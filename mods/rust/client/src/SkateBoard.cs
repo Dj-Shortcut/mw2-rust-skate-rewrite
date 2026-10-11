@@ -45,8 +45,10 @@ public static class SkateBoard
     // edge or end in the hand coming up (toe edge up for an indy, heel edge for a melon, the nose for
     // a nose grab), more as the grab is held. Degrees: toe edge up, nose up.
     public const float GrabRise = 0.3f;
-    private static readonly float[] grabRoll = { 0f, -15f, -20f, 25f, 0f, 0f, 0f, -20f, 15f, -15f, -30f, -40f, 0f, 0f };
-    private static readonly float[] grabPitch = { 0f, 0f, 0f, 0f, 0f, -15f, 15f, -8f, -12f, 12f, -6f, 8f, 18f, -18f };
+    // A seatbelt takes the tail's toe corner (toe edge up, nose down), a crail the nose's (nose up);
+    // a nosebone pushes the nose away with the front leg (nose down), a tailbone the tail (nose up).
+    private static readonly float[] grabRoll = { 0f, -15f, -20f, 25f, 0f, 0f, 0f, -20f, 15f, 15f, -30f, -40f, 0f, 0f };
+    private static readonly float[] grabPitch = { 0f, 0f, 0f, 0f, 0f, -15f, 15f, -8f, 12f, -12f, -6f, 8f, -18f, 18f };
     public static float GrabFold;
     // A no comply or a boneless: the front foot is down beside the board and the back foot kicks
     // the tail, so the nose comes up about the back foot and the board rises with it. Plant (0..1)

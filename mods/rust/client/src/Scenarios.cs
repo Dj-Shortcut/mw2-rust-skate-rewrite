@@ -175,6 +175,8 @@ public static class Scenarios
         new View("board stall on an edge", 90f, "stall", (float)SkateGrindKind.BoardStall), new View("tail stall on an edge", 90f, "stall", (float)SkateGrindKind.TailStall),
         new View("nose stall on an edge", 90f, "stall", (float)SkateGrindKind.NoseStall), new View("handplant", 90f, "stall", (float)SkateGrindKind.Handplant),
         new View("handplant, seen from behind", 180f, "stall", (float)SkateGrindKind.Handplant),
+        new View("handplant, bending down to the edge", 90f, "plantup", 0.22f), new View("handplant, swinging up", 90f, "plantup", 0.5f),
+        new View("handplant, swinging up, seen from behind", 180f, "plantup", 0.5f), new View("handplant, nearly over", 90f, "plantup", 0.78f),
         new View("5-0 grind", 90f, "grind", (float)SkateGrindKind.FiveO), new View("nosegrind", 90f, "grind", (float)SkateGrindKind.Nosegrind),
         new View("smith grind", 90f, "grind", (float)SkateGrindKind.Smith), new View("feeble grind", 90f, "grind", (float)SkateGrindKind.Feeble),
         new View("crooked grind", 90f, "grind", (float)SkateGrindKind.Crooked), new View("boardslide, seen along the rail", 180f, "grind", (float)SkateGrindKind.Boardslide),
@@ -246,6 +248,8 @@ public static class Scenarios
         SkateRide.Stalling = v.State == "stall";
         SkateRide.GrindKind = v.State == "stall" || v.State == "grind" ? (SkateGrindKind)(int)v.Value : SkateGrindKind.None;
         if (v.State == "grabin") RiderRig.GrabFor(0.09f);
+        RiderRig.PlantFor(v.State == "plantup" ? v.Value : -1f);
+        if (v.State == "plantup") { SkateRide.Stalling = true; SkateRide.GrindKind = SkateGrindKind.Handplant; SkateRide.Mode = RideMode.Grind; }
         SkateRide.FlipDeg = v.State == "flip" ? (int)v.Value : 0;
         SkateRide.Grab = v.State == "grab" || v.State == "grabin" ? (SkateGrabKind)(int)v.Value : SkateGrabKind.None;
         SkateRide.ShoveDeg = v.State == "shove" ? v.Value : 0;

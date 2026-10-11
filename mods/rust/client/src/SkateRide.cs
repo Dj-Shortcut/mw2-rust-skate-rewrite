@@ -62,6 +62,11 @@ public static class SkateRide
     // A stall holds the board still on an edge (Mode is Grind, GrindKind a stall kind); a handplant
     // is the stall with a hand on the edge. StallMax: how long one is held before rolling off.
     public const float StallSpeed = 7f, StallMax = 2.5f, StallOut = 2.5f;
+    // A handplant comes down before it leaves the edge: the body swings back onto the board over
+    // HandDownSeconds, held still on the edge meanwhile.
+    public const float HandDownSeconds = 0.4f;
+    private static float handDownAt = -99f; private static bool handDownPop;
+    public static bool HandplantDown { get { return Stalling && handDownAt > 0f; } }
     public static bool Stalling;
     public static int Stalls;
     private static float stallAt, stallSign = 1f;
@@ -141,7 +146,7 @@ public static class SkateRide
         if (mountAt - putBackAt > CapForget) ForgetServer();
         VSpeed = 0f; AirTime = 0f; flipLeft = shoveLeft = pendShove = 0f; pendFlip = 0; SpinDeg = FlipDeg = ShoveDeg = 0; Jumped = TrickAir = Braking = Manual = NoseManual = spinning = DeckReversed = false; PushPhase = 0f; stuck = 0;
         Grab = SkateGrabKind.None; spinSide = 1f; wantKind = SkatePopKind.Ollie; wantFlip = 0; wantShove = 0f; wantScale = 1f;
-        PumpHeld = RevertLeft = 0f; landedTrick = fastFakie = false; steppedAt = -99f; StepUps = 0; Pump = default(SkatePumpState); SlopeDegrees = 0f; ContactNormal = Vector3.up; GrindKind = SkateGrindKind.None; GrindFrontside = GrindAlong = false; GrindDeck = 0f; Stalling = false; Stalls = 0; PlantedUntil = -99f; PushMongo = false;
+        PumpHeld = RevertLeft = 0f; landedTrick = fastFakie = false; steppedAt = -99f; StepUps = 0; Pump = default(SkatePumpState); SlopeDegrees = 0f; ContactNormal = Vector3.up; GrindKind = SkateGrindKind.None; GrindFrontside = GrindAlong = false; GrindDeck = 0f; Stalling = false; Stalls = 0; PlantedUntil = -99f; PushMongo = false; handDownAt = -99f;
         Trick = new SkateTrickState(false); TrickName = ""; ComboPoints = 0; TrickAt = BankedAt = LandAt = jumpWanted = -99f; OffReason = "";
         SkateHud.Clear();
         Normal = ViewNormal = Vector3.up; Position = b.position; Tangent = Dir(yaw);
@@ -655,7 +660,7 @@ public static class SkateRide
         var to = SkateGrind.Target - pos; to.y = 0f;
         GrindFrontside = Vector3.Dot(to, Dir(NoseYaw + 90f)) > 0f; GrindAlong = false;
         if (GrindKind == SkateGrindKind.Handplant && (SkateKeys.HandplantFront || SkateKeys.HandplantBack)) GrindFrontside = SkateKeys.HandplantFront;
-        Enter(RideMode.Grind); GrindStarts++; Stalls++; Stalling = true; stallAt = now;
+        Enter(RideMode.Grind); GrindStarts++; Stalls++; Stalling = true; stallAt = now; handDownAt = -99f;
         Speed = 0f; VSpeed = 0f;
         TrickTick(false, true, 0, 0, 0, impact, dt);
         TrickAir = Jumped = false; AirTime = 0f; Grab = SkateGrabKind.None;
@@ -669,7 +674,15 @@ public static class SkateRide
     private static void StallStep(Vector3 pos, float dt)
     {
         var popped = now - jumpWanted < 0.12f;
-        if (popped || now - stallAt > StallMax)
+        var leaving = popped || now - stallAt > StallMax;
+        if (GrindKind == SkateGrindKind.Handplant)
+        {
+            // The pop (or the time) starts the way down; the edge is left once the body is back on the board.
+            if (leaving && handDownAt < 0f) { handDownAt = now; handDownPop = popped; jumpWanted = -99f; }
+            leaving = handDownAt > 0f && now - handDownAt >= HandDownSeconds;
+            popped = leaving && handDownPop;
+        }
+        if (leaving)
         {
             Stalling = false; Manual = NoseManual = false; GrindEnds++; SkateGrind.Release(dt);
             if (GrindKind == SkateGrindKind.Handplant) { Yaw += 180f; Speed = stallSign * StallOut; }

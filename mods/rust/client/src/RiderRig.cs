@@ -15,8 +15,14 @@ public static class RiderRig
     private static float grabHold = -1f;
     // A view that holds the grab at a given moment of its folding in (the pose check).
     public static void GrabFor(float seconds) { grabHold = seconds; }
+    // How far into the handplant the pose is (0..1): up over PlantSeconds when the edge is taken
+    // with a hand, down again when the ride says the body is coming down; a scripted check can hold it.
+    public const float PlantSeconds = 0.4f;
+    private static float plantBlend, plantHold = -1f;
+    public static float PlantBlend { get { return plantHold >= 0f ? plantHold : plantBlend; } }
+    public static void PlantFor(float blend) { plantHold = blend; }
     public const float AnkleHeight = 0.095f, ToeHeight = 0.025f, DeckTop = 0.092f, HeelShift = 0.055f;
-    public const float HeadLiftFrom = 20f, HeadLiftShare = 0.8f, HeadLiftMost = 50f;
+    public const float HeadLiftFrom = 15f, HeadLiftShare = 1f, HeadLiftMost = 60f;
     public static bool Bound;
     public static Animator Anim;
     public static Transform Root, Pelvis, Neck, Head, LHip, LKnee, LFoot, LToe, RHip, RKnee, RFoot, RToe, LUpper, LFore, LHand, RUpper, RFore, RHand;
@@ -382,10 +388,14 @@ public static class RiderRig
         var hipDrop = Vector3.Distance(Pelvis.position, (LHip.position + RHip.position) * 0.5f);
         var drop = AnkleHeight - ToeHeight;
         var footFlat = (float)Math.Sqrt(Math.Max(0.0001f, Foot * Foot - drop * drop));
-        // The module puts the neck 0.12 of the spine above the chest, and the chest a spine above the hips.
-        Rig = new SkateRiderRig((Thigh + Shin) * 0.945f, hipWidth, Thigh, Shin, footFlat, (back + hipDrop) / 1.12f, Dist(LUpper, RUpper), UpperArm, Forearm, Dist(Neck, Head));
-        // Which way the soles face, seen from each foot bone, while the player stands.
+        // The module puts the neck 0.12 of the spine above the chest, and the chest a spine above the
+        // hips; the arm joints sit a little above the chest point, which the module is told.
         var up = Root.rotation * Vector3.up;
+        var spineLength = (back + hipDrop) / 1.12f;
+        var rise = Vector3.Dot((LUpper.position + RUpper.position) * 0.5f - Pelvis.position, up) - spineLength;
+        Rig = new SkateRiderRig((Thigh + Shin) * 0.945f, hipWidth, Thigh, Shin, footFlat, spineLength, Dist(LUpper, RUpper), UpperArm, Forearm, Dist(Neck, Head),
+            SkateRide.Clamp(rise, 0f, 0.5f));
+        // Which way the soles face, seen from each foot bone, while the player stands.
         lSole = Quaternion.Inverse(LFoot.rotation) * up; rSole = Quaternion.Inverse(RFoot.rotation) * up;
         failed = false; Bound = true; Error = "";
         Say("bound to " + Root.gameObject.name + " spine bones=" + spine.Length + " thigh=" + Thigh.ToString("F3") + " shin=" + Shin.ToString("F3") + " foot=" + Foot.ToString("F3") + " upperArm=" + UpperArm.ToString("F3")
@@ -472,12 +482,17 @@ public static class RiderRig
             fold = fold * fold * (3f - 2f * fold);
             SkateBoard.GrabFold += (fold * (0.8f + 0.2f * SkateRide.Clamp(held / 0.6f, 0f, 1f)) - SkateBoard.GrabFold) * SkateRide.Clamp(frameSeconds * 20f, 0f, 1f);
             var plant = SkateRide.FootPlanted ? SkateRide.Clamp((SkateRide.PlantedUntil - now) / SkateRide.PlantSeconds * 1.5f, 0f, 1f) : 0f;
+            var plantWant = SkateRide.Handplant && !SkateRide.HandplantDown ? 1f : 0f;
+            var plantStep = SkateRide.Clamp(frameSeconds / PlantSeconds, 0f, 1f);
+            plantBlend = SkateRide.Clamp(plantBlend + SkateRide.Clamp(plantWant - plantBlend, -plantStep, plantStep), 0f, 1f);
+            if (mode == RideMode.Bail || !SkateRide.On) plantBlend = 0f;
+            var handplant = PlantBlend;
             SkateBoard.Plant = plant;
             var input = new SkateRiderInput(new SkateVector(plane.x, plane.y, plane.z), new SkateVector(fx, fy, fz), new SkateVector(ux, uy, uz), SkateStance.Regular, SkateRide.TailFirst,
                 speed, lean, Crouch, mode == RideMode.Air, mode == RideMode.Ground && SkateRide.PushPhase > 0f, SkateRide.Clamp(SkateRide.PushPhase, 0f, 1f),
                 SkateRide.FlipDeg, grab, mode == RideMode.Bail, SkateKeys.LookYaw % 360f, SkatePose.FootLift - AnkleHeight,
                 DeckTop, mode == RideMode.Bail ? SkateRide.Clamp((now - SkateRide.ModeAt) / SkateRide.BailSeconds, 0f, 1f) : 0f,
-                SkateRide.PushMongo, plant, grabHold >= 0f ? grabHold : grabSince < 0f ? 0f : now - grabSince, SkateRide.Handplant ? 1f : 0f,
+                SkateRide.PushMongo, plant, grabHold >= 0f ? grabHold : grabSince < 0f ? 0f : now - grabSince, handplant,
                 SkateRide.Clamp(SkateBoard.PitchDegrees, -40f, 40f) * Math.PI / 180.0);
             SkateRiderPose pose; string error;
             if (!SkateRider.TryCreate(Rig, input, out pose, out error))
@@ -490,7 +505,7 @@ public static class RiderRig
             // grab, a handplant), when it must stay there, nor in the air, where the legs' own spring
             // carries the pop and the module's pelvis spring would bob on top of it: the motion is
             // reset and the pose shown as is.
-            var contact = grab != SkateGrabKind.None || SkateRide.Handplant || mode == RideMode.Bail || mode == RideMode.Air;
+            var contact = grab != SkateGrabKind.None || handplant > 0.001f || mode == RideMode.Bail || mode == RideMode.Air;
             if (contact || mode != motionMode) motion = default(SkateRiderMotionState);
             motionMode = mode;
             if (!contact)
@@ -500,13 +515,17 @@ public static class RiderRig
                 { pose = shown; motion = next; }
                 else { motion = default(SkateRiderMotionState); if (motionError != MotionError) { MotionError = motionError; Say("secondary motion refused: " + motionError); } }
             }
-            // In a handplant the board is overhead, against the feet: the board follows the pose.
-            SkateBoard.Held = SkateRide.Handplant;
+            // In a handplant the board is against the feet, held: the board follows the pose, from
+            // the first of the way up to the last of the way down.
+            SkateBoard.Held = handplant > 0.001f;
             if (SkateBoard.Held)
             {
+                // Under the feet, its top toward them: flat on the ground while they are still on it
+                // there, turning with them as they lift and fold in.
                 Vector3 la = V(pose.LeftAnkle), ra = V(pose.RightAnkle), pel = V(pose.Pelvis);
                 var mid = (la + ra) * 0.5f;
-                var grip = (pel - mid).normalized;
+                var lifted = SkateRide.Clamp(Vector3.Dot(mid - plane, upV) / 0.15f, 0f, 1f);
+                var grip = Vector3.Lerp(upV, (pel - mid).normalized, lifted).normalized;
                 SkateBoard.HeldNose = (la - ra).normalized * (SkateRide.TailFirst ? -1f : 1f);
                 SkateBoard.HeldUp = grip;
                 SkateBoard.HeldAt = mid - grip * (AnkleHeight + DeckTop);
@@ -663,8 +682,10 @@ public static class RiderRig
         var drop = up * (AnkleHeight - ToeHeight);
         Aim(LFoot, LToe, joint[LToeJ] - drop - LFoot.position);
         Aim(RFoot, RToe, joint[RToeJ] - drop - RFoot.position);
-        Roll(LFoot, (LToe.position - LFoot.position).normalized, lSole, up);
-        Roll(RFoot, (RToe.position - RFoot.position).normalized, rSole, up);
+        // The feet lie flat on the deck: with the board held against them, their tops face the pelvis.
+        var sole = SkateBoard.Held ? SkateBoard.HeldUp : up;
+        Roll(LFoot, (LToe.position - LFoot.position).normalized, lSole, sole);
+        Roll(RFoot, (RToe.position - RFoot.position).normalized, rSole, sole);
     }
 
     private static void Limb(Transform a, Transform b, Transform c, Vector3 target, Vector3 hint, float upper, float lower, string name)
