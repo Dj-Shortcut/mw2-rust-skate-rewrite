@@ -36,6 +36,48 @@ Linux server console input is noninteractive: screen/tmux show output. Real `oxi
 For Shadow's EAC-disabled client, later startup needs explicit current `-insecure` plus a reviewed **UDP game-port** route for F1 direct join. Query exposure is only for separately required discovery. The Windows loopback launcher is not a Linux/remote-client launcher.
 After a real install, record actual server startup, matching framework, listeners, intended-client join, save/restart and the [plugin acceptance](../../../docs/RUST-SERVER-PLUGIN.md). No playable/ready claim before those results.
 
+## Update the skate plugin
+
+`add-skate.sh` installs ShortcutSkate **0.3.4** from commit
+`54a54a3b199fbe5d7d337b40a739b6546195c631`, with source SHA-256
+`de2e6976f6fc9ab2e3099dfe3cf8c076f2a82ff6c026f75bae0c8eda67c2f8ff`.
+It targets the existing `/srv/rust/server/oxide/plugins` installation created by
+`bootstrap-ubuntu.sh`, with its `rust` user/group. It needs Bash, curl and
+sha256sum; installation uses the GNU/Linux file tools.
+
+From this checkout, verify the pinned download without root or a server:
+
+```sh
+bash mods/rust/server/add-skate.sh --check
+```
+
+This mode downloads into a temporary file, checks its SHA-256 and removes it.
+It does not access the server's plugins folder. On the existing Linux host, run
+the installer as root, with no other plugin update running:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Dj-Shortcut/mw2-rust-skate-rewrite/main/mods/rust/server/add-skate.sh | bash
+```
+
+The source is downloaded and verified in a hidden file in the plugins folder.
+The installer sets its owner/mode before replacing `ShortcutSkate.cs` by a
+same-directory rename. An existing regular source is saved as
+`ShortcutSkate.cs.bak` before replacement; an existing backup is overwritten at
+that stage, even if the final replacement fails. Download, checksum, ownership or backup
+failure leaves the active source untouched. Catchable interruptions remove temporary files;
+SIGKILL/power loss can leave them behind. The script does not restart the server
+or change its configuration/world.
+
+After installation, check the server console for successful compilation and
+`Loaded plugin ShortcutSkate v0.3.4`, then run `oxide.plugins`. Keep the backup
+until the owner has checked placement and riding. Source installation alone
+does not prove plugin loading, park placement or movement without corrections.
+Codex's checks for this installer are local; no live server, Rust client or
+Shadow PC was used. The unchanged pinned 0.3.4 source compiled locally as
+net48/C#7.3 against genuine server references with official Oxide 2.0.7815 and
+2.0.7820, with zero errors/warnings. Its warmup correction still needs native
+acceptance.
+
 ## Native installation evidence
 
 On 8 October 2026, the unchanged reviewed installer completed on Ubuntu 24.04.5 LTS x86_64/Python 3.12.3 as a dedicated nonroot `rust` user in a fresh directory outside Git. Preflight measured approximately 15.1 GiB available RAM and 307 GiB free disk. Official Ubuntu packages supplied the 32-bit GCC/C++ runtime.
