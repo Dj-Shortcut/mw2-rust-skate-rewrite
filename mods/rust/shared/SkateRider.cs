@@ -247,7 +247,7 @@ namespace Shortcut.RustMod
             // A heel-side grab: the chest turns round toward the heels and folds forward over them,
             // as a rider reaches behind; it does not lie back.
             bool heelReach = grabbing && namedGrab && grip.Across < 0 && !grip.Both && grip.ChestTurn == 0;
-            if (heelReach) chestFacing = facing * Math.Cos(HeelTurn) + travel * (Math.Sin(HeelTurn) * HeelTurnSign);
+            if (heelReach) chestFacing = facing * Math.Cos(grip.HeelTurn) + travel * (Math.Sin(grip.HeelTurn) * HeelTurnSign);
             double carve = lean * 0.65 * side * leanScale;
             double pitch = input.Bailed ? chestPitch : 0.1 + 0.12 * crouch + PushLean * turn;
             var carved = up * Math.Cos(carve) + facing * Math.Sin(carve);
@@ -355,12 +355,13 @@ namespace Shortcut.RustMod
         private struct GrabGrip
         {
             public readonly bool Left, Both, End;
-            public readonly double Across, Along, FreeUp, Tuck, Extension, LegShift, BodyShift, ChestTurn;
+            public readonly double Across, Along, FreeUp, Tuck, Extension, LegShift, BodyShift, ChestTurn, HeelTurn;
             public GrabGrip(bool left, double across, double along, double freeUp = 0.25,
                             bool end = false, bool both = false, double tuck = GrabTuckMargin,
-                            double extension = 0, double legShift = 0, double bodyShift = 0, double chestTurn = 0)
+                            double extension = 0, double legShift = 0, double bodyShift = 0, double chestTurn = 0,
+                            double heelTurn = SkateRider.HeelTurn)
             { Left = left; Across = across; Along = along; FreeUp = freeUp; End = end; Both = both;
-              Tuck = tuck; Extension = extension; LegShift = legShift; BodyShift = bodyShift; ChestTurn = chestTurn; }
+              Tuck = tuck; Extension = extension; LegShift = legShift; BodyShift = bodyShift; ChestTurn = chestTurn; HeelTurn = heelTurn; }
         }
 
         private static GrabGrip Grip(SkateGrabKind kind, bool backIsLeft, bool noseIsLeft)
@@ -377,7 +378,8 @@ namespace Shortcut.RustMod
                     chestTurn: backIsLeft != noseIsLeft ? 1.2 : 0);
                 case SkateGrabKind.Seatbelt: return new GrabGrip(!backIsLeft, 0.1, -0.3, 0.35, end: true,
                     chestTurn: backIsLeft != noseIsLeft ? -1.2 : 0);
-                case SkateGrabKind.Melon: return new GrabGrip(!backIsLeft, -0.1, -0.06, 0.35, tuck: 0.035, bodyShift: -0.15, chestTurn: 0.7);
+                // A melon: the chest stays toward the toes and folds over the knees, the lead hand down between them.
+                case SkateGrabKind.Melon: return new GrabGrip(!backIsLeft, -0.1, -0.06, 0.35, tuck: 0.035, bodyShift: -0.15, heelTurn: 0.3);
                 case SkateGrabKind.Method: return new GrabGrip(!backIsLeft, -0.1, 0.04, 0.45, tuck: 0.015, bodyShift: -0.18);
                 case SkateGrabKind.Nosebone: return new GrabGrip(!noseIsLeft, 0.1, -0.25, 0.3, end: true,
                     extension: 0.18, legShift: -0.18, bodyShift: 0.09);
