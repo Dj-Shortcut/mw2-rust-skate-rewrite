@@ -270,13 +270,13 @@ public static class Scenarios
     private static readonly SkateParks.Kind[] parkKinds = { SkateParks.Kind.Bank, SkateParks.Kind.Kicker, SkateParks.Kind.QuarterPipe, SkateParks.Kind.LedgeLow,
         SkateParks.Kind.LedgeHigh, SkateParks.Kind.LongLedge, SkateParks.Kind.Funbox, SkateParks.Kind.Halfpipe };
     private static Vector3 parkAt;
+    // Each model is held for ParkSeconds; the check runs on its own, no key steps it.
+    public const float ParkSeconds = 20f;
     private static void Park(float s, float now)
     {
         var advance = phase == 0;
-        try { var kb = Keyboard.current; var k = kb != null && SkateKeys.Down(kb.kKey); if (k && !keyWas) advance = true; keyWas = k; }
-        catch (Exception) { }
         var riding = phase == parkKinds.Length + 1;
-        if (now - stepAt > (riding ? 9f : 45f)) advance = true;
+        if (now - stepAt > (riding ? 9f : ParkSeconds)) advance = true;
         if (riding) SkateKeys.Push = SkateRide.Speed < 3.5f && now - stepAt < 4f;
         if (now >= nearAt) { nearAt = now + 1f; RiderRig.Near(); }
         if (!advance) return;
@@ -286,7 +286,8 @@ public static class Scenarios
         {
             SkateRig.MountNow(yaw0); SkateRide.Frozen = true;
             parkAt = SkateRig.LocalT.position + SkateRide.Dir(yaw0) * 6f;
-            SkateCamera.Fixed = true; SkateCamera.Chase = true; SkateCamera.Bearing = 60f; SkateCamera.FixedHeight = 3.2f; SkateCamera.FixedDistance = 9f;
+            // From behind the rider, looking along the way to the model.
+            SkateCamera.Fixed = true; SkateCamera.Chase = true; SkateCamera.Bearing = 180f; SkateCamera.FixedHeight = 3.2f; SkateCamera.FixedDistance = 9f;
         }
         if (phase < parkKinds.Length)
         {
@@ -296,7 +297,7 @@ public static class Scenarios
             // The halfpipe's origin is its flat's centre: further out, so the near transition is not on the rider.
             var at = kind == SkateParks.Kind.Halfpipe ? parkAt + SkateRide.Dir(yaw0) * 9f : parkAt;
             var line = SkateParks.PreviewAt(kind, at, yaw0);
-            Enter(phase + 1, SkateParks.KindName(kind) + "   (K: next)");
+            Enter(phase + 1, SkateParks.KindName(kind));
             Say("park " + SkateParks.KindName(kind) + " " + line + " | " + SkateParks.Line());
             return;
         }
