@@ -70,6 +70,16 @@ long enough to finish it.
 While a trigger is held in the air the right stick picks the grab and does not flip the board.
 The steering turns the board at a rate; the view does not steer it.
 
+**Park pieces on foot.** With the server's ShortcutSkate 0.3.0 or later an administrator places a
+park piece by asking for it in the console and then placing one square floor with the building
+plan. On foot, holding `Back` (the view button) shows a menu of the pieces (bank, kicker,
+quarterpipe, ledge-low, ledge-high, long-ledge, funbox): the D-pad steps through them, `A` sends
+`skate.piece <name>` to the server, `B` sends `skate.piece cancel`. The screen says what was asked
+for and, for the 120 s the server keeps the choice, that a floor is to be placed; the server's own
+answer is in the F1 console. `Y` inside the menu does not get on the board. From the keyboard, the
+game's own `bind` does the same (`bind f7 "skate.piece quarterpipe"`). Unverified in game: the
+console call from the plugin.
+
 ### Keys
 
 | Key | On the ground | In the air |

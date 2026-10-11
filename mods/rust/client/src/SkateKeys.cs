@@ -50,7 +50,7 @@ public static class SkateKeys
         if (Scripted || failed) return;
         var now = Time.realtimeSinceStartup;
         SkatePad.Poll(now);
-        var padDown = SkatePad.Pressed();
+        var padDown = SkatePieces.Step(SkatePad.Pressed(), now);
         SkatePadLog.Frame(now);
         try
         {

@@ -253,7 +253,8 @@ public static class SkateHud
         var v = Staged ? Stage : Sample(now);
         var onFoot = !Scenarios.Active && !v.Riding && (!SkateRig.Ready || now - SkateRig.AwakeAt < 12f);
         var recent = now - popAt < PopSeconds || now - bankAt < BankSeconds || now - bailAt < BailSeconds;
-        if (!Scenarios.Active && !v.Riding && !recent && !onFoot) return;
+        var pieces = v.Riding ? "" : SkatePieces.Line(now);
+        if (!Scenarios.Active && !v.Riding && !recent && !onFoot && pieces == "") return;
         float w = Screen.width, h = Screen.height;
         var k = h / 1080f; if (k < 0.75f) k = 0.75f;
         if (fontTries == 0) FindFont();
@@ -264,6 +265,12 @@ public static class SkateHud
             var hint = !SkateRig.Ready ? "Skate mod " + SkatePlugin.Version + " loaded"
                 : SkatePad.Shared ? "Skate mod: press Y on the controller, or K, or jump twice to get on the board" : "Skate mod: press K or jump twice to get on the board";
             Text(40f * k, 110f * k, w - 80f * k, hint, (int)(19 * k), Ink, 0, 1f);
+        }
+
+        if (pieces != "")
+        {
+            Box(40f * k, h - 120f * k, w - 80f * k, 40f * k, Fade(Dark, 0.62f));
+            Text(56f * k, h - 112f * k, w - 112f * k, pieces, (int)(19 * k), SkatePieces.Open ? Ink : Amber, 0, 1f);
         }
 
         if (v.Riding || Staged)

@@ -63,6 +63,10 @@ ride pushed to 8 m/s twenty times on its way out, the after-waking ones among th
 That fits the pace the server allows a walking player, with slack after a rest; the game does not report a rider as sprinting.
 The client lowers its cap on two pull-backs in a row (to 2.1 m/s in that run), shows `server limit`,
 rode back at the cap without a pull-back, and tries a little more later. ShortcutSkate is what lifts this.
+With ShortcutSkate on the server the owner still saw the board held to 6 km/h once, during a session that
+ran at 5 fps: a 200 ms frame sends the server a move it refuses at any speed. Since then two pull-backs
+during a frame longer than 0.1 s leave the cap alone, a raise is tried every 3 s (a refused one doubles
+the wait), and getting on more than 30 s after the last pull-back starts without a cap. Unverified in game.
 
 ## Integration and remaining acceptance
 
