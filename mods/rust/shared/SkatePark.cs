@@ -1,0 +1,336 @@
+using System;
+using System.Collections.Generic;
+
+namespace Shortcut.RustMod
+{
+    // BEGIN SHARED SKATE PARK
+    public enum SkateParkKind { Bank, Kicker, QuarterPipe, LedgeLow, LedgeHigh, LongLedge, Funbox, Halfpipe }
+    public enum SkateParkMaterial { Stone, Metal, Wood }
+
+    public struct SkateParkPart
+    {
+        public double Right, Forward, Height, Pitch, Yaw;
+        public string Prefab;
+        public SkateParkMaterial Material;
+    }
+
+    public struct SkateParkTransform
+    {
+        public double X, Y, Z, Yaw, Pitch;
+    }
+
+    public struct SkateParkBlock
+    {
+        public readonly string Prefab;
+        public readonly double X, Y, Z, Yaw, Pitch;
+        public SkateParkBlock(string prefab, double x, double y, double z, double yaw, double pitch)
+        { Prefab = prefab; X = x; Y = y; Z = z; Yaw = yaw; Pitch = pitch; }
+    }
+
+    public static class SkateParkLayout
+    {
+        public const string FloorPrefab = "assets/prefabs/building core/floor/floor.prefab";
+        public const string LowWallPrefab = "assets/prefabs/building core/wall.low/wall.low.prefab";
+        public const string HalfWallPrefab = "assets/prefabs/building core/wall.half/wall.half.prefab";
+        private const double HalfLength = 1.5;
+        private const double Degrees = Math.PI / 180;
+        public static string Name(SkateParkKind kind)
+        {
+            switch (kind)
+            {
+                case SkateParkKind.Bank: return "bank";
+                case SkateParkKind.Kicker: return "kicker";
+                case SkateParkKind.QuarterPipe: return "quarterpipe";
+                case SkateParkKind.LedgeLow: return "ledge-low";
+                case SkateParkKind.LedgeHigh: return "ledge-high";
+                case SkateParkKind.LongLedge: return "long-ledge";
+                case SkateParkKind.Funbox: return "funbox";
+                case SkateParkKind.Halfpipe: return "halfpipe";
+                default: return null;
+            }
+        }
+        public static bool TryKind(string name, out SkateParkKind kind)
+        {
+            kind = SkateParkKind.Bank;
+            if (name == null) return false;
+            for (int i = 0; i <= (int)SkateParkKind.Halfpipe; i++)
+                if (string.Equals(name, Name((SkateParkKind)i), StringComparison.OrdinalIgnoreCase))
+                { kind = (SkateParkKind)i; return true; }
+            return false;
+        }
+        public static int PartCount(SkateParkKind kind)
+        {
+            switch (kind)
+            {
+                case SkateParkKind.Bank: case SkateParkKind.Kicker:
+                case SkateParkKind.LedgeLow: case SkateParkKind.LedgeHigh: return 1;
+                case SkateParkKind.QuarterPipe: return 2;
+                case SkateParkKind.LongLedge: case SkateParkKind.Funbox: return 3;
+                case SkateParkKind.Halfpipe: return 36;
+                default: return 0;
+            }
+        }
+        public static bool TryPart(SkateParkKind kind, int index, out SkateParkPart part)
+        {
+            part = new SkateParkPart();
+            if (index < 0 || index >= PartCount(kind)) return false;
+            double low = HalfLength * Math.Sin(15 * Degrees);
+            switch (kind)
+            {
+                case SkateParkKind.Bank: part.Height = HalfLength * Math.Sin(12 * Degrees); part.Pitch = -12; break;
+                case SkateParkKind.Kicker: part.Height = HalfLength * Math.Sin(25 * Degrees); part.Pitch = -25; break;
+                case SkateParkKind.QuarterPipe:
+                    part.Height = index == 0 ? low : 2 * low + HalfLength * Math.Sin(35 * Degrees);
+                    part.Forward = index == 0 ? 0 : HalfLength * (Math.Cos(15 * Degrees) + Math.Cos(35 * Degrees));
+                    part.Pitch = index == 0 ? -15 : -35; break;
+                case SkateParkKind.LedgeLow: part.Height = 0.4; break;
+                case SkateParkKind.LedgeHigh: part.Height = 0.8; break;
+                case SkateParkKind.LongLedge: part.Height = 0.4; part.Right = index == 0 ? 0 : index == 1 ? -3 : 3; break;
+                case SkateParkKind.Funbox:
+                    part.Height = index == 0 ? 2 * low : low;
+                    part.Forward = index == 0 ? 0 : (index == 1 ? -1 : 1) * HalfLength * (1 + Math.Cos(15 * Degrees));
+                    part.Pitch = index == 0 ? 0 : index == 1 ? -15 : 15; break;
+                case SkateParkKind.Halfpipe: HalfpipePart(index, out part); break;
+                default: return false;
+            }
+            if (part.Prefab == null) part.Prefab = FloorPrefab;
+            return true;
+        }
+        private static void HalfpipePart(int index, out SkateParkPart part)
+        {
+            part = new SkateParkPart { Prefab = FloorPrefab };
+            if (index < 4)
+            { part.Right = (index % 2) * 3; part.Forward = (index / 2) * 3; return; }
+            double lower = HalfLength * Math.Sin(15 * Degrees);
+            double upper = 2 * lower + HalfLength * Math.Sin(35 * Degrees);
+            double rise = 2 * lower + 2 * HalfLength * Math.Sin(35 * Degrees);
+            double lowerRun = HalfLength * Math.Cos(15 * Degrees);
+            double upperRun = HalfLength * Math.Cos(35 * Degrees);
+            double backLower = -HalfLength - lowerRun;
+            double backUpper = -HalfLength - 2 * lowerRun - upperRun;
+            double frontLower = 3 + HalfLength + lowerRun;
+            double frontUpper = 3 + HalfLength + 2 * lowerRun + upperRun;
+            double backDeck = -3 - 2 * lowerRun - 2 * upperRun;
+            double frontDeck = 6 + 2 * lowerRun + 2 * upperRun;
+            part.Material = SkateParkMaterial.Metal;
+            if (index < 16)
+            {
+                part.Right = (index % 2) * 3;
+                switch ((index - 4) / 2)
+                {
+                    case 0: part.Forward = backLower; part.Height = lower; part.Pitch = 15; break;
+                    case 1: part.Forward = backUpper; part.Height = upper; part.Pitch = 35; break;
+                    case 2: part.Forward = frontLower; part.Height = lower; part.Pitch = -15; break;
+                    case 3: part.Forward = frontUpper; part.Height = upper; part.Pitch = -35; break;
+                    case 4: part.Forward = backDeck; part.Height = rise; break;
+                    case 5: part.Forward = frontDeck; part.Height = rise; break;
+                }
+                return;
+            }
+            if (index < 20)
+            {
+                part.Prefab = LowWallPrefab; part.Material = SkateParkMaterial.Wood;
+                part.Right = (index % 2) * 3; part.Height = rise;
+                part.Forward = index < 18 ? backDeck - HalfLength : frontDeck + HalfLength;
+                part.Yaw = index < 18 ? 180 : 0;
+                return;
+            }
+            part.Prefab = HalfWallPrefab;
+            part.Right = index % 2 == 0 ? -1.85 : 4.85;
+            part.Yaw = index % 2 == 0 ? 90 : 270;
+            switch ((index - 20) / 2)
+            {
+                case 0: part.Forward = 0; break;
+                case 1: part.Forward = 3; break;
+                case 2: part.Forward = backLower; part.Height = lower; break;
+                case 3: part.Forward = backUpper; part.Height = upper; break;
+                case 4: part.Forward = frontLower; part.Height = lower; break;
+                case 5: part.Forward = frontUpper; part.Height = upper; break;
+                case 6: part.Forward = backDeck; part.Height = rise; break;
+                case 7: part.Forward = frontDeck; part.Height = rise; break;
+            }
+        }
+        public static bool TryTransform(SkateParkKind kind, int index, double anchorX, double anchorY,
+                                        double anchorZ, double anchorYaw, out SkateParkTransform transform)
+        {
+            transform = new SkateParkTransform();
+            SkateParkPart part;
+            if (!TryPart(kind, index, out part) || !Coordinate(anchorX) || !Coordinate(anchorY) || !Coordinate(anchorZ) ||
+                !Finite(anchorYaw) || Math.Abs(anchorYaw) > 1000000) return false;
+            double yaw = anchorYaw % 360;
+            if (yaw < 0) yaw += 360;
+            double sin = Math.Sin(yaw * Degrees), cos = Math.Cos(yaw * Degrees);
+            double x = anchorX + part.Right * cos + part.Forward * sin;
+            double y = anchorY + part.Height;
+            double z = anchorZ - part.Right * sin + part.Forward * cos;
+            if (!Coordinate(x) || !Coordinate(y) || !Coordinate(z)) return false;
+            double partYaw = (yaw + part.Yaw) % 360;
+            transform = new SkateParkTransform { X = x, Y = y, Z = z, Yaw = partYaw, Pitch = part.Pitch };
+            return true;
+        }
+        public static bool TrySupportedAnchor(SkateParkKind kind, double supportTop, double floorCenterY,
+            double floorCenterZ, double floorSizeY, double floorSizeZ, out double anchorY)
+        {
+            anchorY = 0;
+            if (PartCount(kind) == 0 || !Coordinate(supportTop) || !Coordinate(floorCenterY) ||
+                !Coordinate(floorCenterZ) || !Coordinate(floorSizeY) || !Coordinate(floorSizeZ) ||
+                floorSizeY <= 0 || floorSizeZ <= 0) return false;
+            double baseline = supportTop - (floorCenterY - floorSizeY / 2) + 0.025;
+            for (int i = 0; i < PartCount(kind); i++)
+            {
+                SkateParkPart part;
+                if (!TryPart(kind, i, out part)) return false;
+                if (part.Prefab != FloorPrefab) continue;
+                double cos = Math.Cos(part.Pitch * Degrees), sin = Math.Sin(part.Pitch * Degrees);
+                double bottom = part.Height + floorCenterY * cos - floorCenterZ * sin -
+                    floorSizeY / 2 * Math.Abs(cos) - floorSizeZ / 2 * Math.Abs(sin);
+                baseline = Math.Max(baseline, supportTop + 0.025 - bottom);
+            }
+            if (!Coordinate(baseline)) return false;
+            anchorY = baseline;
+            return true;
+        }
+        public static bool TryAnchor(SkateParkKind kind, int index, double partX, double partY,
+            double partZ, double partYaw, out double anchorX, out double anchorY,
+            out double anchorZ, out double anchorYaw)
+        {
+            anchorX = anchorY = anchorZ = anchorYaw = 0;
+            SkateParkPart part;
+            if (!TryPart(kind, index, out part) || !Coordinate(partX) || !Coordinate(partY) ||
+                !Coordinate(partZ) || !Angle(partYaw)) return false;
+            double yaw = Normalize(partYaw - part.Yaw);
+            double sin = Math.Sin(yaw * Degrees), cos = Math.Cos(yaw * Degrees);
+            double x = partX - part.Right * cos - part.Forward * sin;
+            double y = partY - part.Height;
+            double z = partZ + part.Right * sin - part.Forward * cos;
+            if (!Coordinate(x) || !Coordinate(y) || !Coordinate(z)) return false;
+            anchorX = x; anchorY = y; anchorZ = z; anchorYaw = yaw;
+            return true;
+        }
+
+        public static bool TryMatch(SkateParkKind kind, IReadOnlyList<SkateParkBlock> blocks,
+            double tolerance, out double anchorX, out double anchorY, out double anchorZ, out double anchorYaw)
+        {
+            anchorX = anchorY = anchorZ = anchorYaw = 0;
+            int count = PartCount(kind);
+            if (count == 0 || count > 36 || blocks == null || blocks.Count != count || !Finite(tolerance) ||
+                tolerance < 0 || tolerance > 0.1) return false;
+            SkateParkBlock first = blocks[0];
+            for (int i = 0; i < count; i++)
+            {
+                SkateParkBlock block = blocks[i];
+                if (!Valid(block)) return false;
+                if (Before(block, first)) first = block;
+            }
+            bool found = false;
+            double foundX = 0, foundY = 0, foundZ = 0, foundYaw = 0;
+            for (int index = 0; index < count; index++)
+            {
+                SkateParkPart part;
+                if (!TryPart(kind, index, out part) || !string.Equals(first.Prefab, part.Prefab, StringComparison.Ordinal) ||
+                    !CloseAngle(first.Pitch, part.Pitch, tolerance)) continue;
+                double x, y, z, yaw;
+                if (!TryAnchor(kind, index, first.X, first.Y, first.Z, first.Yaw, out x, out y, out z, out yaw) ||
+                    !Match(kind, blocks, tolerance, x, y, z, yaw)) continue;
+                if (found && (!ClosePosition(x, y, z, foundX, foundY, foundZ, tolerance) ||
+                    !CloseAngle(yaw, foundYaw, tolerance))) return false;
+                if (!found) { found = true; foundX = x; foundY = y; foundZ = z; foundYaw = yaw; }
+            }
+            if (!found) return false;
+            anchorX = foundX; anchorY = foundY; anchorZ = foundZ; anchorYaw = foundYaw;
+            return true;
+        }
+
+        public static bool VisualOrigin(SkateParkKind kind, out double right, out double forward,
+            out double height, out double yaw)
+        {
+            right = forward = height = yaw = 0;
+            SkateParkPart first;
+            if (!TryPart(kind, 0, out first)) return false;
+            switch (kind)
+            {
+                case SkateParkKind.Bank: case SkateParkKind.Kicker: case SkateParkKind.QuarterPipe:
+                    forward = -HalfLength * Math.Cos(first.Pitch * Degrees); break;
+                case SkateParkKind.Halfpipe: right = forward = HalfLength; break;
+            }
+            return true;
+        }
+
+        private static bool Match(SkateParkKind kind, IReadOnlyList<SkateParkBlock> blocks,
+            double tolerance, double anchorX, double anchorY, double anchorZ, double anchorYaw)
+        {
+            int count = PartCount(kind);
+            ulong used = 0;
+            for (int index = 0; index < count; index++)
+            {
+                SkateParkPart part;
+                SkateParkTransform expected;
+                if (!TryPart(kind, index, out part) ||
+                    !TryTransform(kind, index, anchorX, anchorY, anchorZ, anchorYaw, out expected)) return false;
+                int match = -1;
+                for (int observed = 0; observed < count; observed++)
+                {
+                    SkateParkBlock block = blocks[observed];
+                    if (!string.Equals(part.Prefab, block.Prefab, StringComparison.Ordinal) ||
+                        !ClosePosition(block.X, block.Y, block.Z, expected.X, expected.Y, expected.Z, tolerance) ||
+                        !CloseAngle(block.Yaw, expected.Yaw, tolerance) ||
+                        !CloseAngle(block.Pitch, expected.Pitch, tolerance)) continue;
+                    if (match >= 0) return false;
+                    match = observed;
+                }
+                if (match < 0 || (used & (1UL << match)) != 0) return false;
+                used |= 1UL << match;
+            }
+            return used == (1UL << count) - 1;
+        }
+
+        private static bool Valid(SkateParkBlock block)
+        { return block.Prefab != null && Coordinate(block.X) && Coordinate(block.Y) && Coordinate(block.Z) &&
+            Angle(block.Yaw) && Angle(block.Pitch); }
+
+        private static bool Before(SkateParkBlock a, SkateParkBlock b)
+        {
+            int prefab = string.Compare(a.Prefab, b.Prefab, StringComparison.Ordinal);
+            if (prefab != 0) return prefab < 0;
+            if (a.X != b.X) return a.X < b.X;
+            if (a.Y != b.Y) return a.Y < b.Y;
+            if (a.Z != b.Z) return a.Z < b.Z;
+            double yawA = Normalize(a.Yaw), yawB = Normalize(b.Yaw);
+            if (yawA != yawB) return yawA < yawB;
+            return Normalize(a.Pitch) < Normalize(b.Pitch);
+        }
+
+        private static bool ClosePosition(double x, double y, double z, double otherX, double otherY,
+            double otherZ, double tolerance)
+        {
+            double dx = x - otherX, dy = y - otherY, dz = z - otherZ;
+            return dx * dx + dy * dy + dz * dz <= tolerance * tolerance;
+        }
+
+        private static bool CloseAngle(double a, double b, double tolerance)
+        {
+            double delta = (a - b) % 360;
+            if (delta < -180) delta += 360;
+            else if (delta > 180) delta -= 360;
+            return Math.Abs(delta) <= tolerance;
+        }
+
+        private static double Normalize(double angle)
+        {
+            double value = angle % 360;
+            if (value < 0) value += 360;
+            return value >= 360 || value == 0 ? 0 : value;
+        }
+
+        private static bool Angle(double value)
+        { return Finite(value) && Math.Abs(value) <= 1000000; }
+
+        private static bool Finite(double value)
+        { return !double.IsNaN(value) && !double.IsInfinity(value); }
+
+        private static bool Coordinate(double value)
+        { return Finite(value) && Math.Abs(value) <= 100000; }
+    }
+
+    // END SHARED SKATE PARK
+}
