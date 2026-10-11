@@ -5,8 +5,9 @@ using System.Diagnostics;
 
 public static class SkateClock
 {
-    public const int Keys = 0, Ride = 1, Board = 2, Look = 3, Rider = 4, Camera = 5, Hud = 6, Parts = 7;
-    private static readonly string[] names = { "keys", "ride", "board", "look", "rider", "camera", "hud" };
+    public const int Keys = 0, Ride = 1, Board = 2, Look = 3, Rider = 4, Camera = 5, Hud = 6, Held = 7, Parts = 8;
+    // "look" includes "held": the held item is handled inside the look.
+    private static readonly string[] names = { "keys", "ride", "board", "look", "rider", "camera", "hud", "held" };
     private static readonly long[] ticks = new long[Parts];
     private static readonly int[] calls = new int[Parts];
     private static int frames;
