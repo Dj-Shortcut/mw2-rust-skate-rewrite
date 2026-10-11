@@ -102,6 +102,7 @@ public static class SkateConsole
     private static System.Reflection.MethodInfo startWrite, packetId, writeString, sendWrite;
     private static object consoleCommandId;
     private static Type sendInfoType;
+    private static int writeStringExtra;
     private static bool sendPrepared, sendFailed;
 
     public static bool Send(string line)
@@ -113,7 +114,7 @@ public static class SkateConsole
             var write = startWrite.Invoke(netClient, null);
             if (write == null) { SendState = "the network client gave no write"; return false; }
             packetId.Invoke(write, new[] { consoleCommandId });
-            writeString.Invoke(write, new object[] { line });
+            writeString.Invoke(write, writeStringExtra == 0 ? new object[] { line } : new object[] { line, false });
             var info = Activator.CreateInstance(sendInfoType, connection);
             sendWrite.Invoke(write, new[] { info });
             SentLines++; Last = line; SendState = "sent";
@@ -160,7 +161,16 @@ public static class SkateConsole
             if (messageType == null) { SendState = "no Network.Message.Type enum"; return false; }
             consoleCommandId = Enum.Parse(messageType, "ConsoleCommand");
             packetId = writeType.GetMethod("PacketID", new[] { messageType });
-            writeString = writeType.GetMethod("String", new[] { typeof(string) }) ?? writeType.GetMethod("WriteString", new[] { typeof(string) });
+            // The string write may take a second, optional argument in some builds.
+            writeString = null; writeStringExtra = 0;
+            foreach (var m in writeType.GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
+            {
+                if (m.Name != "String" && m.Name != "WriteString") continue;
+                var ps = m.GetParameters();
+                if (ps.Length < 1 || ps.Length > 2 || ps[0].ParameterType != typeof(string)) continue;
+                if (ps.Length == 2 && ps[1].ParameterType != typeof(bool)) continue;
+                if (writeString == null || ps.Length < writeStringExtra + 1) { writeString = m; writeStringExtra = ps.Length - 1; }
+            }
             sendInfoType = FindType("Network.SendInfo");
             if (packetId == null || writeString == null || sendInfoType == null) { SendState = "the network write lacks PacketID, String or SendInfo"; return false; }
             sendWrite = writeType.GetMethod("Send", new[] { sendInfoType });
