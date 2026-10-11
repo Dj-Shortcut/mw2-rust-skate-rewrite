@@ -1444,8 +1444,8 @@ namespace Oxide.Plugins
                 (actor == null && arg.IsServerside && arg.Connection == null);
             if (!privileged) { arg.ReplyWith("Only an administrator may list park groups."); return; }
             if (arg.Args != null && arg.Args.Length != 0) { arg.ReplyWith("Usage: skate.pieces."); return; }
-            if (parkDataBroken || parkData == null || !SameParkWorld(parkData))
-            { arg.ReplyWith("Park grouping has no verified data for this world/save. Check the server log."); return; }
+            string failure;
+            if (!RefreshParkWorld(out failure)) { arg.ReplyWith(failure); return; }
             var text = new StringBuilder("Park groups: ").Append(parkData.Groups.Count.ToString(CultureInfo.InvariantCulture))
                 .Append("/256; new placement ready=").Append(parkReady).Append('.');
             foreach (SkateParkKind kind in Enum.GetValues(typeof(SkateParkKind)))
