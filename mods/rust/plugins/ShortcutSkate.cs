@@ -645,7 +645,7 @@ namespace Shortcut.RustMod
 
 namespace Oxide.Plugins
 {
-    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.4")]
+    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.5")]
     [Description("Player-scoped skateboard movement bounds and saved building-plan park assemblies.")]
     public sealed class ShortcutSkate : RustPlugin
     {
@@ -697,6 +697,103 @@ namespace Oxide.Plugins
         private BasePlayer parkDemolitionHookPlayer;
         private bool parkDemolitionHookImmediate;
         private string ParkFilename { get { return Path.Combine(Interface.Oxide.DataFileSystem.Directory, "ShortcutSkate.Parks.json"); } }
+        private const int MaximumGroundedMembers = 4096;
+        private readonly Dictionary<ulong, StabilityEntity> groundedEntities = new Dictionary<ulong, StabilityEntity>();
+        private readonly Dictionary<ulong, GroundedMember> groundedMembers = new Dictionary<ulong, GroundedMember>();
+        private readonly Dictionary<ulong, StabilityEntity> groundedPending = new Dictionary<ulong, StabilityEntity>();
+        private GroundedData groundedData;
+        private bool groundedDataBroken, groundedStorageFailed, groundedRefreshing, groundedBusy, groundedReady;
+        private string GroundedFilename { get { return Path.Combine(Interface.Oxide.DataFileSystem.Directory, "ShortcutSkate.Grounded.json"); } }
+
+        public sealed class GroundedData
+        {
+            [JsonProperty(Required = Required.Always)] public int Version;
+            [JsonProperty(Required = Required.Always)] public string WipeId;
+            [JsonProperty(Required = Required.Always)] public long SaveCreatedTicks;
+            [JsonProperty(Required = Required.Always)] public uint Seed, Size;
+            [JsonProperty(Required = Required.Always)] public string Checksum;
+            [JsonProperty(Required = Required.Always)] public List<GroundedMember> Members;
+        }
+
+        public sealed class GroundedMember
+        {
+            [JsonProperty(Required = Required.Always), JsonConverter(typeof(ParkIdConverter))] public ulong Id, Owner;
+            [JsonProperty(Required = Required.Always)] public uint Prefab;
+            [JsonProperty(Required = Required.Always), JsonConverter(typeof(GroundedIdConverter))] public ulong ParentId, ParentOwner;
+            [JsonProperty(Required = Required.Always)] public uint ParentPrefab, ParentBone;
+            [JsonProperty(Required = Required.Always)] public double X, Y, Z, RotX, RotY, RotZ;
+        }
+
+        public sealed class GroundedIdConverter : JsonConverter
+        {
+            public override bool CanConvert(Type type) { return type == typeof(ulong); }
+            public override void WriteJson(JsonWriter writer, object value, JsonSerializer serializer)
+            { writer.WriteValue(((ulong)value).ToString(CultureInfo.InvariantCulture)); }
+            public override object ReadJson(JsonReader reader, Type type, object existing, JsonSerializer serializer)
+            {
+                ulong value;
+                string text = reader.TokenType == JsonToken.String ? reader.Value as string : null;
+                if (text == null || !ulong.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out value) ||
+                    text != value.ToString(CultureInfo.InvariantCulture))
+                    throw new InvalidDataException("Grounded parent IDs must be canonical unsigned decimal strings.");
+                return value;
+            }
+        }
+
+        public static GroundedData ParseGroundedData(string json)
+        {
+            if (json == null || json.Length == 0 || json.Length > MaximumParkDataLength)
+                throw new InvalidDataException("Grounded building data is empty or exceeds one MiB.");
+            using (var reader = new JsonTextReader(new StringReader(json)) { MaxDepth = 16 })
+            {
+                var keys = new Stack<HashSet<string>>();
+                while (reader.Read())
+                {
+                    if (reader.TokenType == JsonToken.StartObject) keys.Push(new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+                    else if (reader.TokenType == JsonToken.StartArray) keys.Push(null);
+                    else if (reader.TokenType == JsonToken.EndObject || reader.TokenType == JsonToken.EndArray) keys.Pop();
+                    else if (reader.TokenType == JsonToken.PropertyName && !keys.Peek().Add((string)reader.Value))
+                        throw new InvalidDataException("Duplicate grounded building data property.");
+                }
+            }
+            GroundedData value = JsonConvert.DeserializeObject<GroundedData>(json, new JsonSerializerSettings
+            {
+                TypeNameHandling = TypeNameHandling.None, MetadataPropertyHandling = MetadataPropertyHandling.Ignore,
+                MissingMemberHandling = MissingMemberHandling.Error, MaxDepth = 16
+            });
+            if (value == null || value.Version != 1 || string.IsNullOrEmpty(value.WipeId) || value.WipeId.Length > 128 ||
+                value.SaveCreatedTicks <= 0 || value.SaveCreatedTicks > DateTime.MaxValue.Ticks ||
+                value.SaveCreatedTicks % TimeSpan.TicksPerSecond != 0 || value.Checksum == null || value.Checksum.Length > 256 ||
+                value.Members == null || value.Members.Count > MaximumGroundedMembers)
+                throw new InvalidDataException("Invalid grounded building world identity or member count.");
+            var ids = new HashSet<ulong>();
+            foreach (GroundedMember member in value.Members)
+                if (!ValidGroundedMember(member) || !ids.Add(member.Id))
+                    throw new InvalidDataException("Invalid or duplicate grounded building identity or pose.");
+            return value;
+        }
+
+        private static bool GroundedCoordinate(double value)
+        { return SkateSessionBounds.Finite(value) && Math.Abs(value) <= 100000; }
+
+        private static bool GroundedAngle(double value)
+        { return SkateSessionBounds.Finite(value) && value >= 0 && value < 360; }
+
+        private static bool ValidGroundedMember(GroundedMember member)
+        {
+            return member != null && member.Id != 0 && member.Owner != 0 && member.Prefab != 0 && member.ParentId != member.Id &&
+                (member.ParentId == 0 ? member.ParentPrefab == 0 && member.ParentOwner == 0 && member.ParentBone == 0 : member.ParentPrefab != 0) &&
+                GroundedCoordinate(member.X) && GroundedCoordinate(member.Y) && GroundedCoordinate(member.Z) &&
+                GroundedAngle(member.RotX) && GroundedAngle(member.RotY) && GroundedAngle(member.RotZ);
+        }
+
+        internal static bool SameGroundedGeneration(GroundedData data, GroundedData current)
+        {
+            return data != null && current != null && !string.IsNullOrEmpty(current.WipeId) && current.WipeId.Length <= 128 &&
+                current.SaveCreatedTicks > 0 && current.SaveCreatedTicks <= DateTime.MaxValue.Ticks &&
+                current.SaveCreatedTicks % TimeSpan.TicksPerSecond == 0 && data.WipeId == current.WipeId &&
+                data.SaveCreatedTicks == current.SaveCreatedTicks && data.Seed == current.Seed && data.Size == current.Size;
+        }
 
         public sealed class ParkData
         {
@@ -829,6 +926,7 @@ namespace Oxide.Plugins
             [JsonProperty(Required = Required.Always)] public double MaximumAirtime;
             [JsonProperty(Required = Required.DisallowNull)] public bool AutomaticEligiblePlayers = true;
             [JsonProperty(Required = Required.DisallowNull)] public double AutomaticRearmSeconds = 1.5;
+            [JsonProperty(Required = Required.DisallowNull)] public bool GroundedBuilding = false;
             [JsonProperty(Required = Required.DisallowNull)] public string ParkNextGesture = "I need wood";
             [JsonProperty(Required = Required.DisallowNull)] public string ParkCancelGesture = "Thumbs up";
             [JsonProperty(Required = Required.DisallowNull)] public string[] ParkPieceOrder =
@@ -907,10 +1005,12 @@ namespace Oxide.Plugins
             instance = this;
             groundMask = LayerMask.GetMask("Terrain", "World", "Construction", "Deployed");
             ReadParkData();
+            ReadGroundedData();
         }
 
         private void OnServerInitialized()
         {
+            InitializeGroundedBuildings();
             InitializeParks();
             InitializeParkGestures();
             ready = settings != null && groundMask != 0 && Patched("ValidateMoves", typeof(MovePatch), false) &&
@@ -1181,7 +1281,9 @@ namespace Oxide.Plugins
                 "m/s; air-limit=" + SkateStatusReport.Number(settings == null ? double.NaN : settings.MaximumAirtime) +
                 "s; automatic=" + (settings != null && settings.AutomaticEligiblePlayers) +
                 "; rearm-required=" + SkateStatusReport.Number(settings == null ? double.NaN : settings.AutomaticRearmSeconds) +
-                "s.\n" + SkateStatusReport.Format(history, clock.Elapsed.TotalSeconds));
+                "s; grounded-building=" + (settings != null && settings.GroundedBuilding) +
+                "; grounded-ready=" + groundedReady + "; grounded-records=" + groundedMembers.Count.ToString(CultureInfo.InvariantCulture) +
+                ".\n" + SkateStatusReport.Format(history, clock.Elapsed.TotalSeconds));
         }
 
         private void Command(ConsoleSystem.Arg arg, int action)
@@ -1326,7 +1428,12 @@ namespace Oxide.Plugins
 
         private void Unload()
         {
+            InitializeGroundedBuildings();
             parkClosing = true;
+            groundedReady = false;
+            groundedPending.Clear();
+            groundedMembers.Clear();
+            groundedEntities.Clear();
             gestureAvailable = false;
             try { if (gestureHarmony != null) gestureHarmony.UnpatchAll(GesturePatchId); }
             catch (Exception error) { PrintError("The park gesture patch could not be removed: " + error.Message); }
@@ -1444,6 +1551,292 @@ namespace Oxide.Plugins
                 }
                 catch (Exception error) { PrintError("Practice part cleanup failed. " + error.Message); }
             }
+        }
+
+        private void ReadGroundedData()
+        {
+            try
+            {
+                if (!File.Exists(GroundedFilename)) return;
+                if (new FileInfo(GroundedFilename).Length > MaximumParkDataLength)
+                    throw new InvalidDataException("Grounded building data exceeds one MiB.");
+                groundedData = ParseGroundedData(File.ReadAllText(GroundedFilename));
+            }
+            catch (Exception error)
+            {
+                groundedDataBroken = true;
+                PrintError("Grounded building restoration is unavailable; the original data file is preserved. " + error.Message);
+            }
+        }
+
+        private static GroundedData NewGroundedData()
+        {
+            ParkData current = NewParkData();
+            return new GroundedData { Version = 1, WipeId = current.WipeId, SaveCreatedTicks = current.SaveCreatedTicks,
+                Seed = current.Seed, Size = current.Size, Checksum = current.Checksum, Members = new List<GroundedMember>() };
+        }
+
+        private static ParkData GroundedIdentity(GroundedData data)
+        {
+            return data == null ? null : new ParkData { WipeId = data.WipeId, SaveCreatedTicks = data.SaveCreatedTicks,
+                Seed = data.Seed, Size = data.Size, Checksum = data.Checksum };
+        }
+
+        private static bool SameGroundedGeneration(GroundedData data)
+        {
+            return data != null && !string.IsNullOrEmpty(SaveRestore.WipeId) && data.WipeId == SaveRestore.WipeId &&
+                data.SaveCreatedTicks == ParkSaveTicks() && data.Seed == World.Seed && data.Size == World.Size;
+        }
+
+        private static Vector3 GroundedPosition(GroundedMember member)
+        { return new Vector3((float)member.X, (float)member.Y, (float)member.Z); }
+
+        private static Quaternion GroundedRotation(GroundedMember member)
+        { return Quaternion.Euler((float)member.RotX, (float)member.RotY, (float)member.RotZ); }
+
+        private static bool GroundedPose(Vector3 position, Quaternion rotation, GroundedMember member)
+        {
+            return Coordinate(position) && (position - GroundedPosition(member)).sqrMagnitude <= 0.000625f &&
+                Quaternion.Angle(rotation, GroundedRotation(member)) <= 0.1f;
+        }
+
+        private static Vector3 GroundedEuler(Quaternion rotation)
+        {
+            Vector3 value = rotation.eulerAngles;
+            return new Vector3(GroundedAngle(value.x), GroundedAngle(value.y), GroundedAngle(value.z));
+        }
+
+        internal static float GroundedAngle(float value)
+        {
+            float angle = value % 360f;
+            if (angle < 0) angle += 360f;
+            return angle >= 360f ? 0 : angle;
+        }
+
+        private static bool GroundedIdentityMatches(StabilityEntity entity, GroundedMember member)
+        {
+            if (entity == null || entity.IsDestroyed || !entity.enableSaving || ParkId(entity) != member.Id ||
+                entity.prefabID != member.Prefab || entity.OwnerID != member.Owner) return false;
+            BaseEntity parent = entity.GetParentEntity();
+            if (entity.parentEntity.uid.Value != member.ParentId || entity.parentBone != member.ParentBone ||
+                ParkId(parent) != member.ParentId || (parent != null &&
+                (parent.IsDestroyed || !parent.enableSaving || parent.prefabID != member.ParentPrefab || parent.OwnerID != member.ParentOwner))) return false;
+            return true;
+        }
+
+        private static bool GroundedMatches(StabilityEntity entity, GroundedMember member)
+        {
+            return GroundedIdentityMatches(entity, member) &&
+                GroundedPose(entity.transform.localPosition, entity.transform.localRotation, member);
+        }
+
+        private static GroundedMember CaptureGroundedMember(StabilityEntity entity)
+        {
+            BaseEntity parent = entity.GetParentEntity();
+            Vector3 position = entity.transform.localPosition;
+            Vector3 rotation = GroundedEuler(entity.transform.localRotation);
+            return new GroundedMember { Id = ParkId(entity), Owner = entity.OwnerID, Prefab = entity.prefabID,
+                ParentId = entity.parentEntity.uid.Value, ParentBone = entity.parentBone, ParentPrefab = parent == null ? 0 : parent.prefabID,
+                ParentOwner = parent == null ? 0 : parent.OwnerID,
+                X = position.x, Y = position.y, Z = position.z, RotX = rotation.x, RotY = rotation.y, RotZ = rotation.z };
+        }
+
+        private bool VerifiedGroundedMember(StabilityEntity entity)
+        {
+            GroundedMember member;
+            StabilityEntity expected;
+            ulong id = ParkId(entity);
+            return settings != null && settings.GroundedBuilding && !groundedDataBroken && SameGroundedGeneration(groundedData) &&
+                id != 0 && groundedMembers.TryGetValue(id, out member) && groundedEntities.TryGetValue(id, out expected) &&
+                ReferenceEquals(entity, expected) && GroundedMatches(entity, member);
+        }
+
+        private void SaveGroundedData()
+        {
+            GroundedData current = NewGroundedData();
+            if (groundedDataBroken || !SameGroundedGeneration(groundedData, current) || groundedData.Checksum != current.Checksum)
+                throw new InvalidDataException("Grounded building metadata has no matching native save/world identity.");
+            string json;
+            try { json = JsonConvert.SerializeObject(groundedData, Formatting.Indented); }
+            catch (Exception) { groundedStorageFailed = true; throw; }
+            if (json.Length > MaximumParkDataLength || Encoding.UTF8.GetByteCount(json) > MaximumParkDataLength)
+                throw new InvalidDataException("Grounded building metadata exceeds one MiB.");
+            try { ParseGroundedData(json); }
+            catch (Exception) { groundedStorageFailed = true; throw; }
+            string temporary = GroundedFilename + ".writing-" + Guid.NewGuid().ToString("N");
+            bool changedWorld = false;
+            try
+            {
+                using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                {
+                    byte[] bytes = new UTF8Encoding(false).GetBytes(json);
+                    stream.Write(bytes, 0, bytes.Length);
+                    stream.Flush(true);
+                }
+                if (!SameGroundedGeneration(groundedData) || groundedData.Checksum != (World.Checksum ?? ""))
+                {
+                    changedWorld = true;
+                    throw new InvalidDataException("Save/world identity changed before grounded building metadata replacement.");
+                }
+                if (File.Exists(GroundedFilename)) File.Replace(temporary, GroundedFilename, null);
+                else File.Move(temporary, GroundedFilename);
+                if (File.ReadAllText(GroundedFilename) != json)
+                    throw new IOException("Grounded building metadata readback differed from its written bytes.");
+            }
+            catch (Exception) { if (!changedWorld) groundedStorageFailed = true; groundedReady = false; throw; }
+            finally { if (File.Exists(temporary)) File.Delete(temporary); }
+        }
+
+        private void InitializeGroundedBuildings()
+        {
+            if (settings == null || !settings.GroundedBuilding || groundedDataBroken || groundedStorageFailed ||
+                groundedRefreshing || groundedBusy || parkClosing) return;
+            groundedReady = false;
+            groundedRefreshing = true;
+            try
+            {
+                GroundedData current = NewGroundedData();
+                List<string> problems = ParkIdentityChanges(null, GroundedIdentity(current));
+                if (problems.Count != 0) throw new InvalidDataException(string.Join("\n", problems));
+                if (!SameGroundedGeneration(groundedData, current))
+                {
+                    if (groundedData != null) PrintWarning("Old grounded building records belong to another save/world generation; no entity IDs were adopted.");
+                    groundedData = current;
+                }
+                foreach (GroundedMember member in groundedData.Members)
+                {
+                    StabilityEntity live;
+                    if (!groundedEntities.TryGetValue(member.Id, out live) ||
+                        !ReferenceEquals(live, BaseNetworkable.serverEntities.Find(new NetworkableId(member.Id))) ||
+                        !GroundedIdentityMatches(live, member)) continue;
+                    GroundedMember pose = CaptureGroundedMember(live);
+                    if (!ValidGroundedMember(pose)) continue;
+                    member.X = pose.X; member.Y = pose.Y; member.Z = pose.Z;
+                    member.RotX = pose.RotX; member.RotY = pose.RotY; member.RotZ = pose.RotZ;
+                }
+                groundedMembers.Clear();
+                groundedEntities.Clear();
+                foreach (GroundedMember member in groundedData.Members.ToArray())
+                {
+                    StabilityEntity entity = BaseNetworkable.serverEntities.Find(new NetworkableId(member.Id)) as StabilityEntity;
+                    if (!GroundedMatches(entity, member)) { groundedData.Members.Remove(member); continue; }
+                    groundedMembers.Add(member.Id, member);
+                    groundedEntities.Add(member.Id, entity);
+                    entity.grounded = true;
+                    entity.InitializeSupports();
+                    entity.UpdateSurroundingEntities();
+                }
+                foreach (GroundedMember member in groundedData.Members.ToArray())
+                {
+                    StabilityEntity entity;
+                    if (!groundedEntities.TryGetValue(member.Id, out entity) ||
+                        !ReferenceEquals(entity, BaseNetworkable.serverEntities.Find(new NetworkableId(member.Id))) || !GroundedMatches(entity, member))
+                    { groundedData.Members.Remove(member); groundedMembers.Remove(member.Id); groundedEntities.Remove(member.Id); }
+                }
+                current = NewGroundedData();
+                if (!SameGroundedGeneration(groundedData, current))
+                    throw new InvalidDataException("Save/world generation changed during grounded building verification.");
+                groundedData.Checksum = current.Checksum;
+                SaveGroundedData();
+                groundedReady = true;
+            }
+            catch (Exception error)
+            { PrintError("New grounded building support is unavailable; verified existing support is retained. " + error.Message); }
+            finally { groundedRefreshing = false; }
+        }
+
+        private bool RefreshGroundedWorld()
+        {
+            if (groundedDataBroken || groundedStorageFailed || groundedRefreshing || groundedBusy || parkClosing) return false;
+            if (!groundedReady || !SameGroundedGeneration(groundedData) || groundedData.Checksum != (World.Checksum ?? "")) InitializeGroundedBuildings();
+            return groundedReady && !groundedDataBroken && !groundedStorageFailed && SameGroundedGeneration(groundedData) &&
+                groundedData.Checksum == (World.Checksum ?? "");
+        }
+
+        private void GroundBuiltEntity(BasePlayer player, StabilityEntity entity)
+        {
+            if (settings == null || !settings.GroundedBuilding || !Eligible(player) || !Permitted(player) ||
+                entity == null || entity.IsDestroyed || !entity.enableSaving || parkClosing) return;
+            ulong id = ParkId(entity), owner = entity.OwnerID;
+            uint prefab = entity.prefabID;
+            if (id == 0 || owner == 0 || prefab == 0 || groundedPending.ContainsKey(id)) return;
+            if (groundedPending.Count >= MaximumGroundedMembers)
+            { PrintWarning("Grounded building has reached its pending-placement capacity."); return; }
+            GroundedData generation = NewGroundedData();
+            groundedPending.Add(id, entity);
+            // Parenting follows the placement callback; fingerprint the final local pose on the next tick.
+            NextTick(() =>
+            {
+                try
+                {
+                    StabilityEntity pending;
+                    if (!ReferenceEquals(instance, this) || parkClosing || !groundedPending.TryGetValue(id, out pending) ||
+                        !ReferenceEquals(entity, pending) || settings == null || !settings.GroundedBuilding ||
+                        !Eligible(player) || !Permitted(player) || entity == null || entity.IsDestroyed ||
+                        !ReferenceEquals(entity, BaseNetworkable.serverEntities.Find(new NetworkableId(id))) ||
+                        ParkId(entity) != id || entity.prefabID != prefab || entity.OwnerID != owner ||
+                        !SameGroundedGeneration(generation, NewGroundedData())) return;
+                    RegisterGroundedBuilding(player, entity);
+                }
+                catch (Exception error) { PrintError("Grounded building registration failed; normal placement remains. " + error.Message); }
+                finally
+                {
+                    StabilityEntity pending;
+                    if (groundedPending.TryGetValue(id, out pending) && ReferenceEquals(entity, pending)) groundedPending.Remove(id);
+                }
+            });
+        }
+
+        private void RegisterGroundedBuilding(BasePlayer player, StabilityEntity entity)
+        {
+            if (settings == null || !settings.GroundedBuilding || !Eligible(player) || !Permitted(player) ||
+                entity == null || entity.IsDestroyed || !entity.enableSaving) return;
+            if (!RefreshGroundedWorld())
+            { PrintWarning("Grounded building was not applied: its metadata or native save/world identity is unavailable."); return; }
+            groundedBusy = true;
+            GroundedMember member = null;
+            bool added = false, persisted = false, applied = false;
+            try
+            {
+                if (!Eligible(player) || !Permitted(player) || parkClosing || settings == null || !settings.GroundedBuilding) return;
+                member = CaptureGroundedMember(entity);
+                if (!ValidGroundedMember(member) || !GroundedMatches(entity, member))
+                    throw new InvalidDataException("Placed stability entity has no verified saved identity/owner/parent/pose.");
+                if (groundedMembers.ContainsKey(member.Id))
+                {
+                    if (VerifiedGroundedMember(entity)) entity.grounded = true;
+                    return;
+                }
+                if (groundedData.Members.Count >= MaximumGroundedMembers)
+                    throw new InvalidDataException("Grounded building metadata reached its 4096-member capacity.");
+                groundedData.Members.Add(member);
+                groundedMembers.Add(member.Id, member);
+                groundedEntities.Add(member.Id, entity);
+                added = true;
+                SaveGroundedData();
+                persisted = true;
+                // Persist first: a support flag that is absent from the save must not outlive its trusted record.
+                if (!Eligible(player) || !Permitted(player) || parkClosing || !SameGroundedGeneration(groundedData) ||
+                    !ReferenceEquals(entity, BaseNetworkable.serverEntities.Find(new NetworkableId(member.Id))) || !GroundedMatches(entity, member))
+                    throw new InvalidDataException("Builder or placed entity identity changed before grounding.");
+                entity.grounded = true;
+                applied = true;
+                entity.InitializeSupports();
+                entity.UpdateSurroundingEntities();
+            }
+            catch (Exception error)
+            {
+                if (added && (!applied || entity == null || entity.IsDestroyed || !GroundedMatches(entity, member)))
+                {
+                    groundedData.Members.Remove(member);
+                    groundedMembers.Remove(member.Id);
+                    groundedEntities.Remove(member.Id);
+                    if (persisted && !groundedStorageFailed)
+                        try { SaveGroundedData(); } catch (Exception cleanup) { PrintError("Grounded record cleanup failed. " + cleanup.Message); }
+                }
+                PrintError("Grounded building processing did not finish. " + error.Message);
+            }
+            finally { groundedBusy = false; }
         }
 
         private void ReadParkData()
@@ -1575,10 +1968,52 @@ namespace Oxide.Plugins
                 block.GetParentEntity() == null && ParkPose(block.transform.position, block.transform.rotation, member);
         }
 
+        private void RestoreGroundedBuildings(Dictionary<BaseEntity, ProtoBuf.Entity> entities)
+        {
+            if (settings == null || !settings.GroundedBuilding || groundedDataBroken || !SameGroundedGeneration(groundedData) || entities == null) return;
+            try
+            {
+                var saved = new Dictionary<ulong, KeyValuePair<BaseEntity, ProtoBuf.Entity>>();
+                var duplicates = new HashSet<ulong>();
+                foreach (var pair in entities)
+                {
+                    ulong id = ParkId(pair.Key);
+                    if (id == 0 || duplicates.Contains(id)) continue;
+                    if (saved.ContainsKey(id)) { saved.Remove(id); duplicates.Add(id); }
+                    else saved.Add(id, pair);
+                }
+                foreach (GroundedMember member in groundedData.Members)
+                {
+                    KeyValuePair<BaseEntity, ProtoBuf.Entity> pair;
+                    if (!saved.TryGetValue(member.Id, out pair)) continue;
+                    StabilityEntity entity = pair.Key as StabilityEntity;
+                    ProtoBuf.Entity proto = pair.Value;
+                    if (entity == null || entity.prefabID != member.Prefab || proto == null || proto.baseNetworkable == null ||
+                        proto.baseEntity == null || proto.ownerInfo == null || proto.baseNetworkable.uid.Value != member.Id ||
+                        proto.baseNetworkable.prefabID != member.Prefab || proto.ownerInfo.steamid != member.Owner ||
+                        (proto.parent == null ? 0 : proto.parent.uid.Value) != member.ParentId ||
+                        (proto.parent == null ? 0 : proto.parent.bone) != member.ParentBone ||
+                        !GroundedPose(proto.baseEntity.pos, Quaternion.Euler(proto.baseEntity.rot), member)) continue;
+                    if (member.ParentId != 0)
+                    {
+                        KeyValuePair<BaseEntity, ProtoBuf.Entity> parent;
+                        if (!saved.TryGetValue(member.ParentId, out parent) || parent.Key == null || parent.Key.prefabID != member.ParentPrefab ||
+                            parent.Value == null || parent.Value.baseNetworkable == null ||
+                            parent.Value.baseNetworkable.uid.Value != member.ParentId || parent.Value.baseNetworkable.prefabID != member.ParentPrefab ||
+                            (parent.Value.ownerInfo == null ? 0 : parent.Value.ownerInfo.steamid) != member.ParentOwner) continue;
+                    }
+                    // Live owner/parent/local transform arrive later; only the incoming saved fingerprint is authoritative here.
+                    entity.grounded = true;
+                }
+            }
+            catch (Exception error) { PrintError("Early grounded building restoration failed. " + error.Message); }
+        }
+
         // Void is intentional: a bool from this hook would abort the game's entire normal save-load loop.
         // OwnerID has not loaded yet; validate the saved protobuf owner, ID, prefab and pose instead.
         private void OnSaveLoad(Dictionary<BaseEntity, ProtoBuf.Entity> entities)
         {
+            RestoreGroundedBuildings(entities);
             if (parkDataBroken || parkData == null || !SameParkGeneration(parkData) || entities == null) return;
             try
             {
@@ -1710,7 +2145,11 @@ namespace Oxide.Plugins
             }
         }
 
-        private void OnServerSave() { if (!parkBusy && !parkRefreshing && !parkDataBroken && parkData != null) SaveParksSafely(); }
+        private void OnServerSave()
+        {
+            if (!parkBusy && !parkRefreshing && !parkDataBroken && parkData != null) SaveParksSafely();
+            InitializeGroundedBuildings();
+        }
 
         [ConsoleCommand("skate.piece")]
         private void SelectParkPiece(ConsoleSystem.Arg arg)
@@ -1801,6 +2240,11 @@ namespace Oxide.Plugins
         private void OnEntityBuilt(Planner planner, GameObject gameObject)
         {
             BasePlayer player = planner == null ? null : planner.GetOwnerPlayer();
+            if (settings != null && settings.GroundedBuilding && gameObject != null)
+            {
+                try { GroundBuiltEntity(player, gameObject.GetComponent<StabilityEntity>()); }
+                catch (Exception error) { PrintError("Grounded building registration was unavailable. " + error.Message); }
+            }
             if (player == null) return;
             ParkSelection selection;
             if (!parkSelections.TryGetValue(player.userID, out selection)) return;
@@ -2414,6 +2858,7 @@ namespace Oxide.Plugins
         {
             ParkGroup group;
             ulong id = ParkId(entity);
+            QueueGroundedRemoval(entity, id);
             if (id == 0 || !parkMembers.TryGetValue(id, out group)) return;
             // Kill hooks can cancel destruction. Never delete metadata or cascade while the origin is alive.
             NextTick(() =>
@@ -2423,8 +2868,29 @@ namespace Oxide.Plugins
             });
         }
 
+        private void QueueGroundedRemoval(BaseNetworkable entity, ulong id)
+        {
+            GroundedMember member;
+            StabilityEntity expected;
+            if (id == 0 || !groundedMembers.TryGetValue(id, out member) ||
+                !groundedEntities.TryGetValue(id, out expected) || !ReferenceEquals(entity, expected)) return;
+            NextTick(() =>
+            {
+                GroundedMember current;
+                if (!ReferenceEquals(instance, this) || parkClosing || (entity != null && !entity.IsDestroyed) ||
+                    !SameGroundedGeneration(groundedData) || !groundedMembers.TryGetValue(id, out current) || !ReferenceEquals(member, current)) return;
+                groundedMembers.Remove(id);
+                groundedEntities.Remove(id);
+                groundedData.Members.Remove(member);
+                if (!groundedDataBroken && !groundedStorageFailed && !groundedRefreshing && !groundedBusy)
+                    try { SaveGroundedData(); }
+                    catch (Exception error) { PrintError("Destroyed grounded building record could not be saved. " + error.Message); }
+            });
+        }
+
         private void OnEntityStabilityCheck(StabilityEntity entity)
         {
+            if (VerifiedGroundedMember(entity)) entity.grounded = true;
             BuildingBlock block = entity as BuildingBlock;
             if (VerifiedParkGroup(block) != null) block.grounded = true;
             // Do not return a non-null override: normal stability processing and other hooks still run.
