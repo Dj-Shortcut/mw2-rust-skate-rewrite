@@ -1273,7 +1273,7 @@ namespace Oxide.Plugins
         private static void Disarm(Session session, SkateSessionObservation observation)
         {
             double said = instance == null ? double.NaN : instance.clock.Elapsed.TotalSeconds;
-            if (session.Bounds.Active && instance != null && said - session.SaidAt > 2)
+            if (observation.WasActive && instance != null && said - session.SaidAt > 2)
             {
                 session.SaidAt = said;
                 instance.Puts("Skating stopped for " + (session.Player == null ? "?" : session.Player.displayName) + ": " + observation.Reason);
