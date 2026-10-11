@@ -401,7 +401,7 @@ namespace Shortcut.RustMod
         private const double AirYaw = 0.35, PushWeight = 0.28, PushSide = 0.03, PushDip = 0.06, PushLean = 0.34, PushSwing = 0.28;
         // The pushing foot comes down PushPlant ahead of the board's middle and leaves it PushSweep
         // behind: the stroke, over which the foot is on the ground (push phase PushDown..PushUp).
-        public const double PushPlant = 0.10, PushSweep = 0.36, PushDown = 0.25, PushUp = 0.6;
+        public const double PushPlant = 0.18, PushSweep = 0.44, PushDown = 0.25, PushUp = 0.6;
         private const double PushHeel = 0.07;
         private const double GrabRoll = 0.4, GrabFoldLimit = 1.0, GrabTuckMargin = 0.05, PlantDrop = 0.3, GrabBackLimit = 0.55, HeelTurn = 1.2;
         private const double HeelTurnSign = 1;
