@@ -57,6 +57,16 @@ This mode downloads into a temporary file, checks its SHA-256 and removes it.
 It does not access the server's plugins folder. On the existing Linux host, run
 the installer as root, with no other plugin update running:
 
+For an existing ShortcutSkate installation, first back up
+`oxide/config/ShortcutSkate.json` under the server root. To adopt the current
+stock skate allowances, edit its existing `MaximumHorizontalSpeed` field to
+`25` and `MaximumAirtime` to `2` before replacing the plugin source. Retain
+`Version: 1` and every other field, including permissions, automatic activation
+and park gestures. Existing files keep their saved values: the installer does
+not update configuration, and new defaults apply only when creating a config.
+Leaving the old `14` m/s limit rejects a `16.5` m/s rider even with the new
+warmup acceptance. Deliberately lower custom limits still restrict that ride.
+
 ```sh
 (
     set -eu
@@ -75,6 +85,13 @@ the installer as root, with no other plugin update running:
 The installer itself is downloaded from an immutable reviewed commit and checked
 before execution. A failed or incomplete download stops the command; it does
 not execute whatever happens to be on `main`.
+
+After updating the source and configuration, run `oxide.reload ShortcutSkate`
+in the authenticated server console or administrator's Rust F1 console. Check
+`skate.status` in the player's F1 console for the configured limits; a playerless
+server console requires `skate.status <SteamID64>` for a connected player.
+These are game-console commands; the shell installer only replaces source.
+Loading and riding remain owner verification.
 
 The source is downloaded and verified in a private temporary directory under
 `/tmp`. Root opens those verified bytes, then a separate session runs all plugin

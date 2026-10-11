@@ -1272,7 +1272,6 @@ namespace Oxide.Plugins
 
         private static void Disarm(Session session, SkateSessionObservation observation)
         {
-            // Said in the server console when a skating rider loses acceptance, at most every two seconds.
             double said = instance == null ? double.NaN : instance.clock.Elapsed.TotalSeconds;
             if (session.Bounds.Active && instance != null && said - session.SaidAt > 2)
             {
