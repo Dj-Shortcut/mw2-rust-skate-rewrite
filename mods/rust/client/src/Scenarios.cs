@@ -6,6 +6,8 @@ using UnityEngine.InputSystem;
 public static class Scenarios
 {
     public static string Name = "", Phase = "";
+    // A check rides from where the view points at its start, turned by this much: a way round an obstacle at the spawn.
+    public static float YawOffset;
     public static bool Active { get { return Name != ""; } }
     // A check that plays a controller rides through the plugin's own input, getting on and off included.
     public static bool Plays { get { return Name == "pad"; } }
@@ -30,7 +32,7 @@ public static class Scenarios
         if (startAt < 0f)
         {
             if (now - SkateRig.AwakeAt < 4f) return;
-            startAt = now; startGame = Time.time; yaw0 = SkateCamera.LookYaw;
+            startAt = now; startGame = Time.time; yaw0 = SkateCamera.LookYaw + YawOffset;
             SkateKeys.Scripted = true; SkateKeys.Reset(); SkateKeys.LookYaw = yaw0;
             Say(Name + " begins, view yaw=" + yaw0.ToString("F0") + " at " + Out.V1(SkateRig.LocalT.position));
         }
