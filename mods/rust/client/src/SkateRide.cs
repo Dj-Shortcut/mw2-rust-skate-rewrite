@@ -14,14 +14,15 @@ public static class SkateRide
 {
     public const float PushAccel = 7f, MaxPush = 11f, BrakeDecel = 12f, RollDecel = 0.45f, MaxSpeed = 13f, MaxReverse = 6f, TurnRate = 150f, SlopeGain = 1.6f;
     public const float AirGravity = 16f, OlliePop = 6f, MaxFall = 30f, BailImpact = 12f, BailSeconds = 1.3f, BailDecel = 10f, PushPeriod = 0.8f, SeaLevel = -1.1f, LowestCap = 3f, LagStep = 0.1f, RaiseWait = 3f, CapForget = 30f, ManualPace = 1f, ManualHold = 0.3f, HopGrace = 0.3f;
-    // Pumping: a crouch held on a transition and let go gives speed, more the steeper and the longer
-    // the crouch (up to PumpCharge seconds); nothing on the flat. Landing: the fall becomes roll on
-    // a slope by LandRoll; a revert within RevertWindow of a landed trick turns the board round at
-    // RevertRate and keeps the combo.
-    public const float PumpGain = 2.6f, PumpCharge = 0.4f, PumpFrom = 8f, PumpFull = 30f, LandRoll = 0.8f, RevertWindow = 0.35f, RevertRate = 600f;
+    // Pumping: the shared SkateRidePhysics judges it (a crouch held down a transition, let go
+    // through its bottom); PumpCharge only shapes the rider's crouch. Landing: the fall becomes
+    // roll on a slope by LandRoll (the shared landing rule); a revert within RevertWindow of a
+    // landed trick turns the board round at RevertRate and keeps the combo.
+    public const float PumpCharge = 0.4f, LandRoll = 0.8f, RevertWindow = 0.35f, RevertRate = 600f;
     public const long RevertPoints = 50;
     public const float RevertStick = 0.85f;
     private static float spinAtLand;
+    private static Vector3 landRoll; private static bool hasLandRoll;
     private const float RayLift = 0.6f, FeetProbe = 0.3f, AirProbe = 3f;
     // A lip ahead up to StepUp high (the seam between two foundations, a kerb) is stepped over:
     // the board is lifted onto it and the loss of way it costs is not read as an obstacle.
@@ -49,6 +50,12 @@ public static class SkateRide
     public static float TrickAt = -99f, BankedAt = -99f;
     public static int Steps, Resets, Pops, Lands, Bails, Pushes, GrindStarts, GrindEnds, Refused, Pumps, Reverts;
     public static float PumpHeld, RevertLeft;
+    // The shared ride physics: the slope along the actual travel, the pump's pass, and the normal of
+    // the ground last hit under the board, which is what a landing meets.
+    public static float SlopeDegrees;
+    public static SkatePumpState Pump = default(SkatePumpState);
+    public static Vector3 ContactNormal = Vector3.up;
+    public static string PhysicsError = "";
     public static SkateGrindKind GrindKind;
     public static bool GrindFrontside, GrindAlong;
     private static float grindCross, grindNoseFar;
@@ -101,7 +108,7 @@ public static class SkateRide
         if (mountAt - putBackAt > CapForget) ForgetServer();
         VSpeed = 0f; AirTime = 0f; flipLeft = shoveLeft = pendShove = 0f; pendFlip = 0; SpinDeg = FlipDeg = ShoveDeg = 0; Jumped = TrickAir = Braking = Manual = NoseManual = spinning = DeckReversed = false; PushPhase = 0f; stuck = 0;
         Grab = SkateGrabKind.None; spinSide = 1f; wantKind = SkatePopKind.Ollie; wantFlip = 0; wantShove = 0f; wantScale = 1f;
-        PumpHeld = RevertLeft = 0f; landedTrick = fastFakie = false; steppedAt = -99f; StepUps = 0; GrindKind = SkateGrindKind.None; GrindFrontside = GrindAlong = false;
+        PumpHeld = RevertLeft = 0f; landedTrick = fastFakie = false; steppedAt = -99f; StepUps = 0; Pump = default(SkatePumpState); SlopeDegrees = 0f; ContactNormal = Vector3.up; GrindKind = SkateGrindKind.None; GrindFrontside = GrindAlong = false;
         Trick = new SkateTrickState(false); TrickName = ""; ComboPoints = 0; TrickAt = BankedAt = LandAt = jumpWanted = -99f; OffReason = "";
         SkateHud.Clear();
         Normal = ViewNormal = Vector3.up; Position = b.position;
@@ -214,11 +221,12 @@ public static class SkateRide
         Clearance = got ? hit.m_Distance - RayLift : 99f;
         Grounded = got && Clearance <= FeetProbe;
         Normal = Grounded && hit.m_Normal.y > 0.3f ? hit.m_Normal : Vector3.up;
+        if (got && hit.m_Normal.y > 0.3f) ContactNormal = hit.m_Normal;
     }
 
     private static void GroundStep(float dt)
     {
-        if (!Grounded) { TakeOff(false, velocity.y + AirGravity * dt); Sense(Position); AirStep(Position, dt); return; }
+        if (!Grounded) { Launch(Tangent, 0f, dt); Sense(Position); AirStep(Position, dt); return; }
         var before = Yaw;
         var maxTurn = TurnRate / (1f + Math.Abs(Speed) / 8f) * dt;
         // A stick steers by how far it is pushed; keys and the mouse turn the board toward where the rider looks.
@@ -228,18 +236,24 @@ public static class SkateRide
         var dir = Dir(Yaw);
         var tangent = dir - Normal * Vector3.Dot(dir, Normal);
         tangent = tangent.sqrMagnitude > 0.0001f ? tangent.normalized : dir;
+        // The shared physics: gravity along the tangent of the ground, the slope signed by the way of travel.
+        SkateSlopeResult slope; string error;
+        if (SkateRidePhysics.TrySlope(new SkateSlopeInput(V(Normal), V(dir), Speed, AirGravity), dt, out slope, out error))
+        {
+            tangent = V(slope.Tangent); Speed = (float)slope.SignedTangentSpeed; SlopeDegrees = (float)slope.SignedSlopeDegrees;
+        }
+        else { Speed += Vector3.Dot(Physics.gravity, tangent) * SlopeGain * dt; Physics_(error); }
         Tangent = tangent; Braking = SkateKeys.Brake;
         // A press up to a moment before touch-down still counts, so tricks can be chained.
         if (now - jumpWanted < 0.12f)
         {
             Pops++; jumpWanted = -99f;
-            TakeOff(true, tangent.y * Speed + OlliePop * wantScale * Normal.y + AirGravity * dt);
+            Launch(tangent, OlliePop * wantScale, dt);
             AirStep(Position, dt);
             return;
         }
-        Speed += Vector3.Dot(Physics.gravity, tangent) * SlopeGain * dt;
         Revert(dt);
-        Pump(dt);
+        PumpStep(dt);
         // A manual is held on two wheels: it needs some speed and leaves no foot free to push. One
         // that has begun lasts down to a crawl: ending it at the pace it needs to begin would let a
         // held push in and out every few tenths of a second, each time ending and scoring it.
@@ -259,8 +273,9 @@ public static class SkateRide
             PushPhase += dt / PushPeriod;
             if (PushPhase >= 1f) PushPhase = 0f;
         }
-        velocity = dir * Speed;
-        velocity.y = tangent.y * Speed - Clamp(Clearance * 8f, 0f, 3f);
+        // The velocity runs along the ground's tangent; a gap under the wheels is closed on top of it.
+        velocity = tangent * Speed;
+        velocity.y -= Clamp(Clearance * 8f, 0f, 3f);
         // Through a revert the rider keeps rolling the way he was; only the board turns under him.
         if (RevertLeft != 0f) { var keep = revertDir * Math.Abs(Speed); keep.y = velocity.y; velocity = keep; }
         StepOver(dir, dt);
@@ -307,18 +322,40 @@ public static class SkateRide
         else Out.Say("SKATE revert refused: " + error);
     }
 
-    // The crouch is charged while a trigger is held; letting go on a transition is the pump.
-    private static void Pump(float dt)
+    // The crouch is held with a trigger; the shared pump judges the pass: charged going down a
+    // transition, awarded when let go through its bottom, once per pass, by an energy budget.
+    private static void PumpStep(float dt)
     {
-        if (SkateKeys.Crouch) { PumpHeld = Math.Min(PumpCharge, PumpHeld + dt); return; }
-        if (PumpHeld <= 0f) return;
-        var charge = PumpHeld / PumpCharge; PumpHeld = 0f;
-        var angle = (float)(Math.Acos(Clamp(Normal.y, -1f, 1f)) * 180.0 / Math.PI);
-        if (angle < PumpFrom || Math.Abs(Speed) < 0.5f) return;
-        var gain = PumpGain * charge * Clamp((angle - PumpFrom) / (PumpFull - PumpFrom), 0f, 1f);
-        Speed += Math.Sign(Speed) * gain; Pumps++;
-        Out.Say("SKATE pump +" + gain.ToString("F1") + " on " + angle.ToString("F0") + " degrees, charge " + charge.ToString("F2"));
+        PumpHeld = SkateKeys.Crouch ? Math.Min(PumpCharge, PumpHeld + dt) : 0f;
+        var travel = Dir(Yaw) * (Speed >= 0f ? 1f : -1f);
+        SkatePumpResult r; string error;
+        var input = new SkatePumpInput(Mode == RideMode.Ground, SkateKeys.Crouch, SlopeDegrees, Math.Abs(Speed), new SkateVector(travel.x, 0, travel.z));
+        if (!SkateRidePhysics.TryPump(Pump, input, dt, out r, out error)) { Physics_(error); return; }
+        Pump = r.State;
+        if (!r.Awarded) return;
+        Speed += Math.Sign(Speed) * (float)r.SpeedGain; Pumps++;
+        Out.Say("SKATE pump +" + r.SpeedGain.ToString("F1") + " m/s (" + r.EnergyGain.ToString("F1") + " J/kg) through the bottom at " + SlopeDegrees.ToString("F0") + " degrees");
     }
+
+    // Leaving the ground: the velocity along it is kept whole, the pop added straight up; the air
+    // step takes its gravity off at once, which the launch gives back for that one step.
+    private static void Launch(Vector3 tangent, float pop, float dt)
+    {
+        SkateLaunchResult r; string error;
+        var surface = tangent * Speed;
+        if (SkateRidePhysics.TryLaunch(new SkateLaunchInput(V(surface), pop), out r, out error))
+        {
+            var v = V(r.Velocity); var flat = new Vector3(v.x, 0f, v.z).magnitude;
+            Speed = Math.Sign(Speed == 0f ? 1f : Speed) * flat;
+            TakeOff(pop > 0f, v.y + AirGravity * dt);
+        }
+        else { Physics_(error); TakeOff(pop > 0f, tangent.y * Speed + pop * Normal.y + AirGravity * dt); }
+    }
+
+    private static int physicsSaid;
+    private static void Physics_(string error) { PhysicsError = error; if (physicsSaid++ < 3) Out.Say("SKATE physics refused: " + error); }
+    private static SkateVector V(Vector3 v) { return new SkateVector(v.x, v.y, v.z); }
+    private static Vector3 V(SkateVector v) { return new Vector3((float)v.X, (float)v.Y, (float)v.Z); }
 
     private static void TakeOff(bool jumped, float vertical)
     {
@@ -374,8 +411,8 @@ public static class SkateRide
             Land(impact, dt);
             if (Mode == RideMode.Ground)
             {
-                velocity = dir * Speed;
-                velocity.y = -Clamp(Clearance / dt, 0f, impact);
+                velocity = hasLandRoll ? landRoll : dir * Speed;
+                velocity.y = (hasLandRoll ? landRoll.y : 0f) - Clamp(Clearance / dt, 0f, impact);
             }
             else BailStep(velocity, dt);
             return;
@@ -436,18 +473,21 @@ public static class SkateRide
     private static void Land(float impact, float dt)
     {
         LastAir = AirLine("land");
-        // On a slope part of the fall is roll: what goes into the surface is the impact, what runs
-        // along it goes to the speed (downhill more, uphill less).
-        var dir = Dir(Yaw);
-        var tangent = dir - Normal * Vector3.Dot(dir, Normal);
-        tangent = tangent.sqrMagnitude > 0.0001f ? tangent.normalized : dir;
-        if (impact > 0.01f && Normal.y < 0.999f)
+        // The shared landing: what goes into the ground is the impact, what runs along it in the
+        // board's rolling direction is kept (the fall weighted by LandRoll), the rest is slip.
+        landRoll = Vector3.zero; hasLandRoll = false;
+        if (impact > 0.01f)
         {
-            var fall = Vector3.up * -impact;
-            var into = -Vector3.Dot(fall, Normal);
-            var along = Vector3.Dot(fall, tangent) * LandRoll;
-            Speed += along; impact = into > 0f ? into : 0f;
-            Speed = Clamp(Speed, -(fastFakie ? Cap : Math.Min(MaxReverse, Cap)), Cap);
+            SkateLandingResult r; string error;
+            var incoming = Dir(Yaw) * Speed + Vector3.up * -impact;
+            var normal = Grounded ? Normal : ContactNormal;
+            if (SkateRidePhysics.TryLand(new SkateLandingInput(V(incoming), V(normal), V(Dir(Yaw)), BailImpact, LandRoll), out r, out error))
+            {
+                Speed = (float)r.SignedTangentSpeed; impact = (float)r.NormalImpact;
+                Speed = Clamp(Speed, -(fastFakie ? Cap : Math.Min(MaxReverse, Cap)), Cap);
+                landRoll = V(r.RollVelocity); hasLandRoll = true;
+            }
+            else Physics_(error);
         }
         if (AirTime > 0.12f || impact > 1.5f) { Lands++; LandAt = now; LandImpact = impact; }
         landedTrick = TrickAir; spinAtLand = SkateKeys.Spin;

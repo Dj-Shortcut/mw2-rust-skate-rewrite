@@ -38,7 +38,7 @@ game; see [The controller](#the-controller).
 | `A` or `X` | Push | |
 | `B` | Brake | |
 | Right stick | The board: see below. Kept part of the way back or forward for 0.2 s: manual or nose manual. | Flicked to a side or a forward diagonal: a flip. Pulled back: set for the pop after the landing. |
-| `LT`, `RT` | Held and let go on a transition: a pump (speed, by how long it was held and how steep the bank; nothing on the flat). | Held: grab; with the right stick held, another grab. |
+| `LT`, `RT` | Held going down a transition and let go through its bottom: a pump (speed, by how long it was held and how steep the descent, once a pass; nothing on the flat or let go on the slope itself). | Held: grab; with the right stick held, another grab. |
 | Right stick click | View from behind or the game's first person | |
 | Left stick, right after landing a trick | Revert: the board turns round under the rider, who rolls on switch; it joins the combo. | |
 | Right stick back or forward, on an edge | 5-0 or nosegrind instead of the 50-50. | |
@@ -161,12 +161,13 @@ that commit and must match the hash; that is for shared code that is ahead on an
 | `SkateKeys.cs` | Keys and controller as one set of riding inputs; whose hands are on the ride. |
 | `SkatePad.cs` | The controller's state from the reader outside the game; the right stick through the shared flick module. |
 | `SkatePadLog.cs` | What a ride with a controller leaves in the log: every movement of the right stick, the keys Steam's layout sends, whether the stick turns the game's view. |
-| `SkateRide.cs` | Ground, air, grind and bail movement; calls the shared trick module. |
+| `SkateRide.cs` | Ground, air, grind and bail movement; calls the shared trick module and, for the slope, the pump, the take-off and the landing, the shared ride physics (`mods/rust/shared/SkateRidePhysics.cs`, described in [`docs/RUST-SKATE-RIDE-PHYSICS.md`](../../../docs/RUST-SKATE-RIDE-PHYSICS.md)). |
 | `SkateGrind.cs` | Samples the ground around the rider and asks the shared edge module for an edge. |
 | `SkateBoard.cs` | The board, what it is drawn with and where it sits. |
 | `RiderRig.cs` | Writes the shared rider pose onto the player model's skeleton; what is drawn in which view, the held item included. |
 | `SkateCamera.cs` | View from behind. |
 | `SkateHud.cs`, `SkateSfx.cs` | The score display and the sounds. |
+| `SkatePieces.cs`, `SkateConsole.cs` | The park-piece menu on the controller and the console line it types for the player. |
 | `Scenarios.cs` | Scripted checks in a world. |
 
 ### Steps
