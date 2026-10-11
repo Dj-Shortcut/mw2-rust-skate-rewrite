@@ -1,9 +1,3 @@
-// Park pieces from the controller. The server plugin places a piece where the next square floor
-// goes, after `skate.piece <name>` in the console. Typing that in the console with a controller in
-// the hands is a chore, so the client offers a small menu on foot: hold the menu button (Back/View
-// by default), step through the pieces with the D-pad, A types `skate.piece <name>` into the F1
-// console for the player (SkateConsole), B types the cancel. Whoever rides from the keyboard can
-// bind a key instead (bind f7 "skate.piece bank").
 using System;
 using Shortcut.RustMod;
 using UnityEngine;
@@ -42,7 +36,7 @@ public static class SkatePieces
         Sent++;
         if (name == "cancel") { Asked = ""; Said = "Typed in the console: " + line; return; }
         Asked = name; AskedAt = now;
-        Said = "Typed in the console: " + line + "  -  now place one square floor with the building plan within " + (int)PlaceSeconds + " s (admin only; the server answers in F1)";
+        Said = "Typed in the console: " + line + "  -  now place one square foundation with the building plan within " + (int)PlaceSeconds + " s (admin only; the server answers in F1)";
     }
 
     // What the screen shows: the menu while open, the last answer for a few seconds, the pending piece.
@@ -55,7 +49,7 @@ public static class SkatePieces
             return s + "      D-pad: choose   A: ask the server   B: cancel";
         }
         if (now - SaidAt < ShownSeconds) return Said;
-        if (Asked != "" && now - AskedAt < PlaceSeconds) return "Park piece " + Asked + ": place a square floor (" + (int)(PlaceSeconds - (now - AskedAt)) + " s left)";
+        if (Asked != "" && now - AskedAt < PlaceSeconds) return "Park piece " + Asked + ": place a square foundation (" + (int)(PlaceSeconds - (now - AskedAt)) + " s left)";
         return "";
     }
 

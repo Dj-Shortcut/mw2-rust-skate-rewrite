@@ -8,6 +8,9 @@ public static class SkateSfx
     public const int Rate = 44100;
     public static bool Ready;
     public static string State = "not started";
+    private static GameObject audio;
+    private static readonly AudioClip[] ownedClips = new AudioClip[6];
+    private static int ownedCount;
     private static AudioSource roll, grind, shots;
     private static AudioClip push, ollie, landing, bail;
     private static int pops, lands, bails, pushes;
@@ -20,8 +23,11 @@ public static class SkateSfx
     {
         float[] samples; string error;
         if (!SkateAudio.TryCreate(sound, Rate, seed, out samples, out error)) throw new InvalidOperationException(sound + ": " + error);
+        if (ownedCount == ownedClips.Length) throw new InvalidOperationException("audio clip capacity exceeded");
         var clip = AudioClip.Create("skate_" + sound, samples.Length, 1, Rate, false);
-        clip.SetData(samples, 0);
+        // Own the clip before upload so a failed setup can release it.
+        ownedClips[ownedCount++] = clip;
+        if (clip == null || !clip.SetData(samples, 0)) throw new InvalidOperationException(sound + ": clip upload failed");
         return clip;
     }
 
@@ -44,51 +50,66 @@ public static class SkateSfx
         if (Ready || failed) return;
         try
         {
-            var go = new GameObject("skate_audio");
-            UnityEngine.Object.DontDestroyOnLoad(go);
-            roll = Source(go, Clip(SkateSound.Rolling, 11u), true);
-            grind = Source(go, Clip(SkateSound.Grind, 12u), true);
-            shots = Source(go, null, false);
+            audio = new GameObject("skate_audio");
+            UnityEngine.Object.DontDestroyOnLoad(audio);
+            roll = Source(audio, Clip(SkateSound.Rolling, 11u), true);
+            grind = Source(audio, Clip(SkateSound.Grind, 12u), true);
+            shots = Source(audio, null, false);
             push = Clip(SkateSound.Push, 13u); ollie = Clip(SkateSound.Ollie, 14u); landing = Clip(SkateSound.Landing, 15u); bail = Clip(SkateSound.Bail, 16u);
             Sync();
             Ready = true; State = "ready";
             Out.Say("AUDIO ready: two loops and four one-shots at " + Rate + " Hz");
-            if (ListClips) Survey();
         }
-        catch (Exception e) { failed = true; State = "failed: " + e.GetType().Name + ": " + e.Message; Out.Say("AUDIO " + State); Silence(); }
+        catch (Exception e) { Fail("failed", e); }
     }
 
-    // Which of the game's own clips are in memory: skateboard-like ones could replace the synthesis.
-    // Names only; nothing here names a type of the game. Only a scripted check (step `clips`) asks.
-    public static bool ListClips;
-    public static void Survey()
+    public static void Shutdown()
     {
-        try
-        {
-            var all = Resources.FindObjectsOfTypeAll(Il2CppInterop.Runtime.Il2CppType.Of<AudioClip>());
-            var like = new System.Text.StringBuilder(); var n = 0; var liked = 0;
-            var words = new[] { "skate", "wheel", "scrape", "metal", "wood", "impact", "slide", "roll", "concrete", "footstep", "land", "thud", "grind", "drag", "stone" };
-            for (var i = 0; i < all.Length; i++)
-            {
-                var c = all[i] == null ? null : all[i].TryCast<AudioClip>();
-                if (c == null) continue;
-                n++;
-                var name = (c.name ?? "").ToLowerInvariant(); var hit = false;
-                for (var w = 0; w < words.Length && !hit; w++) hit = name.Contains(words[w]);
-                if (hit && like.Length < 1500) { liked++; like.Append(liked > 1 ? ", " : "").Append(c.name).Append('(').Append(c.length.ToString("F1")).Append("s)"); }
-            }
-            Out.Say("AUDIO clips in memory: " + n + ", of a skateboard's kind " + liked + ": " + like);
-        }
-        catch (Exception e) { Out.Say("AUDIO clips could not be listed: " + e.GetType().Name + ": " + e.Message); }
+        failed = !Cleanup();
+        deaf = false; ranked = true;
+        State = failed ? "cleanup incomplete" : "stopped";
+        if (failed) Out.Err("AUDIO " + State);
     }
 
-    private static void Silence()
+    private static void Fail(string phase, Exception e)
     {
-        foreach (var source in new[] { roll, grind, shots })
+        failed = true;
+        State = phase + ": " + e.GetType().Name + ": " + e.Message;
+        if (!Cleanup()) State += "; cleanup incomplete";
+        Out.Say("AUDIO " + State);
+    }
+
+    private static bool Cleanup()
+    {
+        Ready = false;
+        Silence(roll); Silence(grind); Silence(shots);
+        var clean = DestroyOwned(audio);
+        if (clean) { audio = null; roll = grind = shots = null; }
+        for (var i = 0; i < ownedCount; i++)
         {
-            try { if (source != null) { source.volume = 0f; source.Stop(); } }
-            catch (Exception) { }
+            if (DestroyOwned(ownedClips[i])) ownedClips[i] = null;
+            else clean = false;
         }
+        if (clean) ownedCount = 0;
+        push = ollie = landing = bail = null;
+        block = null;
+        rollVolume = grindVolume = RollHeard = GrindHeard = ShotsHeard = 0f;
+        pops = lands = bails = pushes = 0;
+        return clean;
+    }
+
+    private static bool DestroyOwned(UnityEngine.Object value)
+    {
+        try { if (value != null) UnityEngine.Object.Destroy(value); return true; }
+        catch (Exception) { return false; }
+    }
+
+    private static void Silence(AudioSource source)
+    {
+        try { if (source != null) source.volume = 0f; }
+        catch (Exception) { }
+        try { if (source != null) source.Stop(); }
+        catch (Exception) { }
     }
 
     private static void Sync() { pops = SkateRide.Pops; lands = SkateRide.Lands; bails = SkateRide.Bails; pushes = SkateRide.Pushes; }
@@ -145,6 +166,6 @@ public static class SkateSfx
             if (SkateRide.Bails != bails) shots.PlayOneShot(bail, 1f);
             Sync();
         }
-        catch (Exception e) { failed = true; State = "failed while playing: " + e.GetType().Name + ": " + e.Message; Out.Say("AUDIO " + State); Silence(); }
+        catch (Exception e) { Fail("failed while playing", e); }
     }
 }

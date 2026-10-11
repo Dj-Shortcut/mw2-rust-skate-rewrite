@@ -15,6 +15,21 @@ the local player's movement body, the pose in which the local player's model is 
 position of the main camera, and it adds a board, sounds and a score display of its own. It sends
 nothing to the server: to the server the rider is a player who moves.
 
+## Development verification
+
+The handover corrections retain tangent-speed physics with horizontal server/HUD limits,
+process complete landing impact before accepted roll, preserve grind travel independently of
+visual board angle, and own one rig and its audio resources. The client menu matches the server's
+square-foundation trigger. These are development source changes; `tools/release.txt` still pins
+the owner's earlier client.
+
+- **Verified:** independent source reviews and publish checks; the actual shared physics DLL
+  passes 11,683 owner-approved checks against genuine C# 7.3/net48 references.
+- **Compiles but unverified:** the shared landing policy in native gameplay.
+- **Still missing:** compilation of the complete changed client against its generated IL2CPP
+  references, native ramp/seam/grind/revert/lifecycle checks and audible playback. Codex has run
+  no Rust client, Shadow PC or live-server commands for this handover.
+
 ## Rules
 
 - It is used only on the owner's own server, which runs without anti-cheat. Rust is started for it
@@ -82,16 +97,18 @@ long enough to finish it.
 While a trigger is held in the air the right stick picks the grab and does not flip the board.
 The steering turns the board at a rate; the view does not steer it.
 
-**Park pieces on foot.** With the server's ShortcutSkate 0.3.0 or later an administrator places a
-park piece by asking for it in the console and then placing one square floor with the building
-plan. On foot, holding `Back` (the view button) shows a menu of the pieces (bank, kicker,
-quarterpipe, ledge-low, ledge-high, long-ledge, funbox, halfpipe — the last needs plugin 0.3.1):
-the D-pad steps through them, `A` puts `skate.piece <name>` on the clipboard, `B` puts
-`skate.piece cancel` there; F1, Ctrl+V, Enter sends it, and the server's answer is in the console.
-The plugin does not run the command itself: the game's console class is renamed in this client
-build and was not found by its shape. `Y` inside the menu does not get on the board. From the
-keyboard, the game's own `bind` is quicker (`bind f7 "skate.piece quarterpipe"`). Unverified in
-game: the clipboard write from the plugin.
+**Park pieces on foot.** Server ShortcutSkate 0.3.3 lets an administrator select the next piece
+with the stock wheel's "I need wood" gesture (halfpipe first); thumbs up cancels. Both gesture
+names and the piece order are configurable. Chat names the selection and `skate.status` shows
+it. Place one square foundation with the building plan within two minutes. A refused placement
+keeps the selection for a retry; floor tiles do not trigger placement.
+
+On foot, holding `Back` (the view button) shows the eight-piece menu. The D-pad selects, `A`
+queues `skate.piece <name>` and `B` queues cancellation. On Windows `SkateConsole` sends the
+F1/command/Enter/F1 sequence; if typing fails it attempts a clipboard fallback. A keyboard bind
+also works (`bind f7 "skate.piece quarterpipe"`). `Y` in the menu does not mount the board.
+Native gesture delivery, menu typing, clipboard fallback and a standing park piece still need
+owner validation for these changes.
 
 ### Keys
 
@@ -173,7 +190,7 @@ that commit and must match the hash; that is for shared code that is ahead on an
 ### Steps
 
 The plugin reads a comma-separated list from `BepInEx\plugins\steps.txt` when it loads; without the
-file it runs `skate`.
+file it runs `skate`. Runtime steps share one rig; the last scenario step selects the scenario.
 
 | Step | Effect |
 | --- | --- |
@@ -184,7 +201,6 @@ file it runs `skate`.
 | `pad` | Scripted: the ride with a controller, played into the plugin without one. |
 | `mute` | Turns the whole client down until nothing can be heard. |
 | `nogrind` | No grinding. |
-| `clips` | When the audio starts, the game's own audio clips of a skateboard's kind are listed in the log (names and lengths), for choosing sounds. |
 
 A scripted check writes what happened to `BepInEx\plugins\skate.log` and ends the session.
 
