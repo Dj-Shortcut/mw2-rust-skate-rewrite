@@ -1,6 +1,7 @@
 using System;
 using System.Globalization;
 using System.IO;
+using System.Reflection;
 using System.Security.Cryptography;
 using Shortcut.RustMod;
 
@@ -213,8 +214,115 @@ internal static class SkateParkLayoutScenarios
             }
             CheckSeams(anchor.X, anchor.Y, anchor.Z, angle.Input);
         }
+        PlacementRequests();
         Console.WriteLine("PASS: skate_park_anchor_yaw_and_snap (20 translated/yaw anchors, " +
                           (checks - start).ToString(CultureInfo.InvariantCulture) + " checks).");
+    }
+
+    private static void PlacementRequests()
+    {
+        Assembly library = typeof(SkateParkLayout).Assembly;
+        Type placement = library.GetType("Shortcut.RustMod.SkateParkPlacement", false);
+        if (placement == null)
+        {
+            Require(library.GetName().Name == "SkateMotion", "Actual server plugin must include the placement request helper.");
+            Console.WriteLine("Shared SkateMotion DLL has no server placement request helper; existing layout checks continue.");
+            return;
+        }
+        MethodInfo request = placement.GetMethod("TryRequest", BindingFlags.Public | BindingFlags.Static, null,
+            new[] { typeof(string[]), typeof(SkateParkKind).MakeByRefType(), typeof(bool).MakeByRefType(),
+                typeof(double).MakeByRefType(), typeof(double).MakeByRefType(), typeof(double).MakeByRefType(),
+                typeof(double).MakeByRefType(), typeof(string).MakeByRefType() }, null);
+        Require(request != null && request.ReturnType == typeof(bool), "Exact public placement request API is required.");
+        ParameterInfo[] parameters = request.GetParameters();
+        for (int i = 1; i < parameters.Length; i++) Require(parameters[i].IsOut, "Placement request output must use out parameters.");
+
+        CultureInfo previous = CultureInfo.CurrentCulture, previousUi = CultureInfo.CurrentUICulture;
+        try
+        {
+            CultureInfo custom = (CultureInfo)new CultureInfo("en-US").Clone();
+            custom.NumberFormat.NumberDecimalSeparator = ",";
+            custom.NumberFormat.NegativeSign = "~";
+            foreach (CultureInfo culture in new[] { CultureInfo.InvariantCulture, new CultureInfo("fr-FR"), custom })
+            {
+                CultureInfo.CurrentCulture = culture;
+                CultureInfo.CurrentUICulture = culture;
+                foreach (Piece piece in Pieces)
+                {
+                    RequestGood(request, new[] { piece.Name }, piece.Kind, false, 0, 0, 0, 0);
+                    RequestGood(request, new[] { piece.Name.ToUpperInvariant(), "17.375", "-2.625", "-8.0625", "-90" },
+                        piece.Kind, true, 17.375, -2.625, -8.0625, 270);
+                }
+                RequestGood(request, new[] { "halfpipe", "-100000", "100000", "0", "1000000" },
+                    SkateParkKind.Halfpipe, true, -100000, 100000, 0, 280);
+                RequestGood(request, new[] { "bank", "1e5", "-1E5", "-0", "-1000000" },
+                    SkateParkKind.Bank, true, 100000, -100000, 0, 80);
+                foreach (Angle angle in new[] { new Angle(0, 0, 0, 0), new Angle(360, 0, 0, 0),
+                    new Angle(-360, 0, 0, 0), new Angle(720, 0, 0, 0), new Angle(-720, 0, 0, 0),
+                    new Angle(-37.25, 322.75, 0, 0), new Angle(450, 90, 0, 0), new Angle(359.999, 359.999, 0, 0) })
+                    RequestGood(request, new[] { "quarterpipe", "0.125", "-0.25", "0.0625",
+                        angle.Input.ToString("R", CultureInfo.InvariantCulture) }, SkateParkKind.QuarterPipe,
+                        true, 0.125, -0.25, 0.0625, angle.Normalized);
+                RequestGood(request, new[] { "funbox", "0", "0", "0", "-5E-324" }, SkateParkKind.Funbox, true, 0, 0, 0, 0);
+                foreach (string value in new[] { "1,25", "1,000", "~1" })
+                {
+                    RequestBad(request, new[] { "bank", value, "0", "0", "0" });
+                    RequestBad(request, new[] { "bank", "0", "0", "0", value });
+                }
+            }
+        }
+        finally { CultureInfo.CurrentCulture = previous; CultureInfo.CurrentUICulture = previousUi; }
+
+        foreach (string[] args in new[] { null, new string[0], new string[] { null }, new[] { "" },
+            new[] { "cancel" }, new[] { "unknown" }, new[] { "bank", "0" }, new[] { "bank", "0", "0" },
+            new[] { "bank", "0", "0", "0" }, new[] { "bank", "0", "0", "0", "0", "extra" },
+            new[] { "cancel", "0", "0", "0", "0" }, new[] { "unknown", "0", "0", "0", "0" } })
+            RequestBad(request, args);
+        for (int component = 1; component <= 4; component++)
+        {
+            foreach (string invalid in new[] { null, "", "NaN", "Infinity", "+Infinity", "-Infinity", "1e309", "-1e309",
+                "word", "0x1", "1.2.3", "1/2" })
+            {
+                string[] args = { "halfpipe", "17.375", "-2.625", "-8.0625", "37.25" };
+                args[component] = invalid;
+                RequestBad(request, args);
+            }
+            foreach (string invalid in component == 4 ? new[] { "1000000.000000001", "-1000000.000000001" } :
+                new[] { "100000.0000000001", "-100000.0000000001" })
+            {
+                string[] args = { "halfpipe", "17.375", "-2.625", "-8.0625", "37.25" };
+                args[component] = invalid;
+                RequestBad(request, args);
+            }
+        }
+    }
+
+    private static object[] Request(MethodInfo request, string[] args, bool expected)
+    {
+        object[] outputs = { args, (SkateParkKind)999, true, 91d, 92d, 93d, 94d, "unchanged" };
+        Require((bool)request.Invoke(null, outputs) == expected, "Placement request acceptance differs from its contract.");
+        return outputs;
+    }
+
+    private static void RequestGood(MethodInfo request, string[] args, SkateParkKind kind, bool explicitAnchor,
+                                    double x, double y, double z, double yaw)
+    {
+        object[] outputs = Request(request, args, true);
+        Require((SkateParkKind)outputs[1] == kind && (bool)outputs[2] == explicitAnchor, "Placement request kind/mode changed.");
+        Near((double)outputs[3], x, "Placement request X.");
+        Near((double)outputs[4], y, "Placement request Y.");
+        Near((double)outputs[5], z, "Placement request Z.");
+        Near((double)outputs[6], yaw, "Placement request normalized yaw.");
+        Require((double)outputs[6] >= 0 && (double)outputs[6] < 360, "Placement request yaw must be canonical.");
+        Require(string.IsNullOrEmpty(outputs[7] as string), "Accepted placement request must not report failure.");
+    }
+
+    private static void RequestBad(MethodInfo request, string[] args)
+    {
+        object[] outputs = Request(request, args, false);
+        Require((SkateParkKind)outputs[1] == default(SkateParkKind) && !(bool)outputs[2], "Refused placement request must reset kind/mode atomically.");
+        for (int i = 3; i <= 6; i++) Require((double)outputs[i] == 0, "Refused placement request must reset every numeric output atomically.");
+        Require(!string.IsNullOrEmpty(outputs[7] as string), "Refused placement request needs a failure reason.");
     }
 
     private static void CheckSeams(double x, double y, double z, double yaw)

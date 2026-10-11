@@ -148,40 +148,123 @@ internal static class SkateParkGestureScenarios
         Check(!SkateParkSelections.TrySelect(SkateParkKind.Bank, true, true, double.MaxValue, out result), "manual deadline overflow refused");
     }
 
+    private static void GestureMatch(string name, string[][] catalog, bool accepted, int expectedIndex,
+                                     string expectedError, bool expectedMissing, string label)
+    {
+        int index = 42;
+        string error = "stale error";
+        bool missing = !expectedMissing;
+        bool result = SkateParkSelections.TryGesture(name, catalog, out index, out error, out missing);
+        Check(result == accepted, label + " result");
+        Check(index == expectedIndex, label + " index");
+        Check(error == expectedError, label + " error");
+        Check(missing == expectedMissing, label + " missing flag");
+        int oldIndex = 42;
+        string oldError = "stale error";
+        Check(SkateParkSelections.TryGesture(name, catalog, out oldIndex, out oldError) == result,
+              label + " legacy overload result");
+        Check(oldIndex == index && oldError == error, label + " legacy overload outputs");
+    }
+
     private static void GestureNames()
     {
         var catalog = new[] {
             new[] { "I need wood", "gesture.needwood", "needwood", "needwood" },
             new[] { "Thumbs up", "gesture.thumbsup", "thumbsup", "thumbsup" },
-            null, new string[] { null, "Wave", "gesture.wave", "wave" }
+            null, new string[] { null, "token.wave", "convar.wave", "command.wave" }
         };
-        int index;
-        string error;
         foreach (string name in new[] { "I need wood", "i NEED WOOD", "gesture.needwood", "needwood" })
-        {
-            Check(SkateParkSelections.TryGesture(name, catalog, out index, out error), "select alias resolves");
-            Check(index == 0 && error == null, "select aliases identify one native row");
-        }
+            GestureMatch(name, catalog, true, 0, null, false, "select alias " + name);
         foreach (string name in new[] { "Thumbs up", "THUMBS UP", "gesture.thumbsup", "thumbsup" })
-        {
-            Check(SkateParkSelections.TryGesture(name, catalog, out index, out error), "cancel alias resolves");
-            Check(index == 1 && error == null, "cancel aliases identify distinct native row");
-        }
-        Check(SkateParkSelections.TryGesture("wave", catalog, out index, out error) && index == 3, "null rows and aliases skipped");
-        Check(!SkateParkSelections.TryGesture("missing", catalog, out index, out error) && index == -1 &&
-              !string.IsNullOrEmpty(error), "unknown gesture fails closed");
-        Check(!SkateParkSelections.TryGesture("I need wood", null, out index, out error) && index == -1 &&
-              !string.IsNullOrEmpty(error), "missing catalog fails closed");
+            GestureMatch(name, catalog, true, 1, null, false, "cancel alias " + name);
+        GestureMatch("command.wave", catalog, true, 3, null, false, "command with missing English resolves");
+        GestureMatch("token.wave", catalog, true, 3, null, false, "token with missing English resolves");
+        GestureMatch("convar.wave", catalog, true, 3, null, false, "convar with missing English resolves");
+        GestureMatch("missing", catalog, false, -1, "Gesture 'missing' was not found in the native catalog.",
+                     true, "unknown gesture");
+        GestureMatch("I need wood", null, false, -1, "Gesture catalog is unavailable.", false, "absent catalog");
+        GestureMatch("missing", new string[0][], false, -1,
+                     "Gesture 'missing' was not found in the native catalog.", true, "empty catalog");
+        GestureMatch("missing", new[] { null, new string[0], new string[] { null, null, null, null } },
+                     false, -1, "Gesture 'missing' was not found in the native catalog.", true, "present catalog without aliases");
         var ambiguous = new[] { new[] { "Thumbs up" }, new[] { "thumbs UP" } };
-        Check(!SkateParkSelections.TryGesture("thumbs up", ambiguous, out index, out error) && index == -1 &&
-              !string.IsNullOrEmpty(error), "ambiguous rows fail closed");
-        foreach (string name in new[] { null, "", " ", " I need wood", "Thumbs up ", "I\nneed wood", new string('a', 129) })
+        GestureMatch("thumbs up", ambiguous, false, -1, "Gesture 'thumbs up' is ambiguous.", false, "distinct rows ambiguous");
+        GestureMatch("repeat", new[] { new[] { "Repeat", "repeat", "REPEAT", "Repeat" } },
+                     true, 0, null, false, "repeated aliases within one gesture");
+        GestureMatch("Comma, English", new[] { new[] { "Comma, English", "token", "convar", "command" } },
+                     true, 0, null, false, "display exclusion does not alter lookup aliases");
+        foreach (string name in new[] { null, "", " ", " I need wood", "Thumbs up ", "I\nneed wood",
+                                        "I\rneed wood", "I\tneed wood", "I\0need wood", new string('a', 129) })
         {
             Check(!SkateParkSelections.ValidGestureName(name), "invalid configured gesture name");
-            Check(!SkateParkSelections.TryGesture(name, catalog, out index, out error) && index == -1 &&
-                  !string.IsNullOrEmpty(error), "invalid gesture leaves no match");
+            GestureMatch(name, catalog, false, -1, "Configured gesture name is invalid.", false, "invalid name");
         }
+        GestureMatch(null, null, false, -1, "Configured gesture name is invalid.", false, "invalid name before absent catalog");
         Check(SkateParkSelections.ValidGestureName(new string('a', 128)), "gesture-name maximum accepted");
+        GestureMatch(new string('a', 128), new[] { new[] { new string('a', 128) } },
+                     true, 0, null, false, "maximum-length alias");
+    }
+
+    private static void CatalogNames(string[][] catalog, string expected, string label)
+    {
+        string actual = SkateParkSelections.GestureCatalogNames(catalog);
+        Check(actual == expected, label + " names and order");
+        Check(actual != null && actual.IndexOf('\n') < 0 && actual.IndexOf('\r') < 0 &&
+              actual.IndexOf('\u2028') < 0 && actual.IndexOf('\u2029') < 0, label + " one line");
+        bool controls = false;
+        foreach (char character in actual) controls |= char.IsControl(character);
+        Check(!controls, label + " no controls");
+    }
+
+    private static void GestureCatalogDisplay()
+    {
+        CatalogNames(null, "", "absent display catalog");
+        CatalogNames(new string[0][], "", "empty display catalog");
+        CatalogNames(new[] { new[] { "English only" } }, "English only", "short English row");
+        CatalogNames(new[] {
+            new[] { "I need wood", "gesture.needwood", "needwood", "needwood" },
+            new[] { "Thumbs up", "gesture.thumbsup", "thumbsup", "thumbsup" },
+            null, new string[] { null, "token.wave", "convar.wave", "command.wave" }
+        }, "I need wood, Thumbs up, convar.wave", "English preferred and convar fallback");
+        CatalogNames(new[] {
+            new[] { "Zulu" }, new[] { "Alpha" }, new[] { "zULU" },
+            new[] { "Beta" }, new string[] { null, "token", "aLPHA", "command" },
+            new string[] { null, "token", "Gamma", "command" },
+            new string[] { null, "token", "bETA", "command" }
+        }, "Zulu, Alpha, Beta, Gamma", "first display spelling and native order");
+        CatalogNames(new[] {
+            new string[] { null, "token", "null-english", "command" },
+            new[] { "", "token", "empty-english", "command" },
+            new[] { " ", "token", "blank-english", "command" },
+            new[] { " Leading", "token", "leading-space", "command" },
+            new[] { "Trailing ", "token", "trailing-space", "command" },
+            new[] { "Control\nName", "token", "control-name", "command" },
+            new[] { "Comma, Name", "token", "comma-name", "command" },
+            new[] { "Line\u2028Name", "token", "line-separator", "command" },
+            new[] { "Paragraph\u2029Name", "token", "paragraph-separator", "command" },
+            new[] { new string('a', 129), "token", "long-english", "command" }
+        }, "null-english, empty-english, blank-english, leading-space, trailing-space, control-name, comma-name, " +
+           "line-separator, paragraph-separator, long-english", "unusable English falls back");
+        CatalogNames(new[] {
+            null, new string[0], new string[] { null }, new string[] { null, "Token only" },
+            new string[] { null, "token", null, "Command only" },
+            new[] { "Comma, English", "Token only" },
+            new string[] { null, "token", "", "command" },
+            new string[] { null, "token", " Convar", "command" },
+            new string[] { null, "token", "Convar ", "command" },
+            new string[] { null, "token", "Comma, convar", "command" },
+            new string[] { null, "token", "Control\tconvar", "command" },
+            new string[] { null, "token", "Line\u2028convar", "command" },
+            new string[] { null, "token", "Paragraph\u2029convar", "command" },
+            new string[] { null, "token", new string('a', 129), "command" }
+        }, "", "unusable rows never display tokens or commands");
+        CatalogNames(new[] {
+            new[] { "Valid English", "token", "Invalid\nconvar", "command" },
+            new string[] { null, "token", "Valid convar", "command" }
+        }, "Valid English, Valid convar", "usable preferred English does not require usable fallback");
+        CatalogNames(new[] { new[] { new string('a', 128) } }, new string('a', 128), "maximum-length English");
+        CatalogNames(new[] { new string[] { null, null, new string('b', 128) } },
+                     new string('b', 128), "maximum-length convar");
     }
 
     private static int Main()
@@ -194,6 +277,7 @@ internal static class SkateParkGestureScenarios
         LifetimeAndPlacement();
         Refusals();
         GestureNames();
+        GestureCatalogDisplay();
         Console.WriteLine("skate_park_gesture_selection: " + checks + " checks passed");
         return 0;
     }
