@@ -81,7 +81,7 @@ The source is downloaded and verified in a private temporary directory under
 file writes as the nonroot `rust` account. A hidden source in the plugins folder
 receives mode 0644 before a same-directory rename replaces `ShortcutSkate.cs`.
 An existing regular source is saved as `ShortcutSkate.cs.bak` before replacement;
-a `rust`-owned source retains its bytes, owner, group, mode and modification time.
+a `rust:rust`-owned source retains its bytes, owner, group, mode and modification time.
 An existing backup is overwritten at that stage, even if the final replacement
 fails. Download, checksum, privilege-drop or backup failure leaves the active
 source untouched. The installer does not grant the service account access to
