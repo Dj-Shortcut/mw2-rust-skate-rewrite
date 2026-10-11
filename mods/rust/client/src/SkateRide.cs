@@ -192,28 +192,22 @@ public static class SkateRide
         if (RevertLeft != 0f || now - revertEndAt < 0.15f) return;
         if ((lastSpeed > 1f && Actual < -3f) || (lastSpeed < -1f && Actual > 3f))
         {
-            // The server put the player back. Without its skate plugin it allows walking pace and
-            // refuses more, tick after tick, until the rider is slower: two in a row lower the cap,
-            // and a raise that is refused again is tried less and less often. One on its own is
-            // left alone, and so is a ride's start: after waking the first seconds are put back at
-            // any speed. A long frame is left alone too: the move it sent was too big for the server
-            // because of the frame, not the speed.
+            // The server put the player back. That is logged and nothing more: the board never
+            // slows itself down for the server. A server that refuses skate speed has to allow it
+            // (the ShortcutSkate plugin, or its own speed checks turned off by the admin).
             Resets++;
             Out.Say("SKATE put back #" + Resets + ", " + (now - mountAt).ToString("F2") + " s after getting on: moved " + Out.V3(pos - lastPos) + " in a step at speed " + lastSpeed.ToString("F1"));
-            var again = now - putBackAt < 1f; putBackAt = now;
-            if (again && Time.unscaledDeltaTime <= LagStep && now - mountAt > 3f && Math.Abs(lastSpeed) > LowestCap)
-            {
-                if (!refusedSinceRaise && now - raisedAt < 45f) raiseWait = Math.Min(raiseWait * 2f, 480f);
-                refusedSinceRaise = true; lastPull = now;
-                Cap = Math.Max(LowestCap, Math.Min(Cap, Math.Abs(lastSpeed)) * 0.85f); CapLoweredAt = now;
-            }
-            // Being put back is not an obstacle: the board keeps what speed the cap allows.
-            Speed = Clamp(Speed, -Cap, Cap);
             return;
         }
         if (now - steppedAt < StepGrace) return;
+        // Only a wall stops the board: when it did not get as far as it rode and something steep
+        // stands right in front of it. Anything else that held it back is not taken off its speed.
+        if (Math.Abs(Speed) < 0.5f || Math.Abs(Actual) > Math.Abs(Speed) * 0.5f) return;
+        RaycastHit wall;
+        var ahead = new Vector3(lastDir.x, 0f, lastDir.z) * Math.Sign(Speed);
+        if (ahead.sqrMagnitude < 0.0001f || !Physics.Raycast(pos + Vector3.up * 0.3f, ahead.normalized, out wall, 0.6f, GroundMask, QueryTriggerInteraction.Ignore) || wall.m_Normal.y > 0.5f) return;
         if (Speed > 0f) { var limit = (Actual > 0f ? Actual : 0f) + 2f; if (Speed > limit) Speed = limit; }
-        else if (Speed < 0f) { var limit = (Actual < 0f ? Actual : 0f) - 2f; if (Speed < limit) Speed = limit; }
+        else { var limit = (Actual < 0f ? Actual : 0f) - 2f; if (Speed < limit) Speed = limit; }
     }
 
     // Land a metre below the water's surface is for swimming, unless something is overhead (tunnels,

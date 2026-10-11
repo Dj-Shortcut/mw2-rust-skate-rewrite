@@ -245,6 +245,7 @@ the two desktop files and the folder `Downloads\claude-loader-probe`.
 On the server, [`ShortcutSkate`](../plugins/SKATE.md) accepts the rider's speed and supplies a
 practice area. The client asks it for nothing: the plugin accepts a rider by itself after a moment
 of ordinary movement. Without it the server allows a rider the pace of a player who walks, about
-10 km/h and a little more downhill, and puts a faster one back. The client learns a limit from
-being put back twice within a second, holds it, tries a little more now and then, and says on
-screen what the server is holding the board back to.
+10 km/h and a little more downhill, and puts a faster one back. The client never slows the board
+for that: a put-back is only counted and logged. Only a wall right in front takes speed off. So on
+a server that refuses skate speed the rider is pulled back instead of braked; the server has to
+allow it (the plugin, or its own speed checks turned off by the admin).
