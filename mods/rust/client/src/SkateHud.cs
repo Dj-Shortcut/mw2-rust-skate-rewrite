@@ -296,8 +296,10 @@ public static class SkateHud
             Score(v, now, w, k);
             Speed(v, h, k);
             Feed(now, h, k);
-            if (v.Cap < SkateRide.MaxSpeed - 0.25f)
-                Text(40f * k, h - 336f * k, w - 80f * k, "The server is holding the board back to " + (v.Cap * 3.6f).ToString("F0") + " km/h", (int)(18 * k), Amber, 0, 1f);
+            // Said for a moment when the cap drops, not for as long as it stands.
+            var capSince = now - SkateRide.CapLoweredAt;
+            if (v.Cap < SkateRide.MaxSpeed - 0.25f && capSince < 3f)
+                Text(40f * k, h - 336f * k, w - 80f * k, "The server put the board back; held to " + (v.Cap * 3.6f).ToString("F0") + " km/h for now", (int)(18 * k), Amber, 0, capSince > 2.5f ? (3f - capSince) / 0.5f : 1f);
             Combo(v, now, w, h, k);
             if (v.Hints) Hints(v, w, h, k);
         }

@@ -38,7 +38,7 @@ game; see [The controller](#the-controller).
 | `A` or `X` | Push | |
 | `B` | Brake | |
 | Right stick | The board: see below. Kept part of the way back or forward for 0.2 s: manual or nose manual. | Flicked to a side or a forward diagonal: a flip. Pulled back: set for the pop after the landing. |
-| `LT`, `RT` | Held and let go on a transition: a pump (speed, by how long it was held and how steep the bank; nothing on the flat). | Held: grab; with the right stick held, another grab. |
+| `LT`, `RT` | Held going down a transition and let go through its bottom: a pump (speed, by how long it was held and how steep the descent, once a pass; nothing on the flat or let go on the slope itself). | Held: grab; with the right stick held, another grab. |
 | Right stick click | View from behind or the game's first person | |
 | Left stick, right after landing a trick | Revert: the board turns round under the rider, who rolls on switch; it joins the combo. | |
 | Right stick back or forward, on an edge | 5-0 or nosegrind instead of the 50-50. | |
@@ -59,7 +59,10 @@ first they are the other way round.
 | Held back, rolled a little to the left or right, flicked straight forward | Hardflip, inward heelflip |
 | Held back, rolled half way round backside | Impossible |
 
-A trick popped riding switch is named Switch (a nollie then is a fakie ollie). A grind is named by
+An edge is taken when the rider comes down on it from an ollie: the way of travel within 60° of
+the edge, at least 1 m/s along it, the feet from 0.15 m below its top to 0.5 m above, the edge
+within 0.45 m to the side and 0.3 m ahead; the board's own angle is free. When an edge is near but
+not taken, the log says why (`GRIND edge near, not taken (...)`). A trick popped riding switch is named Switch (a nollie then is a fakie ollie). A grind is named by
 how the board meets the edge: along it a 50-50 (or a 5-0 / nosegrind with the stick), across it a
 boardslide, lipslide, noseslide or tailslide by which part of the board is on the edge, at an angle
 a crooked, smith or feeble grind; frontside when the edge is on the side the rider's chest faces.
@@ -158,12 +161,13 @@ that commit and must match the hash; that is for shared code that is ahead on an
 | `SkateKeys.cs` | Keys and controller as one set of riding inputs; whose hands are on the ride. |
 | `SkatePad.cs` | The controller's state from the reader outside the game; the right stick through the shared flick module. |
 | `SkatePadLog.cs` | What a ride with a controller leaves in the log: every movement of the right stick, the keys Steam's layout sends, whether the stick turns the game's view. |
-| `SkateRide.cs` | Ground, air, grind and bail movement; calls the shared trick module. |
+| `SkateRide.cs` | Ground, air, grind and bail movement; calls the shared trick module and, for the slope, the pump, the take-off and the landing, the shared ride physics (`mods/rust/shared/SkateRidePhysics.cs`, described in [`docs/RUST-SKATE-RIDE-PHYSICS.md`](../../../docs/RUST-SKATE-RIDE-PHYSICS.md)). |
 | `SkateGrind.cs` | Samples the ground around the rider and asks the shared edge module for an edge. |
 | `SkateBoard.cs` | The board, what it is drawn with and where it sits. |
 | `RiderRig.cs` | Writes the shared rider pose onto the player model's skeleton; what is drawn in which view, the held item included. |
 | `SkateCamera.cs` | View from behind. |
 | `SkateHud.cs`, `SkateSfx.cs` | The score display and the sounds. |
+| `SkatePieces.cs`, `SkateConsole.cs` | The park-piece menu on the controller and the console line it types for the player. |
 | `Scenarios.cs` | Scripted checks in a world. |
 
 ### Steps
@@ -180,6 +184,7 @@ file it runs `skate`.
 | `pad` | Scripted: the ride with a controller, played into the plugin without one. |
 | `mute` | Turns the whole client down until nothing can be heard. |
 | `nogrind` | No grinding. |
+| `clips` | When the audio starts, the game's own audio clips of a skateboard's kind are listed in the log (names and lengths), for choosing sounds. |
 
 A scripted check writes what happened to `BepInEx\plugins\skate.log` and ends the session.
 

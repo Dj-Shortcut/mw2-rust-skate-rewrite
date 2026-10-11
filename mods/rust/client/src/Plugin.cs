@@ -34,6 +34,7 @@ public class SkatePlugin : BasePlugin
             case "ride": case "pose": case "trick": case "pad": case "piece": Scenarios.Name = s; return "added=" + (AddComponent<SkateRig>() != null);
             case "nogrind": SkateGrind.Enabled = false; return "grinding off";
             case "yaw90": case "yaw180": case "yaw270": Scenarios.YawOffset = float.Parse(s.Substring(3)); return "scenario yaw offset " + Scenarios.YawOffset;
+            case "clips": SkateSfx.ListClips = true; return "the game's clips will be listed when the audio starts";
             case "mute": SkateRig.Mute = true; AudioListener.volume = SkateRig.MuteVolume; return "volume=" + AudioListener.volume;
             default: return "unknown step";
         }
