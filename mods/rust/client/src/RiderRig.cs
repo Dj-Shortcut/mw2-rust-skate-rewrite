@@ -50,9 +50,10 @@ public static class RiderRig
     // Switching the parts off is not enough in this client: with a rock in hand they stayed on the
     // screen. So the set is also made too small to see. The game may set the size again at any
     // time, so it is made small again every frame, and the size the game last gave is put back.
-    // The look for held items searches the whole scene, which costs the game a fifth of a second:
-    // done rarely, and at once when a held item has gone.
-    public const float HeldEvery = 2f, HeldSmall = 0.0001f;
+    // A look through the whole scene for held items costs the game a fifth of a second, so it is
+    // done at most every HeldWhole seconds; in between the object that held the last item found
+    // (their parent) is looked through, which is cheap, every HeldEvery seconds.
+    public const float HeldEvery = 0.25f, HeldWhole = 2f, HeldSmall = 0.0001f;
     private const int HeldTries = 5, HeldScans = 3;
 
     // One thing of the set: the object that carries it (Root) or one drawn part of it (Part). What
@@ -69,19 +70,29 @@ public static class RiderRig
     private static long heldSet;
     private static float nextHeld;
     private static bool heldForced = true, heldThird;
+    private static Transform heldHolder;
+    private static float nextWhole;
     private static int heldScanFailures;
 
     private static void Held(bool wantThird, float now)
     {
-        // Looked for anew when the view goes behind the rider, when a held thing has gone, and now and then.
-        if (wantThird && !heldThird) nextHeld = 0f;
+        // The view going behind the rider is worth one look through the whole scene.
+        if (wantThird && !heldThird) nextHeld = nextWhole = 0f;
         heldThird = wantThird;
         if (wantThird && (now >= nextHeld || HeldGone()) && heldScanFailures < HeldScans)
         {
             nextHeld = now + HeldEvery;
             try
             {
-                var models = UnityEngine.Object.FindObjectsOfType<BaseViewModel>();
+                Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppArrayBase<BaseViewModel> models = null;
+                if (!ReferenceEquals(heldHolder, null) && heldHolder != null) models = heldHolder.GetComponentsInChildren<BaseViewModel>(true);
+                if ((models == null || models.Length == 0) && now >= nextWhole)
+                {
+                    nextWhole = now + HeldWhole;
+                    models = UnityEngine.Object.FindObjectsOfType<BaseViewModel>();
+                    heldHolder = models.Length > 0 && models[0] != null ? models[0].transform.parent : null;
+                }
+                if (models == null) return;
                 var found = new System.Collections.Generic.List<HeldThing>(); long set = models.Length; var names = ""; var parts = 0;
                 for (var i = 0; i < models.Length; i++)
                 {
@@ -264,7 +275,7 @@ public static class RiderRig
         // What cannot be put back now is kept, and tried again from the next frame on.
         HeldRestore(false);
         var left = new System.Collections.Generic.List<HeldThing>(); HeldKeep(left);
-        held = left.ToArray(); heldSet = 0; heldScanFailures = 0; nextHeld = 0f;
+        held = left.ToArray(); heldSet = 0; heldScanFailures = 0; nextHeld = nextWhole = 0f; heldHolder = null;
         Bound = false; body = new SkinnedMeshRenderer[0]; legSet = new SkinnedMeshRenderer[0]; skinSet = 0;
     }
 
