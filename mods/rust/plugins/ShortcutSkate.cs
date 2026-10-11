@@ -854,7 +854,7 @@ namespace Oxide.Plugins
         protected override void LoadDefaultConfig()
         {
             Config.WriteObject(new Settings { Version = 1, AllowEveryone = true,
-                MaximumHorizontalSpeed = 14, MaximumAirtime = 1 }, true);
+                MaximumHorizontalSpeed = 25, MaximumAirtime = 2 }, true);
         }
 
         protected override void LoadConfig()

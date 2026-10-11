@@ -9,7 +9,7 @@ Player F1 commands `skate.toggle`, `skate.on`, `skate.off`, `skate.status` remai
 Default config:
 
 ```json
-{"Version":1,"AllowEveryone":true,"MaximumHorizontalSpeed":14,"MaximumAirtime":1,"AutomaticEligiblePlayers":true,"AutomaticRearmSeconds":1.5,"ParkNextGesture":"I need wood","ParkCancelGesture":"Thumbs up","ParkPieceOrder":["halfpipe","bank","kicker","quarterpipe","ledge-low","ledge-high","long-ledge","funbox"]}
+{"Version":1,"AllowEveryone":true,"MaximumHorizontalSpeed":25,"MaximumAirtime":2,"AutomaticEligiblePlayers":true,"AutomaticRearmSeconds":1.5,"ParkNextGesture":"I need wood","ParkCancelGesture":"Thumbs up","ParkPieceOrder":["halfpipe","bank","kicker","quarterpipe","ledge-low","ledge-high","long-ledge","funbox"]}
 ```
 
 Existing Version 1 files may omit the automatic-rearm and park-gesture fields and receive these defaults. Set `AutomaticEligiblePlayers` false for manual activation. Rearm accepts 0.5–10 seconds. `AllowEveryone` grants effective access without changing saved Oxide permission grants; set false to require `shortcutskate.use`, then use `oxide.grant user <SteamID64> shortcutskate.use`. Speed accepts 1–50 m/s; airtime 0.1–2 seconds. Invalid/null/unknown config fields preserve the file and disable skating. Reload with `oxide.reload ShortcutSkate`.
