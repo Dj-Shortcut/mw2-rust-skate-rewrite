@@ -411,7 +411,7 @@ namespace Shortcut.RustMod
         // the pike (of the spine toward the chest, of the legs toward the chest's front) and the deck
         // under the back foot where the other hand holds it.
         private const double PlantLean = 0.75, PlantFoldBy = 1.6, PlantBlend = 0.3, PlantHandOut = 0.22, PlantHandAhead = 0.1,
-            PlantPikeUp = 0.5, PlantPikeOut = 0.3, PlantDeck = 0.05;
+            PlantPikeUp = 0.12, PlantPikeOut = 0.4, PlantDeck = 0.05, PlantOver = 0.2;
         public const double MaximumDeckPitch = 0.8;
 
         // How a grind or a stall holds the deck, degrees: the end that leads up (a 5-0 and a tail
@@ -505,7 +505,9 @@ namespace Shortcut.RustMod
             var edge = input.BoardPosition + up * (Math.Min(0, input.DeckOffset) - input.GroundDrop);
             var ground = edge - up * 0.02;
             // The body's angle over the hand: the lean of the side bend at the start, upside down at the end.
-            double theta = PlantLean + (Math.PI - PlantLean) * Smooth(Math.Max(0, Math.Min(1, (h - 0.08) / 0.92)));
+            // At the top the body is not quite vertical: it leans back over the edge by PlantOver, the
+            // hips over the ramp, the knees the highest point and the feet with the board in front.
+            double theta = PlantLean + (Math.PI - PlantOver - PlantLean) * Smooth(Math.Max(0, Math.Min(1, (h - 0.08) / 0.92)));
             var chestUp = up * Math.Cos(theta) + travel * Math.Sin(theta);
             var chestForward = facing;
             var chestRight = Cross(chestUp, chestForward);
