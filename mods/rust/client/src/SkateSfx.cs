@@ -9,12 +9,12 @@ public static class SkateSfx
     public static bool Ready;
     public static string State = "not started";
     private static GameObject audio;
-    private static readonly AudioClip[] ownedClips = new AudioClip[6];
+    private static readonly AudioClip[] ownedClips = new AudioClip[7];
     private static int ownedCount;
-    private static AudioSource roll, grind, shots;
+    private static AudioSource roll, grind, slide, shots;
     private static AudioClip push, ollie, landing, bail;
     private static int pops, lands, bails, pushes;
-    private static float rollVolume, grindVolume;
+    private static float rollVolume, grindVolume, slideVolume;
     private static bool failed, deaf, ranked = true;
     private static Il2CppStructArray<float> block;
     public static float RollHeard, GrindHeard, ShotsHeard;
@@ -54,11 +54,12 @@ public static class SkateSfx
             UnityEngine.Object.DontDestroyOnLoad(audio);
             roll = Source(audio, Clip(SkateSound.Rolling, 11u), true);
             grind = Source(audio, Clip(SkateSound.Grind, 12u), true);
+            slide = Source(audio, Clip(SkateSound.DeckSlide, 17u), true);
             shots = Source(audio, null, false);
             push = Clip(SkateSound.Push, 13u); ollie = Clip(SkateSound.Ollie, 14u); landing = Clip(SkateSound.Landing, 15u); bail = Clip(SkateSound.Bail, 16u);
             Sync();
             Ready = true; State = "ready";
-            Out.Say("AUDIO ready: two loops and four one-shots at " + Rate + " Hz");
+            Out.Say("AUDIO ready: three loops and four one-shots at " + Rate + " Hz");
         }
         catch (Exception e) { Fail("failed", e); }
     }
@@ -82,9 +83,9 @@ public static class SkateSfx
     private static bool Cleanup()
     {
         Ready = false;
-        Silence(roll); Silence(grind); Silence(shots);
+        Silence(roll); Silence(grind); Silence(slide); Silence(shots);
         var clean = DestroyOwned(audio);
-        if (clean) { audio = null; roll = grind = shots = null; }
+        if (clean) { audio = null; roll = grind = slide = shots = null; }
         for (var i = 0; i < ownedCount; i++)
         {
             if (DestroyOwned(ownedClips[i])) ownedClips[i] = null;
@@ -93,7 +94,7 @@ public static class SkateSfx
         if (clean) ownedCount = 0;
         push = ollie = landing = bail = null;
         block = null;
-        rollVolume = grindVolume = RollHeard = GrindHeard = ShotsHeard = 0f;
+        rollVolume = grindVolume = slideVolume = RollHeard = GrindHeard = ShotsHeard = 0f;
         pops = lands = bails = pushes = 0;
         return clean;
     }
@@ -122,7 +123,7 @@ public static class SkateSfx
         try
         {
             if (block == null) block = new Il2CppStructArray<float>(256);
-            RollHeard = Math.Max(RollHeard, Peak(roll)); GrindHeard = Math.Max(GrindHeard, Peak(grind)); ShotsHeard = Math.Max(ShotsHeard, Peak(shots));
+            RollHeard = Math.Max(RollHeard, Peak(roll)); GrindHeard = Math.Max(GrindHeard, Math.Max(Peak(grind), Peak(slide))); ShotsHeard = Math.Max(ShotsHeard, Peak(shots));
         }
         catch (Exception e) { deaf = true; Out.Say("AUDIO output cannot be read back: " + e.GetType().Name + ": " + e.Message); }
     }
@@ -153,17 +154,32 @@ public static class SkateSfx
         try
         {
             var speed = Math.Abs(SkateRide.Speed);
-            var wantRoll = SkateRide.Mode == RideMode.Ground ? SkateRide.Clamp(speed / 9f, 0f, 1f) * 0.55f : 0f;
-            var wantGrind = SkateRide.Mode == RideMode.Grind ? 0.6f : 0f;
-            var k = SkateRide.Clamp(frameSeconds * 12f, 0f, 1f);
-            rollVolume += (wantRoll - rollVolume) * k; grindVolume += (wantGrind - grindVolume) * k;
-            roll.volume = rollVolume; roll.pitch = 0.75f + speed / 13f * 0.7f;
-            grind.volume = grindVolume; grind.pitch = 0.85f + speed / 13f * 0.4f;
-            if (!SkateRide.On) { Sync(); return; }
-            if (SkateRide.Pushes != pushes) shots.PlayOneShot(push, 0.5f);
-            if (SkateRide.Pops != pops) shots.PlayOneShot(ollie, 0.9f);
-            if (SkateRide.Lands != lands) shots.PlayOneShot(landing, SkateRide.Clamp(0.35f + SkateRide.LandImpact / 10f, 0.35f, 1f));
-            if (SkateRide.Bails != bails) shots.PlayOneShot(bail, 1f);
+            if (float.IsNaN(speed) || float.IsInfinity(speed)) speed = 0f;
+            if (float.IsNaN(frameSeconds) || float.IsInfinity(frameSeconds) || frameSeconds < 0f) frameSeconds = 0f;
+            var ratio = SkateRide.Clamp(speed / SkateRide.MaxSpeed, 0f, 1f);
+            var on = SkateRide.On;
+            var onEdge = on && SkateRide.Mode == RideMode.Grind && speed > 0.1f;
+            var deck = SkateRide.GrindKind == SkateGrindKind.Boardslide || SkateRide.GrindKind == SkateGrindKind.Lipslide ||
+                SkateRide.GrindKind == SkateGrindKind.Noseslide || SkateRide.GrindKind == SkateGrindKind.Tailslide;
+            var wantRoll = on && SkateRide.Mode == RideMode.Ground ? SkateRide.Clamp(speed / 9f, 0f, 1f) * 0.55f : 0f;
+            var edgeVolume = 0.3f + ratio * 0.3f;
+            var wantGrind = onEdge && !deck ? edgeVolume : 0f;
+            var wantSlide = onEdge && deck ? edgeVolume : 0f;
+            var k = 1f - (float)Math.Exp(-12f * SkateRide.Clamp(frameSeconds, 0f, 0.1f));
+            rollVolume += (wantRoll - rollVolume) * k;
+            grindVolume += (wantGrind - grindVolume) * k; slideVolume += (wantSlide - slideVolume) * k;
+            roll.volume = rollVolume; roll.pitch = 0.75f + ratio * 0.55f;
+            grind.volume = grindVolume; slide.volume = slideVolume;
+            grind.pitch = slide.pitch = 0.9f + ratio * 0.35f;
+            if (!on) { Sync(); return; }
+            var bailed = SkateRide.Bails != bails;
+            if (bailed) shots.PlayOneShot(bail, 0.8f);
+            else
+            {
+                if (SkateRide.Pushes != pushes) shots.PlayOneShot(push, 0.4f);
+                if (SkateRide.Pops != pops) shots.PlayOneShot(ollie, 0.8f);
+                if (SkateRide.Lands != lands) shots.PlayOneShot(landing, SkateRide.Clamp(0.3f + SkateRide.LandImpact / 15f, 0.3f, 0.8f));
+            }
             Sync();
         }
         catch (Exception e) { Fail("failed while playing", e); }

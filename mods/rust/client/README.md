@@ -23,12 +23,20 @@ visual board angle, and own one rig and its audio resources. The client menu mat
 square-foundation trigger. These are development source changes; `tools/release.txt` still pins
 the owner's earlier client.
 
-- **Verified:** independent source reviews and publish checks; the actual shared physics DLL
-  passes 11,683 owner-approved checks against genuine C# 7.3/net48 references.
-- **Compiles but unverified:** the shared landing policy in native gameplay.
+- **Verified:** independent source reviews and publish checks; genuine C# 7.3/net48 shared
+  builds pass without warnings/errors. Actual-DLL runners pass 11,683 owner-approved physics
+  checks and 4,069 audio checks across 550 generated clips.
+- **Compiles but unverified:** the shared landing policy and authored waveform generator in
+  native gameplay.
 - **Still missing:** compilation of the complete changed client against its generated IL2CPP
   references, native ramp/seam/grind/revert/lifecycle checks and audible playback. Codex has run
   no Rust client, Shadow PC or live-server commands for this handover.
+
+`SkateSfx` caches original generated roll, metal-truck and wooden-deck loops plus push, pop,
+landing and bail shots. It crossfades truck/deck contact by grind kind, scales bounded
+pitch/volume by speed, gives a new bail priority over concurrent events and owns its cleanup.
+These are development source behaviors; native event delivery, mixed levels and audible quality
+still need validation. [Sound profiles, licence and checks](../../../docs/RUST-SKATE-AUDIO.md).
 
 ## Rules
 
