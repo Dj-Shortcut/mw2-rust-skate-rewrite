@@ -13,7 +13,7 @@ public enum RideMode { Off, Ground, Air, Grind, Bail }
 public static class SkateRide
 {
     public const float PushAccel = 7f, MaxPush = 11f, BrakeDecel = 12f, RollDecel = 0.45f, MaxSpeed = 13f, MaxReverse = 6f, TurnRate = 150f, SlopeGain = 1.6f;
-    public const float AirGravity = 16f, OlliePop = 6f, MaxFall = 30f, BailImpact = 12f, BailSeconds = 1.3f, BailDecel = 10f, PushPeriod = 0.8f, SeaLevel = -0.6f, LowestCap = 1.5f, LagStep = 0.1f, RaiseWait = 3f, CapForget = 30f, ManualPace = 1f, ManualHold = 0.3f, HopGrace = 0.3f;
+    public const float AirGravity = 16f, OlliePop = 6f, MaxFall = 30f, BailImpact = 12f, BailSeconds = 1.3f, BailDecel = 10f, PushPeriod = 0.8f, SeaLevel = -1.1f, LowestCap = 1.5f, LagStep = 0.1f, RaiseWait = 3f, CapForget = 30f, ManualPace = 1f, ManualHold = 0.3f, HopGrace = 0.3f;
     // Pumping: a crouch held on a transition and let go gives speed, more the steeper and the longer
     // the crouch (up to PumpCharge seconds); nothing on the flat. Landing: the fall becomes roll on
     // a slope by LandRoll; a revert within RevertWindow of a landed trick turns the board round at
@@ -190,7 +190,8 @@ public static class SkateRide
         else if (Speed < 0f) { var limit = (Actual < 0f ? Actual : 0f) - 2f; if (Speed < limit) Speed = limit; }
     }
 
-    // Land below sea level is under water unless something is overhead (tunnels, basements).
+    // Land a metre below the water's surface is for swimming, unless something is overhead (tunnels,
+    // basements); the shallows along the shore are rideable.
     private static bool OpenSky(Vector3 pos)
     {
         RaycastHit hit;

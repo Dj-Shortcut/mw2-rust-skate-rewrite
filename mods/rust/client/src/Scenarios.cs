@@ -62,7 +62,7 @@ public static class Scenarios
                 var at = from + dir * d; RaycastHit hit;
                 if (!Physics.Raycast(at + Vector3.up * 3f, Vector3.down, out hit, 8f, SkateRide.GroundMask, QueryTriggerInteraction.Ignore)) break;
                 var y = hit.m_Point.y;
-                if (y < SkateRide.SeaLevel + 0.4f || Math.Abs(y - lastY) > RunwayBump) break;
+                if (y < SkateRide.SeaLevel + 0.3f || Math.Abs(y - lastY) > RunwayBump) break;
                 lastY = y; run = d;
             }
             report += (i == 0 ? "" : ", ") + yaw.ToString("F0") + ":" + run.ToString("F0");
