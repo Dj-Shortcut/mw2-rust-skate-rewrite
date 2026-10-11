@@ -154,11 +154,16 @@ namespace Shortcut.RustMod
             "Grind", "50-50", "5-0", "Nosegrind", "Boardslide", "Lipslide", "Noseslide", "Tailslide", "Smith Grind", "Feeble Grind", "Crooked Grind",
             "50-50 Stall", "Nose Stall", "Tail Stall", "Board Stall", "Handplant"
         };
+        private static readonly string[] DirectionalGrindNames = BuildGrindNames();
         // Points a second on the edge, by how hard the kind is to hold.
         private static readonly int[] GrindRates = { 100, 100, 130, 130, 120, 140, 150, 150, 160, 160, 160, 150, 160, 160, 150, 250 };
         private static readonly string[] GrabSuffixes = {
             "", " Grab", " Backside Grab", " Frontside Grab", " Double Grab", " Tail Grab", " Nose Grab",
             " Stalefish", " Crail", " Seatbelt", " Melon", " Method", " Nosebone", " Tailbone"
+        };
+        private static readonly string[] NamePrefixes = {
+            "", "Nollie", "No Comply", "Boneless", "Fastplant", "Beanplant",
+            "Switch", "Fakie", "Switch No Comply", "Switch Boneless", "Switch Fastplant", "Switch Beanplant"
         };
         private static readonly string[] ComposedNames = BuildNames();
         private static readonly string[] FallbackNames = BuildFallbackNames();
@@ -239,7 +244,7 @@ namespace Shortcut.RustMod
             {
                 int kind = GrindKindValid(state.GrindKind) ? (int)state.GrindKind : 0;
                 points = Math.Max(IsStall(state.GrindKind) ? 100 : 1, (long)Math.Round(grind * GrindRates[kind]));
-                name = kind == 0 ? GrindNames[0] : (state.GrindFrontside ? "Frontside " : "Backside ") + GrindNames[kind];
+                name = GrindName(state.GrindKind, state.GrindFrontside);
                 events |= SkateTrickEvents.GrindEnded;
                 combo = Add(combo, points); count = Math.Min(MaximumMultiplier, count + 1);
                 grind = 0; grindKind = SkateGrindKind.None; grindFrontside = false;
@@ -321,7 +326,17 @@ namespace Shortcut.RustMod
         public static string GrindName(SkateGrindKind kind, bool frontside)
         {
             int k = GrindKindValid(kind) ? (int)kind : 0;
-            return k == 0 ? GrindNames[0] : (frontside ? "Frontside " : "Backside ") + GrindNames[k];
+            return DirectionalGrindNames[(frontside ? GrindNames.Length : 0) + k];
+        }
+
+        private static string[] BuildGrindNames()
+        {
+            var names = new string[2 * GrindNames.Length];
+            for (int side = 0; side < 2; side++)
+                for (int kind = 0; kind < GrindNames.Length; kind++)
+                    names[side * GrindNames.Length + kind] = kind == 0 ? GrindNames[0] :
+                        (side == 0 ? "Backside " : "Frontside ") + GrindNames[kind];
+            return names;
         }
 
         public static bool IsStall(SkateGrindKind kind) { return (int)kind >= 11 && (int)kind <= 15; }
@@ -340,25 +355,7 @@ namespace Shortcut.RustMod
         private static string LandingName(int spin, int flip, int shove, SkateGrabKind grab,
                                           SkatePopKind pop, bool legacy, bool popSwitch)
         {
-            if (IsPlant(pop))
-            {
-                // Named as the ollie would be, with the pop in its place: "No Comply 180", "Switch Boneless".
-                string plain = LandingName(spin, flip, shove, grab, SkatePopKind.Ollie, false, popSwitch);
-                string word = pop == SkatePopKind.NoComply ? "No Comply" : pop == SkatePopKind.Boneless ? "Boneless" :
-                    pop == SkatePopKind.Fastplant ? "Fastplant" : "Beanplant";
-                string lead = plain.StartsWith("Switch ") ? "Switch " : "";
-                string rest = plain.Substring(lead.Length);
-                if (rest == "Ollie" || rest.StartsWith("Ollie ")) rest = rest.Substring(5).TrimStart();
-                return lead + word + (rest.Length == 0 ? "" : " " + rest);
-            }
-            if (popSwitch && !legacy)
-            {
-                // Rolling tail first: a nollie is a fakie ollie, anything else is switch.
-                int fs = Math.Abs(spin) > 4 || Math.Abs(flip) > 2 || Math.Abs(shove) > 2 ? -1 : 0;
-                string core = fs < 0 ? "Multiple Rotation Trick" : Composition(spin, flip, shove);
-                return (pop == SkatePopKind.Nollie ? "Fakie " : "Switch ") + core + GrabSuffixes[(int)grab];
-            }
-            if (legacy)
+            if (legacy && !IsPlant(pop))
             {
                 if (Math.Abs(flip) > 2 || Math.Abs(spin) > 2)
                     return grab == SkateGrabKind.None ? "Multiple Rotation Trick" : "Multiple Rotation Trick Grab";
@@ -366,38 +363,44 @@ namespace Shortcut.RustMod
                 int spinIndex = spin == 0 ? 0 : Math.Abs(spin) % 2 != 0 ? (spin > 0 ? 1 : 2) : (spin > 0 ? 3 : 4);
                 return Names[spinIndex * 5 + flipIndex + (grab == SkateGrabKind.None ? 0 : 25)];
             }
-            int nollie = pop == SkatePopKind.Nollie ? 1 : 0;
+            int style = (pop == SkatePopKind.None ? 0 : (int)pop - 1) + (popSwitch ? 6 : 0);
             if (Math.Abs(spin) > 4 || Math.Abs(flip) > 2 || Math.Abs(shove) > 2)
-                return FallbackNames[nollie * 14 + (int)grab];
-            return ComposedNames[NameIndex(spin, flip, shove, (int)grab, nollie)];
+                return FallbackNames[style * 14 + (int)grab];
+            return ComposedNames[NameIndex(spin, flip, shove, (int)grab, style)];
         }
 
-        private static int NameIndex(int spin, int flip, int shove, int grab, int nollie)
-        { return (((nollie * 9 + spin + 4) * 5 + flip + 2) * 5 + shove + 2) * 14 + grab; }
+        private static int NameIndex(int spin, int flip, int shove, int grab, int style)
+        { return (((style * 9 + spin + 4) * 5 + flip + 2) * 5 + shove + 2) * 14 + grab; }
 
         private static string[] BuildNames()
         {
-            var names = new string[2 * 9 * 5 * 5 * 14];
-            for (int nollie = 0; nollie < 2; nollie++)
+            var names = new string[NamePrefixes.Length * 9 * 5 * 5 * 14];
+            for (int style = 0; style < NamePrefixes.Length; style++)
                 for (int spin = -4; spin <= 4; spin++)
                     for (int flip = -2; flip <= 2; flip++)
                         for (int shove = -2; shove <= 2; shove++)
                         {
-                            string core = Composition(spin, flip, shove);
-                            if (nollie != 0) core = core == "Ollie" ? "Nollie" : "Nollie " + core;
+                            string core = PrefixName(Composition(spin, flip, shove), style);
                             for (int grab = 0; grab < 14; grab++)
-                                names[NameIndex(spin, flip, shove, grab, nollie)] = core + GrabSuffixes[grab];
+                                names[NameIndex(spin, flip, shove, grab, style)] = core + GrabSuffixes[grab];
                         }
             return names;
         }
 
         private static string[] BuildFallbackNames()
         {
-            var names = new string[28];
-            for (int nollie = 0; nollie < 2; nollie++)
+            var names = new string[NamePrefixes.Length * 14];
+            for (int style = 0; style < NamePrefixes.Length; style++)
                 for (int grab = 0; grab < 14; grab++)
-                    names[nollie * 14 + grab] = (nollie == 0 ? "Multiple Rotation Trick" : "Nollie Multiple Rotation Trick") + GrabSuffixes[grab];
+                    names[style * 14 + grab] = PrefixName("Multiple Rotation Trick", style) + GrabSuffixes[grab];
             return names;
+        }
+
+        private static string PrefixName(string core, int style)
+        {
+            if (style == 0) return core;
+            if (core == "Ollie" && style != 6 && style != 7) return NamePrefixes[style];
+            return NamePrefixes[style] + " " + core;
         }
 
         private static string Composition(int spin, int flip, int shove)
