@@ -40,6 +40,17 @@ $refs += 'BepInEx.Core.dll','BepInEx.Unity.IL2CPP.dll','BepInEx.Unity.Common.dll
 $refs += ls $gen -Filter *.dll | % FullName
 # Exactly one plugin may be installed: an older build under another name would run as well.
 Remove-Item "$probe\plugin\*.dll" -ErrorAction SilentlyContinue
+# The park models the plugin draws (mods/rust/client/models.txt), from the same commit, next to
+# the plugin. A commit without them builds without models; the plugin then says so in its log.
+Remove-Item "$probe\plugin\*.glb" -ErrorAction SilentlyContinue
+$models = @()
+try { $modelList = ("" + (irm (zu 'mods/rust/client/models.txt' $head))) -split "`n" } catch { $modelList = @() }
+foreach ($line in $modelList) {
+  $t = $line.Trim(); if (-not $t -or $t.StartsWith('#')) { continue }
+  $dst = "$probe\plugin\" + (Split-Path $t -Leaf)
+  try { Invoke-WebRequest -Uri (zu $t $head) -OutFile $dst -UseBasicParsing; $models += (Split-Path $t -Leaf) } catch { Write-Host ("no model " + $t + " at this commit") }
+}
+"models: " + $models.Count + " " + ($models -join ', ')
 $rsp = "$probe\src\client.rsp"
 (@('-nologo','-target:library','-nostdlib','-optimize+','-nowarn:CS1701,CS1702,CS8632',"-out:`"$probe\plugin\ShortcutSkateClient.dll`"") + ($refs | % { "-r:`"$_`"" }) + ($files | % { "`"$_`"" })) | Out-File $rsp -Encoding ascii
 $csc = (ls "$sdk\sdk" -Directory | select -First 1).FullName + '\Roslyn\bincore\csc.dll'

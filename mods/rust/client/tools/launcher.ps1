@@ -17,10 +17,13 @@ foreach ($f in 'session.ps1', 'skate.ps1', 'watch.ps1', 'clean.ps1', 'sticks.ps1
   $files[$f] = $t
 }
 New-Item -ItemType Directory -Force $L, "$probe\play" | Out-Null
-# Everything in play\ is copied into the game's plugin folder, so only the plugin may be there.
-Get-ChildItem "$probe\play" -File | ? { $_.Name -ne 'ShortcutSkateClient.dll' } | Remove-Item
+# Everything in play\ is copied into the game's plugin folder, so only the plugin and its park
+# models may be there.
+Get-ChildItem "$probe\play" -File | ? { $_.Name -ne 'ShortcutSkateClient.dll' -and $_.Extension -ne '.glb' } | Remove-Item
+Get-ChildItem "$probe\play" -File -Filter *.glb | Remove-Item
 Get-ChildItem $L -File -Filter *.ps1 | ? { -not $files.ContainsKey($_.Name) } | Remove-Item
 Copy-Item "$probe\plugin\ShortcutSkateClient.dll" "$probe\play\ShortcutSkateClient.dll" -Force
+Get-ChildItem "$probe\plugin" -File -Filter *.glb | % { Copy-Item $_.FullName "$probe\play\$($_.Name)" -Force }
 foreach ($f in $files.Keys) { [IO.File]::WriteAllText("$L\$f", $files[$f], $enc) }
 $pb = ((gc 'C:\Program Files (x86)\Steam\steamapps\appmanifest_252490.acf' | sls '"buildid"').Line -split '"')[3]
 "Skate mod " + $rel.Substring(0, 7) + ", prepared " + (Get-Date -Format 'yyyy-MM-dd HH:mm') + " for Rust build $pb" | Out-File "$L\version.txt" -Encoding utf8

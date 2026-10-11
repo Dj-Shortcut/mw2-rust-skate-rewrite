@@ -1,0 +1,10 @@
+# The authored park models the skate client draws over the server's park pieces, one per line;
+# the build copies them from the commit it builds, next to the plugin.
+assets/authored/skate_bank.glb
+assets/authored/skate_kicker.glb
+assets/authored/skate_quarterpipe.glb
+assets/authored/skate_ledge_low.glb
+assets/authored/skate_ledge_high.glb
+assets/authored/skate_long_ledge.glb
+assets/authored/skate_funbox.glb
+assets/authored/skate_halfpipe.glb
