@@ -451,7 +451,7 @@ public static class RiderRig
             if (mode == RideMode.Ground && since < 0.35f) want += (1f - since / 0.35f) * SkateRide.Clamp(SkateRide.LandImpact / 8f, 0.2f, 1f) * 0.45f;
             Crouch += (SkateRide.Clamp(want, 0f, 1f) - Crouch) * SkateRide.Clamp(frameSeconds * 14f, 0f, 1f);
             // The board's rise is eased already; the legs follow it at once, or the body would bob.
-            if (mode == RideMode.Air && SkateRide.Jumped && !SkateRide.Grabbing && Crouch < want) Crouch = want;
+            if (mode == RideMode.Air && SkateRide.Jumped && !SkateRide.Grabbing && Crouch < want) Crouch = SkateRide.Clamp(want, 0f, 1f);
             // The module leans toward the board's own right; the ride leans toward the right of travel.
             var lean = SkateRide.Clamp(SkateRide.Trick.Switch ? -SkateRide.Lean : SkateRide.Lean, -(float)SkatePose.MaximumLean, (float)SkatePose.MaximumLean);
             var speed = Math.Min((float)SkateMotion.MaximumGroundSpeed, Math.Abs(SkateRide.Speed));
