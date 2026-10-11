@@ -1,0 +1,22 @@
+<Project>
+  <PropertyGroup>
+    <BaseIntermediateOutputPath>../../../context/skate-approved-park-gesture/obj/</BaseIntermediateOutputPath>
+    <OutputPath>../../../context/skate-approved-park-gesture/bin/</OutputPath>
+  </PropertyGroup>
+  <Import Project="Sdk.props" Sdk="Microsoft.NET.Sdk" />
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>7.3</LangVersion>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <ActualPluginPath Condition="'$(ActualPluginPath)' == ''">../../../context/rust-skate-plugin-build/bin/net48/ShortcutSkate.dll</ActualPluginPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="SkateParkGestureScenarios.cs" />
+    <Reference Include="ShortcutSkate"><HintPath>$(ActualPluginPath)</HintPath></Reference>
+  </ItemGroup>
+  <Target Name="RequireActualPlugin" BeforeTargets="PrepareForBuild">
+    <Error Condition="'$(ActualPluginPath)' == '' Or !Exists('$(ActualPluginPath)')" Text="Provide ActualPluginPath pointing to ShortcutSkate.dll built against genuine Rust references." />
+  </Target>
+  <Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk" />
+</Project>
