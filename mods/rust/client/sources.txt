@@ -27,3 +27,4 @@ mods/rust/shared/SkateEdges.cs
 mods/rust/shared/SkateAudio.cs
 mods/rust/shared/SkateFlick.cs
 mods/rust/shared/SkateRidePhysics.cs
+mods/rust/shared/SkateRiderMotion.cs
