@@ -12,8 +12,11 @@ public enum RideMode { Off, Ground, Air, Grind, Bail }
 
 public static class SkateRide
 {
+    // Speed is along the ground's tangent (velocity = Tangent * Speed), signed by which end leads;
+    // the server's measure and the cap compare it with the horizontal pace it sees, which on a slope
+    // is less, so the cap errs on the safe side there.
     public const float PushAccel = 7f, MaxPush = 11f, BrakeDecel = 12f, RollDecel = 0.45f, MaxSpeed = 13f, MaxReverse = 6f, TurnRate = 150f, SlopeGain = 1.6f;
-    public const float AirGravity = 16f, OlliePop = 6f, MaxFall = 30f, BailImpact = 12f, BailSeconds = 1.3f, BailDecel = 10f, PushPeriod = 0.8f, SeaLevel = -1.1f, LowestCap = 3f, LagStep = 0.1f, RaiseWait = 3f, CapForget = 30f, ManualPace = 1f, ManualHold = 0.3f, HopGrace = 0.3f;
+    public const float AirGravity = 16f, OlliePop = 6f, MaxFall = 30f, BailImpact = 12f, BailSeconds = 1.3f, BailDecel = 10f, PushPeriod = 0.8f, SeaLevel = -1.1f, LowestCap = 2f, LagStep = 0.1f, RaiseWait = 3f, CapForget = 30f, ManualPace = 1f, ManualHold = 0.3f, HopGrace = 0.3f;
     // Pumping: the shared SkateRidePhysics judges it (a crouch held down a transition, let go
     // through its bottom); PumpCharge only shapes the rider's crouch. Landing: the fall becomes
     // roll on a slope by LandRoll (the shared landing rule); a revert within RevertWindow of a
@@ -58,6 +61,8 @@ public static class SkateRide
     public static string PhysicsError = "";
     public static SkateGrindKind GrindKind;
     public static bool GrindFrontside, GrindAlong;
+    // The deck's angle to the edge, taken when the grind begins and kept through it.
+    public static float GrindDeck;
     private static float grindCross, grindNoseFar;
     private static Vector3 revertDir;
     private static float revertEndAt = -99f;
@@ -108,7 +113,7 @@ public static class SkateRide
         if (mountAt - putBackAt > CapForget) ForgetServer();
         VSpeed = 0f; AirTime = 0f; flipLeft = shoveLeft = pendShove = 0f; pendFlip = 0; SpinDeg = FlipDeg = ShoveDeg = 0; Jumped = TrickAir = Braking = Manual = NoseManual = spinning = DeckReversed = false; PushPhase = 0f; stuck = 0;
         Grab = SkateGrabKind.None; spinSide = 1f; wantKind = SkatePopKind.Ollie; wantFlip = 0; wantShove = 0f; wantScale = 1f;
-        PumpHeld = RevertLeft = 0f; landedTrick = fastFakie = false; steppedAt = -99f; StepUps = 0; Pump = default(SkatePumpState); SlopeDegrees = 0f; ContactNormal = Vector3.up; GrindKind = SkateGrindKind.None; GrindFrontside = GrindAlong = false;
+        PumpHeld = RevertLeft = 0f; landedTrick = fastFakie = false; steppedAt = -99f; StepUps = 0; Pump = default(SkatePumpState); SlopeDegrees = 0f; ContactNormal = Vector3.up; GrindKind = SkateGrindKind.None; GrindFrontside = GrindAlong = false; GrindDeck = 0f;
         Trick = new SkateTrickState(false); TrickName = ""; ComboPoints = 0; TrickAt = BankedAt = LandAt = jumpWanted = -99f; OffReason = "";
         SkateHud.Clear();
         Normal = ViewNormal = Vector3.up; Position = b.position;
@@ -125,7 +130,13 @@ public static class SkateRide
         SkateKeys.EndStep();
     }
 
-    private static void Enter(RideMode m) { Mode = m; ModeAt = Time.realtimeSinceStartup; }
+    private static void Enter(RideMode m)
+    {
+        // A pump's pass lives on the ground: leaving it (air, grind, bail) forgets the charge, so a
+        // crouch let go in the air cannot be paid out on the next ground step.
+        if (m != RideMode.Ground && Mode == RideMode.Ground) { Pump = default(SkatePumpState); PumpHeld = 0f; }
+        Mode = m; ModeAt = Time.realtimeSinceStartup;
+    }
 
     public static string Status()
     {
@@ -293,6 +304,11 @@ public static class SkateRide
         if (!Physics.Raycast(ahead + Vector3.up * (StepUp + 0.3f), Vector3.down, out hit, StepUp + 0.3f + FeetProbe, GroundMask, QueryTriggerInteraction.Ignore)) return;
         var rise = hit.m_Point.y - Position.y;
         if (rise < 0.03f || rise > StepUp || hit.m_Normal.y < 0.7f) return;
+        // A lip has a face: a ray along the ground from the wheels' height must meet something steep
+        // before the spot ahead. A smooth bank rises as much but has no face, and is ridden up.
+        RaycastHit face;
+        var flat = new Vector3(dir.x, 0f, dir.z); if (flat.sqrMagnitude < 0.0001f) return; flat = flat.normalized;
+        if (!Physics.Raycast(Position + Vector3.up * 0.02f, flat * Math.Sign(Speed), out face, StepLook + 0.05f, GroundMask, QueryTriggerInteraction.Ignore) || face.m_Normal.y > 0.5f) return;
         var lift = rise / Math.Max(dt, 0.001f) * 0.6f;
         if (velocity.y < lift) velocity.y = lift;
         if (now - steppedAt > StepGrace) StepUps++;
@@ -424,7 +440,7 @@ public static class SkateRide
             var impact = -VSpeed;
             ClassifyGrind(pos);
             Enter(RideMode.Grind); GrindStarts++;
-            Yaw = SkateGrind.Heading; Speed = SkateGrind.Speed; VSpeed = 0f;
+            Yaw = SkateGrind.Heading + GrindDeck; Speed = SkateGrind.Speed; VSpeed = 0f;
             TrickTick(false, true, 0, 0, 0, impact, dt);
             TrickAir = Jumped = false; AirTime = 0f; Grab = SkateGrabKind.None;
             if (Mode == RideMode.Grind) GrindVelocity(pos);
@@ -483,9 +499,15 @@ public static class SkateRide
             var normal = Grounded ? Normal : ContactNormal;
             if (SkateRidePhysics.TryLand(new SkateLandingInput(V(incoming), V(normal), V(Dir(Yaw)), BailImpact, LandRoll), out r, out error))
             {
-                Speed = (float)r.SignedTangentSpeed; impact = (float)r.NormalImpact;
+                // A bail takes the impact and keeps the speed it fell with; only a landing rolls on.
+                impact = (float)r.NormalImpact;
+                if (r.Bailed) impact = Math.Max(impact, BailImpact + 0.01f);
+                else
+                {
+                Speed = (float)r.SignedTangentSpeed;
                 Speed = Clamp(Speed, -(fastFakie ? Cap : Math.Min(MaxReverse, Cap)), Cap);
                 landRoll = V(r.RollVelocity); hasLandRoll = true;
+                }
             }
             else Physics_(error);
         }
@@ -569,14 +591,15 @@ public static class SkateRide
         if (!SkateGrind.TryContinue(pos, dt, out ended) || ended)
         {
             GrindEnds++; SkateGrind.Release(dt);
-            Speed = SkateGrind.Speed;
+            // Off the edge the board comes round to the way of travel, as it does in Skate.
+            Speed = SkateGrind.Speed; Yaw = SkateGrind.Heading;
             TakeOff(false, 0f);
             velocity = Dir(Yaw) * Speed;
             TrickTick(false, false, 0, 0, 0, 0, dt);
             return;
         }
-        Speed = SkateGrind.Speed; Yaw = SkateGrind.Heading;
-        Tangent = Dir(Yaw);
+        Speed = SkateGrind.Speed; Yaw = SkateGrind.Heading + GrindDeck;
+        Tangent = Dir(SkateGrind.Heading);
         GrindVelocity(pos);
         // Along the edge the stick leans the board onto one truck: back for a 5-0, forward for a nosegrind.
         if (GrindAlong) GrindKind = SkateKeys.Manual ? SkateGrindKind.FiveO : SkateKeys.NoseManual ? SkateGrindKind.Nosegrind : SkateGrindKind.FiftyFifty;
@@ -601,6 +624,8 @@ public static class SkateRide
         if (Math.Abs(cross) > 0.2f) t = (to.x * rail.z - to.z * rail.x) / cross;
         var near = -to.normalized; grindNoseFar = Vector3.Dot(deck, near) < 0f ? 1f : -1f;
         GrindAlong = across < 25f;
+        // Along the edge the deck is squared to it; across or at an angle it keeps the angle it had.
+        GrindDeck = GrindAlong ? (Math.Abs(rel) > 90f ? 180f : 0f) : rel;
         if (GrindAlong) GrindKind = SkateGrindKind.FiftyFifty;
         else if (across > 65f) GrindKind = t > 0.25f ? SkateGrindKind.Noseslide : t < -0.25f ? SkateGrindKind.Tailslide : grindNoseFar > 0f ? SkateGrindKind.Boardslide : SkateGrindKind.Lipslide;
         else GrindKind = t > 0.1f ? SkateGrindKind.Crooked : grindNoseFar > 0f ? SkateGrindKind.Feeble : SkateGrindKind.Smith;
@@ -611,7 +636,7 @@ public static class SkateRide
     {
         var to = SkateGrind.Target - pos;
         var side = to; side.y = 0f;
-        var dir = Dir(Yaw);
+        var dir = Dir(SkateGrind.Heading);
         side = side - dir * Vector3.Dot(side, dir);
         var pull = side * 8f;
         if (pull.sqrMagnitude > 6.25f) pull = pull.normalized * 2.5f;

@@ -76,7 +76,7 @@ public static class SkateGrind
         try
         {
             double vx = velocity.x, vz = velocity.z;
-            if (vx * vx + vz * vz < SkateMotion.MinimumCaptureSpeed * SkateMotion.MinimumCaptureSpeed) return false;
+            if (vx * vx + vz * vz < AlongSpeed * AlongSpeed) return false;
             var grid = Sample(pos, YawOf(vx, vz));
             SkateEdge found; string error;
             if (!SkateEdges.TryFind(grid, new SkateVector(vx, 0, vz), out found, out error)) { Last = "find refused: " + error; return false; }

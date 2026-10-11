@@ -184,6 +184,7 @@ file it runs `skate`.
 | `pad` | Scripted: the ride with a controller, played into the plugin without one. |
 | `mute` | Turns the whole client down until nothing can be heard. |
 | `nogrind` | No grinding. |
+| `clips` | When the audio starts, the game's own audio clips of a skateboard's kind are listed in the log (names and lengths), for choosing sounds. |
 
 A scripted check writes what happened to `BepInEx\plugins\skate.log` and ends the session.
 

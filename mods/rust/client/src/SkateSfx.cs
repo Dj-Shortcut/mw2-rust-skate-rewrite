@@ -53,14 +53,15 @@ public static class SkateSfx
             Sync();
             Ready = true; State = "ready";
             Out.Say("AUDIO ready: two loops and four one-shots at " + Rate + " Hz");
-            Survey();
+            if (ListClips) Survey();
         }
         catch (Exception e) { failed = true; State = "failed: " + e.GetType().Name + ": " + e.Message; Out.Say("AUDIO " + State); Silence(); }
     }
 
     // Which of the game's own clips are in memory: skateboard-like ones could replace the synthesis.
-    // Names only; nothing here names a type of the game.
-    private static void Survey()
+    // Names only; nothing here names a type of the game. Only a scripted check (step `clips`) asks.
+    public static bool ListClips;
+    public static void Survey()
     {
         try
         {

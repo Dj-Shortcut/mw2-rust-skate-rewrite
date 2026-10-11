@@ -4,7 +4,7 @@ Engine-free C#7.3 source for [#335](https://github.com/Dj-Shortcut/mw2-rust-rust
 
 ## Ride physics API
 
-`SkateRidePhysics` provides pure value inputs/results for the reported client's transition pumping, ramp exit and landing calculations. It does not run a controller or query the world. The [API contract and numbered client review](../../../docs/RUST-SKATE-RIDE-PHYSICS.md) describe the required adapter changes; that integration is still missing. Existing `SkateTricks`, motion and drive APIs retain their behavior.
+`SkateRidePhysics` provides pure value inputs/results for the reported client's transition pumping, ramp exit and landing calculations. It does not run a controller or query the world. The [API contract and numbered client review](../../../docs/RUST-SKATE-RIDE-PHYSICS.md) describe the adapter; the client's `SkateRide` calls `TrySlope`, `TryPump`, `TryLaunch` and `TryLand` (see the [client README](../client/README.md#sources)), checked natively only on the flat so far. Existing `SkateTricks`, motion and drive APIs retain their behavior.
 
 `TrySlope(input, dt, out result, out error)` accepts an upward unit surface normal, horizontal nose heading, signed speed along its surface tangent and explicit gravity. It preserves horizontal heading, applies gravity along the unit tangent and returns full velocity, signed tangent speed, horizontal speed and travel-relative slope. `TryLaunch(input, out result, out error)` retains the full surface velocity and adds only the requested vertical pop; passive exit uses zero pop. The adapter applies subsequent air gravity once.
 
