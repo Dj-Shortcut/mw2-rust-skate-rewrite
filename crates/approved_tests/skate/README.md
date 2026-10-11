@@ -1,5 +1,30 @@
 # Approved skate scenarios
 
+## Server source installation
+
+The owner approved `skate_server_plugin_install` by name on 11 October 2026.
+`SkateServerPluginInstallScenario.py` executes the actual installer with real
+pinned public downloads in an otherwise empty Linux container. It checks fresh
+installation, source bytes/ownership/mode, previous-source backup, refusals and
+temporary cleanup after real file-operation failures, including refusal to
+read a root-only prior source through the unprivileged worker. It requires container
+root and refuses an existing Rust installation or `rust` identity.
+
+The CI job **Skate plugin source installation** supplies Ubuntu 24.04 and GNU
+tools. Inside an equivalent disposable container with Bash, curl/CA certificates,
+coreutils, passwd/util-linux and Python 3:
+
+```sh
+python3 crates/approved_tests/skate/SkateServerPluginInstallScenario.py
+```
+
+This scenario never starts Rust/Oxide, the Rust client or Shadow, opens game ports
+or accesses the owner's server. Native plugin compile/load, patches, placement
+and riding remain separate acceptance. INT/TERM cancellation is checked during
+a real kernel-lease-blocked backup,
+including caller status, worker exit before lease release and unchanged source
+afterward. Power loss/SIGKILL are not tested.
+
 ## Recorded gestures
 
 The three scenarios requested by the owner through [issue #337](https://github.com/Dj-Shortcut/mw2-rust-rust-rewrite/issues/337#issuecomment-6098063930) replay the exact recorded stick positions and timestamps. Each position is held until the next timestamp; long holds are subdivided at the module's maximum step without interpolating new positions.
