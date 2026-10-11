@@ -20,6 +20,8 @@ public static class SkateRide
     // RevertRate and keeps the combo.
     public const float PumpGain = 2.6f, PumpCharge = 0.4f, PumpFrom = 8f, PumpFull = 30f, LandRoll = 0.8f, RevertWindow = 0.35f, RevertRate = 600f;
     public const long RevertPoints = 50;
+    public const float RevertStick = 0.85f;
+    private static float spinAtLand;
     private const float RayLift = 0.6f, FeetProbe = 0.3f, AirProbe = 3f;
     // A lip ahead up to StepUp high (the seam between two foundations, a kerb) is stepped over:
     // the board is lifted onto it and the loss of way it costs is not read as an obstacle.
@@ -288,7 +290,10 @@ public static class SkateRide
     {
         if (RevertLeft == 0f)
         {
+            // A stick that was already steering through the landing is a carve, not a revert: the turn
+            // must be asked for afresh, from the middle, and hard.
             if (!landedTrick || now - LandAt > RevertWindow || !SkateKeys.SpinPressed || SkateKeys.Spin == 0f || Math.Abs(Speed) < 1f) return;
+            if (spinAtLand != 0f || (SkateKeys.Analog && Math.Abs(SkateKeys.Steer) < RevertStick)) return;
             landedTrick = false; RevertLeft = 180f * (SkateKeys.Spin > 0f ? 1f : -1f); Reverts++; revertDir = Dir(Yaw) * Math.Sign(Speed);
             Out.Say("SKATE revert begins");
         }
@@ -445,7 +450,7 @@ public static class SkateRide
             Speed = Clamp(Speed, -(fastFakie ? Cap : Math.Min(MaxReverse, Cap)), Cap);
         }
         if (AirTime > 0.12f || impact > 1.5f) { Lands++; LandAt = now; LandImpact = impact; }
-        landedTrick = TrickAir;
+        landedTrick = TrickAir; spinAtLand = SkateKeys.Spin;
         Enter(RideMode.Ground);
         if (TrickAir) TrickTick(false, false, 0, 0, 0, impact, dt);
         else if (impact > BailImpact) Bail();

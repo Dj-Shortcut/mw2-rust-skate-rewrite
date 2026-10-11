@@ -53,8 +53,32 @@ public static class SkateSfx
             Sync();
             Ready = true; State = "ready";
             Out.Say("AUDIO ready: two loops and four one-shots at " + Rate + " Hz");
+            Survey();
         }
         catch (Exception e) { failed = true; State = "failed: " + e.GetType().Name + ": " + e.Message; Out.Say("AUDIO " + State); Silence(); }
+    }
+
+    // Which of the game's own clips are in memory: skateboard-like ones could replace the synthesis.
+    // Names only; nothing here names a type of the game.
+    private static void Survey()
+    {
+        try
+        {
+            var all = Resources.FindObjectsOfTypeAll(Il2CppInterop.Runtime.Il2CppType.Of<AudioClip>());
+            var like = new System.Text.StringBuilder(); var n = 0; var liked = 0;
+            var words = new[] { "skate", "wheel", "scrape", "metal", "wood", "impact", "slide", "roll", "concrete", "footstep", "land", "thud", "grind", "drag", "stone" };
+            for (var i = 0; i < all.Length; i++)
+            {
+                var c = all[i] == null ? null : all[i].TryCast<AudioClip>();
+                if (c == null) continue;
+                n++;
+                var name = (c.name ?? "").ToLowerInvariant(); var hit = false;
+                for (var w = 0; w < words.Length && !hit; w++) hit = name.Contains(words[w]);
+                if (hit && like.Length < 1500) { liked++; like.Append(liked > 1 ? ", " : "").Append(c.name).Append('(').Append(c.length.ToString("F1")).Append("s)"); }
+            }
+            Out.Say("AUDIO clips in memory: " + n + ", of a skateboard's kind " + liked + ": " + like);
+        }
+        catch (Exception e) { Out.Say("AUDIO clips could not be listed: " + e.GetType().Name + ": " + e.Message); }
     }
 
     private static void Silence()
