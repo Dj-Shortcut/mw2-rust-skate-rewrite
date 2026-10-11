@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """SPDX-License-Identifier: Apache-2.0
 
-Author the original CC0 skate park model pack with Blender 4.3 or later.
+Author the original CC0 skate park model pack with pinned Blender 5.2.0.
 Run with Blender, passing --output and optionally --preview-dir after --.
 """
 
