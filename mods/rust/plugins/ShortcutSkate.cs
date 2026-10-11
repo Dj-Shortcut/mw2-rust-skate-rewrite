@@ -419,7 +419,12 @@ namespace Shortcut.RustMod
         { return !string.IsNullOrWhiteSpace(name) && name.Length <= 128 && name == name.Trim() && !name.Any(char.IsControl); }
         public static bool TryGesture(string name, string[][] aliases, out int index, out string error)
         {
-            index = -1; error = null;
+            bool missing;
+            return TryGesture(name, aliases, out index, out error, out missing);
+        }
+        public static bool TryGesture(string name, string[][] aliases, out int index, out string error, out bool missing)
+        {
+            index = -1; error = null; missing = false;
             if (!ValidGestureName(name)) { error = "Configured gesture name is invalid."; return false; }
             if (aliases == null) { error = "Gesture catalog is unavailable."; return false; }
             for (int i = 0; i < aliases.Length; i++)
@@ -429,9 +434,26 @@ namespace Shortcut.RustMod
                 index = i;
             }
             if (index >= 0) return true;
+            missing = true;
             error = "Gesture '" + name + "' was not found in the native catalog.";
             return false;
         }
+        public static string GestureCatalogNames(string[][] aliases)
+        {
+            var names = new List<string>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (aliases == null) return "";
+            foreach (string[] row in aliases)
+            {
+                if (row == null) continue;
+                string name = row.Length > 0 ? row[0] : null;
+                if (!DisplayGestureName(name)) name = row.Length > 2 ? row[2] : null;
+                if (DisplayGestureName(name) && seen.Add(name)) names.Add(name);
+            }
+            return string.Join(", ", names);
+        }
+        private static bool DisplayGestureName(string name)
+        { return ValidGestureName(name) && name.IndexOf(',') < 0 && name.IndexOf('\u2028') < 0 && name.IndexOf('\u2029') < 0; }
     }
 
     public struct SkateParkPart
@@ -722,6 +744,8 @@ namespace Oxide.Plugins
         private bool gestureShape;
         private bool gestureNativeHook;
         private string gestureFailure = "Gesture selection has not initialized.";
+        private bool gestureNameMissing;
+        private string gestureCatalogNames;
         private GestureConfig parkNextGesture, parkCancelGesture;
         private SkateParkKind[] parkGestureOrder;
         private readonly HashSet<string> parkDemolitionPending = new HashSet<string>(StringComparer.Ordinal);
@@ -1007,6 +1031,7 @@ namespace Oxide.Plugins
             unavailableReason = SkateSessionReason.Unavailable;
             settings = null;
             gestureAvailable = false;
+            gestureNameMissing = false; gestureCatalogNames = null;
             gestureFailure = "Valid gesture configuration is required.";
             try
             {
@@ -1078,6 +1103,7 @@ namespace Oxide.Plugins
         private void InitializeParkGestures()
         {
             gestureAvailable = false; gestureShape = false; gestureNativeHook = false;
+            gestureNameMissing = false; gestureCatalogNames = null;
             parkNextGesture = parkCancelGesture = null; parkGestureOrder = null;
             try
             {
@@ -1096,11 +1122,14 @@ namespace Oxide.Plugins
                         gesture.gestureName == null ? null : gesture.gestureName.token, gesture.convarName, gesture.gestureCommand };
                 }
                 int next, cancel;
-                string error;
-                if (!SkateParkSelections.TryGesture(settings.ParkNextGesture, aliases, out next, out error))
-                    throw new InvalidDataException("Next: " + error);
-                if (!SkateParkSelections.TryGesture(settings.ParkCancelGesture, aliases, out cancel, out error))
-                    throw new InvalidDataException("Cancel: " + error);
+                gestureCatalogNames = SkateParkSelections.GestureCatalogNames(aliases);
+                string nextError, cancelError;
+                bool nextMissing, cancelMissing;
+                bool nextFound = SkateParkSelections.TryGesture(settings.ParkNextGesture, aliases, out next, out nextError, out nextMissing);
+                bool cancelFound = SkateParkSelections.TryGesture(settings.ParkCancelGesture, aliases, out cancel, out cancelError, out cancelMissing);
+                gestureNameMissing = nextMissing || cancelMissing;
+                if (!nextFound) throw new InvalidDataException("Next: " + nextError);
+                if (!cancelFound) throw new InvalidDataException("Cancel: " + cancelError);
                 if (next == cancel) throw new InvalidDataException("Next and cancel resolve to the same native gesture.");
                 parkNextGesture = configs[next]; parkCancelGesture = configs[cancel];
                 parkGestureOrder = new SkateParkKind[settings.ParkPieceOrder.Length];
@@ -1329,7 +1358,9 @@ namespace Oxide.Plugins
                 "; rearm-required=" + SkateStatusReport.Number(settings == null ? double.NaN : settings.AutomaticRearmSeconds) +
                 "s; grounded-building=" + (settings != null && settings.GroundedBuilding) +
                 "; grounded-ready=" + groundedReady + "; grounded-records=" + groundedMembers.Count.ToString(CultureInfo.InvariantCulture) +
-                ".\n" + SkateStatusReport.Format(history, clock.Elapsed.TotalSeconds));
+                ".\n" + (privileged && gestureNameMissing ? "Native gestures: " +
+                    (string.IsNullOrEmpty(gestureCatalogNames) ? "(no readable names)" : gestureCatalogNames) + "\n" : "") +
+                SkateStatusReport.Format(history, clock.Elapsed.TotalSeconds));
         }
 
         private void Command(ConsoleSystem.Arg arg, int action)
@@ -1481,6 +1512,7 @@ namespace Oxide.Plugins
             groundedMembers.Clear();
             groundedEntities.Clear();
             gestureAvailable = false;
+            gestureNameMissing = false; gestureCatalogNames = null;
             try { if (gestureHarmony != null) gestureHarmony.UnpatchAll(GesturePatchId); }
             catch (Exception error) { PrintError("The park gesture patch could not be removed: " + error.Message); }
             parkReady = false;

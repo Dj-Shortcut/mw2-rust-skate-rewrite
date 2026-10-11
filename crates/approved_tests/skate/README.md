@@ -64,7 +64,7 @@ The runner uses the actual compiled shared DLL, prints its path/SHA-256 and comp
 The owner approved two layout scenarios by name for [Task 4](https://github.com/Dj-Shortcut/mw2-rust-skate-rewrite/issues/337#issuecomment-6099499139):
 
 - `skate_park_piece_layouts`: the eight pieces' block positions, orientations, native materials and adjoining nominal square-floor edges, including the complete halfpipe's flat, transitions, decks and railings.
-- `skate_park_anchor_yaw_and_snap`: translated and rotated layouts preserve the snapped anchor supplied by ordinary native construction, including anchors away from the world origin. The foundation extension supplies abstract construction bounds and independently checks every tilted floor corner above the support, without changing the authored ledge/deck heights. The same scenario checks the server's direct-placement request helper: aim versus explicit anchors, invariant numeric parsing, finite coordinate/yaw bounds, yaw normalization and atomic refusal outputs across cultures. Its request checks require the helper in `ShortcutSkate.dll`; a canonical shared `SkatePark.dll` without this server-only helper keeps the existing layout checks.
+- `skate_park_anchor_yaw_and_snap`: translated and rotated layouts preserve the snapped anchor supplied by ordinary native construction, including anchors away from the world origin. The foundation extension supplies abstract construction bounds and independently checks every tilted floor corner above the support, without changing the authored ledge/deck heights.
 
 Build the actual server plugin using genuine dedicated-server references, then execute its engine-free helpers on .NET 8:
 
@@ -75,11 +75,11 @@ dotnet run --project crates/approved_tests/skate/SkateParkLayoutScenarios.csproj
 
 Supply `-p:ActualPluginPath=/absolute/path/to/ShortcutSkate.dll` for another built DLL. Outputs stay in ignored `context/`; the runner prints its loaded DLL path and SHA-256.
 
-These checks use the layout helpers in that DLL, with independent expected positions and seams; the request extension invokes the actual public helper by its exact reflected signature. They do not verify native aim rays or placement, floor dimensions/colliders, building privilege, stability, save/load callbacks, demolition or gameplay, and they do not start the Rust client or server.
+These checks use the layout helpers in that DLL, with independent expected positions and seams. They do not verify native floor dimensions/colliders, building privilege, stability, save/load callbacks, demolition or gameplay, and they do not start the Rust client or server.
 
 ## Park gesture selection
 
-The owner approved `skate_park_gesture_selection` by name on 11 October 2026. It exercises the actual plugin's pure selection policy: halfpipe-first cycling, a configured order, cancellation, inclusive two-minute expiry, renewal, failed-placement retention, successful consumption and silent refusal for non-admins. Invalid states, clocks, orders and gesture-name catalog matches are checked atomically.
+The owner approved `skate_park_gesture_selection` by name on 11 October 2026. It exercises the actual plugin's pure selection policy: halfpipe-first cycling, a configured order, cancellation, inclusive two-minute expiry, renewal, failed-placement retention, successful consumption and silent refusal for non-admins. Invalid states, clocks, orders and gesture-name catalog matches are checked atomically. It distinguishes an unknown gesture from invalid names, unavailable catalogs and ambiguous aliases, preserves the original lookup overload, and checks one-line catalog names with English/convar fallback, native ordering and case-insensitive deduplication.
 
 ```sh
 dotnet run --project crates/approved_tests/skate/SkateParkGestureScenarios.csproj -p:ActualPluginPath=/absolute/path/to/ShortcutSkate.dll
@@ -127,3 +127,7 @@ Mac net8, with zero measured bytes in 20,000-call warmed success/refusal loops. 
 secondary-motion geometry checks. The runner starts no Rust client/server or Shadow PC and
 does not establish hand/surface contact, native rendering, adapter integration or IL2CPP cost.
 See the [API and integration limits](../../../mods/rust/shared/README.md#rider-secondary-motion-api).
+
+## Direct park placement requests
+
+The existing `skate_park_anchor_yaw_and_snap` also exercises the server's direct-placement request helper: aim versus explicit anchors, invariant numeric parsing, finite coordinate/yaw bounds, yaw normalization and atomic refusal outputs across cultures. It invokes the actual public helper by its exact reflected signature and requires that helper in `ShortcutSkate.dll`. The shared `SkateMotion.dll` contains geometry helpers only, so its layout run omits the server-request extension. These scalar checks do not execute native aim rays, building hooks, placement or gameplay.

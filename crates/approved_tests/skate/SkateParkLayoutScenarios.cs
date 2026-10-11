@@ -225,8 +225,8 @@ internal static class SkateParkLayoutScenarios
         Type placement = library.GetType("Shortcut.RustMod.SkateParkPlacement", false);
         if (placement == null)
         {
-            Require(library.GetName().Name == "SkatePark", "Actual server plugin must include the placement request helper.");
-            Console.WriteLine("Canonical SkatePark DLL has no server placement request helper; existing layout checks continue.");
+            Require(library.GetName().Name == "SkateMotion", "Actual server plugin must include the placement request helper.");
+            Console.WriteLine("Shared SkateMotion DLL has no server placement request helper; existing layout checks continue.");
             return;
         }
         MethodInfo request = placement.GetMethod("TryRequest", BindingFlags.Public | BindingFlags.Static, null,
