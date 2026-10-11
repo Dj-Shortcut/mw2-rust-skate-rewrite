@@ -50,7 +50,9 @@ public static class RiderRig
     // Switching the parts off is not enough in this client: with a rock in hand they stayed on the
     // screen. So the set is also made too small to see. The game may set the size again at any
     // time, so it is made small again every frame, and the size the game last gave is put back.
-    public const float HeldEvery = 0.15f, HeldSmall = 0.0001f;
+    // The look for held items searches the whole scene, which costs the game a fifth of a second:
+    // done rarely, and at once when a held item has gone.
+    public const float HeldEvery = 2f, HeldSmall = 0.0001f;
     private const int HeldTries = 5, HeldScans = 3;
 
     // One thing of the set: the object that carries it (Root) or one drawn part of it (Part). What
@@ -66,12 +68,15 @@ public static class RiderRig
     private static HeldThing[] held = new HeldThing[0];
     private static long heldSet;
     private static float nextHeld;
-    private static bool heldForced = true;
+    private static bool heldForced = true, heldThird;
     private static int heldScanFailures;
 
     private static void Held(bool wantThird, float now)
     {
-        if (wantThird && now >= nextHeld && heldScanFailures < HeldScans)
+        // Looked for anew when the view goes behind the rider, when a held thing has gone, and now and then.
+        if (wantThird && !heldThird) nextHeld = 0f;
+        heldThird = wantThird;
+        if (wantThird && (now >= nextHeld || HeldGone()) && heldScanFailures < HeldScans)
         {
             nextHeld = now + HeldEvery;
             try
@@ -103,6 +108,18 @@ public static class RiderRig
         }
         if (wantThird) HeldHide();
         HeldRestore(wantThird);
+    }
+
+    // A held item that was swapped is destroyed with its parts: the set is looked for again then.
+    private static bool HeldGone()
+    {
+        for (var i = 0; i < held.Length; i++)
+        {
+            var t = held[i];
+            if (t.Old) continue;
+            if (!ReferenceEquals(t.Root, null) && t.Root == null) return true;
+        }
+        return false;
     }
 
     // What could not be put back yet goes along with the next set, to be tried again.
