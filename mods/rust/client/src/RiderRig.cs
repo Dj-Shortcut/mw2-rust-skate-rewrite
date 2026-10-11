@@ -33,6 +33,7 @@ public static class RiderRig
     // push, the air, a grab, a bail) the joints ease over, in the board's own frame so that a turning
     // or tipping board does not leave them behind.
     public const float EaseSeconds = 0.07f;
+    private const float SideBendShare = 0.6f;
     private const int PelvisJ = 0, LHipJ = 1, RHipJ = 2, LKneeJ = 3, RKneeJ = 4, LAnkleJ = 5, RAnkleJ = 6, LToeJ = 7, RToeJ = 8, ChestJ = 9, NeckJ = 10, HeadJ = 11,
         LShoulderJ = 12, RShoulderJ = 13, LElbowJ = 14, RElbowJ = 15, LHandJ = 16, RHandJ = 17, Points = 18,
         PelvisForwardJ = 18, PelvisUpJ = 19, ChestForwardJ = 20, ChestUpJ = 21, HeadForwardJ = 22, All = 23;
@@ -585,6 +586,20 @@ public static class RiderRig
                     var tip = Quaternion.FromToRotation(now, want);
                     Pelvis.rotation = tip * Pelvis.rotation;
                     Pelvis.position = hips + tip * (Pelvis.position - hips);
+                }
+                // A side bend (the chest rolled toward a grabbing hand) is taken at the spine's root as
+                // well, a share of it, so the neck still lands where the module bends the back to.
+                var side = Vector3.Dot(chestUp, hipLine);
+                if (Math.Abs(side) > 0.05f)
+                {
+                    var rootNow = spine[0].position - hips;
+                    if (rootNow.sqrMagnitude > 0.000001f)
+                    {
+                        var bend = Quaternion.FromToRotation(rootNow, rootNow.magnitude * chestUp.normalized);
+                        bend = Quaternion.Slerp(Quaternion.identity, bend, SideBendShare);
+                        Pelvis.rotation = bend * Pelvis.rotation;
+                        Pelvis.position = hips + bend * (Pelvis.position - hips);
+                    }
                 }
             }
             for (var i = 0; i < spine.Length; i++) Aim(spine[i], i + 1 < spine.Length ? spine[i + 1] : Neck, chestUp);

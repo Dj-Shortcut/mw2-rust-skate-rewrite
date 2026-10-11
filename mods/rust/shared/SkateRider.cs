@@ -339,7 +339,7 @@ namespace Shortcut.RustMod
         private const double PushPelvisYaw = 55, PushChestYaw = 70, PushLeadToe = 60;
         private const double AirYaw = 0.35, PushWeight = 0.28, PushSide = 0.03, PushDip = 0.06, PushLean = 0.34, PushSwing = 0.28;
         private const double PushPlant = 0.10, PushSweep = 0.36, PushHeel = 0.07;
-        private const double GrabRoll = 0.4, GrabFoldLimit = 1.0, GrabTuckMargin = 0.05, PlantDrop = 0.3, GrabBackLimit = 0.55, HeelTurn = 2.0;
+        private const double GrabRoll = 0.4, GrabFoldLimit = 1.0, GrabTuckMargin = 0.05, PlantDrop = 0.3, GrabBackLimit = 0.55, HeelTurn = 1.2;
         private const double HeelTurnSign = 1;
         // A grab folds in over GrabIn seconds; held longer it tweaks. The older inputs pose a grab just folded in.
         public const double GrabIn = 0.18;
