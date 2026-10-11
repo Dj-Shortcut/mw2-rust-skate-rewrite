@@ -198,7 +198,7 @@ that commit and must match the hash; that is for shared code that is ahead on an
 | `RiderRig.cs` | Writes the shared rider pose onto the player model's skeleton; what is drawn in which view, the held item included. |
 | `SkateCamera.cs` | View from behind. |
 | `SkateHud.cs`, `SkateSfx.cs` | The score display and the sounds. |
-| `SkatePieces.cs`, `SkateConsole.cs` | The park-piece menu on the controller and the console line it types for the player. |
+| `SkatePieces.cs`, `SkateConsole.cs` | The park-piece menu on the controller and the console line it sends to the server (`SkateConsole.Send`, a console packet on the client's connection found by name in the network library) or, failing that, types for the player. |
 | `Scenarios.cs` | Scripted checks in a world. |
 | `SkateParks.cs` | Draws the authored park models over the server's park pieces (below). |
 
@@ -239,6 +239,7 @@ file it runs `skate`. Runtime steps share one rig; the last scenario step select
 | `pad` | Scripted: the ride with a controller, played into the plugin without one. |
 | `status` | Scripted: a short ride, then the server's own view of the rider typed into the F1 console (`skate.status`, its speed and fly checks, its plugins), the console left open. |
 | `park` | Scripted: the authored park models one at a time 6 m ahead of the rider, 20 s each, seen from behind the rider, then a ride up the bank; nothing is placed on the server. |
+| `send` | Scripted: a chat line and `skate.status` sent to the server as console packets on the client's own connection (the way the game's console sends them), not typed; the chat line shows on the screen when it arrives. |
 | `mute` | Turns the whole client down until nothing can be heard. |
 | `nogrind` | No grinding. |
 

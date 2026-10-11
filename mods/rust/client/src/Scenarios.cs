@@ -46,6 +46,7 @@ public static class Scenarios
         else if (Name == "status") Status(game, s);
         else if (Name == "pose") Pose(s, now);
         else if (Name == "park") Park(s, now);
+        else if (Name == "send") SendCheck(s);
         else if (Name == "pad") Pad(game, now);
         else Trick(game);
     }
@@ -305,6 +306,27 @@ public static class Scenarios
         SkateParks.PreviewAt(SkateParks.Kind.Bank, parkAt, yaw0);
         SkateCamera.Fixed = false; SkateCamera.Chase = true; SkateRide.Frozen = false; SkateRide.Mode = RideMode.Ground;
         Enter(phase + 1, "riding up the bank");
+    }
+
+    // A command sent to the server by the network, not typed: a chat line that shows on the screen
+    // when it arrives, then the plugin's own status command.
+    private static void SendCheck(float s)
+    {
+        if (phase == 0)
+        {
+            Enter(1, "send a chat line");
+            var ok = SkateConsole.Send("chat.say skate client console check " + DateTime.Now.ToString("HH:mm:ss"));
+            Say("send: " + (ok ? "sent" : "not sent") + " | " + SkateConsole.SendState);
+            return;
+        }
+        if (phase == 1 && s > 3f)
+        {
+            Enter(2, "send skate.status");
+            var ok = SkateConsole.Send("skate.status");
+            Say("send: " + (ok ? "sent" : "not sent") + " | " + SkateConsole.SendState);
+            return;
+        }
+        if (phase == 2 && s > 12f) Finish();
     }
 
     // The ride with a controller, without one: its states are played into the plugin as the reader
