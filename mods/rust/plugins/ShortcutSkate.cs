@@ -667,7 +667,6 @@ namespace Shortcut.RustMod
 
 namespace Shortcut.RustMod
 {
-    // The wire command uses invariant scalars; failed parsing never leaves a partial anchor.
     public static class SkateParkPlacement
     {
         public static bool TryRequest(string[] args, out SkateParkKind kind, out bool explicitAnchor,
@@ -2368,7 +2367,6 @@ namespace Oxide.Plugins
                     x = hit.point.x; z = hit.point.z;
                     yaw = (viewAngles.y % 360 + 360) % 360;
                 }
-                // Client anchors are exact layout origins, never snapped or silently height-adjusted.
                 Vector3 anchor = new Vector3((float)x, (float)y, (float)z);
                 if (!Coordinate(anchor) || Vector3.Distance(eye, anchor) > MaximumParkPlacementDistance)
                 { arg.ReplyWith("The park anchor must be within 25 metres of your server eye position."); return; }
