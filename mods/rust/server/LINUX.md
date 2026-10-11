@@ -63,10 +63,10 @@ the installer as root, with no other plugin update running:
     skate_update_dir=$(mktemp -d /tmp/ShortcutSkate-update.XXXXXX)
     trap 'rm -rf -- "$skate_update_dir"' EXIT
     curl -fsSL --connect-timeout 15 --max-time 60 \
-        https://raw.githubusercontent.com/Dj-Shortcut/mw2-rust-skate-rewrite/44c5c1fcdd73928d285fd5c7f7ca859709a78c3c/mods/rust/server/add-skate.sh \
+        https://raw.githubusercontent.com/Dj-Shortcut/mw2-rust-skate-rewrite/a03ce59122e11fa21e6e239d60afd021f8f5fce2/mods/rust/server/add-skate.sh \
         -o "$skate_update_dir/add-skate.sh"
     printf '%s  %s\n' \
-        68e2e5220354e0df4fa282a32faedfc2d42b4df1c223d92c686b197b14501e5b \
+        dfb96374b3cba3f3aab2aa88d0ae46491030372c33cca4d366314543ca390621 \
         "$skate_update_dir/add-skate.sh" | sha256sum -c -
     bash "$skate_update_dir/add-skate.sh"
 )
@@ -85,8 +85,10 @@ a `rust:rust`-owned source retains its bytes, owner, group, mode and modificatio
 An existing backup is overwritten at that stage, even if the final replacement
 fails. Download, checksum, privilege-drop or backup failure leaves the active
 source untouched. The installer does not grant the service account access to
-root-only files. Catchable exits clean staging; SIGKILL/power loss can leave it
-behind. The script does not restart the server
+root-only files. On INT/TERM the caller signals and waits for its tracked worker
+before returning cancellation. An already-published rename is not rolled back.
+Catchable exits clean staging; SIGKILL/power loss can leave it behind. The script
+does not restart the server
 or change its configuration/world.
 
 After installation, check the server console for successful compilation and
@@ -97,7 +99,9 @@ The owner-approved `skate_server_plugin_install` scenario exercises the actual
 installer in a disposable Ubuntu 24.04 CI container, including fresh installation,
 previous-source backup and refusal/cleanup after real file-operation failures.
 It also verifies that root-only source bytes/metadata remain unchanged when the
-unprivileged backup operation is refused.
+unprivileged backup operation is refused. INT/TERM cases hold a real Linux file
+lease during backup, cancel the caller, and check worker exit before lease
+release plus unchanged source and clean staging afterward.
 It uses genuine pinned public downloads and starts no Rust/Oxide process. No live
 server, Rust client or Shadow PC is used. The unchanged pinned 0.3.4 source
 compiled locally as
