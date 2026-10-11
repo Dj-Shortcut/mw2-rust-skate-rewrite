@@ -36,6 +36,79 @@ Linux server console input is noninteractive: screen/tmux show output. Real `oxi
 For Shadow's EAC-disabled client, later startup needs explicit current `-insecure` plus a reviewed **UDP game-port** route for F1 direct join. Query exposure is only for separately required discovery. The Windows loopback launcher is not a Linux/remote-client launcher.
 After a real install, record actual server startup, matching framework, listeners, intended-client join, save/restart and the [plugin acceptance](../../../docs/RUST-SERVER-PLUGIN.md). No playable/ready claim before those results.
 
+## Update the skate plugin
+
+`add-skate.sh` installs ShortcutSkate **0.3.4** from commit
+`54a54a3b199fbe5d7d337b40a739b6546195c631`, with source SHA-256
+`de2e6976f6fc9ab2e3099dfe3cf8c076f2a82ff6c026f75bae0c8eda67c2f8ff`.
+It targets the existing `/srv/rust/server/oxide/plugins` installation created by
+`bootstrap-ubuntu.sh`, with its `rust` user/group. It needs Bash, curl and
+sha256sum; installation uses the GNU/Linux file tools plus runuser and setsid
+from util-linux. The plugins folder must be writable by the nonroot rust
+account, and an existing source must be readable by that account.
+
+From this checkout, verify the pinned download without root or a server:
+
+```sh
+bash mods/rust/server/add-skate.sh --check
+```
+
+This mode downloads into a temporary file, checks its SHA-256 and removes it.
+It does not access the server's plugins folder. On the existing Linux host, run
+the installer as root, with no other plugin update running:
+
+```sh
+(
+    set -eu
+    skate_update_dir=$(mktemp -d /tmp/ShortcutSkate-update.XXXXXX)
+    trap 'rm -rf -- "$skate_update_dir"' EXIT
+    curl -fsSL --connect-timeout 15 --max-time 60 \
+        https://raw.githubusercontent.com/Dj-Shortcut/mw2-rust-skate-rewrite/a03ce59122e11fa21e6e239d60afd021f8f5fce2/mods/rust/server/add-skate.sh \
+        -o "$skate_update_dir/add-skate.sh"
+    printf '%s  %s\n' \
+        dfb96374b3cba3f3aab2aa88d0ae46491030372c33cca4d366314543ca390621 \
+        "$skate_update_dir/add-skate.sh" | sha256sum -c -
+    bash "$skate_update_dir/add-skate.sh"
+)
+```
+
+The installer itself is downloaded from an immutable reviewed commit and checked
+before execution. A failed or incomplete download stops the command; it does
+not execute whatever happens to be on `main`.
+
+The source is downloaded and verified in a private temporary directory under
+`/tmp`. Root opens those verified bytes, then a separate session runs all plugin
+file writes as the nonroot `rust` account. A hidden source in the plugins folder
+receives mode 0644 before a same-directory rename replaces `ShortcutSkate.cs`.
+An existing regular source is saved as `ShortcutSkate.cs.bak` before replacement;
+a `rust:rust`-owned source retains its bytes, owner, group, mode and modification time.
+An existing backup is overwritten at that stage, even if the final replacement
+fails. Download, checksum, privilege-drop or backup failure leaves the active
+source untouched. The installer does not grant the service account access to
+root-only files. On INT/TERM the caller signals and waits for its tracked worker
+before returning cancellation. An already-published rename is not rolled back.
+Catchable exits clean staging; SIGKILL/power loss can leave it behind. The script
+does not restart the server
+or change its configuration/world.
+
+After installation, check the server console for successful compilation and
+`Loaded plugin ShortcutSkate v0.3.4`, then run `oxide.plugins`. Keep the backup
+until the owner has checked placement and riding. Source installation alone
+does not prove plugin loading, park placement or movement without corrections.
+The owner-approved `skate_server_plugin_install` scenario exercises the actual
+installer in a disposable Ubuntu 24.04 CI container, including fresh installation,
+previous-source backup and refusal/cleanup after real file-operation failures.
+It also verifies that root-only source bytes/metadata remain unchanged when the
+unprivileged backup operation is refused. INT/TERM cases hold a real Linux file
+lease during backup, cancel the caller, and check worker exit before lease
+release plus unchanged source and clean staging afterward.
+It uses genuine pinned public downloads and starts no Rust/Oxide process. No live
+server, Rust client or Shadow PC is used. The unchanged pinned 0.3.4 source
+compiled locally as
+net48/C#7.3 against genuine server references with official Oxide 2.0.7815 and
+2.0.7820, with zero errors/warnings. Its warmup correction still needs native
+acceptance.
+
 ## Native installation evidence
 
 On 8 October 2026, the unchanged reviewed installer completed on Ubuntu 24.04.5 LTS x86_64/Python 3.12.3 as a dedicated nonroot `rust` user in a fresh directory outside Git. Preflight measured approximately 15.1 GiB available RAM and 307 GiB free disk. Official Ubuntu packages supplied the 32-bit GCC/C++ runtime.

@@ -29,6 +29,7 @@ workspace.
 | `skate_park_gesture_selection` | admin-only configurable park-piece cycling, cancel, expiry and retained pending selection |
 | `skate_audio_surfaces_and_events` | authored wheel, truck/deck contact and event PCM: duration, peak/DC, determinism, loop seams and invalid requests |
 | `skate_rider_secondary_motion` | planted ankles and toes, exact limb lengths, bounded secondary pose motion, deterministic steps and atomic invalid-input rejection |
+| `skate_server_plugin_install` | actual source installation, replacement/backup, guarded refusal and cleanup after real Linux file-operation failures |
 
 The owner approved `skate_transition_pumping`, `skate_drop_in_and_launch` and `skate_surface_landing` by name on 11 October 2026 for [Task 5](https://github.com/Dj-Shortcut/mw2-rust-skate-rewrite/issues/337#issuecomment-6106747983). They execute the actual shared C# library. Native adapter integration, contact sensing and ride feel remain separate validation.
 
@@ -41,6 +42,8 @@ The owner approved `skate_audio_surfaces_and_events` by name on 11 October 2026 
 The owner approved `skate_park_gesture_selection` by name on 11 October 2026 for [Task 6](https://github.com/Dj-Shortcut/mw2-rust-skate-rewrite/issues/337#issuecomment-6106613104). It executes the plugin's pure selection policy; native gesture dispatch and admin chat remain separate verification.
 
 The owner approved `skate_rider_secondary_motion` by name on 11 October 2026 in the continuation chat for [the rider-motion handover](https://github.com/Dj-Shortcut/mw2-rust-skate-rewrite/issues/337#issuecomment-6108821492). It executes the actual engine-free shared C# DLL. Native rig integration, hand contact, rendering and visual quality remain separate verification.
+
+The owner approved `skate_server_plugin_install` by name on 11 October 2026 in the continuation chat for [PR #361](https://github.com/Dj-Shortcut/mw2-rust-skate-rewrite/pull/361). It runs the actual Bash installer and genuine pinned public source in a disposable Linux container. It never starts Rust/Oxide or accesses a live server; source installation is separate from plugin loading and gameplay.
 
 The scenario's steps are in `src/scenarios/heavy_gameplay_lifecycle.rs` and
 nowhere else: maps, seed rule, scenes, positions, angles, weapons, durations

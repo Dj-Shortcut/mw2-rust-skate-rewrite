@@ -645,7 +645,7 @@ namespace Shortcut.RustMod
 
 namespace Oxide.Plugins
 {
-    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.3")]
+    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.4")]
     [Description("Player-scoped skateboard movement bounds and saved building-plan park assemblies.")]
     public sealed class ShortcutSkate : RustPlugin
     {
@@ -848,12 +848,13 @@ namespace Oxide.Plugins
             public double LastObserved;
             public SkateSessionHistory History;
             public SkateSessionObservation Observation;
+            public double SaidAt = -99;
         }
 
         protected override void LoadDefaultConfig()
         {
             Config.WriteObject(new Settings { Version = 1, AllowEveryone = true,
-                MaximumHorizontalSpeed = 14, MaximumAirtime = 1 }, true);
+                MaximumHorizontalSpeed = 25, MaximumAirtime = 2 }, true);
         }
 
         protected override void LoadConfig()
@@ -915,6 +916,7 @@ namespace Oxide.Plugins
             ready = settings != null && groundMask != 0 && Patched("ValidateMoves", typeof(MovePatch), false) &&
                 Patched("AreSpeeding", typeof(SpeedPatch), true) && Patched("AreFlying", typeof(FlyPatch), true);
             if (!ready) PrintError("Skating is disabled: matching movement patches and valid config are required.");
+            else Puts("Skating ready: movement patches installed; up to " + settings.MaximumHorizontalSpeed + " m/s, " + settings.MaximumAirtime + " s in the air.");
             timer.Every(0.1f, Sweep);
         }
 
@@ -1270,6 +1272,13 @@ namespace Oxide.Plugins
 
         private static void Disarm(Session session, SkateSessionObservation observation)
         {
+            // Said in the server console when a skating rider loses acceptance, at most every two seconds.
+            double said = instance == null ? double.NaN : instance.clock.Elapsed.TotalSeconds;
+            if (session.Bounds.Active && instance != null && said - session.SaidAt > 2)
+            {
+                session.SaidAt = said;
+                instance.Puts("Skating stopped for " + (session.Player == null ? "?" : session.Player.displayName) + ": " + observation.Reason);
+            }
             session.Observation = observation;
             if (session.History != null)
             {
@@ -2525,6 +2534,10 @@ namespace Oxide.Plugins
                         if (invalidCoordinate && value.Reason == SkateSessionReason.InvalidHorizontalPath)
                             value.Reason = SkateSessionReason.InvalidCoordinate;
                         if (session.Rearm.Seconds == 0) { Disarm(session, value); continue; }
+                        // A warming batch within the bounds is accepted as well: if the game's own
+                        // speed check refused it, its correction would be a discontinuity and the
+                        // warmup would start over for as long as the rider is faster than a walk.
+                        session.Allowed = true;
                         if (rearmed)
                         {
                             double achievedWarmup = session.Rearm.Seconds;
@@ -2537,6 +2550,7 @@ namespace Oxide.Plugins
                             {
                                 value.Reason = SkateSessionReason.AutomaticRearm;
                                 if (session.History != null) session.History.Activate(value);
+                                if (now - session.SaidAt > 2) { session.SaidAt = now; Puts("Skating accepted for " + player.displayName + "."); }
                             }
                             session.Rearm.Reset();
                             if (!session.Allowed) { Disarm(session, value); continue; }
@@ -2571,7 +2585,7 @@ namespace Oxide.Plugins
                 Session session;
                 if (player != null && player.ActivePlayerInd == index &&
                     sessions.TryGetValue(player.userID, out session) && ReferenceEquals(player, session.Player) &&
-                    session.Batch == batch && session.Allowed && session.Bounds.Active &&
+                    session.Batch == batch && session.Allowed && (session.Bounds.Active || session.Rearm.Seconds > 0) &&
                     !OptedOut(player) && Eligible(player) && Permitted(player)) results[n] = false;
             }
         }
