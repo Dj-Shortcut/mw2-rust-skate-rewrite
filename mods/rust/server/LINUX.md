@@ -56,15 +56,31 @@ It does not access the server's plugins folder. On the existing Linux host, run
 the installer as root, with no other plugin update running:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/Dj-Shortcut/mw2-rust-skate-rewrite/main/mods/rust/server/add-skate.sh | bash
+(
+    set -eu
+    skate_update_dir=$(mktemp -d)
+    trap 'rm -rf -- "$skate_update_dir"' EXIT
+    curl -fsSL --connect-timeout 15 --max-time 60 \
+        https://raw.githubusercontent.com/Dj-Shortcut/mw2-rust-skate-rewrite/546e4e4b9b9032d6275c86f5bf6421fdfe2c2b4b/mods/rust/server/add-skate.sh \
+        -o "$skate_update_dir/add-skate.sh"
+    printf '%s  %s\n' \
+        623e520d13479d5d97bd434c3b7367e26fb80f0f4c413201dfdef64033a79444 \
+        "$skate_update_dir/add-skate.sh" | sha256sum -c -
+    bash "$skate_update_dir/add-skate.sh"
+)
 ```
+
+The installer itself is downloaded from an immutable reviewed commit and checked
+before execution. A failed or incomplete download stops the command; it does
+not execute whatever happens to be on `main`.
 
 The source is downloaded and verified in a hidden file in the plugins folder.
 The installer sets its owner/mode before replacing `ShortcutSkate.cs` by a
 same-directory rename. An existing regular source is saved as
 `ShortcutSkate.cs.bak` before replacement; an existing backup is overwritten at
-that stage, even if the final replacement fails. Download, checksum, ownership or backup
-failure leaves the active source untouched. Catchable interruptions remove temporary files;
+that stage, even if the final replacement fails. Download, checksum, ownership
+or backup failure leaves the active source untouched. Catchable interruptions
+remove temporary files;
 SIGKILL/power loss can leave them behind. The script does not restart the server
 or change its configuration/world.
 
@@ -72,8 +88,12 @@ After installation, check the server console for successful compilation and
 `Loaded plugin ShortcutSkate v0.3.4`, then run `oxide.plugins`. Keep the backup
 until the owner has checked placement and riding. Source installation alone
 does not prove plugin loading, park placement or movement without corrections.
-Codex's checks for this installer are local; no live server, Rust client or
-Shadow PC was used. The unchanged pinned 0.3.4 source compiled locally as
+The owner-approved `skate_server_plugin_install` scenario exercises the actual
+installer in a disposable Ubuntu 24.04 CI container, including fresh installation,
+previous-source backup and refusal/cleanup after real file-operation failures.
+It uses genuine pinned public downloads and starts no Rust/Oxide process. No live
+server, Rust client or Shadow PC is used. The unchanged pinned 0.3.4 source
+compiled locally as
 net48/C#7.3 against genuine server references with official Oxide 2.0.7815 and
 2.0.7820, with zero errors/warnings. Its warmup correction still needs native
 acceptance.
