@@ -15,6 +15,9 @@ public static class SkateBoard
     public const float WheelRadius = 0.027f, TruckTurn = 0.8f;
     public static string Drawn = "";
     public static float ShowLift, Tip, Pop, WheelSpin;
+    // Held: the board is where the rider's feet hold it (a handplant), at HeldAt with its grip toward HeldUp.
+    public static bool Held;
+    public static Vector3 HeldAt, HeldNose = Vector3.forward, HeldUp = Vector3.up;
     private static Transform[] trucks = new Transform[0], wheels = new Transform[0];
     private static Vector3[] truckAxes = new Vector3[0], wheelAxes = new Vector3[0];
     private static float[] truckSides = new float[0];
@@ -91,6 +94,16 @@ public static class SkateBoard
             flip += 180f * over; askew = 35f * over;
             travel = bailTravel; nose = bailNose; up = bailUp;
             at = bailFrom + travel * (bailRoll * over) + Vector3.up * (0.22f * (float)Math.Sin(over * Math.PI)) - up * ((RiderRig.DeckTop - BailRest) * over);
+        }
+        if (Held && SkateRide.Handplant)
+        {
+            var heldUp = HeldUp.sqrMagnitude > 0.5f ? HeldUp : Vector3.up;
+            var heldNose = HeldNose - heldUp * Vector3.Dot(HeldNose, heldUp);
+            if (heldNose.sqrMagnitude < 0.0001f) heldNose = Vector3.Cross(heldUp, Vector3.right);
+            board.transform.rotation = Quaternion.LookRotation(heldNose.normalized, heldUp);
+            board.transform.position = HeldAt;
+            Parts(now, travel, heldNose.normalized);
+            return;
         }
         var rot = SkateRide.Turn(askew, up) * Quaternion.LookRotation(nose, up) * SkateRide.Turn(flip, Vector3.forward);
         // A flip turns the board about the middle of the deck, not about the wheels.
