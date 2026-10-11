@@ -2,9 +2,11 @@
 
 `SkateRidePhysics` supplies pure surface acceleration, bounded transition pumping,
 surface-velocity launch and landing roll. It uses double-precision `SkateVector`
-values and no Unity types, ground queries or transforms. The native client still
-needs an adapter to consume these results; this document does not establish
-native collision, controller feel or server acceptance.
+values and no Unity types, ground queries or transforms. The client adapter in
+[PR #357](https://github.com/Dj-Shortcut/mw2-rust-skate-rewrite/pull/357) consumes
+these results. Claude reported native flat-trick checks for its earlier client
+pin; the landing correction here has no native validation. This document does
+not establish ramp collision, controller feel or server acceptance.
 
 ## Units and contracts
 
@@ -55,9 +57,16 @@ vertical pop. Passive departure supplies zero pop. It applies no hidden gravity
 or timestep compensation. The adapter applies airborne gravity once.
 
 `TryLand` measures impact as the positive part of minus the dot product of the
-complete pre-contact velocity and the normalized contact normal. For roll it
-weights the vertical velocity by `FallToRoll`, projects onto the surface, then
-onto the board's rolling axis. These operations cannot increase kinetic energy.
+complete pre-contact velocity and the normalized contact normal. It first
+preserves the original surface projection `p`. The extra closing fall is the
+downward vertical residual relative to a surface-following vector with the same
+X/Z velocity: `min(0, dot(velocity, normal) / normal.Y)`. `FallToRoll` weights
+only that residual. The resulting candidate is retained on the velocity segment
+from zero to `p`, before projection onto the board's rolling axis. This prevents
+fall damping from boosting, reversing or rotating original plane travel, and
+cannot increase kinetic energy. Tangent motion is unchanged for every weight;
+pure vertical fall converts to weighted roll, while pure normal impact produces
+no roll. An opposing fall is not damped if doing so would boost plane speed.
 Zero and 180-degree alignment preserve the same travel with opposite signed
 speed; a sideways landing on flat scrubs all rolling speed. Lateral slip is
 reported separately. Impact strictly above the configured maximum sets `Bailed`;
@@ -82,7 +91,7 @@ supported roll. Calls allocate no objects after initialization.
 | Explicit gravity | Default 16 m/s²; retained design value, not a measurement of walking-player gravity. |
 | Vertical pop | Default 6 m/s; passive exit uses zero. A flat ideal apex is 1.125 m at gravity 16. |
 | Landing impact | Default 12 m/s, applied to full surface-normal impact; equality is accepted. |
-| Vertical-to-roll weighting | Default 0.8. |
+| Extra vertical-fall retention | Default 0.8; original tangent motion is preserved. |
 | Pump charge / start / release / full steepness | 0.4 s / 8° / 4° / 30°, relative to actual travel. |
 | Pump budget / bottom window | 12 J/kg per traversal / 1.5 s. |
 | Fall cap and other handling | Native adapter retains its 30 m/s fall cap, push/brake/roll/reverse/steering/revert choices. |
@@ -94,13 +103,14 @@ The integrated C# 7.3/net48 library compiled against both genuine cached 7815 an
 official 7820 composite reference sets with zero warnings and errors. The cached
 build's actual DLL was consumed on Mac with .NET 8, without native game execution.
 
-The approved scenarios passed 2,532 assertions: 2,308 for transition pumping,
-133 for drop-in and launch, and 91 for surface landing. Three existing recorded
-gesture scenarios also passed. An independent boundary and state probe passed
-10,573 assertions; each of eight success/refusal paths allocated zero bytes over
-200,000 warmed calls. These checks cover the pure arithmetic and managed-call
-contracts. Native adapter integration, contact timing, server acceptance and
-gameplay remain unverified.
+The approved scenarios passed 11,683 assertions: 2,308 for transition pumping,
+133 for drop-in and launch, and 9,242 for surface landing. Landing coverage
+includes repeated seam recontact at weights 0, 0.8 and 1, normal-only and separating
+motion, cross-slope lateral motion, and the unchanged full impact threshold.
+The new seam scenario fails against the previous DLL and passes against the
+corrected one. These checks cover pure arithmetic and managed-call contracts.
+The corrected landing policy, ramp contact/timing, server acceptance and ride
+feel remain unverified in the game.
 
 ## Numbered client review
 

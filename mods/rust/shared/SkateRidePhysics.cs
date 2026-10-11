@@ -225,10 +225,16 @@ namespace Shortcut.RustMod
                 input.FallToRoll < 0 || input.FallToRoll > 1 ||
                 !Frame(input.SurfaceNormal, input.BoardNoseForward, out normal, out tangent))
             { error = "Invalid skate landing input."; return false; }
-            double impact = Math.Max(0, -SkateVector.Dot(input.IncomingVelocity, normal));
-            var weighted = new SkateVector(input.IncomingVelocity.X, input.IncomingVelocity.Y * input.FallToRoll,
-                                           input.IncomingVelocity.Z);
-            SkateVector projected = weighted - normal * SkateVector.Dot(weighted, normal);
+            double normalSpeed = SkateVector.Dot(input.IncomingVelocity, normal);
+            double impact = Math.Max(0, -normalSpeed);
+            SkateVector projected = input.IncomingVelocity - normal * normalSpeed;
+            double planeSquared = projected.LengthSquared;
+            if (impact > 0 && input.FallToRoll < 1 && planeSquared > 0)
+            {
+                double withheldFall = (1 - input.FallToRoll) * impact / normal.Y;
+                double retained = Math.Max(0, Math.Min(1, 1 + withheldFall * projected.Y / planeSquared));
+                projected = projected * retained;
+            }
             double speed = SkateVector.Dot(projected, tangent);
             SkateVector roll = tangent * speed;
             double lateral = (projected - roll).Length;
