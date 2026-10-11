@@ -7,13 +7,19 @@ using Shortcut.RustMod;
 internal static class SkateParkLayoutScenarios
 {
     private const double Tolerance = 1e-10;
+    private const string FloorPrefab = "assets/prefabs/building core/floor/floor.prefab";
+    private const string LowWallPrefab = "assets/prefabs/building core/wall.low/wall.low.prefab";
+    private const string HalfWallPrefab = "assets/prefabs/building core/wall.half/wall.half.prefab";
     private static int checks;
 
     private struct ExpectedPart
     {
-        public readonly double Right, Forward, Height, Pitch;
-        public ExpectedPart(double right, double forward, double height, double pitch)
-        { Right = right; Forward = forward; Height = height; Pitch = pitch; }
+        public readonly double Right, Forward, Height, Pitch, Yaw;
+        public readonly string Prefab;
+        public readonly SkateParkMaterial Material;
+        public ExpectedPart(double right, double forward, double height, double pitch,
+                            SkateParkMaterial material = SkateParkMaterial.Stone, string prefab = FloorPrefab, double yaw = 0)
+        { Right = right; Forward = forward; Height = height; Pitch = pitch; Material = material; Prefab = prefab; Yaw = yaw; }
     }
 
     private sealed class Piece
@@ -52,7 +58,42 @@ internal static class SkateParkLayoutScenarios
         new Piece(SkateParkKind.Funbox, "funbox",
             new ExpectedPart(0, 0, 0.7764571353075622, 0),
             new ExpectedPart(0, -2.9488887394336025, 0.3882285676537811, -15),
-            new ExpectedPart(0, 2.9488887394336025, 0.3882285676537811, 15))
+            new ExpectedPart(0, 2.9488887394336025, 0.3882285676537811, 15)),
+        new Piece(SkateParkKind.Halfpipe, "halfpipe",
+            new ExpectedPart(0, 0, 0, 0), new ExpectedPart(3, 0, 0, 0),
+            new ExpectedPart(0, 3, 0, 0), new ExpectedPart(3, 3, 0, 0),
+            new ExpectedPart(0, -2.9488887394336025, 0.3882285676537811, 15, SkateParkMaterial.Metal),
+            new ExpectedPart(3, -2.9488887394336025, 0.3882285676537811, 15, SkateParkMaterial.Metal),
+            new ExpectedPart(0, -5.626505545300693, 1.6368217898341313, 35, SkateParkMaterial.Metal),
+            new ExpectedPart(3, -5.626505545300693, 1.6368217898341313, 35, SkateParkMaterial.Metal),
+            new ExpectedPart(0, 5.9488887394336025, 0.3882285676537811, -15, SkateParkMaterial.Metal),
+            new ExpectedPart(3, 5.9488887394336025, 0.3882285676537811, -15, SkateParkMaterial.Metal),
+            new ExpectedPart(0, 8.626505545300694, 1.6368217898341313, -35, SkateParkMaterial.Metal),
+            new ExpectedPart(3, 8.626505545300694, 1.6368217898341313, -35, SkateParkMaterial.Metal),
+            new ExpectedPart(0, -8.35523361173418, 2.4971864443607004, 0, SkateParkMaterial.Metal),
+            new ExpectedPart(3, -8.35523361173418, 2.4971864443607004, 0, SkateParkMaterial.Metal),
+            new ExpectedPart(0, 11.35523361173418, 2.4971864443607004, 0, SkateParkMaterial.Metal),
+            new ExpectedPart(3, 11.35523361173418, 2.4971864443607004, 0, SkateParkMaterial.Metal),
+            new ExpectedPart(0, -9.85523361173418, 2.4971864443607004, 0, SkateParkMaterial.Wood, LowWallPrefab, 180),
+            new ExpectedPart(3, -9.85523361173418, 2.4971864443607004, 0, SkateParkMaterial.Wood, LowWallPrefab, 180),
+            new ExpectedPart(0, 12.85523361173418, 2.4971864443607004, 0, SkateParkMaterial.Wood, LowWallPrefab),
+            new ExpectedPart(3, 12.85523361173418, 2.4971864443607004, 0, SkateParkMaterial.Wood, LowWallPrefab),
+            new ExpectedPart(-1.85, 0, 0, 0, SkateParkMaterial.Metal, HalfWallPrefab, 90),
+            new ExpectedPart(4.85, 0, 0, 0, SkateParkMaterial.Metal, HalfWallPrefab, 270),
+            new ExpectedPart(-1.85, 3, 0, 0, SkateParkMaterial.Metal, HalfWallPrefab, 90),
+            new ExpectedPart(4.85, 3, 0, 0, SkateParkMaterial.Metal, HalfWallPrefab, 270),
+            new ExpectedPart(-1.85, -2.9488887394336025, 0.3882285676537811, 0, SkateParkMaterial.Metal, HalfWallPrefab, 90),
+            new ExpectedPart(4.85, -2.9488887394336025, 0.3882285676537811, 0, SkateParkMaterial.Metal, HalfWallPrefab, 270),
+            new ExpectedPart(-1.85, -5.626505545300693, 1.6368217898341313, 0, SkateParkMaterial.Metal, HalfWallPrefab, 90),
+            new ExpectedPart(4.85, -5.626505545300693, 1.6368217898341313, 0, SkateParkMaterial.Metal, HalfWallPrefab, 270),
+            new ExpectedPart(-1.85, 5.9488887394336025, 0.3882285676537811, 0, SkateParkMaterial.Metal, HalfWallPrefab, 90),
+            new ExpectedPart(4.85, 5.9488887394336025, 0.3882285676537811, 0, SkateParkMaterial.Metal, HalfWallPrefab, 270),
+            new ExpectedPart(-1.85, 8.626505545300694, 1.6368217898341313, 0, SkateParkMaterial.Metal, HalfWallPrefab, 90),
+            new ExpectedPart(4.85, 8.626505545300694, 1.6368217898341313, 0, SkateParkMaterial.Metal, HalfWallPrefab, 270),
+            new ExpectedPart(-1.85, -8.35523361173418, 2.4971864443607004, 0, SkateParkMaterial.Metal, HalfWallPrefab, 90),
+            new ExpectedPart(4.85, -8.35523361173418, 2.4971864443607004, 0, SkateParkMaterial.Metal, HalfWallPrefab, 270),
+            new ExpectedPart(-1.85, 11.35523361173418, 2.4971864443607004, 0, SkateParkMaterial.Metal, HalfWallPrefab, 90),
+            new ExpectedPart(4.85, 11.35523361173418, 2.4971864443607004, 0, SkateParkMaterial.Metal, HalfWallPrefab, 270))
     };
 
     private static int Main(string[] args)
@@ -99,6 +140,9 @@ internal static class SkateParkLayoutScenarios
                 Near(part.Forward, expected.Forward, piece.Name + ": forward.");
                 Near(part.Height, expected.Height, piece.Name + ": height.");
                 Near(part.Pitch, expected.Pitch, piece.Name + ": pitch.");
+                Near(part.Yaw, expected.Yaw, piece.Name + ": part yaw.");
+                Require(part.Prefab == expected.Prefab, piece.Name + ": prefab.");
+                Require(part.Material == expected.Material, piece.Name + ": material.");
             }
         }
 
@@ -123,7 +167,8 @@ internal static class SkateParkLayoutScenarios
         Near(LocalEdge(SkateParkKind.LongLedge, 2, 1.5, 0).X -
              LocalEdge(SkateParkKind.LongLedge, 1, -1.5, 0).X, 9, "long-ledge: total width.");
         CheckSeams(0, 0, 0, 0);
-        Console.WriteLine("PASS: skate_park_piece_layouts (7 pieces, 12 floors, " +
+        HalfpipeBounds();
+        Console.WriteLine("PASS: skate_park_piece_layouts (8 pieces, 48 parts, " +
                           (checks - start).ToString(CultureInfo.InvariantCulture) + " checks).");
     }
 
@@ -151,7 +196,9 @@ internal static class SkateParkLayoutScenarios
                 Near(value.X, anchor.X + expected.Right * angle.Cos + expected.Forward * angle.Sin, piece.Name + ": rotated X.");
                 Near(value.Y, anchor.Y + expected.Height, piece.Name + ": translated Y.");
                 Near(value.Z, anchor.Z - expected.Right * angle.Sin + expected.Forward * angle.Cos, piece.Name + ": rotated Z.");
-                Near(value.Yaw, angle.Normalized, piece.Name + ": normalized yaw.");
+                double expectedYaw = angle.Normalized + expected.Yaw;
+                if (expectedYaw >= 360) expectedYaw -= 360;
+                Near(value.Yaw, expectedYaw, piece.Name + ": normalized part yaw.");
                 Near(value.Pitch, expected.Pitch, piece.Name + ": authored pitch preserved.");
                 Near((value.X - anchor.X) * angle.Cos - (value.Z - anchor.Z) * angle.Sin,
                      expected.Right, piece.Name + ": recovered local right.");
@@ -184,7 +231,94 @@ internal static class SkateParkLayoutScenarios
             Same(WorldEdge(SkateParkKind.LongLedge, 2, -1.5, side, x, y, z, yaw),
                  WorldEdge(SkateParkKind.LongLedge, 0, 1.5, side, x, y, z, yaw), "long-ledge: right seam corners.");
         }
+        HalfpipeSeams(x, y, z, yaw);
     }
+
+    private static void HalfpipeSeams(double x, double y, double z, double yaw)
+    {
+        SkateParkKind kind = SkateParkKind.Halfpipe;
+        Same(Centre(kind, 0, x, y, z, yaw), new Point(x, y, z), "halfpipe: native first-floor anchor.");
+        foreach (double edge in new[] { -1.5, 1.5 })
+        {
+            foreach (int station in new[] { 0, 2, 4, 6, 8, 10, 12, 14 })
+                Same(WorldEdge(kind, station, 1.5, edge, x, y, z, yaw),
+                     WorldEdge(kind, station + 1, -1.5, edge, x, y, z, yaw), "halfpipe: joined floor lanes.");
+            for (int lane = 0; lane < 2; lane++)
+            {
+                Same(WorldEdge(kind, lane, edge, 1.5, x, y, z, yaw),
+                     WorldEdge(kind, lane + 2, edge, -1.5, x, y, z, yaw), "halfpipe: central flat seam.");
+                Same(WorldEdge(kind, lane, edge, -1.5, x, y, z, yaw),
+                     WorldEdge(kind, lane + 4, edge, 1.5, x, y, z, yaw), "halfpipe: back flat-transition seam.");
+                Same(WorldEdge(kind, lane + 4, edge, -1.5, x, y, z, yaw),
+                     WorldEdge(kind, lane + 6, edge, 1.5, x, y, z, yaw), "halfpipe: back transition seam.");
+                Same(WorldEdge(kind, lane + 6, edge, -1.5, x, y, z, yaw),
+                     WorldEdge(kind, lane + 12, edge, 1.5, x, y, z, yaw), "halfpipe: back deck seam.");
+                Same(WorldEdge(kind, lane + 2, edge, 1.5, x, y, z, yaw),
+                     WorldEdge(kind, lane + 8, edge, -1.5, x, y, z, yaw), "halfpipe: front flat-transition seam.");
+                Same(WorldEdge(kind, lane + 8, edge, 1.5, x, y, z, yaw),
+                     WorldEdge(kind, lane + 10, edge, -1.5, x, y, z, yaw), "halfpipe: front transition seam.");
+                Same(WorldEdge(kind, lane + 10, edge, 1.5, x, y, z, yaw),
+                     WorldEdge(kind, lane + 14, edge, -1.5, x, y, z, yaw), "halfpipe: front deck seam.");
+            }
+        }
+        for (int lane = 0; lane < 2; lane++)
+        {
+            Same(Centre(kind, 16 + lane, x, y, z, yaw), WorldEdge(kind, 12 + lane, 0, -1.5, x, y, z, yaw),
+                 "halfpipe: wood back rail at deck edge.");
+            Same(Centre(kind, 18 + lane, x, y, z, yaw), WorldEdge(kind, 14 + lane, 0, 1.5, x, y, z, yaw),
+                 "halfpipe: wood front rail at deck edge.");
+        }
+        Same(WorldEdge(kind, 16, -1.5, 0, x, y, z, yaw), WorldEdge(kind, 17, 1.5, 0, x, y, z, yaw),
+             "halfpipe: joined back rail widths.");
+        Same(WorldEdge(kind, 18, 1.5, 0, x, y, z, yaw), WorldEdge(kind, 19, -1.5, 0, x, y, z, yaw),
+             "halfpipe: joined front rail widths.");
+        for (int station = 0; station < 8; station++)
+        {
+            Same(Centre(kind, 20 + station * 2, x, y, z, yaw),
+                 WorldEdge(kind, station * 2, -1.85, 0, x, y, z, yaw), "halfpipe: exterior left side panel.");
+            Same(Centre(kind, 21 + station * 2, x, y, z, yaw),
+                 WorldEdge(kind, station * 2 + 1, 1.85, 0, x, y, z, yaw), "halfpipe: exterior right side panel.");
+        }
+    }
+
+    private static void HalfpipeBounds()
+    {
+        int stone = 0, metal = 0, wood = 0, floors = 0, rails = 0, sides = 0;
+        double minX = double.PositiveInfinity, maxX = double.NegativeInfinity;
+        double minZ = double.PositiveInfinity, maxZ = double.NegativeInfinity, maxY = double.NegativeInfinity;
+        for (int i = 0; i < 36; i++)
+        {
+            SkateParkPart part;
+            Require(SkateParkLayout.TryPart(SkateParkKind.Halfpipe, i, out part), "halfpipe: missing part.");
+            if (part.Material == SkateParkMaterial.Stone) stone++;
+            if (part.Material == SkateParkMaterial.Metal) metal++;
+            if (part.Material == SkateParkMaterial.Wood) wood++;
+            if (part.Prefab == FloorPrefab) floors++;
+            if (part.Prefab == LowWallPrefab) rails++;
+            if (part.Prefab == HalfWallPrefab) sides++;
+            if (i >= 16) continue;
+            foreach (double right in new[] { -1.5, 1.5 })
+            foreach (double forward in new[] { -1.5, 1.5 })
+            {
+                Point vertex = LocalEdge(SkateParkKind.Halfpipe, i, right, forward);
+                Require(vertex.Y >= -Tolerance, "halfpipe: ride floor below the native flat plane.");
+                minX = Math.Min(minX, vertex.X); maxX = Math.Max(maxX, vertex.X);
+                minZ = Math.Min(minZ, vertex.Z); maxZ = Math.Max(maxZ, vertex.Z); maxY = Math.Max(maxY, vertex.Y);
+            }
+        }
+        Require(stone == 4 && metal == 28 && wood == 4, "halfpipe: material counts.");
+        Require(floors == 16 && rails == 4 && sides == 16, "halfpipe: native prefab counts.");
+        Near(minX, -1.5, "halfpipe: left ride edge."); Near(maxX, 4.5, "halfpipe: right ride edge.");
+        Near(minZ, -9.85523361173418, "halfpipe: back ride edge.");
+        Near(maxZ, 12.85523361173418, "halfpipe: front ride edge.");
+        Near(maxX - minX, 6, "halfpipe: ride width."); Near(maxZ - minZ, 22.71046722346836, "halfpipe: ride length.");
+        Near(maxY, 2.4971864443607004, "halfpipe: deck rise.");
+        Near(LocalEdge(SkateParkKind.Halfpipe, 0, -1.5, -1.5).Z, -1.5, "halfpipe: flat begins at snapped tile edge.");
+        Near(LocalEdge(SkateParkKind.Halfpipe, 3, 1.5, 1.5).Z, 4.5, "halfpipe: central flat has 6m length.");
+    }
+
+    private static Point Centre(SkateParkKind kind, int index, double x, double y, double z, double yaw)
+    { SkateParkTransform value = Transform(kind, index, x, y, z, yaw); return new Point(value.X, value.Y, value.Z); }
 
     private static Point LocalEdge(SkateParkKind kind, int index, double right, double forward)
     { return WorldEdge(kind, index, right, forward, 0, 0, 0, 0); }

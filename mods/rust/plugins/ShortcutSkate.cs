@@ -346,11 +346,14 @@ namespace Shortcut.RustMod
         }
     }
 
-    public enum SkateParkKind { Bank, Kicker, QuarterPipe, LedgeLow, LedgeHigh, LongLedge, Funbox }
+    public enum SkateParkKind { Bank, Kicker, QuarterPipe, LedgeLow, LedgeHigh, LongLedge, Funbox, Halfpipe }
+    public enum SkateParkMaterial { Stone, Metal, Wood }
 
     public struct SkateParkPart
     {
-        public double Right, Forward, Height, Pitch;
+        public double Right, Forward, Height, Pitch, Yaw;
+        public string Prefab;
+        public SkateParkMaterial Material;
     }
 
     public struct SkateParkTransform
@@ -360,6 +363,9 @@ namespace Shortcut.RustMod
 
     public static class SkateParkLayout
     {
+        public const string FloorPrefab = "assets/prefabs/building core/floor/floor.prefab";
+        public const string LowWallPrefab = "assets/prefabs/building core/wall.low/wall.low.prefab";
+        public const string HalfWallPrefab = "assets/prefabs/building core/wall.half/wall.half.prefab";
         private const double HalfLength = 1.5;
         private const double Degrees = Math.PI / 180;
         public static string Name(SkateParkKind kind)
@@ -373,6 +379,7 @@ namespace Shortcut.RustMod
                 case SkateParkKind.LedgeHigh: return "ledge-high";
                 case SkateParkKind.LongLedge: return "long-ledge";
                 case SkateParkKind.Funbox: return "funbox";
+                case SkateParkKind.Halfpipe: return "halfpipe";
                 default: return null;
             }
         }
@@ -380,7 +387,7 @@ namespace Shortcut.RustMod
         {
             kind = SkateParkKind.Bank;
             if (name == null) return false;
-            for (int i = 0; i <= (int)SkateParkKind.Funbox; i++)
+            for (int i = 0; i <= (int)SkateParkKind.Halfpipe; i++)
                 if (string.Equals(name, Name((SkateParkKind)i), StringComparison.OrdinalIgnoreCase))
                 { kind = (SkateParkKind)i; return true; }
             return false;
@@ -393,6 +400,7 @@ namespace Shortcut.RustMod
                 case SkateParkKind.LedgeLow: case SkateParkKind.LedgeHigh: return 1;
                 case SkateParkKind.QuarterPipe: return 2;
                 case SkateParkKind.LongLedge: case SkateParkKind.Funbox: return 3;
+                case SkateParkKind.Halfpipe: return 36;
                 default: return 0;
             }
         }
@@ -416,9 +424,65 @@ namespace Shortcut.RustMod
                     part.Height = index == 0 ? 2 * low : low;
                     part.Forward = index == 0 ? 0 : (index == 1 ? -1 : 1) * HalfLength * (1 + Math.Cos(15 * Degrees));
                     part.Pitch = index == 0 ? 0 : index == 1 ? -15 : 15; break;
+                case SkateParkKind.Halfpipe: HalfpipePart(index, out part); break;
                 default: return false;
             }
+            if (part.Prefab == null) part.Prefab = FloorPrefab;
             return true;
+        }
+        private static void HalfpipePart(int index, out SkateParkPart part)
+        {
+            part = new SkateParkPart { Prefab = FloorPrefab };
+            if (index < 4)
+            { part.Right = (index % 2) * 3; part.Forward = (index / 2) * 3; return; }
+            double lower = HalfLength * Math.Sin(15 * Degrees);
+            double upper = 2 * lower + HalfLength * Math.Sin(35 * Degrees);
+            double rise = 2 * lower + 2 * HalfLength * Math.Sin(35 * Degrees);
+            double lowerRun = HalfLength * Math.Cos(15 * Degrees);
+            double upperRun = HalfLength * Math.Cos(35 * Degrees);
+            double backLower = -HalfLength - lowerRun;
+            double backUpper = -HalfLength - 2 * lowerRun - upperRun;
+            double frontLower = 3 + HalfLength + lowerRun;
+            double frontUpper = 3 + HalfLength + 2 * lowerRun + upperRun;
+            double backDeck = -3 - 2 * lowerRun - 2 * upperRun;
+            double frontDeck = 6 + 2 * lowerRun + 2 * upperRun;
+            part.Material = SkateParkMaterial.Metal;
+            if (index < 16)
+            {
+                part.Right = (index % 2) * 3;
+                switch ((index - 4) / 2)
+                {
+                    case 0: part.Forward = backLower; part.Height = lower; part.Pitch = 15; break;
+                    case 1: part.Forward = backUpper; part.Height = upper; part.Pitch = 35; break;
+                    case 2: part.Forward = frontLower; part.Height = lower; part.Pitch = -15; break;
+                    case 3: part.Forward = frontUpper; part.Height = upper; part.Pitch = -35; break;
+                    case 4: part.Forward = backDeck; part.Height = rise; break;
+                    case 5: part.Forward = frontDeck; part.Height = rise; break;
+                }
+                return;
+            }
+            if (index < 20)
+            {
+                part.Prefab = LowWallPrefab; part.Material = SkateParkMaterial.Wood;
+                part.Right = (index % 2) * 3; part.Height = rise;
+                part.Forward = index < 18 ? backDeck - HalfLength : frontDeck + HalfLength;
+                part.Yaw = index < 18 ? 180 : 0;
+                return;
+            }
+            part.Prefab = HalfWallPrefab;
+            part.Right = index % 2 == 0 ? -1.85 : 4.85;
+            part.Yaw = index % 2 == 0 ? 90 : 270;
+            switch ((index - 20) / 2)
+            {
+                case 0: part.Forward = 0; break;
+                case 1: part.Forward = 3; break;
+                case 2: part.Forward = backLower; part.Height = lower; break;
+                case 3: part.Forward = backUpper; part.Height = upper; break;
+                case 4: part.Forward = frontLower; part.Height = lower; break;
+                case 5: part.Forward = frontUpper; part.Height = upper; break;
+                case 6: part.Forward = backDeck; part.Height = rise; break;
+                case 7: part.Forward = frontDeck; part.Height = rise; break;
+            }
         }
         public static bool TryTransform(SkateParkKind kind, int index, double anchorX, double anchorY,
                                         double anchorZ, double anchorYaw, out SkateParkTransform transform)
@@ -434,7 +498,8 @@ namespace Shortcut.RustMod
             double y = anchorY + part.Height;
             double z = anchorZ - part.Right * sin + part.Forward * cos;
             if (!Coordinate(x) || !Coordinate(y) || !Coordinate(z)) return false;
-            transform = new SkateParkTransform { X = x, Y = y, Z = z, Yaw = yaw, Pitch = part.Pitch };
+            double partYaw = (yaw + part.Yaw) % 360;
+            transform = new SkateParkTransform { X = x, Y = y, Z = z, Yaw = partYaw, Pitch = part.Pitch };
             return true;
         }
         private static bool Coordinate(double value)
@@ -473,7 +538,7 @@ namespace Shortcut.RustMod
 
 namespace Oxide.Plugins
 {
-    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.0")]
+    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.1")]
     [Description("Player-scoped skateboard movement bounds and saved building-plan park assemblies.")]
     public sealed class ShortcutSkate : RustPlugin
     {
@@ -577,6 +642,14 @@ namespace Oxide.Plugins
             public int Distance;
             public float TimePlaced;
             public uint Colour;
+        }
+
+        private sealed class ParkNativePart
+        {
+            public string Prefab;
+            public Construction Construction;
+            public DeployVolume[] Volumes;
+            public BuildingGrade.Enum Grade;
         }
 
         public static ParkData ParseParkData(string json)
@@ -1099,8 +1172,11 @@ namespace Oxide.Plugins
 
         private static bool ParkMatches(BuildingBlock block, ParkGroup group, ParkMember member)
         {
+            SkateParkKind kind;
+            SkateParkPart part;
             return block != null && !block.IsDestroyed && ParkId(block) == member.Id && block.prefabID == member.Prefab &&
-                block.PrefabName == SkatePracticeLayout.FloorPrefab && block.OwnerID == group.Owner &&
+                SkateParkLayout.TryKind(group.Kind, out kind) && SkateParkLayout.TryPart(kind, member.Index, out part) &&
+                member.Prefab == StringPool.Get(part.Prefab) && block.PrefabName == part.Prefab && block.OwnerID == group.Owner &&
                 block.GetParentEntity() == null && ParkPose(block.transform.position, block.transform.rotation, member);
         }
 
@@ -1114,15 +1190,18 @@ namespace Oxide.Plugins
                 var saved = new Dictionary<ulong, KeyValuePair<BaseEntity, ProtoBuf.Entity>>();
                 foreach (var pair in entities)
                     if (pair.Key != null && ParkId(pair.Key) != 0) saved[ParkId(pair.Key)] = pair;
-                uint floor = StringPool.Get(SkatePracticeLayout.FloorPrefab);
                 foreach (ParkGroup group in parkData.Groups)
                     foreach (ParkMember member in group.Members)
                     {
+                        SkateParkKind kind;
+                        SkateParkPart part;
+                        if (!SkateParkLayout.TryKind(group.Kind, out kind) ||
+                            !SkateParkLayout.TryPart(kind, member.Index, out part) || member.Prefab != StringPool.Get(part.Prefab)) continue;
                         KeyValuePair<BaseEntity, ProtoBuf.Entity> pair;
                         if (!saved.TryGetValue(member.Id, out pair)) continue;
                         BuildingBlock block = pair.Key as BuildingBlock;
                         ProtoBuf.Entity proto = pair.Value;
-                        if (block == null || member.Prefab != floor || block.prefabID != member.Prefab ||
+                        if (block == null || block.PrefabName != part.Prefab || block.prefabID != member.Prefab ||
                             proto == null || proto.baseNetworkable == null || proto.baseEntity == null || proto.ownerInfo == null ||
                             proto.baseNetworkable.uid.Value != member.Id || proto.baseNetworkable.prefabID != member.Prefab ||
                             proto.ownerInfo.steamid != group.Owner ||
@@ -1211,12 +1290,12 @@ namespace Oxide.Plugins
             if (player == null || !player.IsAdmin)
             { arg.ReplyWith("Use this command as an in-game administrator."); return; }
             if (arg.Args == null || arg.Args.Length != 1)
-            { arg.ReplyWith("Usage: skate.piece <bank|kicker|quarterpipe|ledge-low|ledge-high|long-ledge|funbox|cancel>."); return; }
+            { arg.ReplyWith("Usage: skate.piece <bank|kicker|quarterpipe|ledge-low|ledge-high|long-ledge|funbox|halfpipe|cancel>."); return; }
             if (string.Equals(arg.GetString(0), "cancel", StringComparison.OrdinalIgnoreCase))
             { parkSelections.Remove(player.userID); arg.ReplyWith("Park selection cancelled."); return; }
             SkateParkKind kind;
             if (!SkateParkLayout.TryKind(arg.GetString(0), out kind))
-            { arg.ReplyWith("Unknown park piece. Use bank, kicker, quarterpipe, ledge-low, ledge-high, long-ledge or funbox."); return; }
+            { arg.ReplyWith("Unknown park piece. Use bank, kicker, quarterpipe, ledge-low, ledge-high, long-ledge, funbox or halfpipe."); return; }
             if (!parkReady || parkClosing || parkBusy || !Eligible(player))
             { arg.ReplyWith("Park placement is unavailable; be alive, awake, unmounted and on dry land."); return; }
             PruneParkSelections();
@@ -1225,7 +1304,8 @@ namespace Oxide.Plugins
             { arg.ReplyWith("The park group or pending-selection limit has been reached."); return; }
             parkSelections[player.userID] = new ParkSelection { Player = player, Kind = kind,
                 Expires = clock.Elapsed.TotalSeconds + 120 };
-            arg.ReplyWith("Selected " + SkateParkLayout.Name(kind) + ". Place one normal horizontal square floor with a building plan within 120 seconds. The next placement consumes this selection; the assembly will be Stone.");
+            arg.ReplyWith("Selected " + SkateParkLayout.Name(kind) + ". Place one normal horizontal square floor with a building plan within 120 seconds. The next placement consumes this selection; " +
+                (kind == SkateParkKind.Halfpipe ? "the halfpipe uses a Stone flat, Metal transitions/decks/sides and Wood back rails." : "the assembly will be Stone."));
         }
 
         private void PruneParkSelections()
@@ -1285,25 +1365,68 @@ namespace Oxide.Plugins
                 Coordinate(anchor.transform.position) && Vector3.Dot(anchor.transform.up, Vector3.up) >= (1f - 1e-5f);
         }
 
-        private static bool ParkPrefab(out Construction construction, out DeployVolume[] volumes)
+        private static bool ParkPrefab(SkateParkPart part, out ParkNativePart definition)
         {
-            string path = SkatePracticeLayout.FloorPrefab;
-            construction = null; volumes = null;
+            string path = part.Prefab;
+            definition = null;
             var manifest = GameManifest.Current;
             var prefab = GameManager.server.FindPrefab(path);
             if (manifest == null || manifest.entities == null ||
                 !manifest.entities.Any(p => string.Equals(p, path, StringComparison.Ordinal)) ||
                 prefab == null || prefab.GetComponent<BuildingBlock>() == null) return false;
             uint id = StringPool.Get(path);
-            construction = PrefabAttribute.server.Find<Construction>(id);
-            var stone = construction == null ? null : construction.GetGrade(BuildingGrade.Enum.Stone, 0);
-            if (stone == null || stone.gradeBase == null || stone.gradeBase.type != BuildingGrade.Enum.Stone) return false;
+            Construction construction = PrefabAttribute.server.Find<Construction>(id);
+            BuildingGrade.Enum grade;
+            switch (part.Material)
+            {
+                case SkateParkMaterial.Stone: grade = BuildingGrade.Enum.Stone; break;
+                case SkateParkMaterial.Metal: grade = BuildingGrade.Enum.Metal; break;
+                case SkateParkMaterial.Wood: grade = BuildingGrade.Enum.Wood; break;
+                default: return false;
+            }
+            // Grade lookup can fall back; require the exact requested material and default skin.
+            var selected = construction == null ? null : construction.GetGrade(grade, 0);
+            if (selected == null || selected.gradeBase == null || selected.gradeBase.type != grade || selected.gradeBase.skin != 0) return false;
             Bounds bounds = construction.bounds;
             if (!Coordinate(bounds.center) || !Coordinate(bounds.size) || bounds.size.x < 2.9f || bounds.size.x > 3.1f ||
-                bounds.size.z < 2.9f || bounds.size.z > 3.1f || bounds.size.y <= 0 || bounds.size.y > 1 ||
-                Math.Abs(bounds.center.x) > 0.05f || Math.Abs(bounds.center.z) > 0.05f || Math.Abs(bounds.center.y) > 0.5f) return false;
-            volumes = PrefabAttribute.server.FindAll<DeployVolume>(id);
-            return volumes != null && TerrainMeta.HeightMap != null;
+                Math.Abs(bounds.center.x) > 0.05f) return false;
+            if (path == SkateParkLayout.FloorPrefab)
+            {
+                if (bounds.size.z < 2.9f || bounds.size.z > 3.1f || bounds.size.y <= 0 || bounds.size.y > 1 ||
+                    Math.Abs(bounds.center.z) > 0.05f || Math.Abs(bounds.center.y) > 0.5f) return false;
+            }
+            else if (path == SkateParkLayout.LowWallPrefab || path == SkateParkLayout.HalfWallPrefab)
+            {
+                double height = path == SkateParkLayout.LowWallPrefab ? 1 : 1.5;
+                if (Math.Abs(bounds.size.y - height) > 0.1 || bounds.size.z <= 0 || bounds.size.z > 0.6f ||
+                    Math.Abs(bounds.center.z) > 0.05f || Math.Abs(bounds.min.y) > 0.05f) return false;
+            }
+            else return false;
+            DeployVolume[] volumes = PrefabAttribute.server.FindAll<DeployVolume>(id);
+            if (volumes == null || TerrainMeta.HeightMap == null) return false;
+            definition = new ParkNativePart { Prefab = path, Construction = construction, Volumes = volumes, Grade = grade };
+            return true;
+        }
+
+        private static bool ParkPrefabs(SkateParkKind kind, out ParkNativePart[] definitions)
+        {
+            definitions = new ParkNativePart[SkateParkLayout.PartCount(kind)];
+            if (definitions.Length == 0) return false;
+            var cache = new Dictionary<string, ParkNativePart>(StringComparer.Ordinal);
+            for (int i = 0; i < definitions.Length; i++)
+            {
+                SkateParkPart part;
+                if (!SkateParkLayout.TryPart(kind, i, out part)) return false;
+                string key = part.Prefab + ":" + ((int)part.Material).ToString(CultureInfo.InvariantCulture);
+                ParkNativePart definition;
+                if (!cache.TryGetValue(key, out definition))
+                {
+                    if (!ParkPrefab(part, out definition)) return false;
+                    cache.Add(key, definition);
+                }
+                definitions[i] = definition;
+            }
+            return true;
         }
 
         private static bool ParkProximity(BasePlayer player, Construction construction, Vector3 position,
@@ -1345,13 +1468,15 @@ namespace Oxide.Plugins
         }
 
         private static bool ParkPreflight(BasePlayer player, Planner planner, BuildingBlock anchor,
-            Construction construction, DeployVolume[] volumes, ParkMember[] parts, out string failure)
+            ParkNativePart[] definitions, ParkMember[] parts, out string failure)
         {
             failure = "The complete park assembly needs dry, clear space and building permission.";
             int mask = LayerMask.GetMask("World", "Construction", "Deployed", "Player (Server)");
             if (mask == 0 || TerrainMeta.HeightMap == null) return false;
             foreach (ParkMember member in parts)
             {
+                Construction construction = definitions[member.Index].Construction;
+                DeployVolume[] volumes = definitions[member.Index].Volumes;
                 Vector3 position = ParkPosition(member);
                 Quaternion rotation = ParkRotation(member);
                 Bounds bounds = construction.bounds;
@@ -1463,10 +1588,9 @@ namespace Oxide.Plugins
                 !ReferenceEquals(planner.GetOwnerPlayer(), player) || !HorizontalParkAnchor(anchor) ||
                 ParkId(anchor) != anchorId || anchor.OwnerID != (ulong)player.userID || parkMembers.ContainsKey(anchorId))
             { if (player != null && player.IsConnected) player.ConsoleMessage("Park selection consumed; place a new normal horizontal square floor after selecting again."); return; }
-            Construction construction;
-            DeployVolume[] volumes;
-            if (parkData.Groups.Count >= MaximumParkGroups || !SameParkWorld(parkData) || !ParkPrefab(out construction, out volumes))
-            { player.ConsoleMessage("Park selection consumed; save identity, group capacity or nominal 3 m square-floor prefab data is unavailable."); return; }
+            ParkNativePart[] definitions;
+            if (parkData.Groups.Count >= MaximumParkGroups || !SameParkWorld(parkData) || !ParkPrefabs(kind, out definitions))
+            { player.ConsoleMessage("Park selection consumed; save identity, group capacity or required native prefab/material/bounds data is unavailable."); return; }
             ParkAnchorSnapshot snapshot = CaptureParkAnchor(anchor);
             var group = new ParkGroup { Id = Guid.NewGuid().ToString("N"), Owner = player.userID,
                 Kind = SkateParkLayout.Name(kind), AnchorX = snapshot.Position.x, AnchorY = snapshot.Position.y,
@@ -1476,7 +1600,7 @@ namespace Oxide.Plugins
             {
                 SkateParkTransform transform;
                 if (!SkateParkLayout.TryTransform(kind, i, group.AnchorX, group.AnchorY, group.AnchorZ, group.AnchorYaw, out transform)) return;
-                parts[i] = new ParkMember { Index = i, Prefab = anchor.prefabID, X = transform.X, Y = transform.Y,
+                parts[i] = new ParkMember { Index = i, Prefab = StringPool.Get(definitions[i].Prefab), X = transform.X, Y = transform.Y,
                     Z = transform.Z, Yaw = transform.Yaw, Pitch = transform.Pitch };
             }
             var created = new List<BuildingBlock>();
@@ -1485,7 +1609,7 @@ namespace Oxide.Plugins
             try
             {
                 string failure;
-                if (!ParkPreflight(player, planner, anchor, construction, volumes, parts, out failure))
+                if (!ParkPreflight(player, planner, anchor, definitions, parts, out failure))
                     throw new InvalidDataException(failure);
                 // A CanBuild hook may reenter or mutate the original anchor. Confirm the snapshot after all hooks.
                 if (parkClosing || !Eligible(player) || !player.IsAdmin || !HorizontalParkAnchor(anchor) ||
@@ -1498,9 +1622,9 @@ namespace Oxide.Plugins
                 mutated = true;
                 for (int i = 1; i < parts.Length; i++)
                 {
-                    BaseEntity entity = GameManager.server.CreateEntity(SkatePracticeLayout.FloorPrefab,
+                    BaseEntity entity = GameManager.server.CreateEntity(definitions[i].Prefab,
                         ParkPosition(parts[i]), ParkRotation(parts[i]), true);
-                    if (entity == null) throw new InvalidDataException("A park floor could not be created.");
+                    if (entity == null) throw new InvalidDataException("A park part could not be created.");
                     parkRollback.Add(entity); // Track before cast, Spawn and all reentrant hooks.
                     BuildingBlock block = entity as BuildingBlock;
                     if (block == null) throw new InvalidDataException("A park prefab is not a native building block.");
@@ -1511,8 +1635,9 @@ namespace Oxide.Plugins
                     block.OwnerID = group.Owner;
                     block.Spawn();
                     if (block.IsDestroyed || block.net == null || block.blockDefinition == null)
-                        throw new InvalidDataException("A park floor failed to initialize.");
-                    block.SetGrade(BuildingGrade.Enum.Stone);
+                        throw new InvalidDataException("A park part failed to initialize.");
+                    block.skinID = 0;
+                    block.SetGrade(definitions[i].Grade);
                     block.SetHealthToMax();
                     block.AttachToBuilding(snapshot.Building);
                     block.StartBeingDemolishable();
@@ -1524,13 +1649,14 @@ namespace Oxide.Plugins
                 anchor.ServerRotation = ParkRotation(parts[0]);
                 anchor.grounded = true;
                 anchor.skinID = 0;
-                anchor.SetGrade(BuildingGrade.Enum.Stone);
+                anchor.SetGrade(definitions[0].Grade);
                 anchor.SetHealthToMax();
                 anchor.AttachToBuilding(snapshot.Building);
                 parts[0].Id = anchorId;
                 RefreshParkBlock(anchor, oldBounds);
                 foreach (ParkMember part in parts)
                 {
+                    Construction construction = definitions[part.Index].Construction;
                     var target = new Construction.Target { valid = true, player = player, onTerrain = true,
                         position = ParkPosition(part), rotation = ParkRotation(part).eulerAngles,
                         normal = Vector3.up };
@@ -1540,8 +1666,11 @@ namespace Oxide.Plugins
                 foreach (ParkMember part in parts)
                 {
                     BuildingBlock block = part.Index == 0 ? anchor : created[part.Index - 1];
+                    ParkNativePart definition = definitions[part.Index];
+                    Construction construction = definition.Construction;
                     if (parkClosing || !player.IsAdmin || !Eligible(player) || !ParkMatches(block, group, part) ||
-                        block.grade != BuildingGrade.Enum.Stone || !block.grounded || block.enableSaving || block.buildingID != snapshot.Building ||
+                        block.grade != definition.Grade || block.skinID != 0 || !ReferenceEquals(block.blockDefinition, construction) ||
+                        !block.grounded || block.enableSaving || block.buildingID != snapshot.Building ||
                         !player.CanBuild(ParkPosition(part), ParkRotation(part), construction.bounds, false) ||
                         !ParkProximity(player, construction, ParkPosition(part), ParkRotation(part), anchor, created) ||
                         !ParkFootprint(ParkPosition(part), ParkRotation(part), construction.bounds, anchor, created,
@@ -1558,14 +1687,16 @@ namespace Oxide.Plugins
                     BuildingBlock block = part.Index == 0 ? anchor : created[part.Index - 1];
                     block.EnableSaving(true);
                     if (parkClosing || !Eligible(player) || !player.IsAdmin || !ParkMatches(block, group, part) ||
+                        block.grade != definitions[part.Index].Grade || block.skinID != 0 ||
+                        !ReferenceEquals(block.blockDefinition, definitions[part.Index].Construction) ||
                         !block.enableSaving || !block.grounded || block.buildingID != snapshot.Building)
                         throw new InvalidDataException("A park member changed during save registration.");
                 }
                 foreach (ParkMember part in parts) parkMembers.Add(part.Id, group);
                 foreach (BuildingBlock block in created) parkRollback.Remove(block);
                 committed = true;
-                player.ConsoleMessage("Park " + group.Kind + " created as a saved Stone assembly (" +
-                    parts.Length.ToString(CultureInfo.InvariantCulture) + " floors). Use a hammer to demolish the group.");
+                player.ConsoleMessage("Park " + group.Kind + " created as a saved native building assembly (" +
+                    parts.Length.ToString(CultureInfo.InvariantCulture) + " parts). Use a hammer to demolish the group.");
             }
             catch (Exception error)
             {
@@ -1586,7 +1717,7 @@ namespace Oxide.Plugins
                 if (player != null && player.IsConnected)
                     player.ConsoleMessage("Park selection consumed. " + error.Message +
                         (restored ? " The original floor is retained." : " Original-floor restoration is incomplete; check the server log.") +
-                        (parkRollback.Count == 0 ? "" : " Extra-floor cleanup is incomplete; check the server log."));
+                        (parkRollback.Count == 0 ? "" : " Extra-part cleanup is incomplete; check the server log."));
             }
             finally
             {
