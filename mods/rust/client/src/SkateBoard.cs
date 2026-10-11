@@ -71,9 +71,13 @@ public static class SkateBoard
     // A grind or a stall holds the deck its own way (SkateRider.GrindDeck): eased toward it while
     // grinding, back to flat after. Degrees, the leading end up and the toe edge up.
     public static float GrindPitch, GrindRoll;
+    // An ollie's pitch, degrees, the nose up: the tail down at the pop, the board level at the
+    // top, the nose a little down on the way to the landing (SkateRig sets it from the climb).
+    public static float AirPitch;
+    public const float OllieNoseUp = 26f, OllieNoseDown = 9f;
 
-    // The deck's pitch, degrees, the leading end up: a manual's and a grind's together.
-    public static float PitchDegrees { get { return Tip * TipDegrees + GrindPitch; } }
+    // The deck's pitch, degrees, the leading end up: a manual's, a grind's and an ollie's together.
+    public static float PitchDegrees { get { return Tip * TipDegrees + GrindPitch + AirPitch; } }
 
     public static void Tilt(ref Vector3 at, ref Vector3 up)
     {

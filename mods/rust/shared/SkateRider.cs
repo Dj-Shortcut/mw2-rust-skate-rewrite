@@ -46,6 +46,9 @@ namespace Shortcut.RustMod
         // DeckPitch (radians): the deck pitched about its middle, the end that leads up; a manual, a
         // 5-0 or a tail stall. The body stays on BoardUp and the feet go with the deck.
         public readonly double DeckPitch;
+        // NoseSlide (0..1): in an ollie the front foot slides up toward the nose as the board levels
+        // out, and stays there to the landing.
+        public readonly double NoseSlide;
         public SkateRiderInput(SkateVector boardPosition, SkateVector boardForward, SkateVector boardUp,
                                SkateStance stance, bool ridingSwitch, double speed, double leanDegrees,
                                double crouch, bool airborne, bool pushing, double pushPhase,
@@ -96,7 +99,16 @@ namespace Shortcut.RustMod
                                double flipDegrees, SkateGrabKind grabKind, bool bailed, double lookYawDegrees, double deckOffset,
                                double groundDrop, double bailPhase, bool mongoPush, double footPlant, double grabSeconds, double handplant,
                                double deckPitch)
-        { DeckPitch = deckPitch; MongoPush = mongoPush; FootPlant = footPlant; GrabSeconds = grabSeconds; Handplant = handplant;
+            : this(boardPosition, boardForward, boardUp, stance, ridingSwitch, speed, leanDegrees,
+                   crouch, airborne, pushing, pushPhase, flipDegrees, grabKind, bailed, lookYawDegrees, deckOffset,
+                   groundDrop, bailPhase, mongoPush, footPlant, grabSeconds, handplant, deckPitch, 0) { }
+        public SkateRiderInput(SkateVector boardPosition, SkateVector boardForward, SkateVector boardUp,
+                               SkateStance stance, bool ridingSwitch, double speed, double leanDegrees,
+                               double crouch, bool airborne, bool pushing, double pushPhase,
+                               double flipDegrees, SkateGrabKind grabKind, bool bailed, double lookYawDegrees, double deckOffset,
+                               double groundDrop, double bailPhase, bool mongoPush, double footPlant, double grabSeconds, double handplant,
+                               double deckPitch, double noseSlide)
+        { NoseSlide = noseSlide; DeckPitch = deckPitch; MongoPush = mongoPush; FootPlant = footPlant; GrabSeconds = grabSeconds; Handplant = handplant;
           BoardPosition = boardPosition; BoardForward = boardForward; BoardUp = boardUp; Stance = stance;
           Switch = ridingSwitch; Speed = speed; LeanDegrees = leanDegrees; Crouch = crouch; Airborne = airborne;
           Pushing = pushing; PushPhase = pushPhase; FlipDegrees = flipDegrees; GrabKind = grabKind; Grab = grabKind != SkateGrabKind.None;
@@ -201,6 +213,12 @@ namespace Shortcut.RustMod
             {
                 var spread = forward * (side * FlipSpread * flipping);
                 leftAnkle = leftAnkle + spread; rightAnkle = rightAnkle - spread;
+            }
+            if (input.NoseSlide > 0 && input.Airborne && !input.Bailed)
+            {
+                // The ollie's front foot, slid up toward the nose along the deck.
+                var slide = travel * (OllieSlide * input.NoseSlide);
+                if (backIsLeft) rightAnkle = rightAnkle + slide; else leftAnkle = leftAnkle + slide;
             }
             var leadDeck = backIsLeft ? rightAnkle : leftAnkle;
             var backDeck = backIsLeft ? leftAnkle : rightAnkle;
@@ -405,7 +423,7 @@ namespace Shortcut.RustMod
         private const double PushHeel = 0.07;
         private const double GrabRoll = 0.4, GrabFoldLimit = 1.0, GrabTuckMargin = 0.05, PlantDrop = 0.3, GrabBackLimit = 0.55, HeelTurn = 1.2;
         private const double HeelTurnSign = 1;
-        private const double FlipTuck = 0.14, FlipSpread = 0.05, PitchWeight = 0.18;
+        private const double FlipTuck = 0.14, FlipSpread = 0.05, PitchWeight = 0.18, OllieSlide = 0.13;
         // The handplant: the side bend at the start (radians from upright), where the feet are folded
         // in by, how long the mix from the riding pose runs (of Handplant), the hand beside the board,
         // the pike (of the spine toward the chest, of the legs toward the chest's front) and the deck
@@ -778,7 +796,7 @@ namespace Shortcut.RustMod
             Finite(input.DeckOffset) && Math.Abs(input.DeckOffset) <= MaximumMeasurement &&
             Finite(input.GroundDrop) && input.GroundDrop >= 0 && input.GroundDrop <= MaximumMeasurement &&
             Fraction(input.FootPlant) && Fraction(input.Handplant) && Finite(input.GrabSeconds) && input.GrabSeconds >= 0 && input.GrabSeconds <= 86400 &&
-            Finite(input.DeckPitch) && Math.Abs(input.DeckPitch) <= MaximumDeckPitch &&
+            Finite(input.DeckPitch) && Math.Abs(input.DeckPitch) <= MaximumDeckPitch && Fraction(input.NoseSlide) &&
             Fraction(input.BailPhase) && input.GrabKind >= SkateGrabKind.None && input.GrabKind <= SkateGrabKind.Tailbone; }
         private static bool Finite(SkateRiderPose p)
         { return Vector(p.Pelvis) && Vector(p.LeftHip) && Vector(p.RightHip) && Vector(p.LeftKnee) && Vector(p.RightKnee) &&

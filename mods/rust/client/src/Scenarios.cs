@@ -154,6 +154,7 @@ public static class Scenarios
         new View("stance, seen from above", 90f, "above", 0f),
         new View("push, foot coming down", 90f, "push", 0.2f), new View("push, foot on the ground", 90f, "push", 0.45f),
         new View("push, foot on the ground, seen from behind", 180f, "push", 0.45f), new View("push, foot leaving the ground", 90f, "push", 0.7f),
+        new View("ollie, just popped", 90f, "ollie", 0.9f), new View("ollie, at the top", 90f, "ollie", 0f), new View("ollie, coming down", 90f, "ollie", -0.8f),
         new View("air, half a kickflip", 120f, "flip", 180f), new View("air, quarter flip", 90f, "flip", 90f),
         new View("air with a backside grab", 90f, "grab", (float)SkateGrabKind.Backside), new View("air with a backside grab, seen from behind", 180f, "grab", (float)SkateGrabKind.Backside),
         new View("air with a frontside grab (indy)", 90f, "grab", (float)SkateGrabKind.Frontside), new View("air with a nose grab", 90f, "grab", (float)SkateGrabKind.Nose), new View("air with a melon", 90f, "grab", (float)SkateGrabKind.Melon),
@@ -239,7 +240,7 @@ public static class Scenarios
         SkateCamera.Fixed = v.State != "first"; SkateCamera.Chase = v.State != "first";
         SkateCamera.Bearing = v.Bearing;
         SkateCamera.FixedHeight = v.State == "above" ? 2.9f : 1.15f; SkateCamera.FixedDistance = v.State == "above" ? 1.6f : 2.7f;
-        var air = v.State == "flip" || v.State == "grab" || v.State == "shove" || v.State == "plant" || v.State == "grabin";
+        var air = v.State == "flip" || v.State == "grab" || v.State == "shove" || v.State == "plant" || v.State == "grabin" || v.State == "ollie";
         SkateRide.Mode = air ? RideMode.Air : v.State == "bail" ? RideMode.Bail : v.State == "grind" || v.State == "stall" ? RideMode.Grind : RideMode.Ground;
         var pushes = v.State == "push" || v.State == "mongo" || v.State == "fakie";
         SkateRide.PushPhase = pushes ? v.Value : 0f;
@@ -252,6 +253,7 @@ public static class Scenarios
         RiderRig.PlantFor(v.State == "plantup" ? v.Value : -1f);
         if (v.State == "plantup") { SkateRide.Stalling = true; SkateRide.GrindKind = SkateGrindKind.Handplant; SkateRide.Mode = RideMode.Grind; }
         SkateRide.FlipDeg = v.State == "flip" ? (int)v.Value : 0;
+        SkateRide.Jumped = v.State == "ollie"; SkateRide.VSpeed = v.State == "ollie" ? v.Value * SkateRide.OlliePop : 0f;
         SkateRide.Grab = v.State == "grab" || v.State == "grabin" ? (SkateGrabKind)(int)v.Value : SkateGrabKind.None;
         SkateRide.ShoveDeg = v.State == "shove" ? v.Value : 0;
         SkateRide.Manual = v.State == "manual";
