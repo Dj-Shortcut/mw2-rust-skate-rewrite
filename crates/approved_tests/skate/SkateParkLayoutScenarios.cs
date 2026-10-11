@@ -111,6 +111,7 @@ internal static class SkateParkLayoutScenarios
                 throw new InvalidOperationException("Expected one optional SHA-256 matching the loaded plugin DLL.");
             PieceLayouts();
             AnchorYawAndSnap();
+            FoundationSupport();
             Console.WriteLine("PASS: both approved park layout scenarios (" + checks.ToString(CultureInfo.InvariantCulture) + " checks).");
             return 0;
         }
@@ -315,6 +316,47 @@ internal static class SkateParkLayoutScenarios
         Near(maxY, 2.4971864443607004, "halfpipe: deck rise.");
         Near(LocalEdge(SkateParkKind.Halfpipe, 0, -1.5, -1.5).Z, -1.5, "halfpipe: flat begins at snapped tile edge.");
         Near(LocalEdge(SkateParkKind.Halfpipe, 3, 1.5, 1.5).Z, 4.5, "halfpipe: central flat has 6m length.");
+    }
+
+    private static void FoundationSupport()
+    {
+        int start = checks;
+        foreach (Piece piece in Pieces)
+        foreach (double top in new[] { -17.25, 0.5, 123.875 })
+        foreach (double centerY in new[] { -0.05, 0.1 })
+        foreach (double centerZ in new[] { -0.025, 0.025 })
+        foreach (double thickness in new[] { 0.1, 0.25 })
+        foreach (double depth in new[] { 2.9, 3.0, 3.1 })
+        {
+            double baseY;
+            Require(SkateParkLayout.TrySupportedAnchor(piece.Kind, top, centerY, centerZ, thickness, depth, out baseY),
+                    piece.Name + ": foundation bounds refused.");
+            Require(baseY >= top - centerY + thickness / 2 + 0.025 - Tolerance,
+                    piece.Name + ": upright floor base is below support.");
+            foreach (ExpectedPart part in piece.Parts)
+            {
+                if (part.Prefab != FloorPrefab) continue;
+                double pitch = part.Pitch * Math.PI / 180;
+                foreach (double localY in new[] { centerY - thickness / 2, centerY + thickness / 2 })
+                foreach (double localZ in new[] { centerZ - depth / 2, centerZ + depth / 2 })
+                {
+                    double worldY = baseY + part.Height + localY * Math.Cos(pitch) - localZ * Math.Sin(pitch);
+                    Require(worldY >= top + 0.025 - Tolerance, piece.Name + ": tilted floor corner intersects support.");
+                }
+            }
+            double shifted;
+            Require(SkateParkLayout.TrySupportedAnchor(piece.Kind, top + 7.25, centerY, centerZ, thickness, depth, out shifted),
+                    piece.Name + ": translated support refused.");
+            Near(shifted - baseY, 7.25, piece.Name + ": support height translation.");
+        }
+        double y;
+        Require(!SkateParkLayout.TrySupportedAnchor((SkateParkKind)99, 0, 0, 0, 0.2, 3, out y), "unknown support kind.");
+        foreach (double bad in new[] { double.NaN, double.NegativeInfinity, double.PositiveInfinity, 100001 })
+            Require(!SkateParkLayout.TrySupportedAnchor(SkateParkKind.Halfpipe, bad, 0, 0, 0.2, 3, out y), "invalid support top.");
+        Require(!SkateParkLayout.TrySupportedAnchor(SkateParkKind.Bank, 0, 0, 0, 0, 3, out y), "zero floor thickness.");
+        Require(!SkateParkLayout.TrySupportedAnchor(SkateParkKind.Bank, 0, 0, 0, 0.2, -3, out y), "negative floor depth.");
+        Console.WriteLine("PASS: skate_park_anchor_yaw_and_snap foundation-bound extension (" +
+                          (checks - start).ToString(CultureInfo.InvariantCulture) + " checks).");
     }
 
     private static Point Centre(SkateParkKind kind, int index, double x, double y, double z, double yaw)
