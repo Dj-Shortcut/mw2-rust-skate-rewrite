@@ -12,8 +12,8 @@ import subprocess
 import sys
 
 
-INSTALLER_COMMIT = "546e4e4b9b9032d6275c86f5bf6421fdfe2c2b4b"
-INSTALLER_SHA256 = "623e520d13479d5d97bd434c3b7367e26fb80f0f4c413201dfdef64033a79444"
+INSTALLER_COMMIT = "44c5c1fcdd73928d285fd5c7f7ca859709a78c3c"
+INSTALLER_SHA256 = "68e2e5220354e0df4fa282a32faedfc2d42b4df1c223d92c686b197b14501e5b"
 SOURCE_COMMIT = "54a54a3b199fbe5d7d337b40a739b6546195c631"
 SOURCE_SHA256 = "de2e6976f6fc9ab2e3099dfe3cf8c076f2a82ff6c026f75bae0c8eda67c2f8ff"
 PRIOR_COMMIT = "5a9ed6e550a405365c8a18746dfd276a310b6848"
@@ -75,7 +75,7 @@ def require_environment():
     require(lookup_group("rust") is None, "refusing an existing rust group")
     require(Path("/srv").is_dir() and not Path("/srv").is_symlink(), "requires a regular /srv directory")
     require_private_target()
-    for name in ("sh", "bash", "curl", "sha256sum", "mktemp", "chown", "chmod", "cp", "mv", "rm", "useradd", "userdel", "groupdel"):
+    for name in ("sh", "bash", "curl", "sha256sum", "mktemp", "cat", "chmod", "cp", "mv", "rm", "runuser", "setsid", "useradd", "userdel", "groupdel"):
         require(shutil.which(name, path=COMMAND_PATH) is not None, "missing prerequisite: " + name)
     nobody = lookup_user("nobody")
     require(nobody is not None and nobody.pw_uid != 0, "requires a nonroot nobody identity")
@@ -89,6 +89,18 @@ def snapshot(path):
     data = path.read_bytes()
     metadata = path.stat()
     return data, metadata.st_uid, metadata.st_gid, stat.S_IMODE(metadata.st_mode), metadata.st_mtime_ns
+
+
+def root_download_snapshot():
+    entries = {}
+    for path in (entry for prefix in ("ShortcutSkate-download.", "ShortcutSkate-update.") for entry in Path("/tmp").glob(prefix + "*")):
+        metadata = path.lstat()
+        entries[path.name] = (
+            metadata.st_dev, metadata.st_ino, metadata.st_mode, metadata.st_uid,
+            metadata.st_gid, metadata.st_size, metadata.st_mtime_ns, metadata.st_ctime_ns,
+            str(path.readlink()) if path.is_symlink() else None,
+        )
+    return entries
 
 
 class Scenario:
@@ -105,6 +117,7 @@ class Scenario:
         self.root_identity = None
         self.user_identity = None
         self.group_identity = None
+        self.root_download_baseline = root_download_snapshot()
         self.total = 0
         self.group_checks = 0
         self.work = ROOT / ".skate-install-scenario"
@@ -176,11 +189,13 @@ class Scenario:
 
     def no_staging(self):
         self.check(not any(path.name.startswith(".ShortcutSkate") for path in PLUGINS.iterdir()), "hidden installer staging remains")
+        self.check(not any((self.work / "tmp").iterdir()), "private root download staging remains")
+        self.check(root_download_snapshot() == self.root_download_baseline, "root download staging leaked or changed preexisting entries")
 
     def seed_prior(self):
         self.clean_plugins()
         ACTIVE.write_bytes(self.prior.read_bytes())
-        os.chown(ACTIVE, 0, 0)
+        os.chown(ACTIVE, *(self.user_identity or (0, 0)))
         ACTIVE.chmod(0o640)
         os.utime(ACTIVE, ns=(1660000000123456789, 1660000000123456789))
         return snapshot(ACTIVE)
@@ -200,7 +215,7 @@ class Scenario:
         before = self.seed_prior()
         result = self.install()
         self.check(result.returncode == 1, "missing rust identity did not fail installation")
-        self.check("chown:" in result.stderr and "rust:rust" in result.stderr, "missing owner did not reach real chown failure")
+        self.check("runuser:" in result.stderr and "rust" in result.stderr, "missing owner did not reach real runuser failure")
         self.check(snapshot(ACTIVE) == before, "missing owner changed the active source or metadata")
         self.check(not os.path.lexists(BACKUP), "missing owner created a backup")
         self.no_staging()
@@ -257,6 +272,20 @@ class Scenario:
             if group is not None:
                 self.group_identity = group.gr_gid
         require(self.user_identity is not None and self.group_identity == self.user_identity[1] and self.user_identity[0] != 0, "rust identity creation failed")
+        os.chown(PLUGINS, *self.user_identity)
+        PLUGINS.chmod(0o755)
+
+    def protected_active_refusal(self):
+        self.seed_prior()
+        os.chown(ACTIVE, 0, 0)
+        ACTIVE.chmod(0o600)
+        before = snapshot(ACTIVE)
+        result = self.install()
+        self.check(result.returncode == 1, "worker overwrote a root-only active source")
+        self.check("cp:" in result.stderr and "Permission denied" in result.stderr and "ShortcutSkate.cs" in result.stderr, "root-only source did not reach real worker copy refusal")
+        self.check(snapshot(ACTIVE) == before, "worker changed root-only source bytes or metadata")
+        self.check(not os.path.lexists(BACKUP), "root-only source refusal published a backup")
+        self.no_staging()
 
     def active_installed(self):
         self.check(ACTIVE.is_file() and not ACTIVE.is_symlink(), "installed source is not a regular file")
@@ -352,6 +381,7 @@ class Scenario:
         require(not errors, "cleanup failed: " + "; ".join(errors))
         require(not os.path.lexists(ROOT), "owned target survived cleanup")
         require(lookup_user("rust") is None and lookup_group("rust") is None, "owned rust identity survived cleanup")
+        require(root_download_snapshot() == self.root_download_baseline, "root download staging changed after cleanup")
         print("cleanup: PASS owned tree and identity removed", flush=True)
 
     def execute(self):
@@ -366,6 +396,7 @@ class Scenario:
             self.group("missing_owner", self.missing_owner)
             self.group("admission_guards", self.guards)
             self.create_identity()
+            self.group("protected_active_refusal", self.protected_active_refusal)
             self.group("fresh_install", self.fresh)
             self.group("prior_source_replacement", self.replacement)
             self.group("backup_rename_failure", self.backup_failure)

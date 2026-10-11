@@ -6,7 +6,8 @@ The owner approved `skate_server_plugin_install` by name on 11 October 2026.
 `SkateServerPluginInstallScenario.py` executes the actual installer with real
 pinned public downloads in an otherwise empty Linux container. It checks fresh
 installation, source bytes/ownership/mode, previous-source backup, refusals and
-temporary cleanup after real file-operation failures. It requires container
+temporary cleanup after real file-operation failures, including refusal to
+read a root-only prior source through the unprivileged worker. It requires container
 root and refuses an existing Rust installation or `rust` identity.
 
 The CI job **Skate plugin source installation** supplies Ubuntu 24.04 and GNU

@@ -43,7 +43,9 @@ After a real install, record actual server startup, matching framework, listener
 `de2e6976f6fc9ab2e3099dfe3cf8c076f2a82ff6c026f75bae0c8eda67c2f8ff`.
 It targets the existing `/srv/rust/server/oxide/plugins` installation created by
 `bootstrap-ubuntu.sh`, with its `rust` user/group. It needs Bash, curl and
-sha256sum; installation uses the GNU/Linux file tools.
+sha256sum; installation uses the GNU/Linux file tools plus runuser and setsid
+from util-linux. The plugins folder must be writable by the nonroot rust
+account, and an existing source must be readable by that account.
 
 From this checkout, verify the pinned download without root or a server:
 
@@ -58,13 +60,13 @@ the installer as root, with no other plugin update running:
 ```sh
 (
     set -eu
-    skate_update_dir=$(mktemp -d)
+    skate_update_dir=$(mktemp -d /tmp/ShortcutSkate-update.XXXXXX)
     trap 'rm -rf -- "$skate_update_dir"' EXIT
     curl -fsSL --connect-timeout 15 --max-time 60 \
-        https://raw.githubusercontent.com/Dj-Shortcut/mw2-rust-skate-rewrite/546e4e4b9b9032d6275c86f5bf6421fdfe2c2b4b/mods/rust/server/add-skate.sh \
+        https://raw.githubusercontent.com/Dj-Shortcut/mw2-rust-skate-rewrite/44c5c1fcdd73928d285fd5c7f7ca859709a78c3c/mods/rust/server/add-skate.sh \
         -o "$skate_update_dir/add-skate.sh"
     printf '%s  %s\n' \
-        623e520d13479d5d97bd434c3b7367e26fb80f0f4c413201dfdef64033a79444 \
+        68e2e5220354e0df4fa282a32faedfc2d42b4df1c223d92c686b197b14501e5b \
         "$skate_update_dir/add-skate.sh" | sha256sum -c -
     bash "$skate_update_dir/add-skate.sh"
 )
@@ -74,14 +76,17 @@ The installer itself is downloaded from an immutable reviewed commit and checked
 before execution. A failed or incomplete download stops the command; it does
 not execute whatever happens to be on `main`.
 
-The source is downloaded and verified in a hidden file in the plugins folder.
-The installer sets its owner/mode before replacing `ShortcutSkate.cs` by a
-same-directory rename. An existing regular source is saved as
-`ShortcutSkate.cs.bak` before replacement; an existing backup is overwritten at
-that stage, even if the final replacement fails. Download, checksum, ownership
-or backup failure leaves the active source untouched. Catchable interruptions
-remove temporary files;
-SIGKILL/power loss can leave them behind. The script does not restart the server
+The source is downloaded and verified in a private temporary directory under
+`/tmp`. Root opens those verified bytes, then a separate session runs all plugin
+file writes as the nonroot `rust` account. A hidden source in the plugins folder
+receives mode 0644 before a same-directory rename replaces `ShortcutSkate.cs`.
+An existing regular source is saved as `ShortcutSkate.cs.bak` before replacement;
+a `rust`-owned source retains its bytes, owner, group, mode and modification time.
+An existing backup is overwritten at that stage, even if the final replacement
+fails. Download, checksum, privilege-drop or backup failure leaves the active
+source untouched. The installer does not grant the service account access to
+root-only files. Catchable exits clean staging; SIGKILL/power loss can leave it
+behind. The script does not restart the server
 or change its configuration/world.
 
 After installation, check the server console for successful compilation and
@@ -91,6 +96,8 @@ does not prove plugin loading, park placement or movement without corrections.
 The owner-approved `skate_server_plugin_install` scenario exercises the actual
 installer in a disposable Ubuntu 24.04 CI container, including fresh installation,
 previous-source backup and refusal/cleanup after real file-operation failures.
+It also verifies that root-only source bytes/metadata remain unchanged when the
+unprivileged backup operation is refused.
 It uses genuine pinned public downloads and starts no Rust/Oxide process. No live
 server, Rust client or Shadow PC is used. The unchanged pinned 0.3.4 source
 compiled locally as
