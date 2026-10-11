@@ -138,11 +138,18 @@ namespace Shortcut.RustMod
             double swing = pushing ? Math.Sin(2 * Math.PI * input.PushPhase) : 0;
             double bail = input.Bailed ? input.BailPhase : 0;
 
-            double lift = SkatePose.FootLift + (input.Airborne && !input.Bailed
-                ? SkatePose.FlipFootLift * Math.Abs(Math.Sin((input.FlipDegrees % 360) * Math.PI / 360)) : 0);
+            // In a flip the feet come up off the deck and apart, knees tucked, so the board turns over
+            // under them; they come back down onto it as it comes round.
+            double flipping = input.Airborne && !input.Bailed ? Math.Abs(Math.Sin((input.FlipDegrees % 360) * Math.PI / 360)) : 0;
+            double lift = SkatePose.FootLift + (SkatePose.FlipFootLift + FlipTuck) * flipping;
             var deck = input.BoardPosition + up * lift;
             var leftAnkle = deck + forward * (side * SkatePose.FootOffset);
             var rightAnkle = deck - forward * (side * SkatePose.FootOffset);
+            if (flipping > 0)
+            {
+                var spread = forward * (side * FlipSpread * flipping);
+                leftAnkle = leftAnkle + spread; rightAnkle = rightAnkle - spread;
+            }
             var leadDeck = backIsLeft ? rightAnkle : leftAnkle;
             var backDeck = backIsLeft ? leftAnkle : rightAnkle;
             double leadToe = (RidingLeadToe + (PushLeadToe - RidingLeadToe) * turn) * Math.PI / 180;
@@ -341,6 +348,7 @@ namespace Shortcut.RustMod
         private const double PushPlant = 0.10, PushSweep = 0.36, PushHeel = 0.07;
         private const double GrabRoll = 0.4, GrabFoldLimit = 1.0, GrabTuckMargin = 0.05, PlantDrop = 0.3, GrabBackLimit = 0.55, HeelTurn = 1.2;
         private const double HeelTurnSign = 1;
+        private const double FlipTuck = 0.14, FlipSpread = 0.05;
         // A grab folds in over GrabIn seconds; held longer it tweaks. The older inputs pose a grab just folded in.
         public const double GrabIn = 0.18;
 
