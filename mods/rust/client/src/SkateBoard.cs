@@ -15,6 +15,9 @@ public static class SkateBoard
     public const float WheelRadius = 0.027f, TruckTurn = 0.8f;
     public static string Drawn = "";
     public static float ShowLift, Tip, Pop, WheelSpin;
+    // Held: the board is where the rider's feet hold it (a handplant), at HeldAt with its grip toward HeldUp.
+    public static bool Held;
+    public static Vector3 HeldAt, HeldNose = Vector3.forward, HeldUp = Vector3.up;
     private static Transform[] trucks = new Transform[0], wheels = new Transform[0];
     private static Vector3[] truckAxes = new Vector3[0], wheelAxes = new Vector3[0];
     private static float[] truckSides = new float[0];
@@ -38,17 +41,63 @@ public static class SkateBoard
     // A manual lifts the end that leads: the board, and the rider's footing with it, pitches about
     // the ground under the trailing axle. A nose manual (Tip below zero) lifts the end that trails,
     // about the leading axle.
+    // A grab brings the board up to the rider and tweaks it: each grab tilts it its own way, the
+    // edge or end in the hand coming up (toe edge up for an indy, heel edge for a melon, the nose for
+    // a nose grab), more as the grab is held. Degrees: toe edge up, nose up.
+    public const float GrabRise = 0.3f;
+    // A seatbelt takes the tail's toe corner (toe edge up, nose down), a crail the nose's (nose up);
+    // a nosebone pushes the nose away with the front leg (nose down), a tailbone the tail (nose up).
+    private static readonly float[] grabRoll = { 0f, -15f, -20f, 25f, 0f, 0f, 0f, -20f, 15f, 15f, -30f, -40f, 0f, 0f };
+    private static readonly float[] grabPitch = { 0f, 0f, 0f, 0f, 0f, -15f, 15f, -8f, 12f, -12f, -6f, 8f, -18f, 18f };
+    public static float GrabFold;
+    // A no comply or a boneless: the front foot is down beside the board and the back foot kicks
+    // the tail, so the nose comes up about the back foot and the board rises with it. Plant (0..1)
+    // is set by the rider's pose each frame.
+    public const float PlantPitch = 38f, PlantLift = 0.12f, PlantPivot = 0.2f;
+    public static float Plant;
+    // The board's own tweak in a grab, about the middle of the deck; the rider's frame stays upright
+    // (the feet are near the middle, where the tweak moves the deck least).
+    public static Quaternion GrabTweak(Vector3 up)
+    {
+        var g = (int)SkateRide.Grab;
+        if (SkateRide.Mode != RideMode.Air || g <= 0 || g >= grabRoll.Length || GrabFold <= 0.001f) return Quaternion.identity;
+        var nose = SkateRide.Dir(SkateRide.NoseYaw); nose = nose - up * Vector3.Dot(nose, up);
+        if (nose.sqrMagnitude < 0.0001f) return Quaternion.identity;
+        nose = nose.normalized;
+        var toe = Vector3.Cross(up, nose);
+        return SkateRide.Turn(-grabRoll[g] * GrabFold, nose) * SkateRide.Turn(-grabPitch[g] * GrabFold, toe);
+    }
+
+    // A grind or a stall holds the deck its own way (SkateRider.GrindDeck): eased toward it while
+    // grinding, back to flat after. Degrees, the leading end up and the toe edge up.
+    public static float GrindPitch, GrindRoll;
+
+    // The deck's pitch, degrees, the leading end up: a manual's and a grind's together.
+    public static float PitchDegrees { get { return Tip * TipDegrees + GrindPitch; } }
+
     public static void Tilt(ref Vector3 at, ref Vector3 up)
     {
-        if (Math.Abs(Tip) < 0.001f) return;
-        var lead = SkateRide.Dir(SkateRide.Yaw);
-        lead = lead - up * Vector3.Dot(lead, up);
-        if (lead.sqrMagnitude < 0.0001f) return;
-        lead = SkateRide.Speed >= 0f ? lead.normalized : -lead.normalized;
-        var turn = SkateRide.Turn(Tip * TipDegrees, Vector3.Cross(lead, up));
-        var pivot = at - lead * (Tip > 0f ? Axle : -Axle);
-        at = pivot + turn * (at - pivot);
-        up = turn * up;
+        var pitch = PitchDegrees;
+        if (Math.Abs(pitch) > 0.01f)
+        {
+            var lead = SkateRide.Dir(SkateRide.Yaw);
+            lead = lead - up * Vector3.Dot(lead, up);
+            if (lead.sqrMagnitude > 0.0001f)
+            {
+                lead = SkateRide.Speed >= 0f ? lead.normalized : -lead.normalized;
+                var turn = SkateRide.Turn(pitch, Vector3.Cross(lead, up));
+                // A manual and a stall on one end pitch about the axle that stays down; a grind on a
+                // truck about that truck, which is where the edge is.
+                var pivot = at - lead * (pitch > 0f ? Axle : -Axle);
+                at = pivot + turn * (at - pivot);
+                up = turn * up;
+            }
+        }
+        if (Math.Abs(GrindRoll) > 0.01f)
+        {
+            var nose = SkateRide.Dir(SkateRide.NoseYaw); nose = nose - up * Vector3.Dot(nose, up);
+            if (nose.sqrMagnitude > 0.0001f) up = SkateRide.Turn(-GrindRoll, nose.normalized) * up;
+        }
     }
 
     public static void Follow(GameObject board, Transform playerT)
@@ -92,10 +141,30 @@ public static class SkateBoard
             travel = bailTravel; nose = bailNose; up = bailUp;
             at = bailFrom + travel * (bailRoll * over) + Vector3.up * (0.22f * (float)Math.Sin(over * Math.PI)) - up * ((RiderRig.DeckTop - BailRest) * over);
         }
+        if (Held && SkateRide.Handplant)
+        {
+            var heldUp = HeldUp.sqrMagnitude > 0.5f ? HeldUp : Vector3.up;
+            var heldNose = HeldNose - heldUp * Vector3.Dot(HeldNose, heldUp);
+            if (heldNose.sqrMagnitude < 0.0001f) heldNose = Vector3.Cross(heldUp, Vector3.right);
+            board.transform.rotation = Quaternion.LookRotation(heldNose.normalized, heldUp);
+            board.transform.position = HeldAt;
+            Parts(now, travel, heldNose.normalized);
+            return;
+        }
         var rot = SkateRide.Turn(askew, up) * Quaternion.LookRotation(nose, up) * SkateRide.Turn(flip, Vector3.forward);
+        rot = GrabTweak(up) * rot;
         // A flip turns the board about the middle of the deck, not about the wheels.
+        var centre = at + up * RiderRig.DeckTop - (rot * Vector3.up) * RiderRig.DeckTop;
+        if (Plant > 0.001f && SkateRide.Mode != RideMode.Bail)
+        {
+            var lead = Vector3.Dot(travel, nose) >= 0f ? nose : -nose;
+            var kick = SkateRide.Turn(-PlantPitch * Plant, Vector3.Cross(up, lead));
+            var pivot = centre - lead * PlantPivot;
+            centre = pivot + kick * (centre - pivot) + up * (PlantLift * Plant);
+            rot = kick * rot;
+        }
         board.transform.rotation = rot;
-        board.transform.position = at + up * RiderRig.DeckTop - (rot * Vector3.up) * RiderRig.DeckTop;
+        board.transform.position = centre;
         Parts(now, travel, nose);
     }
 

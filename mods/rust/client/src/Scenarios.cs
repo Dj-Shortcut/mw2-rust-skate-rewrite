@@ -43,6 +43,7 @@ public static class Scenarios
         if (SkateRide.Lands != lands) { lands = SkateRide.Lands; Say("landed: " + SkateRide.LastAir + " | mode=" + SkateRide.Mode + " switch=" + SkateRide.Trick.Switch + " pos=" + Out.V1(SkateRide.Position)); }
         if (Name == "ride") Ride(game);
         else if (Name == "piece") Piece(s);
+        else if (Name == "status") Status(game, s);
         else if (Name == "pose") Pose(s, now);
         else if (Name == "pad") Pad(game, now);
         else Trick(game);
@@ -116,6 +117,27 @@ public static class Scenarios
         if (phase == 3) Finish();
     }
 
+    // What the server says about a rider it puts back: a ride long enough to be put back, then the
+    // plugin's own report and the server's speed checks typed into the F1 console, which is left
+    // open, one line at a time with time for a screenshot of each answer.
+    public static readonly string[] StatusLines = { "skate.status", "antihack.speedhack_protection", "antihack.flyhack_protection", "oxide.plugins" };
+    private static void Status(float game, float s)
+    {
+        var to = game < 1f ? 1 : game < 6f ? 2 : game < 7f ? 3 : 4 + (int)((game - 7f) / 8f);
+        if (to > 4 + StatusLines.Length) to = 4 + StatusLines.Length;
+        if (!Enter(to, to == 1 ? "get on" : to == 2 ? "push" : to == 3 ? "stop" : to < 4 + StatusLines.Length ? "type " + StatusLines[to - 4] : "finish")) return;
+        if (phase == 1) SkateRig.MountNow(yaw0);
+        SkateKeys.Push = phase == 2; SkateKeys.Brake = phase == 3;
+        if (phase == 3) Say("ridden: put back " + SkateRide.Resets + " times, top " + SkateRide.Top.ToString("F1") + " m/s");
+        if (phase == 4) { SkateRide.Dismount("the scenario stepped off to ask the server"); SkateConsole.KeepOpen = true; }
+        if (phase >= 4 && phase < 4 + StatusLines.Length)
+        {
+            var ok = SkateConsole.Queue(StatusLines[phase - 4], Time.realtimeSinceStartup);
+            Say("console: asked " + StatusLines[phase - 4] + " queued=" + ok + " typed=" + SkateConsole.Typed + " failed=" + SkateConsole.Failed);
+        }
+        if (phase == 4 + StatusLines.Length) Finish();
+    }
+
     private struct View
     {
         public readonly string Label, State; public readonly float Bearing, Value;
@@ -133,7 +155,7 @@ public static class Scenarios
         new View("push, foot on the ground, seen from behind", 180f, "push", 0.45f), new View("push, foot leaving the ground", 90f, "push", 0.7f),
         new View("air, half a kickflip", 120f, "flip", 180f), new View("air, quarter flip", 90f, "flip", 90f),
         new View("air with a backside grab", 90f, "grab", (float)SkateGrabKind.Backside), new View("air with a backside grab, seen from behind", 180f, "grab", (float)SkateGrabKind.Backside),
-        new View("air with a nose grab", 90f, "grab", (float)SkateGrabKind.Nose), new View("air with a melon", 90f, "grab", (float)SkateGrabKind.Melon),
+        new View("air with a frontside grab (indy)", 90f, "grab", (float)SkateGrabKind.Frontside), new View("air with a nose grab", 90f, "grab", (float)SkateGrabKind.Nose), new View("air with a melon", 90f, "grab", (float)SkateGrabKind.Melon),
         new View("air with a tailbone", 90f, "grab", (float)SkateGrabKind.Tailbone), new View("air with both hands on the board", 90f, "grab", (float)SkateGrabKind.Double),
         new View("air, the board a quarter round under the feet", 120f, "shove", 90f),
         new View("bail, stumbling", 90f, "bail", 0.2f), new View("bail, going down", 90f, "bail", 0.45f),
@@ -146,6 +168,19 @@ public static class Scenarios
         new View("score display: a grind", 180f, "hud", 5f), new View("score display: banked", 180f, "hud", 6f),
         new View("score display: a bail", 180f, "hud", 7f), new View("score display: held back by the server, keyboard", 180f, "hud", 8f),
         new View("score display: controller", 180f, "hud", 9f),
+        new View("push with the front foot (mongo), foot on the ground", 90f, "mongo", 0.45f), new View("mongo push, seen from behind", 180f, "mongo", 0.45f),
+        new View("push rolling tail first (fakie), foot on the ground", 90f, "fakie", 0.45f),
+        new View("no comply / boneless, the front foot planted", 90f, "plant", 0f), new View("front foot planted, seen from behind", 180f, "plant", 0f),
+        new View("air with a backside grab, just folding in", 90f, "grabin", (float)SkateGrabKind.Backside),
+        new View("board stall on an edge", 90f, "stall", (float)SkateGrindKind.BoardStall), new View("tail stall on an edge", 90f, "stall", (float)SkateGrindKind.TailStall),
+        new View("nose stall on an edge", 90f, "stall", (float)SkateGrindKind.NoseStall), new View("handplant", 90f, "stall", (float)SkateGrindKind.Handplant),
+        new View("handplant, seen from behind", 180f, "stall", (float)SkateGrindKind.Handplant),
+        new View("handplant, bending down to the edge", 90f, "plantup", 0.22f), new View("handplant, swinging up", 90f, "plantup", 0.5f),
+        new View("handplant, swinging up, seen from behind", 180f, "plantup", 0.5f), new View("handplant, nearly over", 90f, "plantup", 0.78f),
+        new View("5-0 grind", 90f, "grind", (float)SkateGrindKind.FiveO), new View("nosegrind", 90f, "grind", (float)SkateGrindKind.Nosegrind),
+        new View("smith grind", 90f, "grind", (float)SkateGrindKind.Smith), new View("feeble grind", 90f, "grind", (float)SkateGrindKind.Feeble),
+        new View("crooked grind", 90f, "grind", (float)SkateGrindKind.Crooked), new View("boardslide, seen along the rail", 180f, "grind", (float)SkateGrindKind.Boardslide),
+        new View("tailslide", 90f, "grind", (float)SkateGrindKind.Tailslide),
         new View("moving, pushing off", 115f, "move", 0f), new View("moving, turning round", 115f, "turn", 0f),
         new View("finish", 90f, "end", 0f) };
     private static float stepAt, nearAt, hudAt;
@@ -203,13 +238,23 @@ public static class Scenarios
         SkateCamera.Fixed = v.State != "first"; SkateCamera.Chase = v.State != "first";
         SkateCamera.Bearing = v.Bearing;
         SkateCamera.FixedHeight = v.State == "above" ? 2.9f : 1.15f; SkateCamera.FixedDistance = v.State == "above" ? 1.6f : 2.7f;
-        var air = v.State == "flip" || v.State == "grab" || v.State == "shove";
-        SkateRide.Mode = air ? RideMode.Air : v.State == "bail" ? RideMode.Bail : v.State == "grind" ? RideMode.Grind : RideMode.Ground;
-        SkateRide.PushPhase = v.State == "push" ? v.Value : 0f;
+        var air = v.State == "flip" || v.State == "grab" || v.State == "shove" || v.State == "plant" || v.State == "grabin";
+        SkateRide.Mode = air ? RideMode.Air : v.State == "bail" ? RideMode.Bail : v.State == "grind" || v.State == "stall" ? RideMode.Grind : RideMode.Ground;
+        var pushes = v.State == "push" || v.State == "mongo" || v.State == "fakie";
+        SkateRide.PushPhase = pushes ? v.Value : 0f;
+        SkateRide.PushMongo = v.State == "mongo";
+        SkateRide.Speed = v.State == "fakie" ? -2f : 0f;
+        SkateRide.PlantedUntil = v.State == "plant" ? now + 999f : -99f;
+        SkateRide.Stalling = v.State == "stall";
+        SkateRide.GrindKind = v.State == "stall" || v.State == "grind" ? (SkateGrindKind)(int)v.Value : SkateGrindKind.None;
+        if (v.State == "grabin") RiderRig.GrabFor(0.09f);
+        RiderRig.PlantFor(v.State == "plantup" ? v.Value : -1f);
+        if (v.State == "plantup") { SkateRide.Stalling = true; SkateRide.GrindKind = SkateGrindKind.Handplant; SkateRide.Mode = RideMode.Grind; }
         SkateRide.FlipDeg = v.State == "flip" ? (int)v.Value : 0;
-        SkateRide.Grab = v.State == "grab" ? (SkateGrabKind)(int)v.Value : SkateGrabKind.None;
+        SkateRide.Grab = v.State == "grab" || v.State == "grabin" ? (SkateGrabKind)(int)v.Value : SkateGrabKind.None;
         SkateRide.ShoveDeg = v.State == "shove" ? v.Value : 0;
-        SkateRide.Manual = v.State == "manual"; SkateRide.NoseManual = v.State == "nose";
+        SkateRide.Manual = v.State == "manual";
+        SkateRide.NoseManual = v.State == "nose";
         SkateBoard.ShowLift = air ? 0.7f : 0f;
         SkateRide.Trick = new SkateTrickState(v.State == "switch");
         if (v.State == "bail") SkateRide.ModeAt = now - v.Value * SkateRide.BailSeconds;
@@ -282,9 +327,9 @@ public static class Scenarios
         }
     }
 
-    private static readonly float[] trickAt = { 3f, 6f, 8.9f, 9f, 9.4f, 11f, 14f, 16.9f, 17f, 17.5f, 20f, 20.12f, 23f, 23.45f, 25f, 27f, 29f, 30.6f, 32.2f, 33.5f, 35.5f, 35.5f, 37.5f, 39f, 41.5f };
+    private static readonly float[] trickAt = { 3f, 6f, 8.9f, 9f, 9.4f, 11f, 14f, 16.9f, 17f, 17.5f, 20f, 20.12f, 23f, 23.45f, 25f, 27f, 29f, 30.6f, 32.2f, 33.5f, 35.5f, 35.5f, 37.5f, 39.5f, 41.5f, 43.5f, 46f };
     private static readonly string[] trickDo = { "ollie", "ollie+kick", "left", "ollie", "release", "turn", "ollie+heel", "right+grab", "ollie", "release", "ollie+kick", "kick", "ollie", "kick",
-        "ollie+shove", "ollie+kick+shove", "ollie+kick+shove+shove", "manual", "release", "ollie+shove+shove", "ollie", "revert", "nollie", "brake", "finish" };
+        "ollie+shove", "ollie+kick+shove", "ollie+kick+shove+shove", "manual", "release", "ollie+shove+shove", "ollie", "revert", "nollie", "nocomply ollie", "boneless ollie", "brake", "finish" };
     private static bool wantRevert; private static int landsAtRevert; private static float revertRelease = -1f;
 
     private static void Trick(float s)
@@ -295,7 +340,7 @@ public static class Scenarios
             SkateRig.MountNow(yaw0);
             SkateCamera.Fixed = true; SkateCamera.Bearing = 100f; SkateCamera.FixedDistance = 4.4f; SkateCamera.FixedHeight = 1.4f;
         }
-        SkateKeys.Push = !SkateKeys.Brake && SkateRide.Mode == RideMode.Ground && SkateRide.Speed < 2.4f;
+        SkateKeys.Push = !SkateKeys.Brake && SkateRide.Mode == RideMode.Ground && Math.Abs(SkateRide.Speed) < 2.4f;
         // The revert is a turn pressed the moment the board is down again: timed by the landing, not the clock.
         if (wantRevert && SkateRide.Mode == RideMode.Ground && SkateRide.Lands > landsAtRevert)
         { wantRevert = false; SkateKeys.Spin = 1f; SkateKeys.SpinPressed = true; revertRelease = s + 0.15f; Say("press revert | " + SkateRide.Status()); }
@@ -309,7 +354,7 @@ public static class Scenarios
             // With the pop: the flip and the board's turn under the feet, a backside half turn for each "shove".
             if (what.Contains("ollie"))
             {
-                SkateKeys.JumpPressed = true; SkateKeys.PopKind = what.StartsWith("nollie") ? SkatePopKind.Nollie : SkatePopKind.Ollie; SkateKeys.PopScale = 1f; SkateKeys.PopFlip = flip;
+                SkateKeys.JumpPressed = true; SkateKeys.PopKind = what.StartsWith("nollie") ? SkatePopKind.Nollie : what.StartsWith("nocomply") ? SkatePopKind.NoComply : what.StartsWith("boneless") ? SkatePopKind.Boneless : SkatePopKind.Ollie; SkateKeys.PopScale = 1f; SkateKeys.PopFlip = flip;
                 SkateKeys.PopShove = what.EndsWith("shove+shove") ? -360f : what.Contains("shove") ? -180f : 0f;
             }
             else if (what == "revert") { wantRevert = true; landsAtRevert = SkateRide.Lands; }

@@ -23,6 +23,9 @@ public static class SkateGrind
     private static double cooldown;
     private static bool failed;
     private static float nearSaidAt = -99f;
+    // An edge met too square or too slowly for a grind is a stall: the board stops on it.
+    public static bool StallCandidate, StallSquare;
+    private static SkateEdge stallEdge;
 
     public static void Reset() { cooldown = 0; edge = default(SkateEdge); Speed = 0f; Last = ""; }
 
@@ -72,6 +75,7 @@ public static class SkateGrind
 
     public static bool TryCapture(Vector3 pos, Vector3 velocity, float noseYaw, float dt)
     {
+        StallCandidate = false;
         if (!Enabled || failed || cooldown > 0) return false;
         try
         {
@@ -90,6 +94,8 @@ public static class SkateGrind
             var cos = flat > 0.001 ? Math.Abs(along) / flat : 0;
             var why = off > Reach ? "too far to the side" : feet < -FeetBelow ? "feet below the edge" : feet > FeetAbove ? "feet too high" : found.Ahead < 0.3 ? "edge too short ahead"
                 : velocity.y >= 0f ? "still rising" : cos < AlongCos ? "crossing the edge too square" : Math.Abs(along) < AlongSpeed ? "too slow along it" : "";
+            if (why == "crossing the edge too square" || why == "too slow along it")
+            { StallCandidate = true; StallSquare = why == "crossing the edge too square"; stallEdge = found; }
             if (why != "")
             {
                 Last = "edge near, not taken (" + why + "): off=" + off.ToString("F2") + " feet=" + feet.ToString("F2") + " ahead=" + found.Ahead.ToString("F2") + " along=" + along.ToString("F1") + " cos=" + cos.ToString("F2");
@@ -104,6 +110,17 @@ public static class SkateGrind
         }
         catch (Exception e) { failed = true; Out.Say("GRIND scan threw " + e.GetType().Name + ": " + e.Message); return false; }
     }
+
+    // The board stops on the edge last met too square or too slowly; HoldStall keeps it there.
+    public static void BeginStall(Vector3 pos)
+    {
+        edge = stallEdge; Speed = 0f; Heading = YawOf(edge.Direction.X, edge.Direction.Z); Captures++;
+        var off = Aim(pos);
+        Last = "stall top=" + edge.TopHeight.ToString("F2") + " off=" + off.ToString("F2") + (StallSquare ? " square" : " along");
+        Out.Say("GRIND " + Last);
+    }
+
+    public static void HoldStall(Vector3 pos) { Aim(pos); }
 
     public static bool TryContinue(Vector3 pos, float dt, out bool ended)
     {

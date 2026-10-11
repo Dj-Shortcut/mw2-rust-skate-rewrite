@@ -15,7 +15,9 @@ namespace Shortcut.RustMod
     public enum SkateGrindKind
     {
         None = 0, FiftyFifty = 1, FiveO = 2, Nosegrind = 3, Boardslide = 4, Lipslide = 5,
-        Noseslide = 6, Tailslide = 7, Smith = 8, Feeble = 9, Crooked = 10
+        Noseslide = 6, Tailslide = 7, Smith = 8, Feeble = 9, Crooked = 10,
+        // Held still on the edge rather than slid along it.
+        FiftyFiftyStall = 11, NoseStall = 12, TailStall = 13, BoardStall = 14, Handplant = 15
     }
 
     public struct SkateTrickInput
@@ -149,10 +151,11 @@ namespace Shortcut.RustMod
             "Backside 360 Grab", "Backside 360 Kickflip Grab", "Backside 360 Heelflip Grab", "Backside 360 Double Kickflip Grab", "Backside 360 Double Heelflip Grab"
         };
         private static readonly string[] GrindNames = {
-            "Grind", "50-50", "5-0", "Nosegrind", "Boardslide", "Lipslide", "Noseslide", "Tailslide", "Smith Grind", "Feeble Grind", "Crooked Grind"
+            "Grind", "50-50", "5-0", "Nosegrind", "Boardslide", "Lipslide", "Noseslide", "Tailslide", "Smith Grind", "Feeble Grind", "Crooked Grind",
+            "50-50 Stall", "Nose Stall", "Tail Stall", "Board Stall", "Handplant"
         };
         // Points a second on the edge, by how hard the kind is to hold.
-        private static readonly int[] GrindRates = { 100, 100, 130, 130, 120, 140, 150, 150, 160, 160, 160 };
+        private static readonly int[] GrindRates = { 100, 100, 130, 130, 120, 140, 150, 150, 160, 160, 160, 150, 160, 160, 150, 250 };
         private static readonly string[] GrabSuffixes = {
             "", " Grab", " Backside Grab", " Frontside Grab", " Double Grab", " Tail Grab", " Nose Grab",
             " Stalefish", " Crail", " Seatbelt", " Melon", " Method", " Nosebone", " Tailbone"
@@ -221,12 +224,13 @@ namespace Shortcut.RustMod
                     events |= SkateTrickEvents.Landed;
                     visualSpin = halves * 180; visualFlip = turns * 360; visualShove = shoves * 180;
                     ridingSwitch ^= (Math.Abs(halves) % 2) != 0;
-                    bool legacy = legacyNaming && shoves == 0 && popKind != SkatePopKind.Nollie &&
+                    bool legacy = legacyNaming && shoves == 0 && popKind == SkatePopKind.Ollie &&
                         (grabKind == SkateGrabKind.None || grabKind == SkateGrabKind.Legacy);
                     name = LandingName(halves, turns, shoves, grabKind, popKind, legacy, popSwitch && !legacy);
                     points = 50 + Math.Min(2, Math.Abs(turns)) * 100 +
                         Math.Min(legacy ? 2 : 4, Math.Abs(halves)) * 100 + Math.Min(2, Math.Abs(shoves)) * 100 +
-                        (grabKind == SkateGrabKind.None ? 0 : 50) + (popSwitch && !legacy ? 25 : 0);
+                        (grabKind == SkateGrabKind.None ? 0 : 50) + (popSwitch && !legacy ? 25 : 0) +
+                        (IsPlant(popKind) ? 50 : 0);
                     combo = Add(combo, points); count = Math.Min(MaximumMultiplier, count + 1);
                 }
                 spin = 0; flip = 0; shove = 0; grabKind = SkateGrabKind.None; popKind = SkatePopKind.None; popSwitch = false;
@@ -234,7 +238,7 @@ namespace Shortcut.RustMod
             if (state.Grinding && !input.Grinding)
             {
                 int kind = GrindKindValid(state.GrindKind) ? (int)state.GrindKind : 0;
-                points = Math.Max(1, (long)Math.Round(grind * GrindRates[kind]));
+                points = Math.Max(IsStall(state.GrindKind) ? 100 : 1, (long)Math.Round(grind * GrindRates[kind]));
                 name = kind == 0 ? GrindNames[0] : (state.GrindFrontside ? "Frontside " : "Backside ") + GrindNames[kind];
                 events |= SkateTrickEvents.GrindEnded;
                 combo = Add(combo, points); count = Math.Min(MaximumMultiplier, count + 1);
@@ -320,6 +324,8 @@ namespace Shortcut.RustMod
             return k == 0 ? GrindNames[0] : (frontside ? "Frontside " : "Backside ") + GrindNames[k];
         }
 
+        public static bool IsStall(SkateGrindKind kind) { return (int)kind >= 11 && (int)kind <= 15; }
+
         public static bool TryBail(SkateTrickState state, out SkateTrickResult result, out string error)
         {
             result = new SkateTrickResult(state, state.Spin, state.Flip, state.GrindSeconds, SkateTrickEvents.None, null, 0, 0);
@@ -334,6 +340,17 @@ namespace Shortcut.RustMod
         private static string LandingName(int spin, int flip, int shove, SkateGrabKind grab,
                                           SkatePopKind pop, bool legacy, bool popSwitch)
         {
+            if (IsPlant(pop))
+            {
+                // Named as the ollie would be, with the pop in its place: "No Comply 180", "Switch Boneless".
+                string plain = LandingName(spin, flip, shove, grab, SkatePopKind.Ollie, false, popSwitch);
+                string word = pop == SkatePopKind.NoComply ? "No Comply" : pop == SkatePopKind.Boneless ? "Boneless" :
+                    pop == SkatePopKind.Fastplant ? "Fastplant" : "Beanplant";
+                string lead = plain.StartsWith("Switch ") ? "Switch " : "";
+                string rest = plain.Substring(lead.Length);
+                if (rest == "Ollie" || rest.StartsWith("Ollie ")) rest = rest.Substring(5).TrimStart();
+                return lead + word + (rest.Length == 0 ? "" : " " + rest);
+            }
             if (popSwitch && !legacy)
             {
                 // Rolling tail first: a nollie is a fakie ollie, anything else is switch.
@@ -448,8 +465,9 @@ namespace Shortcut.RustMod
             (!s.NoseManualing || s.Manualing) && (s.ComboCount == 0) == (s.ComboBasePoints == 0) &&
             GrindKindValid(s.GrindKind) && (s.Grinding || s.GrindKind == SkateGrindKind.None) && (s.Airborne || !s.PopSwitch); }
         private static bool GrabKindValid(SkateGrabKind kind) { return (int)kind >= 0 && (int)kind <= 13; }
-        private static bool GrindKindValid(SkateGrindKind kind) { return (int)kind >= 0 && (int)kind <= 10; }
-        private static bool PopKindValid(SkatePopKind kind) { return (int)kind >= 0 && (int)kind <= 2; }
+        private static bool GrindKindValid(SkateGrindKind kind) { return (int)kind >= 0 && (int)kind <= 15; }
+        private static bool PopKindValid(SkatePopKind kind) { return (int)kind >= 0 && (int)kind <= 6; }
+        public static bool IsPlant(SkatePopKind kind) { return (int)kind >= 3 && (int)kind <= 6; }
         private static bool Axis(double n) { return Finite(n) && Math.Abs(n) <= 1; }
         private static bool Finite(double n) { return !double.IsNaN(n) && !double.IsInfinity(n); }
     }

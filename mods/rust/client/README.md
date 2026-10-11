@@ -58,13 +58,18 @@ game; see [The controller](#the-controller).
 | --- | --- | --- |
 | `Y` | Get on; again gets off. | |
 | Left stick | Steer, by how far it is pushed. Far and straight forward or back: push or brake. | Held more than half way to a side: the rider turns that way for as long as it is held. |
-| `A` or `X` | Push | |
+| `A` | Push with the back foot. Rolling tail first, the push drives on backward (a fakie push). | |
+| `X` | Push with the front foot (mongo). | |
+| `A` tapped while the right stick is held back, then the flick | No comply: the front foot steps down and the board pops off the back foot, a little lower than an ollie ("No Comply 180" with the left stick). | |
+| `LT` + `A`, `LT` + `X` or `RT` + `X`, `RT` + `A` | Foot plants: boneless, fastplant, beanplant (the front foot planted for a moment, a little higher than an ollie). | |
 | `B` | Brake | |
 | Right stick | The board: see below. Kept part of the way back or forward for 0.2 s: manual or nose manual. | Flicked to a side or a forward diagonal: a flip. Pulled back: set for the pop after the landing. |
 | `LT`, `RT` | Held going down a transition and let go through its bottom: a pump (speed, by how long it was held and how steep the descent, once a pass; nothing on the flat or let go on the slope itself). | Held: grab; with the right stick held, another grab. |
 | Right stick click | View from behind or the game's first person | |
 | Left stick, right after landing a trick | Revert: the board turns round under the rider, who rolls on switch; it joins the combo. | |
 | Right stick back or forward, on an edge | 5-0 or nosegrind instead of the 50-50. | |
+| Coming down on an edge square to it, or slowly along it | A stall: the board stops on the edge. Square: a board stall, with the right stick back a tail stall, forward a nose stall, with `LB` or `RB` held a frontside or backside handplant; slowly along it a 50-50 stall. A pop leaves it; after 2.5 s the board rolls off. Out of a stall the rider goes back the way he came, tail first; out of a handplant he comes round and rolls back nose first. | |
+| In a grind or a stall | The deck sits on the edge the way that grind does: a 5-0 on the back truck with the nose up, a nosegrind the other way round, a smith with the nose dipped past the edge, a feeble over it, a crooked on its edge; a tail stall hangs the tail over the coping. The rider stands over the low end with the arms out. | |
 
 The right stick pops the board, and how it moves says what the board does in the jump. The sides
 are those of a regular rider going nose first, whose heels are on the stick's left; riding tail
@@ -115,19 +120,20 @@ On foot, holding `Back` (the view button) shows the eight-piece menu. The D-pad 
 queues `skate.piece <name>` and `B` queues cancellation. On Windows `SkateConsole` sends the
 F1/command/Enter/F1 sequence; if typing fails it attempts a clipboard fallback. A keyboard bind
 also works (`bind f7 "skate.piece quarterpipe"`). `Y` in the menu does not mount the board.
-Native gesture delivery, menu typing, clipboard fallback and a standing park piece still need
-owner validation for these changes.
+Native gesture delivery and a standing park piece still need owner validation. Menu typing does
+not reach the game: in the game the typed keys are reported sent but the F1 console never opens
+(injected input appears to be ignored), so the menu's lines have to be typed by hand for now.
 
 ### Keys
 
 | Key | On the ground | In the air |
 | --- | --- | --- |
 | `K`, or `Space` twice quickly | Get on. `K` again gets off. | |
-| `W` | Push | Tap: kickflip |
+| `W` | Push; rolling tail first, a fakie push | Tap: kickflip |
 | `S` | Brake | Tap: heelflip |
 | `A` / `D` | Carve | Held: the rider turns to the left / right |
 | Mouse | The board turns toward the view | |
-| `Space` | Ollie; on a grind, ollie off | |
+| `Space` | Ollie; on a grind or a stall, ollie off. With `Q` held: no comply; with `Z` held: boneless. `Ctrl` held when the board meets an edge square: a handplant | |
 | `Shift` | Held while rolling: manual | |
 | `Ctrl` or `C` | Held for a moment: get off | Held: grab |
 | `L` | View from behind or the game's first person | |
@@ -207,6 +213,7 @@ file it runs `skate`. Runtime steps share one rig; the last scenario step select
 | `pose` | Scripted: rider and board in each state, standing still, from fixed cameras, then the score display in nine made-up states; `K` steps on. |
 | `trick` | Scripted: ollie, kickflip, heelflip, both spins, a grab, two presses that come too late and a manual. |
 | `pad` | Scripted: the ride with a controller, played into the plugin without one. |
+| `status` | Scripted: a short ride, then the server's own view of the rider typed into the F1 console (`skate.status`, its speed and fly checks, its plugins), the console left open. |
 | `mute` | Turns the whole client down until nothing can be heard. |
 | `nogrind` | No grinding. |
 
@@ -269,6 +276,7 @@ the two desktop files and the folder `Downloads\claude-loader-probe`.
 On the server, [`ShortcutSkate`](../plugins/SKATE.md) accepts the rider's speed and supplies a
 practice area. The client asks it for nothing: the plugin accepts a rider by itself after a moment
 of ordinary movement. Without it the server allows a rider the pace of a player who walks, about
-10 km/h and a little more downhill, and puts a faster one back. The client learns a limit from
-being put back twice within a second, holds it, tries a little more now and then, and says on
-screen what the server is holding the board back to.
+10 km/h and a little more downhill, and puts a faster one back. The client never slows the board
+for that: a put-back is only counted and logged. Only a wall right in front takes speed off. So on
+a server that refuses skate speed the rider is pulled back instead of braked; the server has to
+allow it (the plugin, or its own speed checks turned off by the admin).

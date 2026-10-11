@@ -55,11 +55,12 @@ public static class SkateCamera
                 followAt = now;
                 var back = Quaternion.Euler(pitch, yaw, 0f) * Vector3.forward;
                 want = focus - back * Distance + Vector3.up * 0.3f;
-                var dir = want - focus; var len = dir.magnitude;
-                RaycastHit hit;
-                if (len > 0.01f && Physics.SphereCast(focus, 0.2f, dir / len, out hit, len, SkateRide.GroundMask, QueryTriggerInteraction.Ignore))
-                    want = focus + dir / len * Math.Max(0.6f, hit.m_Distance - 0.05f);
             }
+            // Nothing between the rider and the camera: it comes in to this side of a wall or a fence.
+            var dir = want - focus; var len = dir.magnitude;
+            RaycastHit hit;
+            if (len > 0.01f && Physics.SphereCast(focus, 0.2f, dir / len, out hit, len, SkateRide.GroundMask, QueryTriggerInteraction.Ignore))
+                want = focus + dir / len * Math.Max(0.6f, hit.m_Distance - 0.05f);
             cam.transform.position = want;
             cam.transform.LookAt(focus);
         }

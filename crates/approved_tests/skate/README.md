@@ -104,3 +104,26 @@ An optional single runner argument names a local directory for seven original WA
 Keep exports in ignored `context/`. These are waveform/source checks; the runner uses no Rust
 client/server or Shadow PC, and does not test native sound mixing, audibility or listener preference.
 See the [audio contract](../../../docs/RUST-SKATE-AUDIO.md).
+
+## Rider secondary motion
+
+The owner approved `skate_rider_secondary_motion` by name on 11 October 2026. It checks exact
+target ankles/toes, measured limb lengths and spans, all 18 post-IK displacement bounds,
+pelvis/shoulder/hand lag and overshoot, deterministic histories, unequal rigs, near reach,
+world translation/rotation, isolated reset boundaries, variable dt, inverted handplants and
+all 14 grab targets across regular/goofy and switch. Malformed rig/pose/state/history and dt
+refusals are atomic; warmed success/refusal loops check allocation on the executing runtime.
+
+Build the genuine-reference shared DLL first, then run the approved scenario:
+
+```sh
+dotnet build mods/rust/shared/SkateMotion.csproj -p:RustManagedPath=/absolute/path/to/managed
+dotnet run --project crates/approved_tests/skate/SkateRiderMotionScenarios.csproj -p:SkateLibraryPath=/absolute/path/to/SkateMotion.dll -- EXPECTED_SHA256
+```
+
+The optional single argument verifies the loaded DLL's SHA-256; its path/hash are always printed.
+Outputs stay in ignored `context/`. The integrated genuine net48 DLL passes 180,614 checks on
+Mac net8, with zero measured bytes in 20,000-call warmed success/refusal loops. These are
+secondary-motion geometry checks. The runner starts no Rust client/server or Shadow PC and
+does not establish hand/surface contact, native rendering, adapter integration or IL2CPP cost.
+See the [API and integration limits](../../../mods/rust/shared/README.md#rider-secondary-motion-api).
