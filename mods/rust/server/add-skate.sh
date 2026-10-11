@@ -23,21 +23,16 @@ if ! $CHECK_ONLY; then
     fi
 fi
 
-skate_tmp=''
-skate_backup_tmp=''
+skate_download_dir=''
 cleanup() {
-    if [[ -n $skate_tmp ]]; then rm -f -- "$skate_tmp"; fi
-    if [[ -n $skate_backup_tmp ]]; then rm -f -- "$skate_backup_tmp"; fi
+    if [[ -n $skate_download_dir ]]; then rm -rf -- "$skate_download_dir"; fi
 }
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-if $CHECK_ONLY; then
-    skate_tmp=$(mktemp)
-else
-    skate_tmp=$(mktemp "$DIR/.ShortcutSkate.XXXXXX")
-fi
+skate_download_dir=$(mktemp -d /tmp/ShortcutSkate-download.XXXXXX)
+skate_tmp=$skate_download_dir/ShortcutSkate.cs
 curl -fsSL --connect-timeout 15 --max-time 60 \
     "https://raw.githubusercontent.com/Dj-Shortcut/mw2-rust-skate-rewrite/$COMMIT/mods/rust/plugins/ShortcutSkate.cs" \
     -o "$skate_tmp"
@@ -51,14 +46,39 @@ if $CHECK_ONLY; then
     exit 0
 fi
 
-chown rust:rust "$skate_tmp"
-chmod 0644 "$skate_tmp"
-if [[ -f $DIR/ShortcutSkate.cs ]]; then
-    skate_backup_tmp=$(mktemp "$DIR/.ShortcutSkate-backup.XXXXXX")
-    cp -p -- "$DIR/ShortcutSkate.cs" "$skate_backup_tmp"
-    mv -fT -- "$skate_backup_tmp" "$DIR/ShortcutSkate.cs.bak"
-fi
-mv -fT -- "$skate_tmp" "$DIR/ShortcutSkate.cs"
+# Root only reads verified bytes; the service-owned tree is mutated as rust.
+# shellcheck disable=SC2016
+runuser -u rust -g rust -- setsid --wait /bin/bash -c '
+    set -Eeuo pipefail
+    DIR=$1
+    [[ $EUID -ne 0 ]] || { echo "rust must be a nonroot account" >&2; exit 1; }
+    [[ -d $DIR ]] || { echo "no Oxide plugins folder at $DIR" >&2; exit 1; }
+    if [[ -e $DIR/ShortcutSkate.cs || -L $DIR/ShortcutSkate.cs ]]; then
+        [[ -f $DIR/ShortcutSkate.cs && ! -L $DIR/ShortcutSkate.cs ]] || {
+            echo "existing ShortcutSkate.cs must be a regular file" >&2
+            exit 1
+        }
+    fi
+    umask 077
+    skate_tmp=""
+    skate_backup_tmp=""
+    cleanup() {
+        if [[ -n $skate_tmp ]]; then rm -f -- "$skate_tmp"; fi
+        if [[ -n $skate_backup_tmp ]]; then rm -f -- "$skate_backup_tmp"; fi
+    }
+    trap cleanup EXIT
+    trap "exit 130" INT
+    trap "exit 143" TERM
+    skate_tmp=$(mktemp "$DIR/.ShortcutSkate.XXXXXX")
+    cat > "$skate_tmp"
+    chmod 0644 "$skate_tmp"
+    if [[ -f $DIR/ShortcutSkate.cs ]]; then
+        skate_backup_tmp=$(mktemp "$DIR/.ShortcutSkate-backup.XXXXXX")
+        cp -p -- "$DIR/ShortcutSkate.cs" "$skate_backup_tmp"
+        mv -fT -- "$skate_backup_tmp" "$DIR/ShortcutSkate.cs.bak"
+    fi
+    mv -fT -- "$skate_tmp" "$DIR/ShortcutSkate.cs"
+' skate-install "$DIR" < "$skate_tmp"
 echo "ShortcutSkate v$VERSION source installed in $DIR."
 echo "Confirm compilation and loading in the server console with: oxide.plugins"
 echo "A source install does not confirm in-game behavior."
