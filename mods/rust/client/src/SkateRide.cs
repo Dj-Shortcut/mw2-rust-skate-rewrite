@@ -297,7 +297,7 @@ public static class SkateRide
         if (now - jumpWanted < 0.12f)
         {
             Pops++; jumpWanted = -99f;
-            if (wantKind == SkatePopKind.NoComply || wantKind == SkatePopKind.Boneless) PlantedUntil = now + PlantSeconds;
+            if (SkateTricks.IsPlant(wantKind)) PlantedUntil = now + PlantSeconds;
             Launch(tangent, OlliePop * wantScale * PopHeight(wantKind), dt);
             AirStep(Position, dt);
             return;
@@ -424,7 +424,10 @@ public static class SkateRide
 
     // A no comply pops lower than an ollie (the front foot is off the board), a boneless higher
     // (the rider jumps off his planted foot).
-    public static float PopHeight(SkatePopKind kind) { return kind == SkatePopKind.NoComply ? 0.85f : kind == SkatePopKind.Boneless ? 1.12f : 1f; }
+    public static float PopHeight(SkatePopKind kind)
+    {
+        return kind == SkatePopKind.NoComply ? 0.85f : kind == SkatePopKind.Boneless ? 1.12f : kind == SkatePopKind.Fastplant ? 1.1f : kind == SkatePopKind.Beanplant ? 1.05f : 1f;
+    }
 
     private static void TakeOff(bool jumped, float vertical)
     {
@@ -644,12 +647,14 @@ public static class SkateRide
         LastAir = AirLine("stall");
         var impact = -VSpeed;
         stallSign = Speed < 0f ? -1f : 1f;
-        GrindKind = !SkateGrind.StallSquare ? SkateGrindKind.FiftyFiftyStall
-            : Grab != SkateGrabKind.None || SkateKeys.Grab != SkateGrabKind.None ? SkateGrindKind.Handplant
+        // A handplant is asked for with a bumper (LB frontside, RB backside) or, on the keyboard, the grab key.
+        var plant = SkateKeys.HandplantFront || SkateKeys.HandplantBack || (!SkateKeys.Pad && (Grab != SkateGrabKind.None || SkateKeys.Grab != SkateGrabKind.None));
+        GrindKind = plant ? SkateGrindKind.Handplant : !SkateGrind.StallSquare ? SkateGrindKind.FiftyFiftyStall
             : SkateKeys.Manual ? SkateGrindKind.TailStall : SkateKeys.NoseManual ? SkateGrindKind.NoseStall : SkateGrindKind.BoardStall;
         SkateGrind.BeginStall(pos);
         var to = SkateGrind.Target - pos; to.y = 0f;
         GrindFrontside = Vector3.Dot(to, Dir(NoseYaw + 90f)) > 0f; GrindAlong = false;
+        if (GrindKind == SkateGrindKind.Handplant && (SkateKeys.HandplantFront || SkateKeys.HandplantBack)) GrindFrontside = SkateKeys.HandplantFront;
         Enter(RideMode.Grind); GrindStarts++; Stalls++; Stalling = true; stallAt = now;
         Speed = 0f; VSpeed = 0f;
         TrickTick(false, true, 0, 0, 0, impact, dt);

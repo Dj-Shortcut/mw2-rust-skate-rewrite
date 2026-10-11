@@ -18,9 +18,14 @@ public static class SkateKeys
     public const float PadRest = 0.5f, SteerDead = 0.18f, Straight = 0.35f, StickPush = 0.75f, SpinFrom = 0.5f, LeastPop = 0.7f, GrabStick = 0.6f;
     public static bool Scripted;
     public static bool Push, Brake, Left, Right, Crouch, Jump, Manual, NoseManual;
-    // Mongo: the push is with the front foot (X on the controller; A pushes with the back foot).
-    // A pop with a bumper held (Q or Z on the keyboard) is a no comply (left) or a boneless (right).
-    public static bool Mongo;
+    // As in skate.: A pushes with the back foot, X with the front (mongo). A tapped just before the
+    // pop's flick, while the right stick is held back for it, makes it a no comply. A trigger held and A or X pressed is a foot plant: LT+A a
+    // boneless, LT+X or RT+X a fastplant, RT+A a beanplant. A bumper held when the board meets an
+    // edge is a handplant: LB frontside, RB backside. On the keyboard Q (no comply) or Z (boneless)
+    // held with Space.
+    public const float NoComplyTap = 0.35f;
+    public static bool Mongo, HandplantFront, HandplantBack;
+    private static float aTappedAt = -99f;
     // What a physics step has not seen yet. A pop comes with what the board does in it: whole flips
     // (a kickflip is +1) and degrees of shove under the feet (frontside is +). LateFlip is flips
     // asked for in the air. SpinPressed: the turn was asked for afresh, not held from before.
@@ -43,7 +48,7 @@ public static class SkateKeys
     public static void Reset()
     {
         Push = Brake = Left = Right = Crouch = Jump = Manual = NoseManual = Analog = Charging = false; Steer = Charge = Spin = wasSpin = 0f; PopScale = 1f;
-        Grab = SkateGrabKind.None; PopKind = SkatePopKind.Ollie; Mongo = false;
+        Grab = SkateGrabKind.None; PopKind = SkatePopKind.Ollie; Mongo = HandplantFront = HandplantBack = false; aTappedAt = -99f;
         EndStep(); JumpTap = ToggleTap = CameraTap = CrouchTap = false;
     }
 
@@ -108,8 +113,19 @@ public static class SkateKeys
                 var straight = Math.Abs(x) < Straight;
                 Analog = true;
                 Steer = Math.Abs(x) <= SteerDead ? 0f : (x - Math.Sign(x) * SteerDead) / (1f - SteerDead);
-                Push = (SkatePad.Buttons & (SkatePad.A | SkatePad.X)) != 0 || (straight && y > StickPush);
+                bool lt0 = SkatePad.LeftTrigger > SkatePad.Pulled, rt0 = SkatePad.RightTrigger > SkatePad.Pulled;
+                // With a trigger held A and X are foot plants, not pushes.
+                Push = (!lt0 && !rt0 && (SkatePad.Buttons & (SkatePad.A | SkatePad.X)) != 0) || (straight && y > StickPush);
                 Mongo = (SkatePad.Buttons & SkatePad.X) != 0 && (SkatePad.Buttons & SkatePad.A) == 0;
+                HandplantFront = (SkatePad.Buttons & SkatePad.LeftBumper) != 0; HandplantBack = (SkatePad.Buttons & SkatePad.RightBumper) != 0;
+                // Only while the right stick is held back for the pop: a push tapped on its own stays a push.
+                if ((padDown & SkatePad.A) != 0 && SkatePad.Charging) aTappedAt = now;
+                if ((lt0 || rt0) && (padDown & (SkatePad.A | SkatePad.X)) != 0 && SkateRide.Mode != RideMode.Air)
+                {
+                    JumpPressed = true; PopFlip = 0; PopShove = 0f; PopScale = 1f;
+                    PopKind = (padDown & SkatePad.A) != 0 ? (lt0 ? SkatePopKind.Boneless : SkatePopKind.Beanplant) : SkatePopKind.Fastplant;
+                    aTappedAt = -99f;
+                }
                 Brake = (SkatePad.Buttons & SkatePad.B) != 0 || (straight && y < -StickPush);
                 Left = x < -SpinFrom; Right = x > SpinFrom;
                 Spin = Left ? -1f : Right ? 1f : 0f;
@@ -123,7 +139,7 @@ public static class SkateKeys
                 {
                     var flips = (int)Math.Round(pop.FlipTurns);
                     if (pop.Kind == SkatePopKind.None) LateFlip += flips;
-                    else { JumpPressed = true; PopKind = PopWith(pop.Kind, (SkatePad.Buttons & SkatePad.LeftBumper) != 0, (SkatePad.Buttons & SkatePad.RightBumper) != 0); PopFlip = flips; PopShove = (float)pop.ShoveDegrees; PopScale = LeastPop + (1f - LeastPop) * (float)pop.Strength; }
+                    else { JumpPressed = true; PopKind = PopWith(pop.Kind, now - aTappedAt < NoComplyTap && (SkatePad.Buttons & SkatePad.A) == 0, false); aTappedAt = -99f; PopFlip = flips; PopShove = (float)pop.ShoveDegrees; PopScale = LeastPop + (1f - LeastPop) * (float)pop.Strength; }
                 }
             }
             else
@@ -134,7 +150,7 @@ public static class SkateKeys
                 Spin = Steer;
                 if (push && !wasPush) LateFlip++;
                 if (brake && !wasBrake) LateFlip--;
-                Mongo = false;
+                Mongo = HandplantFront = HandplantBack = false;
                 if (jump && !wasJump) { JumpPressed = true; PopKind = PopWith(SkatePopKind.Ollie, noComply, boneless); PopFlip = 0; PopShove = 0f; PopScale = 1f; }
                 if (crouch && !wasCrouch) CrouchTap = true;
                 Push = push; Brake = brake; Left = left; Right = right; Jump = jump; Crouch = crouch; Manual = manual;

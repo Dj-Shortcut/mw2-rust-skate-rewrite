@@ -230,7 +230,7 @@ namespace Shortcut.RustMod
                     points = 50 + Math.Min(2, Math.Abs(turns)) * 100 +
                         Math.Min(legacy ? 2 : 4, Math.Abs(halves)) * 100 + Math.Min(2, Math.Abs(shoves)) * 100 +
                         (grabKind == SkateGrabKind.None ? 0 : 50) + (popSwitch && !legacy ? 25 : 0) +
-                        (popKind == SkatePopKind.NoComply || popKind == SkatePopKind.Boneless ? 50 : 0);
+                        (IsPlant(popKind) ? 50 : 0);
                     combo = Add(combo, points); count = Math.Min(MaximumMultiplier, count + 1);
                 }
                 spin = 0; flip = 0; shove = 0; grabKind = SkateGrabKind.None; popKind = SkatePopKind.None; popSwitch = false;
@@ -340,11 +340,12 @@ namespace Shortcut.RustMod
         private static string LandingName(int spin, int flip, int shove, SkateGrabKind grab,
                                           SkatePopKind pop, bool legacy, bool popSwitch)
         {
-            if (pop == SkatePopKind.NoComply || pop == SkatePopKind.Boneless)
+            if (IsPlant(pop))
             {
                 // Named as the ollie would be, with the pop in its place: "No Comply 180", "Switch Boneless".
                 string plain = LandingName(spin, flip, shove, grab, SkatePopKind.Ollie, false, popSwitch);
-                string word = pop == SkatePopKind.NoComply ? "No Comply" : "Boneless";
+                string word = pop == SkatePopKind.NoComply ? "No Comply" : pop == SkatePopKind.Boneless ? "Boneless" :
+                    pop == SkatePopKind.Fastplant ? "Fastplant" : "Beanplant";
                 string lead = plain.StartsWith("Switch ") ? "Switch " : "";
                 string rest = plain.Substring(lead.Length);
                 if (rest == "Ollie" || rest.StartsWith("Ollie ")) rest = rest.Substring(5).TrimStart();
@@ -465,7 +466,8 @@ namespace Shortcut.RustMod
             GrindKindValid(s.GrindKind) && (s.Grinding || s.GrindKind == SkateGrindKind.None) && (s.Airborne || !s.PopSwitch); }
         private static bool GrabKindValid(SkateGrabKind kind) { return (int)kind >= 0 && (int)kind <= 13; }
         private static bool GrindKindValid(SkateGrindKind kind) { return (int)kind >= 0 && (int)kind <= 15; }
-        private static bool PopKindValid(SkatePopKind kind) { return (int)kind >= 0 && (int)kind <= 4; }
+        private static bool PopKindValid(SkatePopKind kind) { return (int)kind >= 0 && (int)kind <= 6; }
+        public static bool IsPlant(SkatePopKind kind) { return (int)kind >= 3 && (int)kind <= 6; }
         private static bool Axis(double n) { return Finite(n) && Math.Abs(n) <= 1; }
         private static bool Finite(double n) { return !double.IsNaN(n) && !double.IsInfinity(n); }
     }
