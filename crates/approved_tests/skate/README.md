@@ -64,7 +64,7 @@ The runner uses the actual compiled shared DLL, prints its path/SHA-256 and comp
 The owner approved two layout scenarios by name for [Task 4](https://github.com/Dj-Shortcut/mw2-rust-skate-rewrite/issues/337#issuecomment-6099499139):
 
 - `skate_park_piece_layouts`: the eight pieces' block positions, orientations, native materials and adjoining nominal square-floor edges, including the complete halfpipe's flat, transitions, decks and railings.
-- `skate_park_anchor_yaw_and_snap`: translated and rotated layouts preserve the snapped anchor supplied by ordinary native construction, including anchors away from the world origin. The foundation extension supplies abstract construction bounds and independently checks every tilted floor corner above the support, without changing the authored ledge/deck heights.
+- `skate_park_anchor_yaw_and_snap`: translated and rotated layouts preserve the snapped anchor supplied by ordinary native construction, including anchors away from the world origin. The foundation extension supplies abstract construction bounds and independently checks every tilted floor corner above the support, without changing the authored ledge/deck heights. The same scenario checks the server's direct-placement request helper: aim versus explicit anchors, invariant numeric parsing, finite coordinate/yaw bounds, yaw normalization and atomic refusal outputs across cultures. Its request checks require the helper in `ShortcutSkate.dll`; a canonical shared `SkatePark.dll` without this server-only helper keeps the existing layout checks.
 
 Build the actual server plugin using genuine dedicated-server references, then execute its engine-free helpers on .NET 8:
 
@@ -75,7 +75,7 @@ dotnet run --project crates/approved_tests/skate/SkateParkLayoutScenarios.csproj
 
 Supply `-p:ActualPluginPath=/absolute/path/to/ShortcutSkate.dll` for another built DLL. Outputs stay in ignored `context/`; the runner prints its loaded DLL path and SHA-256.
 
-These checks use the layout helpers in that DLL, with independent expected positions and seams. They do not verify native floor dimensions/colliders, building privilege, stability, save/load callbacks, demolition or gameplay, and they do not start the Rust client or server.
+These checks use the layout helpers in that DLL, with independent expected positions and seams; the request extension invokes the actual public helper by its exact reflected signature. They do not verify native aim rays or placement, floor dimensions/colliders, building privilege, stability, save/load callbacks, demolition or gameplay, and they do not start the Rust client or server.
 
 ## Park gesture selection
 

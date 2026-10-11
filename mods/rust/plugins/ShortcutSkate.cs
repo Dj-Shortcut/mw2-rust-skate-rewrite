@@ -643,10 +643,41 @@ namespace Shortcut.RustMod
     }
 }
 
+namespace Shortcut.RustMod
+{
+    // The wire command uses invariant scalars; failed parsing never leaves a partial anchor.
+    public static class SkateParkPlacement
+    {
+        public static bool TryRequest(string[] args, out SkateParkKind kind, out bool explicitAnchor,
+            out double x, out double y, out double z, out double yaw, out string failure)
+        {
+            kind = default(SkateParkKind); explicitAnchor = false;
+            x = y = z = yaw = 0;
+            failure = "Usage: skate.place <bank|kicker|quarterpipe|ledge-low|ledge-high|long-ledge|funbox|halfpipe> [x y z yaw].";
+            if (args == null || (args.Length != 1 && args.Length != 5)) return false;
+            SkateParkKind parsed;
+            if (!SkateParkLayout.TryKind(args[0], out parsed))
+            { failure = "Unknown park piece. Use bank, kicker, quarterpipe, ledge-low, ledge-high, long-ledge, funbox or halfpipe."; return false; }
+            if (args.Length == 1) { kind = parsed; failure = null; return true; }
+            var values = new double[4];
+            string[] names = { "x", "y", "z", "yaw" };
+            for (int i = 0; i < values.Length; i++)
+            {
+                if (!double.TryParse(args[i + 1], NumberStyles.Float, CultureInfo.InvariantCulture, out values[i]) ||
+                    !SkateSessionBounds.Finite(values[i]) || Math.Abs(values[i]) > (i == 3 ? 1000000 : 100000))
+                { failure = "Invalid " + names[i] + ": use a finite invariant number within " + (i == 3 ? "1000000 degrees." : "100000 metres."); return false; }
+            }
+            kind = parsed; explicitAnchor = true;
+            x = values[0]; y = values[1]; z = values[2]; yaw = (values[3] % 360 + 360) % 360;
+            failure = null; return true;
+        }
+    }
+}
+
 namespace Oxide.Plugins
 {
-    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.5")]
-    [Description("Player-scoped skateboard movement bounds and saved building-plan park assemblies.")]
+    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.6")]
+    [Description("Player-scoped skateboard movement bounds and saved park assemblies.")]
     public sealed class ShortcutSkate : RustPlugin
     {
         private const string UsePermission = "shortcutskate.use";
@@ -671,6 +702,7 @@ namespace Oxide.Plugins
         private const int MaximumParkGroups = 256;
         private const int MaximumParkSelections = 128;
         private const int MaximumParkDataLength = 1048576;
+        private const float MaximumParkPlacementDistance = 25;
         private const string ParkFoundationPrefab = "assets/prefabs/building core/foundation/foundation.prefab";
         private readonly Dictionary<ulong, ParkSelection> parkSelections = new Dictionary<ulong, ParkSelection>();
         private object parkSelectionEpoch = new object();
@@ -862,6 +894,20 @@ namespace Oxide.Plugins
             public Construction Construction;
             public DeployVolume[] Volumes;
             public BuildingGrade.Enum Grade;
+        }
+
+        private sealed class ParkPlacementRequest
+        {
+            public BasePlayer Player;
+            public Planner Planner;
+            public Item PlannerItem;
+            public ItemContainer Belt;
+            public ParkData Data;
+            public BuildingBlock Foundation;
+            public ulong FoundationId;
+            public ParkAnchorSnapshot Snapshot;
+            public ParkSelection Selection;
+            public uint Building;
         }
 
         public static ParkData ParseParkData(string json)
@@ -2193,6 +2239,126 @@ namespace Oxide.Plugins
                 (kind == SkateParkKind.Halfpipe ? "the halfpipe uses a Stone flat, Metal transitions/decks/sides and Wood back rails." : "the assembly will be Stone."));
         }
 
+        private static bool ParkPlannerItem(BasePlayer player, ItemContainer belt, Item item, Planner planner)
+        {
+            return player != null && player.inventory != null && belt != null &&
+                ReferenceEquals(player.inventory.containerBelt, belt) && belt.itemList != null &&
+                belt.itemList.Count <= 32 && item != null && item.isServer &&
+                ReferenceEquals(item.parent, belt) && belt.itemList.Contains(item) &&
+                ReferenceEquals(item.GetOwnerPlayer(), player) && planner != null && !planner.IsDestroyed &&
+                ReferenceEquals(item.GetHeldEntity(), planner) && ReferenceEquals(planner.GetOwnerPlayer(), player) &&
+                ReferenceEquals(planner.GetParentEntity(), player);
+        }
+
+        private static bool FindParkPlanner(BasePlayer player, out ItemContainer belt, out Item item, out Planner planner)
+        {
+            belt = player.inventory == null ? null : player.inventory.containerBelt;
+            item = null; planner = null;
+            if (belt == null || belt.itemList == null || belt.itemList.Count > 32) return false;
+            Planner active = player.GetHeldEntity() as Planner;
+            foreach (Item candidate in belt.itemList)
+            {
+                if (candidate == null || !candidate.isServer) continue;
+                Planner existing = candidate.GetHeldEntity() as Planner;
+                if (!ParkPlannerItem(player, belt, candidate, existing)) continue;
+                if (planner == null || ReferenceEquals(existing, active)) { item = candidate; planner = existing; }
+                if (ReferenceEquals(existing, active)) break;
+            }
+            return planner != null;
+        }
+
+        private bool CurrentParkRequest(ParkPlacementRequest request)
+        {
+            if (request == null || !ReferenceEquals(instance, this) || parkClosing || !parkReady ||
+                SaveRestore.IsSaving || !ReferenceEquals(parkData, request.Data) || !SameParkWorld(request.Data) ||
+                request.Player == null || !request.Player.IsAdmin || !Eligible(request.Player) ||
+                request.Planner == null || request.Planner.IsDestroyed ||
+                !ReferenceEquals(request.Planner.GetOwnerPlayer(), request.Player)) return false;
+            if (request.Selection != null)
+                return CurrentParkSelection(request.Player, request.Selection) &&
+                    ParkFoundationMatches(request.Foundation, request.FoundationId, request.Snapshot);
+            return ParkPlannerItem(request.Player, request.Belt, request.PlannerItem, request.Planner);
+        }
+
+        [ConsoleCommand("skate.place")]
+        private void PlaceParkPiece(ConsoleSystem.Arg arg)
+        {
+            BasePlayer player = arg.Player();
+            if (player == null || !player.IsAdmin)
+            { arg.ReplyWith("Use this command as an in-game administrator."); return; }
+            SkateParkKind kind;
+            bool explicitAnchor;
+            double x, y, z, yaw;
+            string failure;
+            string[] arguments = null;
+            if (arg.Args != null && (arg.Args.Length == 1 || arg.Args.Length == 5))
+            {
+                arguments = new string[arg.Args.Length];
+                for (int i = 0; i < arguments.Length; i++) arguments[i] = arg.GetString(i);
+            }
+            if (!SkateParkPlacement.TryRequest(arguments, out kind, out explicitAnchor, out x, out y, out z, out yaw, out failure))
+            { arg.ReplyWith(failure); return; }
+            try
+            {
+                if (!Eligible(player) || player.eyes == null)
+                { arg.ReplyWith("Park placement is unavailable; be alive, awake, unmounted and on dry land."); return; }
+                if (parkBusy || parkRefreshing || parkClosing || SaveRestore.IsSaving)
+                { arg.ReplyWith("Park placement is busy or the world is being saved; try again shortly."); return; }
+                if (!RefreshParkWorld(out failure)) { arg.ReplyWith(failure); return; }
+                ItemContainer belt;
+                Item item;
+                Planner planner;
+                if (!FindParkPlanner(player, out belt, out item, out planner))
+                { arg.ReplyWith("Park placement needs an existing building plan in your belt for native building-hook checks. Hold the plan once if it has not initialized."); return; }
+                Vector3 eye = player.eyes.position;
+                if (!Coordinate(eye)) { arg.ReplyWith("The server eye position is unavailable."); return; }
+                var failures = new List<string>();
+                ParkNativePart[] definitions;
+                ParkPrefabs(kind, failures, out definitions);
+                if (failures.Count != 0) { arg.ReplyWith(string.Join("\n", failures)); return; }
+                if (!explicitAnchor)
+                {
+                    Vector3 direction = player.eyes.HeadForward();
+                    int mask = LayerMask.GetMask("Terrain", "Construction");
+                    RaycastHit hit;
+                    if (!Coordinate(direction) || direction.sqrMagnitude < 0.0001f || mask == 0 ||
+                        LayerMask.NameToLayer("Terrain") < 0 || LayerMask.NameToLayer("Construction") < 0 ||
+                        !Physics.Raycast(eye, direction.normalized, out hit, MaximumParkPlacementDistance, mask, QueryTriggerInteraction.Ignore) ||
+                        !Coordinate(hit.point) || !Coordinate(hit.normal) || hit.normal.y <= 0)
+                    { arg.ReplyWith("Aim at an upward-facing terrain or construction surface within 25 metres."); return; }
+                    Vector3 viewAngles = player.eyes.rotation.eulerAngles;
+                    if (!Coordinate(viewAngles))
+                    { arg.ReplyWith("The server view heading is unavailable."); return; }
+                    Bounds bounds = definitions[0].Construction.bounds;
+                    if (!SkateParkLayout.TrySupportedAnchor(kind, hit.point.y, bounds.center.y, bounds.center.z,
+                        bounds.size.y, bounds.size.z, out y))
+                    { arg.ReplyWith("The aim surface or supported native layout height is outside world-coordinate bounds."); return; }
+                    x = hit.point.x; z = hit.point.z;
+                    yaw = (viewAngles.y % 360 + 360) % 360;
+                }
+                // Client anchors are exact layout origins, never snapped or silently height-adjusted.
+                Vector3 anchor = new Vector3((float)x, (float)y, (float)z);
+                if (!Coordinate(anchor) || Vector3.Distance(eye, anchor) > MaximumParkPlacementDistance)
+                { arg.ReplyWith("The park anchor must be within 25 metres of your server eye position."); return; }
+                var request = new ParkPlacementRequest { Player = player, Planner = planner, PlannerItem = item,
+                    Belt = belt, Data = parkData };
+                var group = new ParkGroup { Id = Guid.NewGuid().ToString("N"), Owner = player.userID,
+                    Kind = SkateParkLayout.Name(kind), AnchorX = x, AnchorY = y, AnchorZ = z, AnchorYaw = yaw,
+                    Members = new List<ParkMember>() };
+                if (!BuildParkAssembly(request, kind, definitions, group, out failure))
+                { arg.ReplyWith("Park " + group.Kind + " placement refused: " + failure); return; }
+                arg.ReplyWith(ParkPlacementReply(group));
+            }
+            catch (Exception error) { arg.ReplyWith("Park placement refused: " + error.Message); }
+        }
+
+        private static string ParkPlacementReply(ParkGroup group)
+        {
+            return string.Format(CultureInfo.InvariantCulture,
+                "Park {0} placed at ({1:R}, {2:R}, {3:R}), yaw {4:R}; {5} saved native parts. Use a hammer to demolish the group.",
+                group.Kind, group.AnchorX, group.AnchorY, group.AnchorZ, group.AnchorYaw, group.Members.Count);
+        }
+
         private void PruneParkSelections()
         {
             double now = clock.Elapsed.TotalSeconds;
@@ -2448,7 +2614,7 @@ namespace Oxide.Plugins
             uint buildingId = 0;
             foreach (BuildingBlock neighbour in neighbours)
             {
-                if (ReferenceEquals(neighbour, anchor) || (transactionParts != null && transactionParts.Contains(neighbour))) continue;
+                if ((anchor != null && ReferenceEquals(neighbour, anchor)) || (transactionParts != null && transactionParts.Contains(neighbour))) continue;
                 if (neighbour == null || neighbour.IsDestroyed || neighbour.blockDefinition == null) return false;
                 var a = BuildingProximity.GetProximity(construction, position, rotation, neighbour.blockDefinition,
                     neighbour.transform.position, neighbour.transform.rotation);
@@ -2515,7 +2681,7 @@ namespace Oxide.Plugins
             {
                 if (collider == null) continue;
                 BaseEntity entity = collider.ToBaseEntity();
-                if (ReferenceEquals(entity, anchor) || (transactionParts != null && transactionParts.Contains(entity as BuildingBlock))) continue;
+                if ((anchor != null && ReferenceEquals(entity, anchor)) || (transactionParts != null && transactionParts.Contains(entity as BuildingBlock))) continue;
                 failure = "The park assembly overlaps another entity or world obstruction.";
                 return false;
             }
@@ -2584,12 +2750,40 @@ namespace Oxide.Plugins
             var group = new ParkGroup { Id = Guid.NewGuid().ToString("N"), Owner = player.userID,
                 Kind = SkateParkLayout.Name(selection.Kind), AnchorX = snapshot.Position.x, AnchorY = baseline,
                 AnchorZ = snapshot.Position.z, AnchorYaw = snapshot.Rotation.eulerAngles.y, Members = new List<ParkMember>() };
-            var parts = new ParkMember[SkateParkLayout.PartCount(selection.Kind)];
+            var request = new ParkPlacementRequest { Player = player, Planner = planner, Data = parkData,
+                Foundation = anchor, FoundationId = anchorId, Snapshot = snapshot, Selection = selection,
+                Building = snapshot.Building };
+            if (!BuildParkAssembly(request, selection.Kind, definitions, group, out failure))
+            { ReportParkFailures(player, failure.Split('\n')); return; }
+            player.ConsoleMessage(ParkPlacementReply(group) + " The original foundation remains a separate normal building piece.");
+        }
+
+        private bool BuildParkAssembly(ParkPlacementRequest request, SkateParkKind kind,
+            ParkNativePart[] definitions, ParkGroup group, out string failure)
+        {
+            failure = "Park placement is busy, unavailable or the world is being saved.";
+            if (parkBusy || parkRefreshing || !CurrentParkRequest(request)) return false;
+            // Kill hooks may reenter placement while a previous rollback is being retried.
+            if (parkRollback.Count != 0)
+            {
+                parkBusy = true;
+                try { CleanupParkRollback(); }
+                finally { parkBusy = false; }
+            }
+            if (parkRollback.Count != 0)
+            { failure = "Previous unsaved park cleanup is incomplete; new placement is disabled until those parts are removed."; return false; }
+            if (!CurrentParkRequest(request)) return false;
+            if (request.Data.Groups.Count >= MaximumParkGroups)
+            { failure = "Park group limit reached: 256."; return false; }
+            BasePlayer player = request.Player;
+            Planner planner = request.Planner;
+            BuildingBlock anchor = request.Foundation;
+            var parts = new ParkMember[SkateParkLayout.PartCount(kind)];
             for (int i = 0; i < parts.Length; i++)
             {
                 SkateParkTransform transform;
-                if (!SkateParkLayout.TryTransform(selection.Kind, i, group.AnchorX, group.AnchorY, group.AnchorZ, group.AnchorYaw, out transform))
-                { ReportParkFailures(player, new[] { "Park layout part[" + i.ToString(CultureInfo.InvariantCulture) + "] exceeds world-coordinate bounds." }); return; }
+                if (!SkateParkLayout.TryTransform(kind, i, group.AnchorX, group.AnchorY, group.AnchorZ, group.AnchorYaw, out transform))
+                { failure = "Park layout part[" + i.ToString(CultureInfo.InvariantCulture) + "] exceeds world-coordinate bounds."; return false; }
                 parts[i] = new ParkMember { Index = i, Prefab = StringPool.Get(definitions[i].Prefab), X = transform.X, Y = transform.Y,
                     Z = transform.Z, Yaw = transform.Yaw, Pitch = transform.Pitch };
             }
@@ -2600,19 +2794,17 @@ namespace Oxide.Plugins
             {
                 if (!ParkPreflight(player, planner, anchor, definitions, parts, out failure))
                     throw new InvalidDataException(failure);
-                // Hooks may cancel/reselect or change the normally placed support before any part exists.
-                if (!CurrentParkSelection(player, selection) || parkClosing || !Eligible(player) || !player.IsAdmin ||
-                    !SameParkWorld(parkData) || !ParkFoundationMatches(anchor, anchorId, snapshot))
-                    throw new InvalidDataException("The selection, save/world, placed foundation or administrator changed during preflight.");
+                // Native/plugin callbacks can change the actor, planner, world or foundation.
+                if (!CurrentParkRequest(request))
+                    throw new InvalidDataException("The administrator, building plan, save/world or placement request changed during preflight.");
                 for (int i = 0; i < parts.Length; i++)
                 {
-                    if (!CurrentParkSelection(player, selection) || parkClosing || !Eligible(player) || !player.IsAdmin ||
-                        !SameParkWorld(parkData) || !ParkFoundationMatches(anchor, anchorId, snapshot))
-                        throw new InvalidDataException("The selection, save/world, foundation or administrator changed during creation.");
+                    if (!CurrentParkRequest(request))
+                        throw new InvalidDataException("The administrator, building plan, save/world or placement request changed during creation.");
                     BaseEntity entity = GameManager.server.CreateEntity(definitions[i].Prefab,
                         ParkPosition(parts[i]), ParkRotation(parts[i]), true);
                     if (entity == null) throw new InvalidDataException("A park part could not be created: " + definitions[i].Prefab + ".");
-                    parkRollback.Add(entity); // Track before casting and native initialization; hooks can reenter.
+                    parkRollback.Add(entity);
                     BuildingBlock block = entity as BuildingBlock;
                     if (block == null) throw new InvalidDataException("A park prefab is not a native building block: " + definitions[i].Prefab + ".");
                     created.Add(block);
@@ -2624,9 +2816,8 @@ namespace Oxide.Plugins
                     block.Spawn();
                     if (block.IsDestroyed || block.net == null || block.blockDefinition == null)
                         throw new InvalidDataException("A park part failed to initialize: " + definitions[i].Prefab + ".");
-                    if (!CurrentParkSelection(player, selection) || parkClosing || !SameParkWorld(parkData) ||
-                        !ParkFoundationMatches(anchor, anchorId, snapshot) || !Eligible(player) || !player.IsAdmin)
-                        throw new InvalidDataException("The selection, save/world, foundation or administrator changed during part initialization.");
+                    if (!CurrentParkRequest(request))
+                        throw new InvalidDataException("The administrator, building plan, save/world or placement request changed during part initialization.");
                     parts[i].Id = ParkId(block);
                     if (parts[i].Id == 0 || !ParkMatches(block, group, parts[i]) ||
                         !ReferenceEquals(block.blockDefinition, definitions[i].Construction))
@@ -2634,12 +2825,21 @@ namespace Oxide.Plugins
                     block.skinID = 0;
                     block.SetGrade(definitions[i].Grade);
                     block.SetHealthToMax();
-                    block.AttachToBuilding(snapshot.Building);
+                    if (request.Selection == null && i == 0)
+                    {
+                        // The DecayEntity overload allocates a real native building; uint zero does not.
+                        block.AttachToBuilding((DecayEntity)null);
+                        request.Building = block.buildingID;
+                    }
+                    else block.AttachToBuilding(request.Building);
+                    if (request.Building == 0 || block.buildingID != request.Building)
+                        throw new InvalidDataException("Native park building attachment failed.");
                     block.StartBeingDemolishable();
                     RefreshParkBlock(block, ParkWorldBounds(block));
                 }
                 foreach (ParkMember part in parts)
                 {
+                    if (!CurrentParkRequest(request)) throw new InvalidDataException("The placement request changed before final building-hook checks.");
                     Construction construction = definitions[part.Index].Construction;
                     var target = new Construction.Target { valid = true, player = player, onTerrain = true,
                         position = ParkPosition(part), rotation = ParkRotation(part).eulerAngles,
@@ -2652,61 +2852,63 @@ namespace Oxide.Plugins
                     BuildingBlock block = created[part.Index];
                     ParkNativePart definition = definitions[part.Index];
                     Construction construction = definition.Construction;
-                    if (!CurrentParkSelection(player, selection) || parkClosing || !SameParkWorld(parkData) ||
-                        !ParkFoundationMatches(anchor, anchorId, snapshot) || !player.IsAdmin || !Eligible(player) || !ParkMatches(block, group, part) ||
+                    if (!CurrentParkRequest(request) || !ParkMatches(block, group, part) ||
                         block.grade != definition.Grade || block.skinID != 0 || !ReferenceEquals(block.blockDefinition, construction) ||
-                        !block.grounded || block.enableSaving || block.buildingID != snapshot.Building ||
+                        !block.grounded || block.enableSaving || block.buildingID != request.Building ||
                         !player.CanBuild(ParkPosition(part), ParkRotation(part), construction.bounds, false) ||
                         !ParkProximity(player, construction, ParkPosition(part), ParkRotation(part), anchor, created) ||
                         !ParkFootprint(ParkPosition(part), ParkRotation(part), construction.bounds, anchor, created,
                             LayerMask.GetMask("World", "Construction", "Deployed", "Player (Server)"), out failure))
-                        throw new InvalidDataException("A selection, save/world, foundation or park member changed during final permission verification.");
+                        throw new InvalidDataException("A placement request or park member changed during final permission verification.");
                 }
                 group.Members.AddRange(parts);
-                parkData.Groups.Add(group);
+                request.Data.Groups.Add(group);
                 recorded = true;
-                // Persist the manifest before registering spawned parts in the native save list.
+                // Persist metadata before registering the spawned parts in the native save list.
                 SaveParkData();
                 foreach (ParkMember part in parts)
                 {
                     BuildingBlock block = created[part.Index];
                     block.EnableSaving(true);
-                    if (!CurrentParkSelection(player, selection) || parkClosing || !SameParkWorld(parkData) ||
-                        !ParkFoundationMatches(anchor, anchorId, snapshot) || !Eligible(player) || !player.IsAdmin || !ParkMatches(block, group, part) ||
+                    if (!CurrentParkRequest(request) || !ParkMatches(block, group, part) ||
                         block.grade != definitions[part.Index].Grade || block.skinID != 0 ||
                         !ReferenceEquals(block.blockDefinition, definitions[part.Index].Construction) ||
-                        !block.enableSaving || !block.grounded || block.buildingID != snapshot.Building)
-                        throw new InvalidDataException("A selection, save/world, foundation or park member changed during save registration.");
+                        !block.enableSaving || !block.grounded || block.buildingID != request.Building)
+                        throw new InvalidDataException("A placement request or park member changed during save registration.");
                 }
-                SkateParkSelectionState consumed;
-                if (!CurrentParkSelection(player, selection) || !SkateParkSelections.TryApply(selection.State,
-                    SkateParkSelectionAction.PlacementSucceeded, player.IsAdmin, parkReady, clock.Elapsed.TotalSeconds, null, out consumed))
-                    throw new InvalidDataException("The park selection expired or changed before completion.");
+                SkateParkSelectionState consumed = new SkateParkSelectionState();
+                if (!CurrentParkRequest(request) || (request.Selection != null &&
+                    !SkateParkSelections.TryApply(request.Selection.State, SkateParkSelectionAction.PlacementSucceeded,
+                        player.IsAdmin, parkReady, clock.Elapsed.TotalSeconds, null, out consumed)))
+                    throw new InvalidDataException("The placement request expired or changed before completion.");
                 foreach (ParkMember part in parts) parkMembers.Add(part.Id, group);
                 foreach (BuildingBlock block in created) parkRollback.Remove(block);
-                selection.State = consumed;
-                parkSelectionEpoch = new object();
-                parkSelections.Remove(player.userID);
+                if (request.Selection != null)
+                {
+                    request.Selection.State = consumed;
+                    parkSelectionEpoch = new object();
+                    parkSelections.Remove(player.userID);
+                }
                 committed = true;
-                player.ConsoleMessage("Park " + group.Kind + " created as a saved native building assembly (" +
-                    parts.Length.ToString(CultureInfo.InvariantCulture) + " parts). The original foundation remains a separate normal building piece. Use a hammer to demolish the park group.");
+                failure = null;
+                return true;
             }
             catch (Exception error)
             {
                 SkateParkSelectionState retained;
-                if (SkateParkSelections.TryApply(selection.State, SkateParkSelectionAction.PlacementFailed,
-                    player != null && player.IsAdmin, parkReady, clock.Elapsed.TotalSeconds, null, out retained)) selection.State = retained;
+                if (request.Selection != null && CurrentParkSelection(player, request.Selection) &&
+                    SkateParkSelections.TryApply(request.Selection.State, SkateParkSelectionAction.PlacementFailed,
+                        player != null && player.IsAdmin, parkReady, clock.Elapsed.TotalSeconds, null, out retained))
+                    request.Selection.State = retained;
                 if (recorded)
                 {
-                    parkData.Groups.Remove(group);
+                    request.Data.Groups.Remove(group);
                     foreach (ParkMember part in parts) parkMembers.Remove(part.Id);
                 }
                 CleanupParkRollback();
                 if (recorded) SaveParksSafely();
-                ReportParkFailures(player, error.Message.Split('\n'));
-                if (player != null && player.IsConnected)
-                    player.ConsoleMessage("Park creation was not completed. The selection remains until its original expiry unless cancelled or replaced." +
-                        (parkRollback.Count == 0 ? "" : " Part cleanup is incomplete; check the server log."));
+                failure = error.Message + (parkRollback.Count == 0 ? "" : " Part cleanup is incomplete; new placement is disabled until cleanup succeeds.");
+                return false;
             }
             finally
             {
