@@ -9,6 +9,8 @@ using UnityEngine;
 public static class SkateBoard
 {
     public const float TipDegrees = 15f, Axle = 0.23f;
+    // A tail or nose stall hangs the board steeper over the edge than a manual does.
+    public const float StallTip = 1.8f;
     public const string LitShader = "Rust/Standard", PlainShader = "Hidden/Internal-Colored";
     public const float Gloss = 0.2f, BailTurn = 0.5f, BailBehind = 0.9f, BailRest = 0.045f, PopMost = 0.22f, LieSeconds = 6f;
     // The wheels of the shared mesh, and how far a truck turns per degree the board leans.
@@ -48,6 +50,11 @@ public static class SkateBoard
     private static readonly float[] grabRoll = { 0f, -15f, -20f, 25f, 0f, 0f, 0f, -20f, 15f, -15f, -30f, -40f, 0f, 0f };
     private static readonly float[] grabPitch = { 0f, 0f, 0f, 0f, 0f, -15f, 15f, -8f, -12f, 12f, -6f, 8f, 18f, -18f };
     public static float GrabFold;
+    // A no comply or a boneless: the front foot is down beside the board and the back foot kicks
+    // the tail, so the nose comes up about the back foot and the board rises with it. Plant (0..1)
+    // is set by the rider's pose each frame.
+    public const float PlantPitch = 38f, PlantLift = 0.12f, PlantPivot = 0.2f;
+    public static float Plant;
     // The board's own tweak in a grab, about the middle of the deck; the rider's frame stays upright
     // (the feet are near the middle, where the tweak moves the deck least).
     public static Quaternion GrabTweak(Vector3 up)
@@ -128,8 +135,17 @@ public static class SkateBoard
         var rot = SkateRide.Turn(askew, up) * Quaternion.LookRotation(nose, up) * SkateRide.Turn(flip, Vector3.forward);
         rot = GrabTweak(up) * rot;
         // A flip turns the board about the middle of the deck, not about the wheels.
+        var centre = at + up * RiderRig.DeckTop - (rot * Vector3.up) * RiderRig.DeckTop;
+        if (Plant > 0.001f && SkateRide.Mode != RideMode.Bail)
+        {
+            var lead = Vector3.Dot(travel, nose) >= 0f ? nose : -nose;
+            var kick = SkateRide.Turn(-PlantPitch * Plant, Vector3.Cross(up, lead));
+            var pivot = centre - lead * PlantPivot;
+            centre = pivot + kick * (centre - pivot) + up * (PlantLift * Plant);
+            rot = kick * rot;
+        }
         board.transform.rotation = rot;
-        board.transform.position = at + up * RiderRig.DeckTop - (rot * Vector3.up) * RiderRig.DeckTop;
+        board.transform.position = centre;
         Parts(now, travel, nose);
     }
 
