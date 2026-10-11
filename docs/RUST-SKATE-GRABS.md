@@ -2,7 +2,7 @@
 
 This is a proposed animation specification for the existing Rust skate mod. The grip identities below use public skateboarding teaching references. Every angle, distance, knee range and timing target marked **proposal** is original authored data for this project, not a measurement of a skater or an animation extracted from a game. These values have not been applied or visually verified in the Rust client.
 
-The source audit refers to revision `d07f0a6`. The relevant files are [the grab enum](../mods/rust/shared/SkateTricks.cs), [shared rider poses](../mods/rust/shared/SkateRider.cs), [the board mesh](../mods/rust/shared/SkateBoardMesh.cs), [board rendering](../mods/rust/client/src/SkateBoard.cs), and [the rider adapter](../mods/rust/client/src/RiderRig.cs). This document changes none of those files.
+The grab source audit refers to revision `d07f0a6`; its audited values are unchanged at `9f8569d`. The stall/plant audit below includes Claude's subsequent `6f54d2f` changes through `9f8569d`. The relevant files are [the grab enum](../mods/rust/shared/SkateTricks.cs), [shared rider poses](../mods/rust/shared/SkateRider.cs), [the board mesh](../mods/rust/shared/SkateBoardMesh.cs), [board rendering](../mods/rust/client/src/SkateBoard.cs), and [the rider adapter](../mods/rust/client/src/RiderRig.cs). This document changes none of those files.
 
 ## Hands, stance and board ends
 
@@ -138,3 +138,83 @@ The following is an audit of current project-authored data, **not the proposal**
 The current shared `Grip` assigns side-grab offsets around `±0.10`, central nose/tail contacts at `±0.36`, and Crail/Seatbelt contacts at `±0.30`. Nosebone currently contacts near the toe-side tail at `-0.25`; Tailbone near the heel-side nose at `+0.30`. Its named tuck, extension, body-shift and chest-turn constants are authored solver inputs. They are not the grip-zone, knee or chest targets proposed above; chest-turn inputs there use radians.
 
 Current hand contacts are made from an upright rider frame and are not themselves transformed by `GrabTweak`. Consequently, increasing a render-only tweak does not establish that a hand remains on the board edge. The rollout should first resolve stance/end roles and a shared final board frame, then constrain contact/feet/limbs, then tune the authored values against actual visible poses. `SkateRiderMotion` adds secondary hand lag and has no contact flags: bypass/reset it for constrained modes or solve held-hand contact after secondary motion. Filtering an already solved grip afterward cannot maintain zero hand separation. Preserve Legacy until old callers deliberately migrate. Source review establishes these contracts; client contact, reach, clipping and visual quality remain unverified.
+
+
+## Coping stalls: contact before pose
+
+This section proposes original contact, board and rider data for `TailStall`, `NoseStall`, `BoardStall` and `FiftyFiftyStall`. Public teaching references establish which part of the board bears on the coping. The numerical targets below are authored starting values, not measured game animation data or validated native collision behaviour.
+
+| Existing kind | Source-backed identity | Entry and release feature |
+|---|---|---|
+| `TailStall` | Tail bears on coping; rear leg loads while front leg bends | Typical entry is fakie, followed by dropping back in. [Tail stall](https://www.skateboardhere.com/tail-stall.html). |
+| `NoseStall` | Nose bears on coping; front leg loads while rear leg bends | Enter nose first and return fakie. [Nose stall](https://www.skateboardhere.com/nose-stall.html). |
+| `BoardStall` | Selected baseline is rock-to-fakie: front truck goes beyond the coping and the deck underside rocks on it | Lift the front truck clear before returning. A disaster needs its additional entry rotation and is not assumed here. [Rock to fakie](https://www.skateboardhere.com/rock-to-fakie.html). |
+| `FiftyFiftyStall` | Both truck hangers bear on coping; deck length runs along the coping | Pivot to bring the front truck back into the transition. [Axle stall](https://www.skateboardhere.com/axle-stall.html). |
+
+Capture a world contact `C`, a normalized coping tangent `K`, platform/support up `U`, and deckward direction `A` perpendicular to the coping. In a square approach, nose-first `N` points deckward along `A`; in a 50-50 hold it lies along either `+K` or `-K`. Freeze these contact descriptors during hold. They must come from the selected surface/coping, not from a moving player origin or an invented flat ground height.
+
+For these proposed poses, rotate about the actual contact rather than the board centre. If local board point `p` must stay at `C`, and `Q` is the desired final board orientation, its mesh origin is `C-Q*p`. A two-truck hold needs both transformed hanger points on the coping; a single midpoint target does not establish that constraint. Keep feet attached to the transformed deck and solve the rider above them. No grab rise applies while the board is supported in a stall.
+
+The authored mesh has truck centres at `z=±0.245`, while the current board's manual approximation uses `Axle=0.23`. Its hanger centre is `y=0.034` with radius `0.007`; the axle centre is `y=0.027` with radius `0.0035`. The proposal therefore uses the lowest central emitted metal surface around `(0,0.0235,±0.245)`, or the actual truck surface when another board representation is selected. The hanger bottom at `0.027` intersects the axle geometry and must not be used as the complete truck underside. Nose/tail and centre deck contacts use the deck underside `h(x,z)-0.009` from the mesh formula above. These are source mesh coordinates; the stall angles and selected contact stations are proposals.
+
+| Kind | Proposed held contact in board coordinates | Board direction / pitch | Sole centres on deck `(a,b)` | Rider shape proposal |
+|---|---|---|---|---|
+| Tail stall | Tail underside at `(0,h(0,-0.360)-0.009,-0.360)` fixed to `C` | Nose away from coping into transition; nose-up `+22°` relative to platform frame | F `(0,+0.16)`, B `(0,-0.31)` | B knee `30°`, F `70°`; hips over tail contact, modest `10°` forward fold, free arms balance |
+| Nose stall | Nose underside at `(0,h(0,+0.360)-0.009,+0.360)` fixed to `C` | Nose toward deck; nose-up `-22°` | F `(0,+0.31)`, B `(0,-0.16)` | F knee `30°`, B `70°`; hips over nose contact, `10°` fold, free arms balance |
+| Board stall | Centre underside `(0,0.083,0)` fixed to `C` | Nose toward deck; hold nose-up `+8°` as a starting target | F `(0,+0.21)`, B `(0,-0.21)` | F/B knees `45°/55°`; centre weight over deck contact, `10°` fold |
+| 50-50 stall | Both truck underside contacts around `(0,0.0235,±0.245)` | Length parallel to coping, hold pitch `0°` relative to local coping support plane | F `(0,+0.21)`, B `(0,-0.21)` | F/B knees `45°/45°`; hips between trucks, free arms opposite for balance |
+
+Sole heights follow the final top surface, with the actual foot's sole-to-ankle offset. The `(a,b)` entries do not mean that an ankle should be placed directly on the deck. The exact held angle may be reduced to maintain reachable limbs or adjusted for measured coping geometry; it is not a permission to penetrate a ramp collider.
+
+Proposed timing uses contact acquisition as `s=0`: blend into the held pose over `0.12s`, then keep the contact unchanged until release or the current hold timeout. Tail/nose release unloads the held end and transitions toward the measured outgoing surface; BoardStall first raises the front truck, beginning with nose-up `+18°` around the retained deck contact, before travelling back across the lip. A 50-50 release lifts the front truck, begins a `90°` yaw back toward the transition around the rear hanger contact, then ends that pivot only after the front truck is clear. These are authored sequencing targets. Clearance and attainable exit geometry must determine when the contact can actually release; no arbitrary timer proves that clearance.
+
+The source at `9f8569d` selects these stall kinds and holds a movement target. Tail/NoseStall also set the generic manual flags. Since `6f54d2f`, their rendered Tip target is `±1.8` times `TipDegrees=15`, a nominal `±27°` approached by smoothing. The board's generic `Tilt` still rotates around its approximate trailing/leading axle rather than the coping-end/deck/truck pivot specified here. Rider stall crouch targets are Board `0.55`, 50-50 `0.45`, Handplant `0.38` and otherwise `0.32`; non-handplant stalls widen the balancing arms with `StallArms=1.6`. These source pose parameters are distinct from the proposed knee angles above. The controller uses `StallMax=2.5s`, then reverses travel for non-handplant exits. Those are existing controller/rendering rules, not evidence that the four contact shapes or their exits have been visually solved.
+
+## Footplants: different feet and different launch sequences
+
+Front/back roles use the stance mapping above and stay fixed for the whole action. No-comply plants F and pops with B; boneless plants F with a B-hand Indy grip; fastplant plants B with an Indy grip; the selected beanplant plants F to the heel side with an F-hand nose grip. These identities come from the linked teaching pages. The foot position, pitch and timing columns below are proposals.
+
+| `SkatePopKind` | Grounded foot | Foot retained on board | Hand and board action | Reference |
+|---|---|---|---|---|
+| `NoComply = 3` | F | B pops tail and guides/catches the board | No required hand grab | [No-comply](https://www.skateboardhere.com/no-comply.html) |
+| `Boneless = 4` | F | B | B-hand Indy acquired before the jump; board is pulled up while the planted leg launches | [Boneless](https://www.skateboardhere.com/boneless.html) |
+| `Fastplant = 5` | B | F | B-hand Indy, with the rear foot planted rather than the front | [Fastplant](https://www.skateboardhere.com/fastplant.html) |
+| `Beanplant = 6` | F | B | Selected nose-grab variant: F hand holds nose, F foot steps off heel side, B stays on deck | [Beanplant](https://www.skateboardhere.com/bean-plant.html) |
+
+EA also describes no-comply as the front foot leaving while the back foot pops. Its settings guide does not give the offsets or animation timings below. [EA skate. settings guide](https://help.ea.com/en/articles/skate/skate/settings-guide/).
+
+Choose a reachable ground patch before a plant starts. Let `O` be the board centre at that acquisition, `N` its resolved nose direction, and `T` the anatomical toe direction. The proposed ground sole contact is the surface projection of `O + a*T + b*N`. Once acquired, store that world point and its normal: the planted foot stays there until lift-off, while the board and hips can rise. On a moving support, retain the contact in that support's local frame and resolve its world transform each frame. An airborne body origin plus a downward offset is not a substitute for a stored ground contact.
+
+| Plant | Proposed ground sole `(a,b)` | Retained board sole at acquisition | Proposed preload shape |
+|---|---|---|---|
+| No-comply | `(-0.28,+0.16)` | B near tail `(0,-0.31)` | F knee `45°`; B bends to pop, torso initially `15°` forward |
+| Boneless | `(-0.30,+0.18)` | B `(0,-0.21)` | F knee `40°`; B `60°`; Indy hand secured before loading the plant |
+| Fastplant | `(-0.30,-0.18)` | F `(0,+0.21)` | B knee `40°`; F `60°`; Indy contact carries the freed rear end |
+| Beanplant | `(-0.30,+0.18)` | B `(0,-0.21)` | F knee `40°`; B `60°`; front arm/nose contact clear of front knee |
+
+The heel-side location for Beanplant is source-backed; choosing heel-side patches for the other three is an authored starting choice, not a claim that every real variation plants on that side. Resolve L/R using the stance table: NoComply/Boneless/Beanplant plant L in regular and R in goofy, reversing those roles in switch; Fastplant plants the other foot. Translate the sole contact into ankle and toe targets with the measured foot shape and surface normal. The retained foot follows the displayed deck and the named hand follows its actual grip zone.
+
+### Proposed launch-relative timing and board pitch
+
+Here `t=0` is **lift-off from the planted foot**, when the launch velocity is committed. Negative time is preparation while support contact still exists; positive time is aerial return. These are original timing targets for a new plant action, not a restatement of the current post-launch timer. Interpolate pose samples smoothly without overshooting pitch or passing through the contact plane.
+
+| Plant | `t=-0.18s`: begin | `t=-0.10s`: acquire/load contact | `t=0`: extend and lift off | `t=+0.12s`: return | By `t=+0.30s`, or earlier landing |
+|---|---|---|---|---|---|
+| No-comply | Board pitch `0°`; F begins stepping away | F sole fixed; B loads tail; pitch `+15°` | Planted F leg extends toward `15°` knee bend; tail pop lifts nose toward `+35°`; B leg guides board | F returns toward deck; pitch falls toward `+12°`, B guides its catch | Both soles back on deck, pitch approaches `0°` relative to the landing surface |
+| Boneless | Crouch and acquire Indy; pitch `0°` | F fixed; B and hand lift nose; pitch `+15°` | F leg extends toward `15°`; hold Indy, board pitch peaks near `+30°` | F retracts to deck; Indy can release; pitch returns toward `+10°` | Both soles supported by deck; release hand and prepare landing |
+| Fastplant | Acquire Indy; B begins stepping away; pitch `0°` | B fixed; F remains on deck; pitch `+8°` | B leg extends toward `15°`; Indy lifts board with F attached; pitch near `+15°` | B retracts to rear deck; pitch returns toward `+5°` | Both soles back; hand releases and normal landing pose resumes |
+| Beanplant | F hand acquires nose; F steps heelward; pitch `+5°` | F fixed; B stays on deck; nose held at about `+20°` | F leg extends toward `15°`; nose-hand lift peaks near `+30°` | F retracts; B and nose hand control return toward `+12°` | Both soles back; nose hand releases before landing |
+
+All pitches above are semantic nose-up in the resolved board frame. They use the actual quaternion sign conversion above; they are not raw `grabPitch` assignments that can be layered independently over a competing grab/manual rotation. Define one resulting board orientation and one set of contact targets. For plant hand contact, use the grip zone established above; do not use the generic air-grab rise while that hand is already constraining the board during preload.
+
+During the airborne return, propose moving the freed foot through an arc with up to `0.10m` extra sole clearance above its final deck position, then returning it to the measured deck surface. Its ground-contact weight reaches zero at `t=0`; its deck-contact weight reaches one by `t=+0.30s`, shortened to the actual landing deadline. When that interval is too short for a safe reachable return, reduce or refuse the action rather than leaving a foot fixed below a descending board. Visual motion must not add a second physical launch or pump-energy award. Launch physics and board pitch are separate outputs.
+
+### Current plant audit and implementation boundary
+
+At `9f8569d`, the controller starts `PlantedUntil = now + PlantSeconds` when a plant launches, with `PlantSeconds=0.25s`; `FootPlanted` is active in Air. The rider adapter passes a scalar blend to the shared rider. That shared path always moves the effective F ankle toward `BoardPosition + facing*0.20 + travel*0.22`, lowering it by a blend of `GroundDrop+0.30`. It does not choose B for Fastplant or store a plant-specific ground contact.
+
+Since `6f54d2f`, the same scalar also drives the displayed board: `PlantPitch=38°`, `PlantLift=0.12m` and `PlantPivot=0.20m`. It rotates about a rearward pivot chosen along the nose or its opposite according to travel, after the grab/flip rotation, then raises the board. This generic render transform applies whenever Plant is active outside Bail; it is not a per-kind preload, fixed world-foot contact or the launch-relative pitch sequence above. The rider's feet frame receives Contact and Tilt but not this Plant kick. Board Follow also reads the cached Plant scalar before RiderRig.Frame refreshes it, so it represents the previous frame's pose value. Its hand/foot contact relationship still needs to be solved with the final displayed deck transform.
+
+Current pop-height multipliers are NoComply `0.85`, Boneless `1.12`, Fastplant `1.10` and Beanplant `1.05`. They are existing authored controller choices, not evidence of the correct grounded foot, contact duration, board pitch or native animation. The proposal preserves the distinction between pop physics and pose data; changing those height factors is outside this document.
+
+Implementation should acquire and validate the selected support contact and stance roles, run preparation with the correct foot and hand, commit one launch at plant release, then return the freed foot in time for landing. Cancelled actions, bails, dismounts and unsupported contact must release all pose/contact constraints. The data here establishes intended identities and starting shapes; actual support detection, contact collision, limb reach and visible client motion remain unverified.
