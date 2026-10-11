@@ -237,6 +237,10 @@ namespace Shortcut.RustMod
             var chestFacing = facing * Math.Cos(chestYaw) + travel * Math.Sin(chestYaw);
             if (namedGrab && grip.ChestTurn != 0)
                 chestFacing = facing * Math.Cos(grip.ChestTurn) + (grip.End ? forward : travel) * Math.Sin(grip.ChestTurn);
+            // A heel-side grab: the chest turns round toward the heels and folds forward over them,
+            // as a rider reaches behind; it does not lie back.
+            bool heelReach = grabbing && namedGrab && grip.Across < 0 && !grip.Both && grip.ChestTurn == 0;
+            if (heelReach) chestFacing = facing * Math.Cos(HeelTurn) + travel * (Math.Sin(HeelTurn) * HeelTurnSign);
             double carve = lean * 0.65 * side * leanScale;
             double pitch = input.Bailed ? chestPitch : 0.1 + 0.12 * crouch + PushLean * turn;
             var carved = up * Math.Cos(carve) + facing * Math.Sin(carve);
@@ -254,7 +258,7 @@ namespace Shortcut.RustMod
             {
                 // The roll toward the grabbing hand comes in with the fold and grows a little as it is held: the tweak.
                 roll = namedGrab && grip.Both ? 0 : GrabRoll * (grabLeft ? -1 : 1) * (0.4 + 0.6 * folded) * (1 + 0.25 * Math.Min(1, Math.Max(0, input.GrabSeconds - GrabIn) / 0.6));
-                pitch = namedGrab && grip.Across < 0 && !grip.Both
+                pitch = namedGrab && grip.Across < 0 && !grip.Both && !heelReach
                     ? -GrabPitch(pelvis, carved, ahead * -1, grab, rig, -roll, !grabLeft, pitch)
                     : GrabPitch(pelvis, carved, ahead, grab, rig, roll, grabLeft, pitch);
                 // A heel-side grab is reached by bending down beside the board, not by lying back:
@@ -332,7 +336,8 @@ namespace Shortcut.RustMod
         private const double PushPelvisYaw = 55, PushChestYaw = 70, PushLeadToe = 60;
         private const double AirYaw = 0.35, PushWeight = 0.28, PushSide = 0.03, PushDip = 0.06, PushLean = 0.34, PushSwing = 0.28;
         private const double PushPlant = 0.10, PushSweep = 0.36, PushHeel = 0.07;
-        private const double GrabRoll = 0.4, GrabFoldLimit = 1.0, GrabTuckMargin = 0.05, PlantDrop = 0.3, GrabBackLimit = 0.55;
+        private const double GrabRoll = 0.4, GrabFoldLimit = 1.0, GrabTuckMargin = 0.05, PlantDrop = 0.3, GrabBackLimit = 0.55, HeelTurn = 2.0;
+        private const double HeelTurnSign = 1;
         // A grab folds in over GrabIn seconds; held longer it tweaks. The older inputs pose a grab just folded in.
         public const double GrabIn = 0.18;
 
