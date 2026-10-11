@@ -10,6 +10,8 @@ using UnityEngine;
 public static class RiderRig
 {
     private static float grabSince = -1f;
+    private static float crouchSpeed;
+    public const float CrouchSpring = 220f, CrouchDamp = 21f;
     private static float grabHold = -1f;
     // A view that holds the grab at a given moment of its folding in (the pose check).
     public static void GrabFor(float seconds) { grabHold = seconds; }
@@ -449,7 +451,11 @@ public static class RiderRig
             if (mode == RideMode.Ground && SkateRide.PumpHeld > 0f) want = Math.Max(want, 0.25f + 0.45f * SkateRide.PumpHeld / SkateRide.PumpCharge);
             var since = now - SkateRide.LandAt;
             if (mode == RideMode.Ground && since < 0.35f) want += (1f - since / 0.35f) * SkateRide.Clamp(SkateRide.LandImpact / 8f, 0.2f, 1f) * 0.45f;
-            Crouch += (SkateRide.Clamp(want, 0f, 1f) - Crouch) * SkateRide.Clamp(frameSeconds * 14f, 0f, 1f);
+            // The legs are a spring, a little under critical: the body dips past the crouch on a
+            // landing and comes back, and settles into a pop with a small overshoot.
+            var dt = SkateRide.Clamp(frameSeconds, 0f, 0.05f);
+            crouchSpeed += ((SkateRide.Clamp(want, 0f, 1f) - Crouch) * CrouchSpring - crouchSpeed * CrouchDamp) * dt;
+            Crouch = SkateRide.Clamp(Crouch + crouchSpeed * dt, 0f, 1f);
             // The board's rise is eased already; the legs follow it at once, or the body would bob.
             if (mode == RideMode.Air && SkateRide.Jumped && !SkateRide.Grabbing && Crouch < want) Crouch = SkateRide.Clamp(want, 0f, 1f);
             // The module leans toward the board's own right; the ride leans toward the right of travel.

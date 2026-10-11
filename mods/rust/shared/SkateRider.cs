@@ -295,19 +295,22 @@ namespace Shortcut.RustMod
                 - along * (backIsLeft ? 0.10 : 0.05) - counterSwing;
             if (grabbing)
             {
-                // The free arm is thrown up and out as the grab is held, and sways a little.
+                // The free arm goes out to the side for balance, level with the shoulder or a little
+                // above, not overhead; it lifts a little as the grab is held, and sways.
                 double held = Math.Min(1, Math.Max(0, input.GrabSeconds - GrabIn) / (GrabIn * 2));
-                double sway = Math.Sin(input.GrabSeconds * 7) * 0.08 * held;
-                var free = up * (armLength * (0.15 + 0.35 * held + sway)) + chestForward * (armLength * (0.2 - 0.1 * held));
+                double sway = Math.Sin(input.GrabSeconds * 7) * 0.06 * held;
+                var outward = Unit(Project(chestRight, up));
+                if (outward.LengthSquared < 0.5) outward = chestRight;
+                double armLift = (namedGrab ? grip.FreeUp * 0.4 : 0.06) + 0.12 * held + sway;
+                var freeRight = rightShoulder + outward * (armLength * 0.85) + up * (armLength * armLift) - travel * (armLength * 0.1);
+                var freeLeft = leftShoulder - outward * (armLength * 0.85) + up * (armLength * armLift) - travel * (armLength * 0.1);
                 if (namedGrab)
                 {
-                    free = up * (armLength * (grip.FreeUp + 0.3 * held + sway)) + chestForward * (armLength * 0.15) -
-                        Project(grab - input.BoardPosition, up) * 0.3;
-                    if (grabLeft) { leftTarget = grab; rightTarget = grip.Both ? secondGrab : rightShoulder + chestRight * (armLength * 0.75) + free; }
-                    else { rightTarget = grab; leftTarget = grip.Both ? secondGrab : leftShoulder - chestRight * (armLength * 0.75) + free; }
+                    if (grabLeft) { leftTarget = grab; rightTarget = grip.Both ? secondGrab : freeRight; }
+                    else { rightTarget = grab; leftTarget = grip.Both ? secondGrab : freeLeft; }
                 }
-                else if (backIsLeft) { leftTarget = grab; rightTarget = rightShoulder + chestRight * (armLength * 0.7) + free; }
-                else { rightTarget = grab; leftTarget = leftShoulder - chestRight * (armLength * 0.7) + free; }
+                else if (backIsLeft) { leftTarget = grab; rightTarget = freeRight; }
+                else { rightTarget = grab; leftTarget = freeLeft; }
             }
             if (reaching) { leftTarget = leftReach; rightTarget = rightReach; }
             SkateVector leftHand, rightHand, leftElbow, rightElbow;

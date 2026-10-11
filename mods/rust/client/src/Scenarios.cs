@@ -155,7 +155,7 @@ public static class Scenarios
         new View("push, foot on the ground, seen from behind", 180f, "push", 0.45f), new View("push, foot leaving the ground", 90f, "push", 0.7f),
         new View("air, half a kickflip", 120f, "flip", 180f), new View("air, quarter flip", 90f, "flip", 90f),
         new View("air with a backside grab", 90f, "grab", (float)SkateGrabKind.Backside), new View("air with a backside grab, seen from behind", 180f, "grab", (float)SkateGrabKind.Backside),
-        new View("air with a nose grab", 90f, "grab", (float)SkateGrabKind.Nose), new View("air with a melon", 90f, "grab", (float)SkateGrabKind.Melon),
+        new View("air with a frontside grab (indy)", 90f, "grab", (float)SkateGrabKind.Frontside), new View("air with a nose grab", 90f, "grab", (float)SkateGrabKind.Nose), new View("air with a melon", 90f, "grab", (float)SkateGrabKind.Melon),
         new View("air with a tailbone", 90f, "grab", (float)SkateGrabKind.Tailbone), new View("air with both hands on the board", 90f, "grab", (float)SkateGrabKind.Double),
         new View("air, the board a quarter round under the feet", 120f, "shove", 90f),
         new View("bail, stumbling", 90f, "bail", 0.2f), new View("bail, going down", 90f, "bail", 0.45f),
