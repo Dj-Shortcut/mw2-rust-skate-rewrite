@@ -42,6 +42,7 @@ public static class RiderRig
     private static int lookFailures;
     private static long skinSet;
     private static float nextScan, lookRetryAt;
+    public const float ScanEvery = 5f;
     public static string LookState = "first person";
 
     // The item in the hands and the first-person arms are drawn right in front of the camera,
@@ -251,12 +252,14 @@ public static class RiderRig
         if (!Bound || Root == null || lookFailures >= 3 || now < lookRetryAt) return;
         try
         {
-            if (now >= nextScan)
+            if (now >= nextScan || SkinGone())
             {
                 // Clothing changes replace the meshes, also one for one, so the set is compared by
-                // identity now and then. The old set goes back to the game's own state before the new
-                // one is sorted: a mesh is recognised as body by that state.
-                nextScan = now + 1f;
+                // identity now and then. Walking the whole model costs a visible hitch, so it is done
+                // every few seconds, or at once when a known mesh has been destroyed. The old set goes
+                // back to the game's own state before the new one is sorted: a mesh is recognised as
+                // body by that state.
+                nextScan = now + ScanEvery;
                 var all = Root.GetComponentsInChildren<SkinnedMeshRenderer>(true);
                 long set = all.Length;
                 for (var i = 0; i < all.Length; i++) set = set * 31 + all[i].Pointer.ToInt64();
@@ -283,6 +286,15 @@ public static class RiderRig
             Say("look threw " + e.GetType().Name + ": " + e.Message);
             try { Show(false, true); } catch (Exception) { }
         }
+    }
+
+    // A destroyed Unity object compares equal to null; checking the few known meshes is cheap, and
+    // catches a clothing change the moment it happens.
+    private static bool SkinGone()
+    {
+        for (var i = 0; i < body.Length; i++) if (body[i] == null) return true;
+        for (var i = 0; i < legSet.Length; i++) if (legSet[i] == null) return true;
+        return false;
     }
 
     public static void Unbind()
