@@ -112,8 +112,9 @@ namespace Shortcut.RustMod
             var travel = forward * (input.Switch ? -1 : 1);
             bool pushing = input.Pushing && !input.Airborne && !input.Bailed;
             bool grabbing = input.Grab && input.Airborne && !input.Bailed;
+            double plantDown = input.Airborne && !input.Bailed ? input.FootPlant * (input.GroundDrop + PlantDrop) : 0;
             var floor = input.BoardPosition + up * (Math.Min(0, input.DeckOffset) -
-                (input.Bailed || pushing ? input.GroundDrop : 0));
+                (input.Bailed || pushing ? input.GroundDrop : 0) - plantDown);
             bool backIsLeft = (input.Stance == SkateStance.Goofy) != input.Switch;
             bool namedGrab = grabbing && input.GrabKind != SkateGrabKind.Legacy;
             var grip = namedGrab ? Grip(input.GrabKind, backIsLeft, input.Stance == SkateStance.Regular) : default(GrabGrip);
@@ -140,7 +141,8 @@ namespace Shortcut.RustMod
             if (mongo)
             {
                 // The front foot pushes; the back foot stays on the tail and the toes stay forward.
-                leadAnkle = PushFoot(input.BoardPosition, travel, facing, up, input.PushPhase, input.GroundDrop, out grounded, out heel);
+                // The stroke runs a foot's length further forward: the pushing foot starts from the front of the deck.
+                leadAnkle = PushFoot(input.BoardPosition + travel * (SkatePose.FootOffset * 2), travel, facing, up, input.PushPhase, input.GroundDrop, out grounded, out heel);
                 leadToe = RidingLeadToe * Math.PI / 180 + (Math.PI / 2 - RidingLeadToe * Math.PI / 180) * grounded;
             }
             else if (pushing)
@@ -150,8 +152,8 @@ namespace Shortcut.RustMod
             }
             if (input.FootPlant > 0 && input.Airborne && !input.Bailed)
             {
-                // The front foot off the deck, stepped out beside the board at deck height.
-                var planted = input.BoardPosition + facing * 0.24 + travel * 0.18 + up * SkatePose.FootLift;
+                // The front foot off the deck and down toward the ground beside the board, ahead of it.
+                var planted = input.BoardPosition + facing * 0.2 + travel * 0.22 + up * (SkatePose.FootLift - plantDown);
                 leadAnkle = leadAnkle + (planted - leadAnkle) * input.FootPlant;
             }
             double leanScale = 1, yawScale = input.Airborne ? AirYaw : 1;
@@ -315,7 +317,7 @@ namespace Shortcut.RustMod
         private const double PushPelvisYaw = 55, PushChestYaw = 70, PushLeadToe = 60;
         private const double AirYaw = 0.35, PushWeight = 0.28, PushSide = 0.03, PushDip = 0.06, PushLean = 0.22, PushSwing = 0.28;
         private const double PushPlant = 0.10, PushSweep = 0.36, PushHeel = 0.07;
-        private const double GrabRoll = 0.4, GrabFoldLimit = 1.0, GrabTuckMargin = 0.05;
+        private const double GrabRoll = 0.4, GrabFoldLimit = 1.0, GrabTuckMargin = 0.05, PlantDrop = 0.3;
         // A grab folds in over GrabIn seconds; held longer it tweaks. The older inputs pose a grab just folded in.
         public const double GrabIn = 0.18;
 

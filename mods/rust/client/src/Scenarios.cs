@@ -168,6 +168,13 @@ public static class Scenarios
         new View("score display: a grind", 180f, "hud", 5f), new View("score display: banked", 180f, "hud", 6f),
         new View("score display: a bail", 180f, "hud", 7f), new View("score display: held back by the server, keyboard", 180f, "hud", 8f),
         new View("score display: controller", 180f, "hud", 9f),
+        new View("push with the front foot (mongo), foot on the ground", 90f, "mongo", 0.45f), new View("mongo push, seen from behind", 180f, "mongo", 0.45f),
+        new View("push rolling tail first (fakie), foot on the ground", 90f, "fakie", 0.45f),
+        new View("no comply / boneless, the front foot planted", 90f, "plant", 0f), new View("front foot planted, seen from behind", 180f, "plant", 0f),
+        new View("air with a backside grab, just folding in", 90f, "grabin", (float)SkateGrabKind.Backside),
+        new View("board stall on an edge", 90f, "stall", (float)SkateGrindKind.BoardStall), new View("tail stall on an edge", 90f, "stall", (float)SkateGrindKind.TailStall),
+        new View("nose stall on an edge", 90f, "stall", (float)SkateGrindKind.NoseStall), new View("handplant", 90f, "stall", (float)SkateGrindKind.Handplant),
+        new View("handplant, seen from behind", 180f, "stall", (float)SkateGrindKind.Handplant),
         new View("moving, pushing off", 115f, "move", 0f), new View("moving, turning round", 115f, "turn", 0f),
         new View("finish", 90f, "end", 0f) };
     private static float stepAt, nearAt, hudAt;
@@ -225,13 +232,21 @@ public static class Scenarios
         SkateCamera.Fixed = v.State != "first"; SkateCamera.Chase = v.State != "first";
         SkateCamera.Bearing = v.Bearing;
         SkateCamera.FixedHeight = v.State == "above" ? 2.9f : 1.15f; SkateCamera.FixedDistance = v.State == "above" ? 1.6f : 2.7f;
-        var air = v.State == "flip" || v.State == "grab" || v.State == "shove";
-        SkateRide.Mode = air ? RideMode.Air : v.State == "bail" ? RideMode.Bail : v.State == "grind" ? RideMode.Grind : RideMode.Ground;
-        SkateRide.PushPhase = v.State == "push" ? v.Value : 0f;
+        var air = v.State == "flip" || v.State == "grab" || v.State == "shove" || v.State == "plant" || v.State == "grabin";
+        SkateRide.Mode = air ? RideMode.Air : v.State == "bail" ? RideMode.Bail : v.State == "grind" || v.State == "stall" ? RideMode.Grind : RideMode.Ground;
+        var pushes = v.State == "push" || v.State == "mongo" || v.State == "fakie";
+        SkateRide.PushPhase = pushes ? v.Value : 0f;
+        SkateRide.PushMongo = v.State == "mongo";
+        SkateRide.Speed = v.State == "fakie" ? -2f : 0f;
+        SkateRide.PlantedUntil = v.State == "plant" ? now + 999f : -99f;
+        SkateRide.Stalling = v.State == "stall";
+        SkateRide.GrindKind = v.State == "stall" ? (SkateGrindKind)(int)v.Value : SkateGrindKind.None;
+        if (v.State == "grabin") RiderRig.GrabFor(0.09f);
         SkateRide.FlipDeg = v.State == "flip" ? (int)v.Value : 0;
-        SkateRide.Grab = v.State == "grab" ? (SkateGrabKind)(int)v.Value : SkateGrabKind.None;
+        SkateRide.Grab = v.State == "grab" || v.State == "grabin" ? (SkateGrabKind)(int)v.Value : SkateGrabKind.None;
         SkateRide.ShoveDeg = v.State == "shove" ? v.Value : 0;
-        SkateRide.Manual = v.State == "manual"; SkateRide.NoseManual = v.State == "nose";
+        SkateRide.Manual = v.State == "manual" || (v.State == "stall" && v.Value == (float)SkateGrindKind.TailStall);
+        SkateRide.NoseManual = v.State == "nose" || (v.State == "stall" && v.Value == (float)SkateGrindKind.NoseStall);
         SkateBoard.ShowLift = air ? 0.7f : 0f;
         SkateRide.Trick = new SkateTrickState(v.State == "switch");
         if (v.State == "bail") SkateRide.ModeAt = now - v.Value * SkateRide.BailSeconds;

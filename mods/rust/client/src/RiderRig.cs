@@ -10,6 +10,9 @@ using UnityEngine;
 public static class RiderRig
 {
     private static float grabSince = -1f;
+    private static float grabHold = -1f;
+    // A view that holds the grab at a given moment of its folding in (the pose check).
+    public static void GrabFor(float seconds) { grabHold = seconds; }
     public const float AnkleHeight = 0.095f, ToeHeight = 0.025f, DeckTop = 0.092f, HeelShift = 0.055f;
     public const float HeadLiftFrom = 20f, HeadLiftShare = 0.8f, HeadLiftMost = 50f;
     public static bool Bound;
@@ -454,13 +457,13 @@ public static class RiderRig
             var speed = Math.Min((float)SkateMotion.MaximumGroundSpeed, Math.Abs(SkateRide.Speed));
             // A handplant is posed as a tucked grab with a hand down at the edge.
             var grab = mode == RideMode.Air ? SkateRide.Grab : SkateRide.Handplant ? SkateGrabKind.Legacy : SkateGrabKind.None;
-            if (grab == SkateGrabKind.None) grabSince = -1f; else if (grabSince < 0f) grabSince = now;
+            if (grab == SkateGrabKind.None) { grabSince = -1f; grabHold = -1f; } else if (grabSince < 0f) grabSince = now;
             var plant = SkateRide.FootPlanted ? SkateRide.Clamp((SkateRide.PlantedUntil - now) / SkateRide.PlantSeconds * 1.5f, 0f, 1f) : 0f;
             var input = new SkateRiderInput(new SkateVector(plane.x, plane.y, plane.z), new SkateVector(fx, fy, fz), new SkateVector(ux, uy, uz), SkateStance.Regular, SkateRide.TailFirst,
                 speed, lean, Crouch, mode == RideMode.Air || SkateRide.Handplant, mode == RideMode.Ground && SkateRide.PushPhase > 0f, SkateRide.Clamp(SkateRide.PushPhase, 0f, 1f),
                 SkateRide.FlipDeg, grab, mode == RideMode.Bail, SkateKeys.LookYaw % 360f, SkatePose.FootLift - AnkleHeight,
                 DeckTop, mode == RideMode.Bail ? SkateRide.Clamp((now - SkateRide.ModeAt) / SkateRide.BailSeconds, 0f, 1f) : 0f,
-                SkateRide.PushMongo, plant, grabSince < 0f ? 0f : now - grabSince);
+                SkateRide.PushMongo, plant, grabHold >= 0f ? grabHold : grabSince < 0f ? 0f : now - grabSince);
             SkateRiderPose pose; string error;
             if (!SkateRider.TryCreate(Rig, input, out pose, out error))
             {
