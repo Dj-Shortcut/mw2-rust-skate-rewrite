@@ -19,6 +19,9 @@ public static class SkateParks
     public const string HalfWallPrefab = "assets/prefabs/building core/wall.half/wall.half.prefab";
     public const string FoundationPrefab = "assets/prefabs/building core/foundation/foundation.prefab";
     public static bool Enabled = true;
+    // How far a native floor tile's bottom lies below its own origin, read from the last floor seen
+    // (the picker lifts an explicit anchor by it so the first tile clears the ground); a guess until then.
+    public static float FloorBottom = -0.1f;
     public static int Blocks, Assemblies, Drawn, Colliders, HiddenRenderers, Scans;
     public static string Status = "", Error = "";
     private static float nextScan;
@@ -182,6 +185,7 @@ public static class SkateParks
             var t = b.transform; var e = t.rotation.eulerAngles;
             float top = 0f, bottom = 0f;
             try { var bounds = b.bounds; top = bounds.center.y + bounds.extents.y; bottom = bounds.center.y - bounds.extents.y; } catch (Exception) { }
+            if (prefab == FloorPrefab && bottom < 0f && bottom > -0.5f) FloorBottom = bottom;
             blocks.Add(new Block { Entity = b, Prefab = prefab, Position = t.position, Rotation = t.rotation, Yaw = e.y, Pitch = Wrap(e.x), Top = top, Bottom = bottom, Id = b.GetInstanceID() });
         }
         Blocks = blocks.Count;

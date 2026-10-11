@@ -120,7 +120,11 @@ The picker: on foot, holding `Back` (the view button) shows the eight pieces; th
 cancels. On the keyboard `P` opens the picker and steps to the next piece, `Q`/`E` turn it, `O`
 places it and `Backspace` closes it. While the picker is open the chosen piece's authored model
 is drawn where the view meets the ground, turned as asked, as a preview. Placing sends
-`skate.place <name> x y z yaw` to the server as a console packet on the client's own connection
+`skate.place <name>` to the server (the server finds the place from the player's own view and
+lifts the piece clear of the ground) or, when the piece was turned, `skate.place <name> x y z yaw`
+with the preview's anchor lifted by a floor tile's thickness (read from the last floor seen, a
+guess of 0.1 m before that) plus 4 cm, which the server takes exactly as given. The command goes
+as a console packet on the client's own connection
 (`SkateConsole.Send`: the game's console class is renamed in this client build, but the network
 library keeps its names, so the packet is written the way the console writes it); the server
 builds the piece there (0.3.6, Codex). Where sending is not available the old route stays: `A`

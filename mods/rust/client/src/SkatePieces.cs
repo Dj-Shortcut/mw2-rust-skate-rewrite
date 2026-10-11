@@ -12,7 +12,7 @@ public static class SkatePieces
 {
     public static readonly string[] Names = { "bank", "kicker", "quarterpipe", "ledge-low", "ledge-high", "long-ledge", "funbox", "halfpipe" };
     public const int MenuButton = SkatePad.Back;
-    public const float ShownSeconds = 6f, PlaceSeconds = 120f, AimReach = 40f, TurnStep = 15f;
+    public const float ShownSeconds = 6f, PlaceSeconds = 120f, AimReach = 40f, TurnStep = 15f, ClearGround = 0.04f;
 
     public static bool Open;
     public static int Chosen;
@@ -109,7 +109,12 @@ public static class SkatePieces
         if (!SkateConsole.CanSend) { Ask(name, now); return; }
         if (!AimOk) { Said = "Aim at the ground first"; SaidAt = now; return; }
         var ci = CultureInfo.InvariantCulture;
-        var line = "skate.place " + name + " " + Aim.x.ToString("F2", ci) + " " + Aim.y.ToString("F2", ci) + " " + Aim.z.ToString("F2", ci) + " " + Yaw.ToString("F0", ci);
+        // Untouched, the server places the piece where the player looks and lifts it clear of the
+        // ground itself; turned, the preview's own anchor goes along, lifted by a floor tile's
+        // thickness and a little slack, which the server takes exactly as given.
+        var lift = -SkateParks.FloorBottom + ClearGround;
+        var line = Turn == 0f ? "skate.place " + name
+            : "skate.place " + name + " " + Aim.x.ToString("F2", ci) + " " + (Aim.y + lift).ToString("F2", ci) + " " + Aim.z.ToString("F2", ci) + " " + Yaw.ToString("F0", ci);
         if (SkateConsole.Send(line))
         {
             Placed++; SaidAt = now; Asked = "";
