@@ -45,6 +45,8 @@ public static class Scenarios
         else if (Name == "piece") Piece(s);
         else if (Name == "status") Status(game, s);
         else if (Name == "pose") Pose(s, now);
+        else if (Name == "park") Park(s, now);
+        else if (Name == "send") SendCheck(s);
         else if (Name == "pad") Pad(game, now);
         else Trick(game);
     }
@@ -153,6 +155,7 @@ public static class Scenarios
         new View("stance, seen from above", 90f, "above", 0f),
         new View("push, foot coming down", 90f, "push", 0.2f), new View("push, foot on the ground", 90f, "push", 0.45f),
         new View("push, foot on the ground, seen from behind", 180f, "push", 0.45f), new View("push, foot leaving the ground", 90f, "push", 0.7f),
+        new View("ollie, just popped", 90f, "ollie", 0.9f), new View("ollie, at the top", 90f, "ollie", 0f), new View("ollie, coming down", 90f, "ollie", -0.8f),
         new View("air, half a kickflip", 120f, "flip", 180f), new View("air, quarter flip", 90f, "flip", 90f),
         new View("air with a backside grab", 90f, "grab", (float)SkateGrabKind.Backside), new View("air with a backside grab, seen from behind", 180f, "grab", (float)SkateGrabKind.Backside),
         new View("air with a frontside grab (indy)", 90f, "grab", (float)SkateGrabKind.Frontside), new View("air with a nose grab", 90f, "grab", (float)SkateGrabKind.Nose), new View("air with a melon", 90f, "grab", (float)SkateGrabKind.Melon),
@@ -238,7 +241,7 @@ public static class Scenarios
         SkateCamera.Fixed = v.State != "first"; SkateCamera.Chase = v.State != "first";
         SkateCamera.Bearing = v.Bearing;
         SkateCamera.FixedHeight = v.State == "above" ? 2.9f : 1.15f; SkateCamera.FixedDistance = v.State == "above" ? 1.6f : 2.7f;
-        var air = v.State == "flip" || v.State == "grab" || v.State == "shove" || v.State == "plant" || v.State == "grabin";
+        var air = v.State == "flip" || v.State == "grab" || v.State == "shove" || v.State == "plant" || v.State == "grabin" || v.State == "ollie";
         SkateRide.Mode = air ? RideMode.Air : v.State == "bail" ? RideMode.Bail : v.State == "grind" || v.State == "stall" ? RideMode.Grind : RideMode.Ground;
         var pushes = v.State == "push" || v.State == "mongo" || v.State == "fakie";
         SkateRide.PushPhase = pushes ? v.Value : 0f;
@@ -251,6 +254,7 @@ public static class Scenarios
         RiderRig.PlantFor(v.State == "plantup" ? v.Value : -1f);
         if (v.State == "plantup") { SkateRide.Stalling = true; SkateRide.GrindKind = SkateGrindKind.Handplant; SkateRide.Mode = RideMode.Grind; }
         SkateRide.FlipDeg = v.State == "flip" ? (int)v.Value : 0;
+        SkateRide.Jumped = v.State == "ollie"; SkateRide.VSpeed = v.State == "ollie" ? v.Value * SkateRide.OlliePop : 0f;
         SkateRide.Grab = v.State == "grab" || v.State == "grabin" ? (SkateGrabKind)(int)v.Value : SkateGrabKind.None;
         SkateRide.ShoveDeg = v.State == "shove" ? v.Value : 0;
         SkateRide.Manual = v.State == "manual";
@@ -260,6 +264,69 @@ public static class Scenarios
         if (v.State == "bail") SkateRide.ModeAt = now - v.Value * SkateRide.BailSeconds;
         if (v.State == "move") { SkateRide.Frozen = false; SkateRide.Mode = RideMode.Ground; }
         if (v.State == "turn") SkateKeys.LookYaw = yaw0 + 180f;
+    }
+
+    // The park models, one at a time 6 m ahead of the rider, seen from a fixed camera (K steps on),
+    // then a ride up the bank: the models' reading, drawing and colliders, without any server piece.
+    private static readonly SkateParks.Kind[] parkKinds = { SkateParks.Kind.Bank, SkateParks.Kind.Kicker, SkateParks.Kind.QuarterPipe, SkateParks.Kind.LedgeLow,
+        SkateParks.Kind.LedgeHigh, SkateParks.Kind.LongLedge, SkateParks.Kind.Funbox, SkateParks.Kind.Halfpipe };
+    private static Vector3 parkAt;
+    // Each model is held for ParkSeconds; the check runs on its own, no key steps it.
+    public const float ParkSeconds = 20f;
+    private static void Park(float s, float now)
+    {
+        var advance = phase == 0;
+        var riding = phase == parkKinds.Length + 1;
+        if (now - stepAt > (riding ? 9f : ParkSeconds)) advance = true;
+        if (riding) SkateKeys.Push = SkateRide.Speed < 3.5f && now - stepAt < 4f;
+        if (now >= nearAt) { nearAt = now + 1f; RiderRig.Near(); }
+        if (!advance) return;
+        stepAt = now;
+        if (phase == parkKinds.Length + 1) { Finish(); return; }
+        if (phase == 0)
+        {
+            SkateRig.MountNow(yaw0); SkateRide.Frozen = true;
+            parkAt = SkateRig.LocalT.position + SkateRide.Dir(yaw0) * 6f;
+            // From behind the rider, looking along the way to the model.
+            SkateCamera.Fixed = true; SkateCamera.Chase = true; SkateCamera.Bearing = 180f; SkateCamera.FixedHeight = 3.2f; SkateCamera.FixedDistance = 9f;
+        }
+        if (phase < parkKinds.Length)
+        {
+            var kind = parkKinds[phase];
+            var big = kind == SkateParks.Kind.Halfpipe || kind == SkateParks.Kind.QuarterPipe;
+            SkateCamera.FixedDistance = big ? 16f : 9f; SkateCamera.FixedHeight = big ? 5f : 3.2f;
+            // The halfpipe's origin is its flat's centre: further out, so the near transition is not on the rider.
+            var at = kind == SkateParks.Kind.Halfpipe ? parkAt + SkateRide.Dir(yaw0) * 9f : parkAt;
+            var line = SkateParks.PreviewAt(kind, at, yaw0);
+            Enter(phase + 1, SkateParks.KindName(kind));
+            Say("park " + SkateParks.KindName(kind) + " " + line + " | " + SkateParks.Line());
+            return;
+        }
+        // The ride: the bank ahead, the rider pushing into it.
+        SkateParks.PreviewAt(SkateParks.Kind.Bank, parkAt, yaw0);
+        SkateCamera.Fixed = false; SkateCamera.Chase = true; SkateRide.Frozen = false; SkateRide.Mode = RideMode.Ground;
+        Enter(phase + 1, "riding up the bank");
+    }
+
+    // A command sent to the server by the network, not typed: a chat line that shows on the screen
+    // when it arrives, then the plugin's own status command.
+    private static void SendCheck(float s)
+    {
+        if (phase == 0)
+        {
+            Enter(1, "send a chat line");
+            var ok = SkateConsole.Send("chat.say skate client console check " + DateTime.Now.ToString("HH:mm:ss"));
+            Say("send: " + (ok ? "sent" : "not sent") + " | " + SkateConsole.SendState);
+            return;
+        }
+        if (phase == 1 && s > 3f)
+        {
+            Enter(2, "send skate.status");
+            var ok = SkateConsole.Send("skate.status");
+            Say("send: " + (ok ? "sent" : "not sent") + " | " + SkateConsole.SendState);
+            return;
+        }
+        if (phase == 2 && s > 12f) Finish();
     }
 
     // The ride with a controller, without one: its states are played into the plugin as the reader

@@ -96,6 +96,10 @@ public static class SkateRide
     private static int wantFlip, pendFlip;
     private static float wantShove, wantScale = 1f, pendShove, spinSide = 1f;
     private const float SpinSlack = 15f;
+    // The chest ahead of a spin (degrees, positive frontside): turned into it while it goes on and
+    // brought back as the half turn completes; on the ground, wound up against the one being asked for.
+    public static float SpinLead;
+    public const float SpinLeadMost = 32f, SpinWindUp = 18f;
 
     public static Vector3 Dir(float yaw) { return Quaternion.Euler(0f, yaw, 0f) * Vector3.forward; }
     public static float Toward(float a, float b, float step) { return Math.Abs(b - a) <= step ? b : a + Math.Sign(b - a) * step; }
@@ -131,6 +135,8 @@ public static class SkateRide
         if (Mode == RideMode.Grind) SkateGrind.Speed = Speed;
     }
     public static bool TailFirst { get { return Trick.Switch != (Speed < -0.3f); } }
+    // Which way round a frontside turn goes from here: the sign a left-stick turn gets in the trick module.
+    public static float SpinSide { get { return TailFirst ? -1f : 1f; } }
     public static bool Rotating { get { return spinning || Math.Abs(flipLeft) > 0.001f || Math.Abs(shoveLeft) > 0.001f; } }
 
     public static void ForgetServer() { Cap = MaxSpeed; raiseWait = RaiseWait; refusedSinceRaise = false; raisedAt = putBackAt = -999f; }
@@ -329,7 +335,13 @@ public static class SkateRide
         if (pushing || PushPhase > 0f)
         {
             if (PushPhase <= 0f) { Pushes++; PushMongo = SkateKeys.Mongo; }
-            PushPhase += dt / PushPeriod;
+            // While the foot is on the ground it stays where it came down and the board rolls on
+            // past it: the stroke runs by the distance the board moves, not by the clock (a board
+            // that cannot move gets the slow clock), so the foot never slides along the ground.
+            var stroke = (float)(SkateRider.PushPlant + SkateRider.PushSweep);
+            var span = (float)(SkateRider.PushUp - SkateRider.PushDown);
+            var down = PushPhase > (float)SkateRider.PushDown && PushPhase < (float)SkateRider.PushUp;
+            PushPhase += down ? Math.Max(dt / (PushPeriod * 3f), Math.Abs(Speed) * dt / stroke * span) : dt / PushPeriod;
             if (PushPhase >= 1f) PushPhase = 0f;
         }
         // The velocity runs along the ground's tangent; a gap under the wheels is closed on top of it.
@@ -534,18 +546,19 @@ public static class SkateRide
         var want = -SkateKeys.Spin * spinSide;
         // A fall without a jump becomes a trick when a turn is asked for afresh, not by a stick that
         // was steering when the ground ended.
-        if (!TrickAir && !(want != 0f && SkateKeys.SpinPressed)) return 0f;
+        if (!TrickAir && !(want != 0f && SkateKeys.SpinPressed)) { SpinLead = 0f; return 0f; }
         var at = TrickAir ? (float)Trick.Spin : 0f;
         if (want != 0f)
         {
             var next = at + want * step;
             var ahead = want > 0f ? (float)Math.Ceiling(next / 180.0 - 0.0001) * 180f - next : next - (float)Math.Floor(next / 180.0 + 0.0001) * 180f;
-            if (ahead <= (left - dt) * rate + SpinSlack) { TrickAir = spinning = true; return want; }
+            if (ahead <= (left - dt) * rate + SpinSlack) { TrickAir = spinning = true; SpinLead = want * SpinLeadMost; return want; }
             if (SkateKeys.SpinPressed) Refused++;
         }
-        if (!TrickAir) return 0f;
+        if (!TrickAir) { SpinLead = 0f; return 0f; }
         var rest = (float)Math.Round(at / 180.0, MidpointRounding.AwayFromZero) * 180f - at;
         spinning = Math.Abs(rest) > 1f;
+        SpinLead = Clamp(rest / 90f, -1f, 1f) * SpinLeadMost;
         return Clamp(rest / step, -1f, 1f);
     }
 

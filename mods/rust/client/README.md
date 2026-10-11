@@ -198,8 +198,32 @@ that commit and must match the hash; that is for shared code that is ahead on an
 | `RiderRig.cs` | Writes the shared rider pose onto the player model's skeleton; what is drawn in which view, the held item included. |
 | `SkateCamera.cs` | View from behind. |
 | `SkateHud.cs`, `SkateSfx.cs` | The score display and the sounds. |
-| `SkatePieces.cs`, `SkateConsole.cs` | The park-piece menu on the controller and the console line it types for the player. |
+| `SkatePieces.cs`, `SkateConsole.cs` | The park-piece menu on the controller and the console line it sends to the server (`SkateConsole.Send`, a console packet on the client's connection found by name in the network library) or, failing that, types for the player. |
 | `Scenarios.cs` | Scripted checks in a world. |
+| `SkateParks.cs` | Draws the authored park models over the server's park pieces (below). |
+
+[`models.txt`](models.txt) lists the park models (`assets/authored/skate_*.glb`) the build copies
+next to the plugin from the commit it builds; a commit without them builds without models.
+
+## Park models
+
+The server builds a park piece from native floor tiles and walls (the ShortcutSkate plugin's
+layout, placed from the building plan). Within 80 m of the player, every three seconds, the
+client looks at the building blocks on the construction layer and recognises those assemblies by
+their tiles' prefabs, pitches and spacing: a bank is one tile at 12°, a kicker one at 25°, a
+quarterpipe a 15° tile and a 35° tile, a funbox a flat tile between a 15° tile either side, a
+halfpipe its 36 parts; a ledge is a tile 0.4 or 0.8 m above a foundation with nothing else of a
+building (ordinary floors never sit that close over a foundation), a long ledge three of them.
+Over each assembly the matching model from the ramp pack is drawn (its `Visual` scene) and its
+`CollisionProxies` scene becomes static colliders, so the ride runs on the model's smooth
+surface; the model sits 2 cm above the native tiles. The native tiles' renderers are switched
+off under it. The server keeps its own blocks: they are its collision and what unmodded clients
+see; nothing is sent. A demolished piece takes its model with it. The bank, kicker, ledges and
+funbox models match the native assemblies; the quarterpipe and halfpipe models are circular
+(2.5 m) and shorter than the native 15°/35° facets, so they are placed by their entry (the
+quarterpipe) and their flat (the halfpipe) and do not yet cover the native tiles. Without the
+`.glb` files next to the plugin the pieces are found and nothing is drawn; the log says which
+file is missing. Unverified in game.
 
 ### Steps
 
@@ -214,6 +238,8 @@ file it runs `skate`. Runtime steps share one rig; the last scenario step select
 | `trick` | Scripted: ollie, kickflip, heelflip, both spins, a grab, two presses that come too late and a manual. |
 | `pad` | Scripted: the ride with a controller, played into the plugin without one. |
 | `status` | Scripted: a short ride, then the server's own view of the rider typed into the F1 console (`skate.status`, its speed and fly checks, its plugins), the console left open. |
+| `park` | Scripted: the authored park models one at a time 6 m ahead of the rider, 20 s each, seen from behind the rider, then a ride up the bank; nothing is placed on the server. |
+| `send` | Scripted: a chat line and `skate.status` sent to the server as console packets on the client's own connection (the way the game's console sends them), not typed; the chat line shows on the screen when it arrives. |
 | `mute` | Turns the whole client down until nothing can be heard. |
 | `nogrind` | No grinding. |
 

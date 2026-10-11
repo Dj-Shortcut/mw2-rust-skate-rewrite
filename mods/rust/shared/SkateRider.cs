@@ -46,6 +46,12 @@ namespace Shortcut.RustMod
         // DeckPitch (radians): the deck pitched about its middle, the end that leads up; a manual, a
         // 5-0 or a tail stall. The body stays on BoardUp and the feet go with the deck.
         public readonly double DeckPitch;
+        // NoseSlide (0..1): in an ollie the front foot slides up toward the nose as the board levels
+        // out, and stays there to the landing.
+        public readonly double NoseSlide;
+        // ChestTurnDegrees: the chest turned ahead of a spin (positive frontside), or wound up
+        // against the one that is coming; on top of the riding and pushing turn.
+        public readonly double ChestTurnDegrees;
         public SkateRiderInput(SkateVector boardPosition, SkateVector boardForward, SkateVector boardUp,
                                SkateStance stance, bool ridingSwitch, double speed, double leanDegrees,
                                double crouch, bool airborne, bool pushing, double pushPhase,
@@ -96,7 +102,25 @@ namespace Shortcut.RustMod
                                double flipDegrees, SkateGrabKind grabKind, bool bailed, double lookYawDegrees, double deckOffset,
                                double groundDrop, double bailPhase, bool mongoPush, double footPlant, double grabSeconds, double handplant,
                                double deckPitch)
-        { DeckPitch = deckPitch; MongoPush = mongoPush; FootPlant = footPlant; GrabSeconds = grabSeconds; Handplant = handplant;
+            : this(boardPosition, boardForward, boardUp, stance, ridingSwitch, speed, leanDegrees,
+                   crouch, airborne, pushing, pushPhase, flipDegrees, grabKind, bailed, lookYawDegrees, deckOffset,
+                   groundDrop, bailPhase, mongoPush, footPlant, grabSeconds, handplant, deckPitch, 0) { }
+        public SkateRiderInput(SkateVector boardPosition, SkateVector boardForward, SkateVector boardUp,
+                               SkateStance stance, bool ridingSwitch, double speed, double leanDegrees,
+                               double crouch, bool airborne, bool pushing, double pushPhase,
+                               double flipDegrees, SkateGrabKind grabKind, bool bailed, double lookYawDegrees, double deckOffset,
+                               double groundDrop, double bailPhase, bool mongoPush, double footPlant, double grabSeconds, double handplant,
+                               double deckPitch, double noseSlide)
+            : this(boardPosition, boardForward, boardUp, stance, ridingSwitch, speed, leanDegrees,
+                   crouch, airborne, pushing, pushPhase, flipDegrees, grabKind, bailed, lookYawDegrees, deckOffset,
+                   groundDrop, bailPhase, mongoPush, footPlant, grabSeconds, handplant, deckPitch, noseSlide, 0) { }
+        public SkateRiderInput(SkateVector boardPosition, SkateVector boardForward, SkateVector boardUp,
+                               SkateStance stance, bool ridingSwitch, double speed, double leanDegrees,
+                               double crouch, bool airborne, bool pushing, double pushPhase,
+                               double flipDegrees, SkateGrabKind grabKind, bool bailed, double lookYawDegrees, double deckOffset,
+                               double groundDrop, double bailPhase, bool mongoPush, double footPlant, double grabSeconds, double handplant,
+                               double deckPitch, double noseSlide, double chestTurnDegrees)
+        { ChestTurnDegrees = chestTurnDegrees; NoseSlide = noseSlide; DeckPitch = deckPitch; MongoPush = mongoPush; FootPlant = footPlant; GrabSeconds = grabSeconds; Handplant = handplant;
           BoardPosition = boardPosition; BoardForward = boardForward; BoardUp = boardUp; Stance = stance;
           Switch = ridingSwitch; Speed = speed; LeanDegrees = leanDegrees; Crouch = crouch; Airborne = airborne;
           Pushing = pushing; PushPhase = pushPhase; FlipDegrees = flipDegrees; GrabKind = grabKind; Grab = grabKind != SkateGrabKind.None;
@@ -202,6 +226,12 @@ namespace Shortcut.RustMod
                 var spread = forward * (side * FlipSpread * flipping);
                 leftAnkle = leftAnkle + spread; rightAnkle = rightAnkle - spread;
             }
+            if (input.NoseSlide > 0 && input.Airborne && !input.Bailed)
+            {
+                // The ollie's front foot, slid up toward the nose along the deck.
+                var slide = travel * (OllieSlide * input.NoseSlide);
+                if (backIsLeft) rightAnkle = rightAnkle + slide; else leftAnkle = leftAnkle + slide;
+            }
             var leadDeck = backIsLeft ? rightAnkle : leftAnkle;
             var backDeck = backIsLeft ? leftAnkle : rightAnkle;
             double leadToe = (RidingLeadToe + (PushLeadToe - RidingLeadToe) * turn) * Math.PI / 180;
@@ -295,6 +325,7 @@ namespace Shortcut.RustMod
 
             double chestYaw = input.Bailed ? bailYaw : (RidingChestYaw + (PushChestYaw - RidingChestYaw) * turn) * yawScale * Math.PI / 180;
             if (grabbing) chestYaw = 0;
+            if (!input.Bailed) chestYaw += input.ChestTurnDegrees * Math.PI / 180;
             var chestFacing = facing * Math.Cos(chestYaw) + travel * Math.Sin(chestYaw);
             if (namedGrab && grip.ChestTurn != 0)
                 chestFacing = facing * Math.Cos(grip.ChestTurn) + (grip.End ? forward : travel) * Math.Sin(grip.ChestTurn);
@@ -399,17 +430,20 @@ namespace Shortcut.RustMod
         private const double RidingPelvisYaw = 12, RidingChestYaw = 28, RidingLeadToe = 25, RidingBackToe = 5;
         private const double PushPelvisYaw = 55, PushChestYaw = 70, PushLeadToe = 60;
         private const double AirYaw = 0.35, PushWeight = 0.28, PushSide = 0.03, PushDip = 0.06, PushLean = 0.34, PushSwing = 0.28;
-        private const double PushPlant = 0.10, PushSweep = 0.36, PushHeel = 0.07;
+        // The pushing foot comes down PushPlant ahead of the board's middle and leaves it PushSweep
+        // behind: the stroke, over which the foot is on the ground (push phase PushDown..PushUp).
+        public const double PushPlant = 0.18, PushSweep = 0.44, PushDown = 0.25, PushUp = 0.6;
+        private const double PushHeel = 0.07;
         private const double GrabRoll = 0.4, GrabFoldLimit = 1.0, GrabTuckMargin = 0.05, PlantDrop = 0.3, GrabBackLimit = 0.55, HeelTurn = 1.2;
         private const double HeelTurnSign = 1;
-        private const double FlipTuck = 0.14, FlipSpread = 0.05, PitchWeight = 0.18;
+        private const double FlipTuck = 0.14, FlipSpread = 0.05, PitchWeight = 0.18, OllieSlide = 0.13;
         // The handplant: the side bend at the start (radians from upright), where the feet are folded
         // in by, how long the mix from the riding pose runs (of Handplant), the hand beside the board,
         // the pike (of the spine toward the chest, of the legs toward the chest's front) and the deck
         // under the back foot where the other hand holds it.
         private const double PlantLean = 0.75, PlantFoldBy = 1.6, PlantBlend = 0.3, PlantHandOut = 0.22, PlantHandAhead = 0.1,
-            PlantPikeUp = 0.5, PlantPikeOut = 0.3, PlantDeck = 0.05;
-        public const double MaximumDeckPitch = 0.8;
+            PlantPikeUp = 0.12, PlantPikeOut = 0.4, PlantDeck = 0.05, PlantOver = 0.2;
+        public const double MaximumDeckPitch = 0.8, MaximumChestTurn = 60;
 
         // How a grind or a stall holds the deck, degrees: the end that leads up (a 5-0 and a tail
         // stall sit on the back truck or the tail, the nose up), the toe edge up (a smith dips the
@@ -502,7 +536,9 @@ namespace Shortcut.RustMod
             var edge = input.BoardPosition + up * (Math.Min(0, input.DeckOffset) - input.GroundDrop);
             var ground = edge - up * 0.02;
             // The body's angle over the hand: the lean of the side bend at the start, upside down at the end.
-            double theta = PlantLean + (Math.PI - PlantLean) * Smooth(Math.Max(0, Math.Min(1, (h - 0.08) / 0.92)));
+            // At the top the body is not quite vertical: it leans back over the edge by PlantOver, the
+            // hips over the ramp, the knees the highest point and the feet with the board in front.
+            double theta = PlantLean + (Math.PI - PlantOver - PlantLean) * Smooth(Math.Max(0, Math.Min(1, (h - 0.08) / 0.92)));
             var chestUp = up * Math.Cos(theta) + travel * Math.Sin(theta);
             var chestForward = facing;
             var chestRight = Cross(chestUp, chestForward);
@@ -634,9 +670,9 @@ namespace Shortcut.RustMod
             var back = origin - travel * PushSweep + side * SkatePose.PushFootSide + up * (SkatePose.FootLift - groundDrop + PushHeel);
             var lifted = back + up * (0.1 + groundDrop * 0.5) + travel * 0.06;
             heel = 0;
-            if (phase <= 0.25) { grounded = Smooth(phase / 0.25); return Blend(deck, front, grounded); }
-            if (phase <= 0.6) { grounded = 1; heel = PushHeel * (phase - 0.25) / 0.35; return Blend(front, back, (phase - 0.25) / 0.35); }
-            if (phase <= 0.85) { grounded = 1 - Smooth((phase - 0.6) / 0.25); heel = PushHeel * grounded; return Blend(back, lifted, 1 - grounded); }
+            if (phase <= PushDown) { grounded = Smooth(phase / PushDown); return Blend(deck, front, grounded); }
+            if (phase <= PushUp) { grounded = 1; heel = PushHeel * (phase - PushDown) / (PushUp - PushDown); return Blend(front, back, (phase - PushDown) / (PushUp - PushDown)); }
+            if (phase <= 0.85) { grounded = 1 - Smooth((phase - PushUp) / 0.25); heel = PushHeel * grounded; return Blend(back, lifted, 1 - grounded); }
             grounded = 0; return Blend(lifted, deck, Smooth((phase - 0.85) / 0.15));
         }
 
@@ -773,7 +809,8 @@ namespace Shortcut.RustMod
             Finite(input.DeckOffset) && Math.Abs(input.DeckOffset) <= MaximumMeasurement &&
             Finite(input.GroundDrop) && input.GroundDrop >= 0 && input.GroundDrop <= MaximumMeasurement &&
             Fraction(input.FootPlant) && Fraction(input.Handplant) && Finite(input.GrabSeconds) && input.GrabSeconds >= 0 && input.GrabSeconds <= 86400 &&
-            Finite(input.DeckPitch) && Math.Abs(input.DeckPitch) <= MaximumDeckPitch &&
+            Finite(input.DeckPitch) && Math.Abs(input.DeckPitch) <= MaximumDeckPitch && Fraction(input.NoseSlide) &&
+            Finite(input.ChestTurnDegrees) && Math.Abs(input.ChestTurnDegrees) <= MaximumChestTurn &&
             Fraction(input.BailPhase) && input.GrabKind >= SkateGrabKind.None && input.GrabKind <= SkateGrabKind.Tailbone; }
         private static bool Finite(SkateRiderPose p)
         { return Vector(p.Pelvis) && Vector(p.LeftHip) && Vector(p.RightHip) && Vector(p.LeftKnee) && Vector(p.RightKnee) &&

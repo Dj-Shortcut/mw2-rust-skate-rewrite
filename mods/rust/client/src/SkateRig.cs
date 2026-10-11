@@ -153,6 +153,7 @@ public class SkateRig : MonoBehaviour
         var now = Time.realtimeSinceStartup;
         var frame = SkateRide.Clamp(now - lastFrame, 0.001f, 0.1f); lastFrame = now;
         SkateCamera.Sample();
+        SkateParks.Frame(now);
         // With a controller the rider looks where the board goes, a little into the turn; the view
         // itself is turned by the right stick's flicks and says nothing.
         if (!SkateKeys.Scripted) SkateKeys.LookYaw = SkateKeys.Pad && SkateRide.On ? SkateRide.Yaw + SkateKeys.Steer * 35f : SkateCamera.LookYaw;
@@ -162,6 +163,12 @@ public class SkateRig : MonoBehaviour
         if (grinding) Shortcut.RustMod.SkateRider.GrindDeck(SkateRide.GrindKind, out gp, out gr, out gc);
         SkateBoard.GrindPitch += ((float)gp - SkateBoard.GrindPitch) * SkateRide.Clamp(frame * 12f, 0f, 1f);
         SkateBoard.GrindRoll += ((float)gr - SkateBoard.GrindRoll) * SkateRide.Clamp(frame * 12f, 0f, 1f);
+        // An ollie pitches the board: nose up as it climbs, level at the top, nose a little down as
+        // it falls; not held in a grab or a handplant, where the hands have the board.
+        var ollie = SkateRide.On && SkateRide.Mode == RideMode.Air && SkateRide.Jumped && !SkateRide.Grabbing && !SkateRide.Handplant;
+        var climb = SkateRide.Clamp(SkateRide.VSpeed / SkateRide.OlliePop, -1f, 1f);
+        var airPitch = ollie ? (climb > 0f ? SkateBoard.OllieNoseUp : SkateBoard.OllieNoseDown) * climb : 0f;
+        SkateBoard.AirPitch += (airPitch - SkateBoard.AirPitch) * SkateRide.Clamp(frame * 14f, 0f, 1f);
         // In a jump the knees come up: the board rises toward the rider around the top and is back
         // at the legs' full reach when it moves at take-off speed, going up or coming down. The
         // player itself is where the game has it; only the board and the feet are drawn higher.
@@ -203,6 +210,8 @@ public class SkateRig : MonoBehaviour
         catch (Exception e) { Out.Err("SKATE late driver teardown threw " + e.GetType().Name + ": " + e.Message); }
         try { RiderRig.Unbind(); }
         catch (Exception e) { Out.Err("RIDER unbind threw " + e.GetType().Name + ": " + e.Message); }
+        try { SkateParks.Clear(); }
+        catch (Exception e) { Out.Err("PARK clear threw " + e.GetType().Name + ": " + e.Message); }
         try { if (board != null) board.SetActive(false); }
         catch (Exception e) { Out.Err("SKATE board disable threw " + e.GetType().Name + ": " + e.Message); }
         try { if (board != null) UnityEngine.Object.Destroy(board); board = null; }

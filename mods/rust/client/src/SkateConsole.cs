@@ -90,5 +90,95 @@ public static class SkateConsole
         if (sent != inputs.Length) throw new InvalidOperationException("SendInput sent " + sent + " of " + inputs.Length + " (error " + Marshal.GetLastWin32Error() + ")");
     }
 
-    public static void Reset() { pending = ""; step = -1; Typed = Failed = 0; Last = ""; LeftOpen = false; }
+    public static void Reset() { pending = ""; step = -1; Typed = Failed = 0; Last = ""; LeftOpen = false; SentLines = 0; SendState = ""; }
+
+    // A command sent to the server the way the game's own console sends one: a ConsoleCommand
+    // packet on the player's connection, written with the network library (Facepunch.Network keeps
+    // its names; the game's console class does not). Found by name at run time, so a client build
+    // without these names refuses here instead of failing to compile; SendState says what was found.
+    public static int SentLines;
+    public static string SendState = "";
+    private static object connection, netClient;
+    private static System.Reflection.MethodInfo startWrite, packetId, writeString, sendWrite;
+    private static object consoleCommandId;
+    private static Type sendInfoType;
+    private static bool sendPrepared, sendFailed;
+
+    public static bool Send(string line)
+    {
+        if (string.IsNullOrEmpty(line) || line.Length > 400 || line.IndexOf('\n') >= 0) { SendState = "refused: an empty, overlong or multi-line command"; return false; }
+        try
+        {
+            if (!Prepare()) return false;
+            var write = startWrite.Invoke(netClient, null);
+            if (write == null) { SendState = "the network client gave no write"; return false; }
+            packetId.Invoke(write, new[] { consoleCommandId });
+            writeString.Invoke(write, new object[] { line });
+            var info = Activator.CreateInstance(sendInfoType, connection);
+            sendWrite.Invoke(write, new[] { info });
+            SentLines++; Last = line; SendState = "sent";
+            Out.Say("CONSOLE sent to the server: " + line);
+            return true;
+        }
+        catch (Exception e)
+        {
+            SendState = "sending threw " + e.GetType().Name + ": " + (e.InnerException != null ? e.InnerException.Message : e.Message);
+            Out.Say("CONSOLE " + SendState);
+            return false;
+        }
+    }
+
+    public static bool CanSend { get { return Prepare(); } }
+
+    private static bool Prepare()
+    {
+        if (sendPrepared) return !sendFailed;
+        sendPrepared = true; sendFailed = true;
+        try
+        {
+            var net = FindType("Network.Net");
+            if (net == null) { SendState = "no Network.Net type"; return false; }
+            var cl = net.GetField("cl", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+            var clValue = cl != null ? cl.GetValue(null) : null;
+            if (clValue == null)
+            {
+                var clProperty = net.GetProperty("cl", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+                clValue = clProperty != null ? clProperty.GetValue(null, null) : null;
+            }
+            if (clValue == null) { SendState = "Network.Net.cl is not there or not connected"; sendPrepared = false; return false; }
+            netClient = clValue;
+            var clientType = clValue.GetType();
+            var connectionMember = clientType.GetProperty("Connection") as System.Reflection.MemberInfo ?? clientType.GetField("Connection");
+            connection = connectionMember is System.Reflection.PropertyInfo ? ((System.Reflection.PropertyInfo)connectionMember).GetValue(clValue, null)
+                : connectionMember is System.Reflection.FieldInfo ? ((System.Reflection.FieldInfo)connectionMember).GetValue(clValue) : null;
+            if (connection == null) { SendState = "the network client has no connection yet"; sendPrepared = false; return false; }
+            startWrite = clientType.GetMethod("StartWrite", Type.EmptyTypes);
+            if (startWrite == null) { SendState = "no StartWrite on the network client"; return false; }
+            var writeType = startWrite.ReturnType;
+            var messageType = FindType("Network.Message+Type") ?? FindType("Network.Message/Type");
+            if (messageType == null) { var message = FindType("Network.Message"); messageType = message != null ? message.GetNestedType("Type") : null; }
+            if (messageType == null) { SendState = "no Network.Message.Type enum"; return false; }
+            consoleCommandId = Enum.Parse(messageType, "ConsoleCommand");
+            packetId = writeType.GetMethod("PacketID", new[] { messageType });
+            writeString = writeType.GetMethod("String", new[] { typeof(string) }) ?? writeType.GetMethod("WriteString", new[] { typeof(string) });
+            sendInfoType = FindType("Network.SendInfo");
+            if (packetId == null || writeString == null || sendInfoType == null) { SendState = "the network write lacks PacketID, String or SendInfo"; return false; }
+            sendWrite = writeType.GetMethod("Send", new[] { sendInfoType });
+            if (sendWrite == null) { SendState = "the network write has no Send(SendInfo)"; return false; }
+            if (sendInfoType.GetConstructor(new[] { connection.GetType() }) == null && sendInfoType.GetConstructor(new[] { FindType("Network.Connection") ?? connection.GetType() }) == null)
+            { SendState = "SendInfo has no constructor taking a connection"; return false; }
+            sendFailed = false; SendState = "ready";
+            return true;
+        }
+        catch (Exception e) { SendState = "preparing threw " + e.GetType().Name + ": " + e.Message; return false; }
+    }
+
+    private static Type FindType(string name)
+    {
+        foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+        {
+            try { var t = assembly.GetType(name, false); if (t != null) return t; } catch (Exception) { }
+        }
+        return null;
+    }
 }
