@@ -45,6 +45,7 @@ public static class Scenarios
         else if (Name == "piece") Piece(s);
         else if (Name == "status") Status(game, s);
         else if (Name == "pose") Pose(s, now);
+        else if (Name == "park") Park(s, now);
         else if (Name == "pad") Pad(game, now);
         else Trick(game);
     }
@@ -260,6 +261,47 @@ public static class Scenarios
         if (v.State == "bail") SkateRide.ModeAt = now - v.Value * SkateRide.BailSeconds;
         if (v.State == "move") { SkateRide.Frozen = false; SkateRide.Mode = RideMode.Ground; }
         if (v.State == "turn") SkateKeys.LookYaw = yaw0 + 180f;
+    }
+
+    // The park models, one at a time 6 m ahead of the rider, seen from a fixed camera (K steps on),
+    // then a ride up the bank: the models' reading, drawing and colliders, without any server piece.
+    private static readonly SkateParks.Kind[] parkKinds = { SkateParks.Kind.Bank, SkateParks.Kind.Kicker, SkateParks.Kind.QuarterPipe, SkateParks.Kind.LedgeLow,
+        SkateParks.Kind.LedgeHigh, SkateParks.Kind.LongLedge, SkateParks.Kind.Funbox, SkateParks.Kind.Halfpipe };
+    private static Vector3 parkAt;
+    private static void Park(float s, float now)
+    {
+        var advance = phase == 0;
+        try { var kb = Keyboard.current; var k = kb != null && SkateKeys.Down(kb.kKey); if (k && !keyWas) advance = true; keyWas = k; }
+        catch (Exception) { }
+        var riding = phase == parkKinds.Length + 1;
+        if (now - stepAt > (riding ? 9f : 45f)) advance = true;
+        if (riding) SkateKeys.Push = SkateRide.Speed < 3.5f && now - stepAt < 4f;
+        if (now >= nearAt) { nearAt = now + 1f; RiderRig.Near(); }
+        if (!advance) return;
+        stepAt = now;
+        if (phase == parkKinds.Length + 1) { Finish(); return; }
+        if (phase == 0)
+        {
+            SkateRig.MountNow(yaw0); SkateRide.Frozen = true;
+            parkAt = SkateRig.LocalT.position + SkateRide.Dir(yaw0) * 6f;
+            SkateCamera.Fixed = true; SkateCamera.Chase = true; SkateCamera.Bearing = 60f; SkateCamera.FixedHeight = 3.2f; SkateCamera.FixedDistance = 9f;
+        }
+        if (phase < parkKinds.Length)
+        {
+            var kind = parkKinds[phase];
+            var big = kind == SkateParks.Kind.Halfpipe || kind == SkateParks.Kind.QuarterPipe;
+            SkateCamera.FixedDistance = big ? 16f : 9f; SkateCamera.FixedHeight = big ? 5f : 3.2f;
+            // The halfpipe's origin is its flat's centre: further out, so the near transition is not on the rider.
+            var at = kind == SkateParks.Kind.Halfpipe ? parkAt + SkateRide.Dir(yaw0) * 9f : parkAt;
+            var line = SkateParks.PreviewAt(kind, at, yaw0);
+            Enter(phase + 1, SkateParks.KindName(kind) + "   (K: next)");
+            Say("park " + SkateParks.KindName(kind) + " " + line + " | " + SkateParks.Line());
+            return;
+        }
+        // The ride: the bank ahead, the rider pushing into it.
+        SkateParks.PreviewAt(SkateParks.Kind.Bank, parkAt, yaw0);
+        SkateCamera.Fixed = false; SkateCamera.Chase = true; SkateRide.Frozen = false; SkateRide.Mode = RideMode.Ground;
+        Enter(phase + 1, "riding up the bank");
     }
 
     // The ride with a controller, without one: its states are played into the plugin as the reader
