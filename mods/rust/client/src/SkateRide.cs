@@ -335,7 +335,7 @@ public static class SkateRide
             var stroke = (float)(SkateRider.PushPlant + SkateRider.PushSweep);
             var span = (float)(SkateRider.PushUp - SkateRider.PushDown);
             var down = PushPhase > (float)SkateRider.PushDown && PushPhase < (float)SkateRider.PushUp;
-            PushPhase += down ? Math.Max(dt / (PushPeriod * 2f), Math.Abs(Speed) * dt / stroke * span) : dt / PushPeriod;
+            PushPhase += down ? Math.Max(dt / (PushPeriod * 3f), Math.Abs(Speed) * dt / stroke * span) : dt / PushPeriod;
             if (PushPhase >= 1f) PushPhase = 0f;
         }
         // The velocity runs along the ground's tangent; a gap under the wheels is closed on top of it.
