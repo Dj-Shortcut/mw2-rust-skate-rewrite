@@ -73,12 +73,13 @@ The steering turns the board at a rate; the view does not steer it.
 **Park pieces on foot.** With the server's ShortcutSkate 0.3.0 or later an administrator places a
 park piece by asking for it in the console and then placing one square floor with the building
 plan. On foot, holding `Back` (the view button) shows a menu of the pieces (bank, kicker,
-quarterpipe, ledge-low, ledge-high, long-ledge, funbox, halfpipe — the last needs plugin 0.3.1): the D-pad steps through them, `A` sends
-`skate.piece <name>` to the server, `B` sends `skate.piece cancel`. The screen says what was asked
-for and, for the 120 s the server keeps the choice, that a floor is to be placed; the server's own
-answer is in the F1 console. `Y` inside the menu does not get on the board. From the keyboard, the
-game's own `bind` does the same (`bind f7 "skate.piece quarterpipe"`). Unverified in game: the
-console call from the plugin.
+quarterpipe, ledge-low, ledge-high, long-ledge, funbox, halfpipe — the last needs plugin 0.3.1):
+the D-pad steps through them, `A` puts `skate.piece <name>` on the clipboard, `B` puts
+`skate.piece cancel` there; F1, Ctrl+V, Enter sends it, and the server's answer is in the console.
+The plugin does not run the command itself: the game's console class is renamed in this client
+build and was not found by its shape. `Y` inside the menu does not get on the board. From the
+keyboard, the game's own `bind` is quicker (`bind f7 "skate.piece quarterpipe"`). Unverified in
+game: the clipboard write from the plugin.
 
 ### Keys
 
