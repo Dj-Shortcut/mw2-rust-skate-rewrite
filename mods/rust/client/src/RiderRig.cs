@@ -445,7 +445,7 @@ public static class RiderRig
             var mode = SkateRide.Mode;
             // In a jump the legs fold by as much as the board has come up, so the body keeps its line.
             var inAir = SkateRide.Grabbing ? 0.95f : SkateRide.Jumped ? 0.2f + SkateBoard.Pop / (float)SkatePose.CrouchDrop : 0.45f;
-            var want = mode == RideMode.Air ? inAir : mode == RideMode.Grind ? 0.38f : SkateRide.Braking ? 0.4f : 0.18f;
+            var want = mode == RideMode.Air ? inAir : mode == RideMode.Grind ? (SkateRide.Stalling ? StallCrouch(SkateRide.GrindKind) : 0.38f) : SkateRide.Braking ? 0.4f : 0.18f;
             // A right stick held back is the rider gathering for the pop; a trigger held is the crouch of a pump.
             if (SkateKeys.Charging && mode == RideMode.Ground) want = Math.Max(want, 0.3f + 0.3f * SkateKeys.Charge);
             if (mode == RideMode.Ground && SkateRide.PumpHeld > 0f) want = Math.Max(want, 0.25f + 0.45f * SkateRide.PumpHeld / SkateRide.PumpCharge);
@@ -469,6 +469,7 @@ public static class RiderRig
             fold = fold * fold * (3f - 2f * fold);
             SkateBoard.GrabFold += (fold * (0.8f + 0.2f * SkateRide.Clamp(held / 0.6f, 0f, 1f)) - SkateBoard.GrabFold) * SkateRide.Clamp(frameSeconds * 20f, 0f, 1f);
             var plant = SkateRide.FootPlanted ? SkateRide.Clamp((SkateRide.PlantedUntil - now) / SkateRide.PlantSeconds * 1.5f, 0f, 1f) : 0f;
+            SkateBoard.Plant = plant;
             var input = new SkateRiderInput(new SkateVector(plane.x, plane.y, plane.z), new SkateVector(fx, fy, fz), new SkateVector(ux, uy, uz), SkateStance.Regular, SkateRide.TailFirst,
                 speed, lean, Crouch, mode == RideMode.Air, mode == RideMode.Ground && SkateRide.PushPhase > 0f, SkateRide.Clamp(SkateRide.PushPhase, 0f, 1f),
                 SkateRide.FlipDeg, grab, mode == RideMode.Bail, SkateKeys.LookYaw % 360f, SkatePose.FootLift - AnkleHeight,
@@ -529,20 +530,30 @@ public static class RiderRig
     // What the module does not know: in a manual the weight goes over the axle that carries it, the
     // body back toward the tail (or forward over the nose), and the arms come out for balance.
     public const float ManualShift = 0.12f, ManualArms = 0.14f;
+    // A stall is a held balance on the edge: deep in the board stall, the weight over the tail or
+    // the nose in the others, and the arms out wider than in a manual.
+    private static float StallCrouch(SkateGrindKind kind)
+    {
+        return kind == SkateGrindKind.BoardStall ? 0.55f : kind == SkateGrindKind.FiftyFiftyStall ? 0.45f : kind == SkateGrindKind.Handplant ? 0.38f : 0.32f;
+    }
     private static void Shape(Vector3 up)
     {
         var tip = SkateBoard.Tip;
-        if (Math.Abs(tip) < 0.01f) return;
+        var stall = SkateRide.Stalling && !SkateRide.Handplant;
+        if (Math.Abs(tip) < 0.01f && !stall) return;
         var lead = SkateRide.Dir(SkateRide.Yaw); lead = lead - up * Vector3.Dot(lead, up);
         if (lead.sqrMagnitude < 0.0001f) return;
         lead = SkateRide.Speed >= 0f ? lead.normalized : -lead.normalized;
-        var shift = -lead * (ManualShift * tip);
+        // The weight shifts with the tip, and no further than a manual's for a steeper stall.
+        var shift = -lead * (ManualShift * SkateRide.Clamp(tip, -1f, 1f));
         int[] body = { PelvisJ, LHipJ, RHipJ, ChestJ, NeckJ, HeadJ, LShoulderJ, RShoulderJ, LElbowJ, RElbowJ, LHandJ, RHandJ };
         for (var i = 0; i < body.Length; i++) joint[body[i]] += shift;
-        var side = Vector3.Cross(up, lead); var amount = Math.Abs(tip);
+        var side = Vector3.Cross(up, lead);
+        var amount = stall ? StallArms : Math.Abs(tip);
         joint[LHandJ] += (-side * ManualArms + up * ManualArms * 0.8f) * amount; joint[LElbowJ] += (-side * ManualArms * 0.5f + up * ManualArms * 0.3f) * amount;
         joint[RHandJ] += (side * ManualArms + up * ManualArms * 0.8f) * amount; joint[RElbowJ] += (side * ManualArms * 0.5f + up * ManualArms * 0.3f) * amount;
     }
+    public const float StallArms = 1.6f;
 
     private static void Apply(Vector3 up, bool legsOnly)
     {

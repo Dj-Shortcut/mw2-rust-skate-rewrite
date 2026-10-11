@@ -156,7 +156,8 @@ public class SkateRig : MonoBehaviour
         // With a controller the rider looks where the board goes, a little into the turn; the view
         // itself is turned by the right stick's flicks and says nothing.
         if (!SkateKeys.Scripted) SkateKeys.LookYaw = SkateKeys.Pad && SkateRide.On ? SkateRide.Yaw + SkateKeys.Steer * 35f : SkateCamera.LookYaw;
-        SkateBoard.Tip += ((!SkateRide.On ? 0f : SkateRide.Manual ? 1f : SkateRide.NoseManual ? -1f : 0f) - SkateBoard.Tip) * SkateRide.Clamp(frame * 9f, 0f, 1f);
+        SkateBoard.Tip += ((!SkateRide.On ? 0f : SkateRide.Stalling && SkateRide.GrindKind == Shortcut.RustMod.SkateGrindKind.TailStall ? SkateBoard.StallTip
+            : SkateRide.Stalling && SkateRide.GrindKind == Shortcut.RustMod.SkateGrindKind.NoseStall ? -SkateBoard.StallTip : SkateRide.Manual ? 1f : SkateRide.NoseManual ? -1f : 0f) - SkateBoard.Tip) * SkateRide.Clamp(frame * 9f, 0f, 1f);
         // In a jump the knees come up: the board rises toward the rider around the top and is back
         // at the legs' full reach when it moves at take-off speed, going up or coming down. The
         // player itself is where the game has it; only the board and the feet are drawn higher.
