@@ -14,10 +14,10 @@ import sys
 import time
 
 
-INSTALLER_COMMIT = "a03ce59122e11fa21e6e239d60afd021f8f5fce2"
-INSTALLER_SHA256 = "dfb96374b3cba3f3aab2aa88d0ae46491030372c33cca4d366314543ca390621"
-SOURCE_COMMIT = "54a54a3b199fbe5d7d337b40a739b6546195c631"
-SOURCE_SHA256 = "de2e6976f6fc9ab2e3099dfe3cf8c076f2a82ff6c026f75bae0c8eda67c2f8ff"
+INSTALLER_COMMIT = "ace52fcbc20a84aa697cb37f79271411b5169a88"
+INSTALLER_SHA256 = "44b2f302ce01a7929d85a8c518a0a8d1b884ee4934890fc19d67243ce31ad539"
+SOURCE_COMMIT = "6e08751ce932eca441842c852acd369977b459e1"
+SOURCE_SHA256 = "ca3cc15a2d507eafd5cfb9303a13f7bc6ca57d0966c9b43bfddbbb36fc2f077e"
 PRIOR_COMMIT = "5a9ed6e550a405365c8a18746dfd276a310b6848"
 PRIOR_SHA256 = "078508fbdb67683f92d4943480250c7987bcbe051e60565713df06e41cbb465e"
 PUBLIC_ROOT = "https://raw.githubusercontent.com/Dj-Shortcut/mw2-rust-skate-rewrite"
@@ -406,7 +406,7 @@ class Scenario:
         self.clean_plugins()
         result = self.install(delivered=True)
         self.check(result.returncode == 0, "delivered installer failed fresh installation: " + result.stderr.strip())
-        self.check("ShortcutSkate v0.3.4 source installed" in result.stdout, "fresh installation lacked source-install acknowledgement")
+        self.check("ShortcutSkate v0.3.6 source installed" in result.stdout, "fresh installation lacked source-install acknowledgement")
         self.active_installed()
         self.check(not os.path.lexists(BACKUP), "fresh installation unexpectedly created a backup")
 
@@ -424,7 +424,7 @@ class Scenario:
         self.check(not any(scratch.iterdir()), "documented entrypoint scratch was not empty")
         result = self.run(["sh", "-c", self.entrypoint], timeout=150)
         self.check(result.returncode == 0, "documented entrypoint failed: " + result.stderr.strip())
-        self.check("ShortcutSkate v0.3.4 source installed" in result.stdout, "documented entrypoint did not execute the installer")
+        self.check("ShortcutSkate v0.3.6 source installed" in result.stdout, "documented entrypoint did not execute the installer")
         self.active_installed()
         self.check(not os.path.lexists(BACKUP), "documented fresh installation unexpectedly created a backup")
         self.check(not any(scratch.iterdir()), "documented entrypoint retained private download staging")

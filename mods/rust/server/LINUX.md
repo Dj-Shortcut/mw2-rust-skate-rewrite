@@ -38,9 +38,10 @@ After a real install, record actual server startup, matching framework, listener
 
 ## Update the skate plugin
 
-`add-skate.sh` installs ShortcutSkate **0.3.4** from commit
-`54a54a3b199fbe5d7d337b40a739b6546195c631`, with source SHA-256
-`de2e6976f6fc9ab2e3099dfe3cf8c076f2a82ff6c026f75bae0c8eda67c2f8ff`.
+`add-skate.sh` installs reviewed ShortcutSkate **0.3.6** from the owner-merged
+[PR #375](https://github.com/Dj-Shortcut/mw2-rust-skate-rewrite/pull/375), commit
+`6e08751ce932eca441842c852acd369977b459e1`, with source SHA-256
+`ca3cc15a2d507eafd5cfb9303a13f7bc6ca57d0966c9b43bfddbbb36fc2f077e`.
 It targets the existing `/srv/rust/server/oxide/plugins` installation created by
 `bootstrap-ubuntu.sh`, with its `rust` user/group. It needs Bash, curl and
 sha256sum; installation uses the GNU/Linux file tools plus runuser and setsid
@@ -73,10 +74,10 @@ warmup acceptance. Deliberately lower custom limits still restrict that ride.
     skate_update_dir=$(mktemp -d /tmp/ShortcutSkate-update.XXXXXX)
     trap 'rm -rf -- "$skate_update_dir"' EXIT
     curl -fsSL --connect-timeout 15 --max-time 60 \
-        https://raw.githubusercontent.com/Dj-Shortcut/mw2-rust-skate-rewrite/a03ce59122e11fa21e6e239d60afd021f8f5fce2/mods/rust/server/add-skate.sh \
+        https://raw.githubusercontent.com/Dj-Shortcut/mw2-rust-skate-rewrite/ace52fcbc20a84aa697cb37f79271411b5169a88/mods/rust/server/add-skate.sh \
         -o "$skate_update_dir/add-skate.sh"
     printf '%s  %s\n' \
-        dfb96374b3cba3f3aab2aa88d0ae46491030372c33cca4d366314543ca390621 \
+        44b2f302ce01a7929d85a8c518a0a8d1b884ee4934890fc19d67243ce31ad539 \
         "$skate_update_dir/add-skate.sh" | sha256sum -c -
     bash "$skate_update_dir/add-skate.sh"
 )
@@ -109,7 +110,7 @@ does not restart the server
 or change its configuration/world.
 
 After installation, check the server console for successful compilation and
-`Loaded plugin ShortcutSkate v0.3.4`, then run `oxide.plugins`. Keep the backup
+`Loaded plugin ShortcutSkate v0.3.6`, then run `oxide.plugins`. Keep the backup
 until the owner has checked placement and riding. Source installation alone
 does not prove plugin loading, park placement or movement without corrections.
 The owner-approved `skate_server_plugin_install` scenario exercises the actual
@@ -120,11 +121,10 @@ unprivileged backup operation is refused. INT/TERM cases hold a real Linux file
 lease during backup, cancel the caller, and check worker exit before lease
 release plus unchanged source and clean staging afterward.
 It uses genuine pinned public downloads and starts no Rust/Oxide process. No live
-server, Rust client or Shadow PC is used. The unchanged pinned 0.3.4 source
-compiled locally as
-net48/C#7.3 against genuine server references with official Oxide 2.0.7815 and
-2.0.7820, with zero errors/warnings. Its warmup correction still needs native
-acceptance.
+server, Rust client or Shadow PC is used. The unchanged pinned 0.3.6 source
+compiled locally as net48/C#7.3 against genuine server references with zero
+errors/warnings. Native compilation/loading, movement acceptance and park
+placement still need owner validation.
 
 ## Native installation evidence
 
