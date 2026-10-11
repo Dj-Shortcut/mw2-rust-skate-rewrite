@@ -42,6 +42,7 @@ public static class RiderRig
     // or tipping board does not leave them behind.
     public const float EaseSeconds = 0.07f;
     private static bool pinLeft, pinRight;
+    private static float chestLead;
     private const float SideBendShare = 0.6f;
     private const int PelvisJ = 0, LHipJ = 1, RHipJ = 2, LKneeJ = 3, RKneeJ = 4, LAnkleJ = 5, RAnkleJ = 6, LToeJ = 7, RToeJ = 8, ChestJ = 9, NeckJ = 10, HeadJ = 11,
         LShoulderJ = 12, RShoulderJ = 13, LElbowJ = 14, RElbowJ = 15, LHandJ = 16, RHandJ = 17, Points = 18,
@@ -485,6 +486,11 @@ public static class RiderRig
             fold = fold * fold * (3f - 2f * fold);
             SkateBoard.GrabFold += (fold * (0.8f + 0.2f * SkateRide.Clamp(held / 0.6f, 0f, 1f)) - SkateBoard.GrabFold) * SkateRide.Clamp(frameSeconds * 20f, 0f, 1f);
             var plant = SkateRide.FootPlanted ? SkateRide.Clamp((SkateRide.PlantedUntil - now) / SkateRide.PlantSeconds * 1.5f, 0f, 1f) : 0f;
+            // The chest ahead of a spin in the air; on the ground, wound up against the spin the
+            // left stick asks for while the right stick is held back for the pop.
+            var leadWant = mode == RideMode.Air ? SkateRide.SpinLead
+                : mode == RideMode.Ground && SkateKeys.Charging && SkateKeys.Spin != 0f ? SkateKeys.Spin * SkateRide.SpinSide * SkateRide.SpinWindUp : 0f;
+            chestLead += (SkateRide.Clamp(leadWant, -(float)SkateRider.MaximumChestTurn, (float)SkateRider.MaximumChestTurn) - chestLead) * SkateRide.Clamp(frameSeconds * 10f, 0f, 1f);
             var plantWant = SkateRide.Handplant && !SkateRide.HandplantDown ? 1f : 0f;
             var plantStep = SkateRide.Clamp(frameSeconds / PlantSeconds, 0f, 1f);
             plantBlend = SkateRide.Clamp(plantBlend + SkateRide.Clamp(plantWant - plantBlend, -plantStep, plantStep), 0f, 1f);
@@ -497,7 +503,8 @@ public static class RiderRig
                 DeckTop, mode == RideMode.Bail ? SkateRide.Clamp((now - SkateRide.ModeAt) / SkateRide.BailSeconds, 0f, 1f) : 0f,
                 SkateRide.PushMongo, plant, grabHold >= 0f ? grabHold : grabSince < 0f ? 0f : now - grabSince, handplant,
                 SkateRide.Clamp(SkateBoard.PitchDegrees, -40f, 40f) * Math.PI / 180.0,
-                mode == RideMode.Air && SkateRide.Jumped && !SkateRide.Grabbing ? SkateRide.Clamp(1f - SkateRide.VSpeed / SkateRide.OlliePop, 0f, 1f) : 0f);
+                mode == RideMode.Air && SkateRide.Jumped && !SkateRide.Grabbing ? SkateRide.Clamp(1f - SkateRide.VSpeed / SkateRide.OlliePop, 0f, 1f) : 0f,
+                chestLead);
             SkateRiderPose pose; string error;
             if (!SkateRider.TryCreate(Rig, input, out pose, out error))
             {
