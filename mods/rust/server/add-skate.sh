@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
-COMMIT=54a54a3b199fbe5d7d337b40a739b6546195c631
-SHA256=de2e6976f6fc9ab2e3099dfe3cf8c076f2a82ff6c026f75bae0c8eda67c2f8ff
-VERSION=0.3.4
+COMMIT=6e08751ce932eca441842c852acd369977b459e1
+SHA256=ca3cc15a2d507eafd5cfb9303a13f7bc6ca57d0966c9b43bfddbbb36fc2f077e
+VERSION=0.3.6
 DIR=/srv/rust/server/oxide/plugins
 CHECK_ONLY=false
 if [[ $# -eq 1 && $1 == --check ]]; then
