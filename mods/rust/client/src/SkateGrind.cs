@@ -8,6 +8,11 @@ public static class SkateGrind
 {
     public const int Rows = 9, Cols = 11;
     public const float RowStep = 0.2f, ColStep = 0.1f, Inset = 0.1f, Reach = 0.45f;
+    // The capture rule of the client: the way of travel within AlongCos of the edge (60 degrees), at
+    // least AlongSpeed along it, the feet from a little below the edge's top to FeetAbove above it.
+    // The board's own angle to the edge is free: it says what kind of grind it is. The shared
+    // module's rule, which also wants the board's nose along the edge, would never let a slide on.
+    public const float AlongCos = 0.5f, AlongSpeed = 1.0f, FeetBelow = 0.15f, FeetAbove = 0.5f;
     public static bool Enabled = true;
     public static float Heading, Speed;
     public static Vector3 Target;
@@ -17,6 +22,7 @@ public static class SkateGrind
     private static SkateEdge edge;
     private static double cooldown;
     private static bool failed;
+    private static float nearSaidAt = -99f;
 
     public static void Reset() { cooldown = 0; edge = default(SkateEdge); Speed = 0f; Last = ""; }
 
@@ -79,11 +85,18 @@ public static class SkateGrind
             var previous = edge; edge = found;
             var off = Aim(pos);
             var feet = pos.y - (float)found.TopHeight;
-            bool allowed = false; double speed = 0;
-            var rad = noseYaw * Math.PI / 180.0;
-            var ok = off <= Reach && feet >= -0.1f && feet <= 0.4f && found.Ahead >= 0.3
-                && SkateEdges.TryCapture(found, new SkateVector(velocity.x, velocity.y, velocity.z), new SkateVector(Math.Sin(rad), 0, Math.Cos(rad)), cooldown, out allowed, out speed, out error) && allowed;
-            if (!ok) { Last = "edge near: off=" + off.ToString("F2") + " feet=" + feet.ToString("F2") + " ahead=" + found.Ahead.ToString("F2") + " allowed=" + allowed; edge = previous; return false; }
+            var flat = Math.Sqrt(vx * vx + vz * vz);
+            var along = vx * found.Direction.X + vz * found.Direction.Z;
+            var cos = flat > 0.001 ? Math.Abs(along) / flat : 0;
+            var why = off > Reach ? "too far to the side" : feet < -FeetBelow ? "feet below the edge" : feet > FeetAbove ? "feet too high" : found.Ahead < 0.3 ? "edge too short ahead"
+                : velocity.y >= 0f ? "still rising" : cos < AlongCos ? "crossing the edge too square" : Math.Abs(along) < AlongSpeed ? "too slow along it" : "";
+            if (why != "")
+            {
+                Last = "edge near, not taken (" + why + "): off=" + off.ToString("F2") + " feet=" + feet.ToString("F2") + " ahead=" + found.Ahead.ToString("F2") + " along=" + along.ToString("F1") + " cos=" + cos.ToString("F2");
+                if (Time.realtimeSinceStartup - nearSaidAt > 0.5f) { nearSaidAt = Time.realtimeSinceStartup; Out.Say("GRIND " + Last); }
+                edge = previous; return false;
+            }
+            var speed = Math.Sign(along) * Math.Min(SkateMotion.MaximumGroundSpeed, Math.Abs(along));
             Speed = (float)speed; Heading = YawOf(found.Direction.X, found.Direction.Z); Captures++;
             Last = "captured top=" + found.TopHeight.ToString("F2") + " speed=" + Speed.ToString("F1") + " ahead=" + found.Ahead.ToString("F2") + " heading=" + Heading.ToString("F0");
             Out.Say("GRIND " + Last);

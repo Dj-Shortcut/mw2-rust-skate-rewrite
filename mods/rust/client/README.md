@@ -59,7 +59,10 @@ first they are the other way round.
 | Held back, rolled a little to the left or right, flicked straight forward | Hardflip, inward heelflip |
 | Held back, rolled half way round backside | Impossible |
 
-A trick popped riding switch is named Switch (a nollie then is a fakie ollie). A grind is named by
+An edge is taken when the rider comes down on it from an ollie: the way of travel within 60° of
+the edge, at least 1 m/s along it, the feet from 0.15 m below its top to 0.5 m above, the edge
+within 0.45 m to the side and 0.3 m ahead; the board's own angle is free. When an edge is near but
+not taken, the log says why (`GRIND edge near, not taken (...)`). A trick popped riding switch is named Switch (a nollie then is a fakie ollie). A grind is named by
 how the board meets the edge: along it a 50-50 (or a 5-0 / nosegrind with the stick), across it a
 boardslide, lipslide, noseslide or tailslide by which part of the board is on the edge, at an angle
 a crooked, smith or feeble grind; frontside when the edge is on the side the rider's chest faces.
