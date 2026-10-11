@@ -10,7 +10,7 @@ using UnityEngine;
 
 public static class SkatePieces
 {
-    public static readonly string[] Names = { "bank", "kicker", "quarterpipe", "ledge-low", "ledge-high", "long-ledge", "funbox" };
+    public static readonly string[] Names = { "bank", "kicker", "quarterpipe", "ledge-low", "ledge-high", "long-ledge", "funbox", "halfpipe" };
     public const int MenuButton = SkatePad.Back;
     public const float ShownSeconds = 6f, PlaceSeconds = 120f;
 
