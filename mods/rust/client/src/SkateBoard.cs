@@ -11,8 +11,14 @@ public static class SkateBoard
     public const float TipDegrees = 15f, Axle = 0.23f;
     public const string LitShader = "Rust/Standard", PlainShader = "Hidden/Internal-Colored";
     public const float Gloss = 0.2f, BailTurn = 0.5f, BailBehind = 0.9f, BailRest = 0.045f, PopMost = 0.22f, LieSeconds = 6f;
+    // The wheels of the shared mesh, and how far a truck turns per degree the board leans.
+    public const float WheelRadius = 0.027f, TruckTurn = 0.8f;
     public static string Drawn = "";
-    public static float ShowLift, Tip, Pop;
+    public static float ShowLift, Tip, Pop, WheelSpin;
+    private static Transform[] trucks = new Transform[0], wheels = new Transform[0];
+    private static Vector3[] truckAxes = new Vector3[0], wheelAxes = new Vector3[0];
+    private static float[] truckSides = new float[0];
+    private static float followedAt = -1f;
     private static Vector3 bailFrom, bailTravel, bailNose, bailUp;
     private static float bailStamp = -1f, bailRoll, lieUntil = -1f;
     private static bool lying;
@@ -20,6 +26,9 @@ public static class SkateBoard
 
     public static GameObject Build()
     {
+        trucks = new Transform[0]; wheels = new Transform[0];
+        try { var made = FromParts(); Say("BOARD from the shared mesh in parts: " + trucks.Length + " trucks, " + wheels.Length + " wheels"); return made; }
+        catch (Exception e) { Say("board in parts unavailable (" + e.GetType().Name + ": " + e.Message + "); using the one-piece mesh"); trucks = new Transform[0]; wheels = new Transform[0]; }
         try { var made = FromMesh(); Say("BOARD from the shared mesh"); return made; }
         catch (Exception e) { Say("shared mesh unavailable (" + e.GetType().Name + ": " + e.Message + "); using primitives"); return FromPrimitives(); }
     }
@@ -87,6 +96,93 @@ public static class SkateBoard
         // A flip turns the board about the middle of the deck, not about the wheels.
         board.transform.rotation = rot;
         board.transform.position = at + up * RiderRig.DeckTop - (rot * Vector3.up) * RiderRig.DeckTop;
+        Parts(now, travel, nose);
+    }
+
+    // The trucks steer with the lean, the front one into the turn and the rear one out of it, each
+    // about its own kingpin; the wheels roll with the speed, the way the deck's nose is pointing.
+    private static void Parts(float now, Vector3 travel, Vector3 nose)
+    {
+        var dt = followedAt < 0f ? 0f : SkateRide.Clamp(now - followedAt, 0f, 0.1f);
+        followedAt = now;
+        if (SkateRide.Mode != RideMode.Bail)
+        {
+            var ahead = Vector3.Dot(travel, nose) < 0f ? -1f : 1f;
+            WheelSpin = (WheelSpin + ahead * SkateRide.Speed / WheelRadius * 57.29578f * dt) % 360f;
+        }
+        var turn = SkateRide.Mode == RideMode.Ground ? SkateRide.Lean * TruckTurn : 0f;
+        for (var i = 0; i < trucks.Length; i++) trucks[i].localRotation = Quaternion.AngleAxis(truckSides[i] * turn, truckAxes[i]);
+        for (var i = 0; i < wheels.Length; i++) wheels[i].localRotation = Quaternion.AngleAxis(WheelSpin, wheelAxes[i]);
+    }
+
+    // The detailed shared mesh: a deck, two trucks that hang from it and four wheels that hang
+    // from the trucks, each its own object about its own pivot, all drawn with one texture.
+    private static GameObject FromParts()
+    {
+        var data = Shortcut.RustMod.SkateBoardMesh.CreateDetailed();
+        if (data.Parts.Length == 0 || data.TextureWidth == 0) throw new InvalidOperationException("the shared mesh has no parts");
+        var tex = new Texture2D(data.TextureWidth, data.TextureHeight);
+        for (var y = 0; y < data.TextureHeight; y++)
+            for (var x = 0; x < data.TextureWidth; x++)
+            {
+                var o = (y * data.TextureWidth + x) * 4;
+                tex.SetPixel(x, y, new Color(data.TextureRgba[o] / 255f, data.TextureRgba[o + 1] / 255f, data.TextureRgba[o + 2] / 255f, data.TextureRgba[o + 3] / 255f));
+            }
+        tex.filterMode = FilterMode.Bilinear;
+        tex.Apply();
+        string how; var lit = Find(LitShader, out how); Material mat;
+        if (lit != null)
+        {
+            mat = new Material(lit); mat.mainTexture = tex; mat.color = Color.white;
+            mat.SetFloat("_Glossiness", Gloss); mat.SetFloat("_Metallic", 0f);
+            Drawn = LitShader; Say("BOARD lit by " + LitShader + " (found " + how + "), textured");
+        }
+        else
+        {
+            var sh = Shader.Find(PlainShader);
+            if (sh == null) throw new InvalidOperationException("no vertex-colour shader");
+            mat = new Material(sh); mat.color = Color.white; Drawn = PlainShader;
+            Say("no " + LitShader + " shader in this client; the board is drawn without light");
+        }
+        var root = new GameObject("skate_board");
+        var objects = new Transform[data.Parts.Length];
+        var pivots = new Vector3[data.Parts.Length];
+        var truckList = new System.Collections.Generic.List<Transform>(); var truckAxis = new System.Collections.Generic.List<Vector3>(); var truckSide = new System.Collections.Generic.List<float>();
+        var wheelList = new System.Collections.Generic.List<Transform>(); var wheelAxis = new System.Collections.Generic.List<Vector3>();
+        for (var p = 0; p < data.Parts.Length; p++)
+        {
+            var part = data.Parts[p];
+            var pivot = new Vector3(part.PivotX, part.PivotY, part.PivotZ);
+            var axis = new Vector3(part.AxisX, part.AxisY, part.AxisZ);
+            var verts = new Vector3[part.VertexCount]; var norms = new Vector3[part.VertexCount]; var cols = new Color[part.VertexCount]; var uv = new Vector2[part.VertexCount];
+            for (var i = 0; i < part.VertexCount; i++)
+            {
+                var v = part.VertexStart + i;
+                verts[i] = new Vector3(data.Positions[v * 3], data.Positions[v * 3 + 1], data.Positions[v * 3 + 2]) - pivot;
+                norms[i] = new Vector3(data.Normals[v * 3], data.Normals[v * 3 + 1], data.Normals[v * 3 + 2]);
+                cols[i] = new Color(data.Colours[v * 4], data.Colours[v * 4 + 1], data.Colours[v * 4 + 2], data.Colours[v * 4 + 3]);
+                uv[i] = new Vector2(data.UVs[v * 2], data.UVs[v * 2 + 1]);
+            }
+            var tris = new int[part.IndexCount];
+            for (var i = 0; i < part.IndexCount; i++) tris[i] = data.Triangles[part.IndexStart + i] - part.VertexStart;
+            var mesh = new Mesh();
+            mesh.vertices = verts; mesh.normals = norms; mesh.colors = cols; mesh.uv = uv; mesh.triangles = tris;
+            mesh.RecalculateBounds();
+            var go = new GameObject(part.Kind == Shortcut.RustMod.SkateBoardPartKind.Deck ? "deck" : part.Kind == Shortcut.RustMod.SkateBoardPartKind.Truck ? "truck" : "wheel");
+            go.AddComponent<MeshFilter>().sharedMesh = mesh;
+            go.AddComponent<MeshRenderer>().material = mat;
+            var parent = part.ParentIndex >= 0 && part.ParentIndex < p ? objects[part.ParentIndex] : root.transform;
+            var parentPivot = part.ParentIndex >= 0 && part.ParentIndex < p ? pivots[part.ParentIndex] : Vector3.zero;
+            go.transform.SetParent(parent, false);
+            go.transform.localPosition = pivot - parentPivot; go.transform.localRotation = Quaternion.identity;
+            objects[p] = go.transform; pivots[p] = pivot;
+            if (part.Kind == Shortcut.RustMod.SkateBoardPartKind.Truck) { truckList.Add(go.transform); truckAxis.Add(axis); truckSide.Add(part.PivotZ < 0f ? -1f : 1f); }
+            if (part.Kind == Shortcut.RustMod.SkateBoardPartKind.Wheel) { wheelList.Add(go.transform); wheelAxis.Add(axis); }
+        }
+        trucks = truckList.ToArray(); truckAxes = truckAxis.ToArray(); truckSides = truckSide.ToArray();
+        wheels = wheelList.ToArray(); wheelAxes = wheelAxis.ToArray();
+        UnityEngine.Object.DontDestroyOnLoad(root);
+        return root;
     }
 
     private static GameObject FromMesh()

@@ -9,7 +9,7 @@ using UnityEngine;
 
 public static class RiderRig
 {
-    public const float AnkleHeight = 0.095f, ToeHeight = 0.025f, DeckTop = 0.085f, HeelShift = 0.055f;
+    public const float AnkleHeight = 0.095f, ToeHeight = 0.025f, DeckTop = 0.092f, HeelShift = 0.055f;
     public const float HeadLiftFrom = 20f, HeadLiftShare = 0.8f, HeadLiftMost = 50f;
     public static bool Bound;
     public static Animator Anim;
@@ -42,6 +42,7 @@ public static class RiderRig
     private static int lookFailures;
     private static long skinSet;
     private static float nextScan, lookRetryAt;
+    public const float ScanEvery = 5f;
     public static string LookState = "first person";
 
     // The item in the hands and the first-person arms are drawn right in front of the camera,
@@ -50,7 +51,10 @@ public static class RiderRig
     // Switching the parts off is not enough in this client: with a rock in hand they stayed on the
     // screen. So the set is also made too small to see. The game may set the size again at any
     // time, so it is made small again every frame, and the size the game last gave is put back.
-    public const float HeldEvery = 0.15f, HeldSmall = 0.0001f;
+    // A look through the whole scene for held items costs the game a fifth of a second, so it is
+    // done at most every HeldWhole seconds; in between the object that held the last item found
+    // (their parent) is looked through, which is cheap, every HeldEvery seconds.
+    public const float HeldEvery = 0.25f, HeldWhole = 2f, HeldSmall = 0.0001f;
     private const int HeldTries = 5, HeldScans = 3;
 
     // One thing of the set: the object that carries it (Root) or one drawn part of it (Part). What
@@ -66,17 +70,38 @@ public static class RiderRig
     private static HeldThing[] held = new HeldThing[0];
     private static long heldSet;
     private static float nextHeld;
-    private static bool heldForced = true;
+    private static bool heldForced = true, heldThird, heldOff;
+    private static long heldSlow;
+    // A frame's worth of this is a frame lost: past this the handling is switched off for the session.
+    private const double HeldBudgetMs = 8.0; private const int HeldSlowFrames = 30;
+    private static Transform heldHolder;
+    private static float nextWhole;
     private static int heldScanFailures;
 
     private static void Held(bool wantThird, float now)
     {
+        if (heldOff) return;
+        var began = SkateClock.Now();
+        // The view going behind the rider is worth one look through the whole scene.
+        if (wantThird && !heldThird) nextHeld = nextWhole = 0f;
+        heldThird = wantThird;
+        // A set that lost a thing is looked for again at once, but once: the lost thing is dropped
+        // so that it cannot ask for a look every frame, which cost the owner his frame rate.
+        if (wantThird && HeldGone()) nextHeld = 0f;
         if (wantThird && now >= nextHeld && heldScanFailures < HeldScans)
         {
             nextHeld = now + HeldEvery;
             try
             {
-                var models = UnityEngine.Object.FindObjectsOfType<BaseViewModel>();
+                Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppArrayBase<BaseViewModel> models = null;
+                if (!ReferenceEquals(heldHolder, null) && heldHolder != null) models = heldHolder.GetComponentsInChildren<BaseViewModel>(true);
+                if ((models == null || models.Length == 0) && now >= nextWhole)
+                {
+                    nextWhole = now + HeldWhole;
+                    models = UnityEngine.Object.FindObjectsOfType<BaseViewModel>();
+                    heldHolder = models.Length > 0 && models[0] != null ? models[0].transform.parent : null;
+                }
+                if (models == null) return;
                 var found = new System.Collections.Generic.List<HeldThing>(); long set = models.Length; var names = ""; var parts = 0;
                 for (var i = 0; i < models.Length; i++)
                 {
@@ -103,6 +128,26 @@ public static class RiderRig
         }
         if (wantThird) HeldHide();
         HeldRestore(wantThird);
+        var ms = (SkateClock.Now() - began) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+        heldSlow = ms > HeldBudgetMs ? heldSlow + 1 : 0;
+        if (heldSlow >= HeldSlowFrames)
+        {
+            heldOff = true; HeldRestore(false);
+            Say("held item: keeping it out of the way cost " + ms.ToString("F0") + " ms a frame for " + HeldSlowFrames + " frames; it is left alone from here on");
+        }
+    }
+
+    // A held item that was swapped is destroyed with its parts: the set is looked for again then.
+    private static bool HeldGone()
+    {
+        var gone = false;
+        for (var i = 0; i < held.Length; i++)
+        {
+            var t = held[i];
+            if (t.Old) continue;
+            if (!ReferenceEquals(t.Root, null) && t.Root == null) { t.Old = true; t.Changed = false; gone = true; }
+        }
+        return gone;
     }
 
     // What could not be put back yet goes along with the next set, to be tried again.
@@ -203,16 +248,18 @@ public static class RiderRig
     public static void Look(bool wantThird)
     {
         var now = Time.realtimeSinceStartup;
-        Held(wantThird, now);
+        var began = SkateClock.Now(); Held(wantThird, now); SkateClock.Add(SkateClock.Held, began);
         if (!Bound || Root == null || lookFailures >= 3 || now < lookRetryAt) return;
         try
         {
-            if (now >= nextScan)
+            if (now >= nextScan || SkinGone())
             {
                 // Clothing changes replace the meshes, also one for one, so the set is compared by
-                // identity now and then. The old set goes back to the game's own state before the new
-                // one is sorted: a mesh is recognised as body by that state.
-                nextScan = now + 1f;
+                // identity now and then. Walking the whole model costs a visible hitch, so it is done
+                // every few seconds, or at once when a known mesh has been destroyed. The old set goes
+                // back to the game's own state before the new one is sorted: a mesh is recognised as
+                // body by that state.
+                nextScan = now + ScanEvery;
                 var all = Root.GetComponentsInChildren<SkinnedMeshRenderer>(true);
                 long set = all.Length;
                 for (var i = 0; i < all.Length; i++) set = set * 31 + all[i].Pointer.ToInt64();
@@ -241,13 +288,22 @@ public static class RiderRig
         }
     }
 
+    // A destroyed Unity object compares equal to null; checking the few known meshes is cheap, and
+    // catches a clothing change the moment it happens.
+    private static bool SkinGone()
+    {
+        for (var i = 0; i < body.Length; i++) if (body[i] == null) return true;
+        for (var i = 0; i < legSet.Length; i++) if (legSet[i] == null) return true;
+        return false;
+    }
+
     public static void Unbind()
     {
         try { Show(false, true); } catch (Exception) { }
         // What cannot be put back now is kept, and tried again from the next frame on.
         HeldRestore(false);
         var left = new System.Collections.Generic.List<HeldThing>(); HeldKeep(left);
-        held = left.ToArray(); heldSet = 0; heldScanFailures = 0; nextHeld = 0f;
+        held = left.ToArray(); heldSet = 0; heldScanFailures = 0; nextHeld = nextWhole = 0f; heldHolder = null; heldOff = false; heldSlow = 0;
         Bound = false; body = new SkinnedMeshRenderer[0]; legSet = new SkinnedMeshRenderer[0]; skinSet = 0;
     }
 

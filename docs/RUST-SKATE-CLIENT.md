@@ -1,7 +1,7 @@
 # Rust PC skate client architecture
 
 Scope: existing Rust PC game; standalone rewrite parked. Claude/the owner reported these observations in [#337, run R](https://github.com/Dj-Shortcut/mw2-rust-rust-rewrite/issues/337#issuecomment-6094262459), [integrated runs R2/R3/T/P](https://github.com/Dj-Shortcut/mw2-rust-rust-rewrite/issues/337#issuecomment-6094749999) and, on the source of [PR #340](https://github.com/Dj-Shortcut/mw2-rust-rust-rewrite/pull/340), in further runs on 10 October 2026.
-Codex did not rerun them. Client Steam build25824447. The owner's launcher plays client commit `c5098aef57967d45e8ed5d21be08eb184b03ca6b` (plugin 0.14.0) with the shared modules of that commit.
+Codex did not rerun them. Client Steam build25824447. The owner's launcher plays client commit `0f3098a4b15eadcd644b247c184a2fdbf8332027` (plugin 0.15.0) with the shared modules pinned in its `sources.txt`; `claude-skate-next` is ahead of it (controller, trick vocabulary, score display) and is checked in the game before it is released.
 Source, controls and tools: [client](../mods/rust/client/README.md), [tools](../mods/rust/client/tools/README.md).
 
 ## Reported client route
@@ -24,17 +24,25 @@ FootLift−ankleHeight (−.085 m for that rig); it does not shift ankle anchors
 
 The local model has 27 full-body skinned meshes normally shadows-only and eight `leg-` meshes
 normally visible in first person. For the view from behind, full-body drawing is switched on and the leg set off.
-Late bone writes rendered stance/push/air-flip/grab/bail/switch/grind/manual **poses** across 22 keyed views
-(the push in three places, flip and grab apart, the bail at two moments), stepped with key presses sent from a
-distance. With the rider module of items 8–10 TryCreate refused nothing and joints met their targets within
+Late bone writes rendered stance/push/air-flip/grab/bail/switch/grind/manual **poses** across 40 keyed views
+(the push in three places, flip and grab apart, six grab kinds, the board a quarter round under the feet, the
+bail at four moments, nose manual, nine views of the score display), stepped with key presses sent from a
+distance; on `a79f293` the rider module refused nothing in 897 frames and the grabbing hand ended .037 m short. With the rider module of items 8–10 TryCreate refused nothing and joints met their targets within
 .001 m, except the grabbing hand, which ends .06 m short of the deck edge: the adapter tips the pelvis about the
 hip line so that the spine root meets the folded chest, and lifts neck and head when the chest folds more than 20°.
 In a manual the board tips 15° about its rear axle and the footing follows. Bones changed before the next frame, after the rendered picture.
-The **board** is drawn with the game's own `Rust/Standard` shader, found by name, and a texture that gives every
-vertex colour a block of texels: in daylight it took the world's light and cast a shadow. Night was not looked at.
+The **board** is drawn with the game's own `Rust/Standard` shader, found by name. Until `73474a8` it was the
+one-piece shared mesh with a texture that gave every vertex colour a block of texels: in daylight it took the
+world's light and cast a shadow; night was not looked at. Since then it is the detailed shared mesh in parts
+(deck, trucks that steer with the lean, wheels that roll) with the mesh's own 256 × 256 texture; its deck top is
+.092 m, which the rider's `DeckTop` follows. Not yet seen in the game.
 In daylight the stance reads as hands on hips, the push as a step off sideways, and during a bail the rider holds
 a squat at deck height while the board leaves; [#337](https://github.com/Dj-Shortcut/mw2-rust-rust-rewrite/issues/337#issuecomment-6096570455) lists what the look still needs.
 Moving the **main camera** late gives a lit/skinned view; a second CopyFrom camera rendered white.
+The **score display** is IMGUI text: the game has `RobotoCondensed-Bold` loaded and the display draws in it, but
+`GUIStyle.font`'s setter is stripped from this client and throws; the style's font is set through the engine call
+`set_font_Injected` that the interop lists. `GUI.DrawTexture`, rich text sizes and colours, alignment and a texture
+built with `SetPixel` work; `Font.GetOSInstalledFontNames` is stripped.
 Scripted tricks: .72 s air, about 1 m peak, 5 m/s impact; Ollie, Kickflip, Frontside 180, Heelflip,
 Backside 180 Grab, switch changes, a held manual (+159) and a banked combo (+418) gave score 1268, the offline total.
 Two late presses were refused as plain airs; native bail gameplay remains unverified.
@@ -55,6 +63,10 @@ ride pushed to 8 m/s twenty times on its way out, the after-waking ones among th
 That fits the pace the server allows a walking player, with slack after a rest; the game does not report a rider as sprinting.
 The client lowers its cap on two pull-backs in a row (to 2.1 m/s in that run), shows `server limit`,
 rode back at the cap without a pull-back, and tries a little more later. ShortcutSkate is what lifts this.
+With ShortcutSkate on the server the owner still saw the board held to 6 km/h once, during a session that
+ran at 5 fps: a 200 ms frame sends the server a move it refuses at any speed. Since then two pull-backs
+during a frame longer than 0.1 s leave the cap alone, a raise is tried every 3 s (a refused one doubles
+the wait), and getting on more than 30 s after the last pull-back starts without a cap. Unverified in game.
 
 ## Integration and remaining acceptance
 

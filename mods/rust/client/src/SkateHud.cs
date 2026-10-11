@@ -121,8 +121,9 @@ public static class SkateHud
         s.fontSize = size; s.fontStyle = FontStyle.Bold;
         if (font != null)
         {
-            // A face that is bold already is not thickened once more.
-            try { s.font = font; if (fontBold) s.fontStyle = FontStyle.Normal; }
+            // The property's setter is stripped from this client and throws; the engine call behind it
+            // is there. A face that is bold already is not thickened once more.
+            try { GUIStyle.set_font_Injected(s.Pointer, font.Pointer); if (fontBold) s.fontStyle = FontStyle.Normal; }
             catch (Exception e) { font = null; fontTries = MostFontTries; Out.Say("HUD font: the default one; a style takes no other here (" + e.GetType().Name + ")"); }
         }
         if (anchor != 0 && anchors)
@@ -252,7 +253,8 @@ public static class SkateHud
         var v = Staged ? Stage : Sample(now);
         var onFoot = !Scenarios.Active && !v.Riding && (!SkateRig.Ready || now - SkateRig.AwakeAt < 12f);
         var recent = now - popAt < PopSeconds || now - bankAt < BankSeconds || now - bailAt < BailSeconds;
-        if (!Scenarios.Active && !v.Riding && !recent && !onFoot) return;
+        var pieces = v.Riding ? "" : SkatePieces.Line(now);
+        if (!Scenarios.Active && !v.Riding && !recent && !onFoot && pieces == "") return;
         float w = Screen.width, h = Screen.height;
         var k = h / 1080f; if (k < 0.75f) k = 0.75f;
         if (fontTries == 0) FindFont();
@@ -263,6 +265,12 @@ public static class SkateHud
             var hint = !SkateRig.Ready ? "Skate mod " + SkatePlugin.Version + " loaded"
                 : SkatePad.Shared ? "Skate mod: press Y on the controller, or K, or jump twice to get on the board" : "Skate mod: press K or jump twice to get on the board";
             Text(40f * k, 110f * k, w - 80f * k, hint, (int)(19 * k), Ink, 0, 1f);
+        }
+
+        if (pieces != "")
+        {
+            Box(40f * k, h - 120f * k, w - 80f * k, 40f * k, Fade(Dark, 0.62f));
+            Text(56f * k, h - 112f * k, w - 112f * k, pieces, (int)(19 * k), SkatePieces.Open ? Ink : Amber, 0, 1f);
         }
 
         if (v.Riding || Staged)

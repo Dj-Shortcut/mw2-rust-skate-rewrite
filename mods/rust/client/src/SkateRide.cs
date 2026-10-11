@@ -12,8 +12,8 @@ public enum RideMode { Off, Ground, Air, Grind, Bail }
 
 public static class SkateRide
 {
-    public const float PushAccel = 6f, MaxPush = 8f, BrakeDecel = 12f, RollDecel = 0.45f, MaxSpeed = 13f, MaxReverse = 6f, TurnRate = 150f, SlopeGain = 1.6f;
-    public const float AirGravity = 16f, OlliePop = 6f, MaxFall = 30f, BailImpact = 12f, BailSeconds = 1.3f, BailDecel = 10f, PushPeriod = 0.8f, SeaLevel = -0.6f, LowestCap = 1.5f, ManualPace = 1f;
+    public const float PushAccel = 7f, MaxPush = 11f, BrakeDecel = 12f, RollDecel = 0.45f, MaxSpeed = 13f, MaxReverse = 6f, TurnRate = 150f, SlopeGain = 1.6f;
+    public const float AirGravity = 16f, OlliePop = 6f, MaxFall = 30f, BailImpact = 12f, BailSeconds = 1.3f, BailDecel = 10f, PushPeriod = 0.8f, SeaLevel = -0.6f, LowestCap = 1.5f, LagStep = 0.1f, RaiseWait = 3f, CapForget = 30f, ManualPace = 1f, ManualHold = 0.3f, HopGrace = 0.3f;
     private const float RayLift = 0.6f, FeetProbe = 0.3f, AirProbe = 3f;
     public static readonly int GroundMask = ~((1 << 12) | (1 << 17) | (1 << 18) | (1 << 4) | (1 << 10) | (1 << 9) | (1 << 2));
 
@@ -37,7 +37,7 @@ public static class SkateRide
     public static int Steps, Resets, Pops, Lands, Bails, Pushes, GrindStarts, GrindEnds, Refused;
     private static Rigidbody body;
     private static Vector3 lastPos, lastDir, velocity;
-    private static float lastSpeed, lastPull = -999f, raisedAt = -999f, putBackAt = -999f, raiseWait = 20f, now, mountAt, takeOffY, flipLeft, shoveLeft, jumpWanted = -99f;
+    private static float lastSpeed, lastPull = -999f, raisedAt = -999f, putBackAt = -999f, raiseWait = RaiseWait, now, mountAt, takeOffY, flipLeft, shoveLeft, jumpWanted = -99f;
     private static bool hasLast, refusedSinceRaise, spinning;
     private static int stuck;
     // The pop that was asked for, kept with the press for the moment the press itself is kept; what
@@ -67,7 +67,7 @@ public static class SkateRide
     public static bool TailFirst { get { return Trick.Switch != (Speed < -0.3f); } }
     public static bool Rotating { get { return spinning || Math.Abs(flipLeft) > 0.001f || Math.Abs(shoveLeft) > 0.001f; } }
 
-    public static void ForgetServer() { Cap = MaxSpeed; raiseWait = 20f; refusedSinceRaise = false; raisedAt = putBackAt = -999f; }
+    public static void ForgetServer() { Cap = MaxSpeed; raiseWait = RaiseWait; refusedSinceRaise = false; raisedAt = putBackAt = -999f; }
 
     public static void Mount(Rigidbody b, float yaw)
     {
@@ -76,6 +76,8 @@ public static class SkateRide
         Speed = Vector3.Dot(v, Dir(yaw));
         SkateKeys.EndStep();
         hasLast = false; Steps = 0; Resets = 0; Top = 0f; Lean = 0f; lastPull = mountAt = Time.realtimeSinceStartup;
+        // A cap from a ride a while ago says nothing about this one.
+        if (mountAt - putBackAt > CapForget) ForgetServer();
         VSpeed = 0f; AirTime = 0f; flipLeft = shoveLeft = pendShove = 0f; pendFlip = 0; SpinDeg = FlipDeg = ShoveDeg = 0; Jumped = TrickAir = Braking = Manual = NoseManual = spinning = DeckReversed = false; PushPhase = 0f; stuck = 0;
         Grab = SkateGrabKind.None; spinSide = 1f; wantKind = SkatePopKind.Ollie; wantFlip = 0; wantShove = 0f; wantScale = 1f;
         Trick = new SkateTrickState(false); TrickName = ""; ComboPoints = 0; TrickAt = BankedAt = LandAt = jumpWanted = -99f; OffReason = "";
@@ -127,7 +129,7 @@ public static class SkateRide
             if (Cap < MaxSpeed && now - lastPull > raiseWait)
             {
                 Cap = Math.Min(MaxSpeed, Cap + (refusedSinceRaise ? 0.5f : 1f));
-                if (!refusedSinceRaise) raiseWait = 20f;
+                if (!refusedSinceRaise) raiseWait = RaiseWait;
                 refusedSinceRaise = false; lastPull = raisedAt = now;
             }
             if (Speed > Top) Top = Speed;
@@ -152,11 +154,12 @@ public static class SkateRide
             // refuses more, tick after tick, until the rider is slower: two in a row lower the cap,
             // and a raise that is refused again is tried less and less often. One on its own is
             // left alone, and so is a ride's start: after waking the first seconds are put back at
-            // any speed.
+            // any speed. A long frame is left alone too: the move it sent was too big for the server
+            // because of the frame, not the speed.
             Resets++;
             Out.Say("SKATE put back #" + Resets + ", " + (now - mountAt).ToString("F2") + " s after getting on: moved " + Out.V3(pos - lastPos) + " in a step at speed " + lastSpeed.ToString("F1"));
             var again = now - putBackAt < 1f; putBackAt = now;
-            if (again && now - mountAt > 3f && Math.Abs(lastSpeed) > LowestCap)
+            if (again && Time.unscaledDeltaTime <= LagStep && now - mountAt > 3f && Math.Abs(lastSpeed) > LowestCap)
             {
                 if (!refusedSinceRaise && now - raisedAt < 45f) raiseWait = Math.Min(raiseWait * 2f, 480f);
                 refusedSinceRaise = true; lastPull = now;
@@ -208,9 +211,12 @@ public static class SkateRide
             return;
         }
         Speed += Vector3.Dot(Physics.gravity, tangent) * SlopeGain * dt;
-        // A manual is held on two wheels: it needs some speed and leaves no foot free to push.
-        Manual = SkateKeys.Manual && !SkateKeys.Brake && Math.Abs(Speed) > ManualPace;
-        NoseManual = !Manual && SkateKeys.NoseManual && !SkateKeys.Brake && Math.Abs(Speed) > ManualPace;
+        // A manual is held on two wheels: it needs some speed and leaves no foot free to push. One
+        // that has begun lasts down to a crawl: ending it at the pace it needs to begin would let a
+        // held push in and out every few tenths of a second, each time ending and scoring it.
+        var pace = Math.Abs(Speed);
+        Manual = SkateKeys.Manual && !SkateKeys.Brake && pace > (Manual ? ManualHold : ManualPace);
+        NoseManual = !Manual && SkateKeys.NoseManual && !SkateKeys.Brake && pace > (NoseManual ? ManualHold : ManualPace);
         var pushing = SkateKeys.Push && !SkateKeys.Brake && !Manual && !NoseManual && Speed < MaxPush;
         if (pushing) Speed = Math.Min(MaxPush, Speed + PushAccel * dt);
         if (SkateKeys.Brake) Speed = Toward(Speed, 0f, BrakeDecel * dt);
@@ -233,7 +239,8 @@ public static class SkateRide
         // Read while the board still rolls: which end leads decides which way is frontside.
         spinSide = TailFirst ? -1f : 1f;
         Enter(RideMode.Air);
-        Jumped = jumped; TrickAir = jumped; Manual = NoseManual = false; VSpeed = vertical; AirTime = 0f; AirPeak = 0f; takeOffY = Position.y;
+        // A manual survives a hop over a bump; a jump ends it, and so does a longer fall below.
+        Jumped = jumped; TrickAir = jumped; if (jumped) Manual = NoseManual = false; VSpeed = vertical; AirTime = 0f; AirPeak = 0f; takeOffY = Position.y;
         flipLeft = shoveLeft = 0f; spinning = false; PushPhase = 0f; Braking = false; stuck = 0;
         popKind = jumped ? wantKind : SkatePopKind.Ollie; pendFlip = jumped ? wantFlip : 0; pendShove = jumped ? wantShove : 0f;
         wantFlip = 0; wantShove = 0f; wantKind = SkatePopKind.Ollie;
@@ -248,6 +255,7 @@ public static class SkateRide
     private static void AirStep(Vector3 pos, float dt)
     {
         AirTime += dt;
+        if (AirTime > HopGrace) Manual = NoseManual = false;
         VSpeed -= AirGravity * dt; if (VSpeed < -MaxFall) VSpeed = -MaxFall;
         if (pos.y - takeOffY > AirPeak) AirPeak = pos.y - takeOffY;
         var dir = Dir(Yaw);
@@ -451,7 +459,7 @@ public class LateDriver : MonoBehaviour
     private void FixedUpdate()
     {
         Calls++;
-        SkateRide.Step();
+        var t0 = SkateClock.Now(); SkateRide.Step(); SkateClock.Add(SkateClock.Ride, t0);
     }
 
     private void LateUpdate()

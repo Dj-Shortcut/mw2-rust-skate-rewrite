@@ -70,6 +70,16 @@ long enough to finish it.
 While a trigger is held in the air the right stick picks the grab and does not flip the board.
 The steering turns the board at a rate; the view does not steer it.
 
+**Park pieces on foot.** With the server's ShortcutSkate 0.3.0 or later an administrator places a
+park piece by asking for it in the console and then placing one square floor with the building
+plan. On foot, holding `Back` (the view button) shows a menu of the pieces (bank, kicker,
+quarterpipe, ledge-low, ledge-high, long-ledge, funbox, halfpipe — the last needs plugin 0.3.1): the D-pad steps through them, `A` sends
+`skate.piece <name>` to the server, `B` sends `skate.piece cancel`. The screen says what was asked
+for and, for the 120 s the server keeps the choice, that a floor is to be placed; the server's own
+answer is in the F1 console. `Y` inside the menu does not get on the board. From the keyboard, the
+game's own `bind` does the same (`bind f7 "skate.piece quarterpipe"`). Unverified in game: the
+console call from the plugin.
+
 ### Keys
 
 | Key | On the ground | In the air |
@@ -179,6 +189,12 @@ change with a Rust update:
   draws with it takes the world's light and casts a shadow; its colours come from a texture
   (`_MainTex`), its gloss from `_Glossiness`. `Hidden/Internal-Colored` draws vertex colours without
   light and is what the board falls back to.
+- The board is the shared mesh's detailed form (`SkateBoardMesh.CreateDetailed`): a deck, two
+  trucks hanging from it and four wheels hanging from the trucks, each an object of its own about
+  its pivot, with the 256 × 256 texture the mesh brings (grip tape, a graphic underneath, metal,
+  wheels). The trucks turn with the lean, the front one into the turn and the rear one out of it,
+  0.8° per degree; the wheels roll with the speed. Without the parts the one-piece mesh is drawn,
+  without a mesh at all a board of primitives.
 - A controller is not visible to the plugin as a gamepad; keys and mouse buttons are read from the
   Input System, the controller from outside the game.
 - The item in the player's hands is drawn by an object with a `BaseViewModel` component. Switching
