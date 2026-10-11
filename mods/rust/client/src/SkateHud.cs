@@ -5,11 +5,14 @@
 // condensed face of the game's own interface, which is taken from the fonts the game has loaded.
 // What is left then is the same layout in the engine's default font.
 // The layout follows the game's own: flat dark panels, condensed letters, one warm accent.
-//   top right     the session's score, counting up when a combo is banked
+//   top right     the session's score, counting up when a combo is banked, and under it the
+//                 session's bests: combo, top speed, longest grind and manual
 //   bottom centre the open combo: its tricks in a row, their points and the multiplier, and a bar
-//                 that runs out while the board rolls without a trick
-//   upper centre  the trick that just landed, a manual or grind as it runs, a bail
-//   bottom left   speed, and the controls for the first seconds on the board
+//                 that runs out while the board rolls without a trick; a manual or grind as it
+//                 runs sits in that row with its seconds and points
+//   upper centre  the trick that just landed, coloured by its kind, a bail
+//   bottom left   speed, the last tricks landed with their points (the feed), and the controls
+//                 for the first seconds on the board
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -31,6 +34,14 @@ public static class SkateHud
         public string Live;
         public float LiveSeconds;
     }
+
+    // The session's bests, kept while the plugin lives.
+    public static long BestCombo;
+    public static float TopSpeed, LongestGrind, LongestManual;
+    private struct Fed { public string Name; public long Points; public float At; }
+    private static readonly List<Fed> feed = new List<Fed>();
+    private const int MostFed = 5;
+    private const float FeedSeconds = 5f;
     public static bool Staged;
     public static Shown Stage;
 
@@ -50,11 +61,14 @@ public static class SkateHud
     {
         if (string.IsNullOrEmpty(name)) return;
         line.Add(name); popName = name; popPoints = points; popAt = Time.realtimeSinceStartup;
+        feed.Add(new Fed { Name = name, Points = points, At = popAt });
+        while (feed.Count > MostFed) feed.RemoveAt(0);
     }
 
     public static void Banked(long points, long total)
     {
         line.Clear(); bankPoints = points; bankAt = countAt = Time.realtimeSinceStartup; countFrom = total - points; countTo = total;
+        if (points > BestCombo) BestCombo = points;
     }
 
     public static void Bailed(long lost) { line.Clear(); lostPoints = lost; bailAt = Time.realtimeSinceStartup; popAt = -99f; }
@@ -241,9 +255,13 @@ public static class SkateHud
         s.Speed = Math.Abs(SkateRide.Speed); s.Cap = SkateRide.Cap;
         s.Score = t.TotalPoints; s.Base = t.ComboBasePoints; s.Count = t.ComboCount;
         s.Window = (float)(t.RollingSeconds / SkateTricks.ComboRollingTimeout);
-        s.Live = SkateRide.Mode == RideMode.Grind ? "GRIND" : !t.Manualing ? "" : t.NoseManualing ? "NOSE MANUAL" : "MANUAL";
-        s.LiveSeconds = SkateRide.Mode == RideMode.Grind ? (float)t.GrindSeconds : (float)t.ManualSeconds;
-        s.LivePoints = (long)Math.Round(s.LiveSeconds * SkateTricks.ManualPointsPerSecond);
+        var grinding = SkateRide.Mode == RideMode.Grind;
+        s.Live = grinding ? SkateTricks.GrindName(SkateRide.GrindKind, SkateRide.GrindFrontside).ToUpperInvariant() : !t.Manualing ? "" : t.NoseManualing ? "NOSE MANUAL" : "MANUAL";
+        s.LiveSeconds = grinding ? (float)t.GrindSeconds : (float)t.ManualSeconds;
+        s.LivePoints = (long)Math.Round(s.LiveSeconds * (grinding ? SkateTricks.GrindRate(SkateRide.GrindKind) : SkateTricks.ManualPointsPerSecond));
+        if (s.Speed > TopSpeed) TopSpeed = s.Speed;
+        if (grinding && s.LiveSeconds > LongestGrind) LongestGrind = s.LiveSeconds;
+        if (t.Manualing && s.LiveSeconds > LongestManual) LongestManual = s.LiveSeconds;
         return s;
     }
 
@@ -277,6 +295,7 @@ public static class SkateHud
         {
             Score(v, now, w, k);
             Speed(v, h, k);
+            Feed(now, h, k);
             if (v.Cap < SkateRide.MaxSpeed - 0.25f)
                 Text(40f * k, h - 336f * k, w - 80f * k, "The server is holding the board back to " + (v.Cap * 3.6f).ToString("F0") + " km/h", (int)(18 * k), Amber, 0, 1f);
             Combo(v, now, w, h, k);
@@ -294,11 +313,35 @@ public static class SkateHud
         Box(x, y, 6f * k, height, Accent);
         Text(x + 22f * k, y + 7f * k, width, "SCORE", (int)(15 * k), Dim, 0, 1f);
         Text(x + 22f * k, y + 23f * k, width - 30f * k, shown.ToString("N0"), (int)(38 * k), counting ? Good : Ink, 0, 1f);
+        if (BestCombo > 0 || TopSpeed > 1f)
+        {
+            Box(x, y + height + 4f * k, width, 50f * k, Fade(Dark, 0.5f));
+            Text(x + 22f * k, y + height + 9f * k, width - 30f * k, DimTag + "BEST COMBO " + End + BestCombo.ToString("N0") + DimTag + "   TOP " + End + (TopSpeed * 3.6f).ToString("F0") + DimTag + " km/h" + End, (int)(15 * k), Ink, 0, 1f);
+            Text(x + 22f * k, y + height + 28f * k, width - 30f * k, DimTag + "GRIND " + End + LongestGrind.ToString("F1") + DimTag + " s   MANUAL " + End + LongestManual.ToString("F1") + DimTag + " s" + End, (int)(15 * k), Ink, 0, 1f);
+        }
         var since = now - bankAt;
         if (since < BankSeconds)
         {
             var out_ = Ease(since / BankSeconds);
             Text(x - 320f * k, y + (26f - 22f * out_) * k, 300f * k, "+" + bankPoints.ToString("N0"), (int)(30 * k), Good, 2, since > BankSeconds - 0.5f ? (BankSeconds - since) / 0.5f : 1f);
+        }
+    }
+
+    // The last tricks landed, newest at the bottom and brightest, gone a few seconds after the last.
+    private static void Feed(float now, float h, float k)
+    {
+        if (feed.Count == 0) return;
+        var since = now - feed[feed.Count - 1].At;
+        if (since > FeedSeconds) { feed.Clear(); return; }
+        var a = since > FeedSeconds - 0.6f ? (FeedSeconds - since) / 0.6f : 1f;
+        float x = 40f * k, y = h - 316f * k;
+        for (var i = feed.Count - 1; i >= 0; i--)
+        {
+            var newest = i == feed.Count - 1;
+            var age = now - feed[i].At; var slide = newest && age < 0.15f ? (1f - age / 0.15f) * 14f * k : 0f;
+            var size = (int)((newest ? 24 : 18) * k);
+            Text(x + slide, y, 520f * k, feed[i].Name + "  " + AmberTag + "+" + feed[i].Points.ToString("N0") + End, size, newest ? Ink : Dim, 0, a * (newest ? 1f : 0.8f));
+            y -= (newest ? 30f : 23f) * k;
         }
     }
 
@@ -331,7 +374,7 @@ public static class SkateHud
         if (live)
         {
             if (line.Count > first) row.Append(AccentTag).Append("  +  ").Append(End);
-            row.Append(v.Live == "GRIND" ? "Grind " : v.Live == "NOSE MANUAL" ? "Nose Manual " : "Manual ").Append(v.LiveSeconds.ToString("F1")).Append(" s");
+            row.Append(Title(v.Live)).Append(' ').Append(v.LiveSeconds.ToString("F1")).Append(" s");
         }
         var basePoints = v.Base + (live ? v.LivePoints : 0);
         // The newest trick makes the row jump: a little larger for a moment.
@@ -355,10 +398,10 @@ public static class SkateHud
             if (lostPoints > 0) Text(0f, y + 84f * k, w, "combo lost   " + DimTag + "\u2212" + lostPoints.ToString("N0") + End, (int)(24 * k), Ink, 1, a);
             return;
         }
-        if (!string.IsNullOrEmpty(v.Live))
+        if (!string.IsNullOrEmpty(v.Live) && now - popAt > 0.6f)
         {
-            Text(0f, y, w, v.Live, (int)(46 * k), Ink, 1, 1f);
-            Text(0f, y + 62f * k, w, v.LiveSeconds.ToString("F1") + " s   " + AmberTag + "+" + v.LivePoints.ToString("N0") + End, (int)(26 * k), Ink, 1, 1f);
+            Text(0f, y, w, v.Live, (int)(40 * k), Kind(v.Live), 1, 1f);
+            Text(0f, y + 54f * k, w, v.LiveSeconds.ToString("F1") + " s   " + AmberTag + "+" + v.LivePoints.ToString("N0") + End, (int)(24 * k), Ink, 1, 1f);
             return;
         }
         var bank = now - bankAt;
@@ -374,9 +417,21 @@ public static class SkateHud
         {
             var a = pop > PopSeconds - 0.4f ? (PopSeconds - pop) / 0.4f : 1f;
             var bump = pop < 0.14f ? 1f + 0.3f * (1f - pop / 0.14f) : 1f;
-            Text(0f, y, w, popName, (int)(46 * k * bump), popPoints >= 250 ? Amber : Ink, 1, a);
-            if (popPoints > 0) Text(0f, y + 64f * k, w, "+" + popPoints.ToString("N0"), (int)(28 * k), popPoints >= 250 ? Ink : Amber, 1, a);
+            Text(0f, y, w, popName, (int)(46 * k * bump), Kind(popName), 1, a);
+            if (popPoints > 0) Text(0f, y + 64f * k, w, "+" + popPoints.ToString("N0"), (int)(28 * k), Amber, 1, a);
         }
+    }
+
+    // A colour by the kind of trick: grinds and slides cool, manuals and reverts warm, flips and
+    // spins the plain ink, grabs green.
+    private static readonly Color Cool = new Color(0.45f, 0.78f, 0.95f), Warm = new Color(0.98f, 0.60f, 0.30f);
+    private static Color Kind(string name)
+    {
+        var n = name.ToLowerInvariant();
+        if (n.Contains("grind") || n.Contains("slide") || n.Contains("50-50") || n.Contains("5-0")) return Cool;
+        if (n.Contains("manual") || n.Contains("revert")) return Warm;
+        if (n.Contains("grab") || n.Contains("stalefish") || n.Contains("melon") || n.Contains("method") || n.Contains("crail") || n.Contains("seatbelt") || n.Contains("bone")) return Good;
+        return Ink;
     }
 
     private static void Hints(Shown v, float w, float h, float k)
@@ -396,4 +451,17 @@ public static class SkateHud
     }
 
     private static string Key(string name) { return AmberTag + name + End; }
+
+    // "FRONTSIDE 50-50" as "Frontside 50-50".
+    private static string Title(string upper)
+    {
+        var b = new StringBuilder(upper.Length); var start = true;
+        for (var i = 0; i < upper.Length; i++)
+        {
+            var c = upper[i];
+            b.Append(start ? c : char.ToLowerInvariant(c));
+            start = c == ' ' || c == '-';
+        }
+        return b.ToString();
+    }
 }

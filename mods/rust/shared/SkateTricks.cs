@@ -312,6 +312,8 @@ namespace Shortcut.RustMod
             return true;
         }
 
+        public static int GrindRate(SkateGrindKind kind) { return GrindRates[GrindKindValid(kind) ? (int)kind : 0]; }
+
         public static string GrindName(SkateGrindKind kind, bool frontside)
         {
             int k = GrindKindValid(kind) ? (int)kind : 0;
