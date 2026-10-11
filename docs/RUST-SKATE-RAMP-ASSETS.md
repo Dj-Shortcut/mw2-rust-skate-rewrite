@@ -43,6 +43,6 @@ loads this pack; network placement, riding and Unity import are unverified.
 Generate with the [authored README commands](../assets/authored/README.md).
 The generator checks finite geometry, closed outward solids, triangle areas,
 positive transforms and per-model budgets, then records bounds/counts/hashes.
-Generation and render evidence uses actual Blender 5.2.0. Same-version local
-regeneration is checked separately; Blender 4.3 cross-version parity and native
-performance are not established by those checks.
+Generation and render evidence uses actual Blender 5.2.0. Local ramp regeneration
+is checked separately. CI pins Blender 4.3.2 for the original four and 5.2.0 for
+the ramps; cross-version export equivalence and native performance are unproven.

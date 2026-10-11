@@ -32,8 +32,8 @@ jobs:
           diff -r --exclude=README.md assets/authored/audio "$RUNNER_TEMP/audio"
           echo "WAV pack and manifest match a fresh run of scripts/generate_authored_audio.py" >> "$GITHUB_STEP_SUMMARY"
 
-  # Blender's output is not bit-stable across machines: CI regenerates three
-  # of four models byte for byte, but masked_operator comes out with floats
+  # The original four are not bit-stable across machines: CI regenerates three
+  # byte for byte, but masked_operator comes out with floats
   # one float32 step off and some triangles in another order.
   # scripts/compare_glb.py accepts exactly that and nothing larger.
   # Report-only because it depends on download.blender.org. The .blend files
@@ -44,6 +44,8 @@ jobs:
     continue-on-error: true
     env:
       BLENDER: blender-4.3.2-linux-x64
+      RAMP_BLENDER: blender-5.2.0-linux-x64
+      RAMP_SHA256: 96f6c181a30f4950607839dc84d42a354b250d8a0231b098b59b7bc69c351c48
     steps:
       - uses: actions/checkout@v4
       # Restore and save separately so the download is cached even when the
@@ -62,6 +64,22 @@ jobs:
         with:
           path: ${{ runner.temp }}/${{ env.BLENDER }}
           key: ${{ env.BLENDER }}
+      - uses: actions/cache/restore@v4
+        id: ramp-blender
+        with:
+          path: ${{ runner.temp }}/${{ env.RAMP_BLENDER }}
+          key: ${{ env.RAMP_BLENDER }}-${{ env.RAMP_SHA256 }}
+      - name: Download the ramp authoring Blender version
+        if: steps.ramp-blender.outputs.cache-hit != 'true'
+        run: |
+          curl -fsSL "https://download.blender.org/release/Blender5.2/$RAMP_BLENDER.tar.xz" -o "$RUNNER_TEMP/$RAMP_BLENDER.tar.xz"
+          printf '%s  %s\n' "$RAMP_SHA256" "$RUNNER_TEMP/$RAMP_BLENDER.tar.xz" | sha256sum --check --strict
+          tar -xJf "$RUNNER_TEMP/$RAMP_BLENDER.tar.xz" -C "$RUNNER_TEMP"
+      - uses: actions/cache/save@v4
+        if: steps.ramp-blender.outputs.cache-hit != 'true'
+        with:
+          path: ${{ runner.temp }}/${{ env.RAMP_BLENDER }}
+          key: ${{ env.RAMP_BLENDER }}-${{ env.RAMP_SHA256 }}
       - name: Install Blender runtime libraries
         run: |
           sudo apt-get update
@@ -70,7 +88,7 @@ jobs:
         run: |
           "$RUNNER_TEMP/$BLENDER/blender" -b --factory-startup \
             --python scripts/generate_authored_content.py -- --output "$RUNNER_TEMP/models"
-          "$RUNNER_TEMP/$BLENDER/blender" -b --factory-startup \
+          "$RUNNER_TEMP/$RAMP_BLENDER/blender" -b --factory-startup \
             --python scripts/generate_skate_ramp_assets.py -- --output "$RUNNER_TEMP/models"
       - name: Compare with the committed files
         run: |
