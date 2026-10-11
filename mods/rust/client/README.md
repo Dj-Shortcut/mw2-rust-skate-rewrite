@@ -110,19 +110,24 @@ long enough to finish it.
 While a trigger is held in the air the right stick picks the grab and does not flip the board.
 The steering turns the board at a rate; the view does not steer it.
 
-**Park pieces on foot.** Server ShortcutSkate 0.3.3 lets an administrator select the next piece
-with the stock wheel's "I need wood" gesture (halfpipe first); thumbs up cancels. Both gesture
-names and the piece order are configurable. Chat names the selection and `skate.status` shows
-it. Place one square foundation with the building plan within two minutes. A refused placement
-keeps the selection for a retry; floor tiles do not trigger placement.
+**Park pieces on foot.** Server ShortcutSkate 0.3.3+ lets an administrator select the next piece
+with a stock-wheel gesture ("I need wood" by default; the owner's build does not have that name,
+so `skate.piece <name>` in F1 is the working route there) and place a square foundation within
+two minutes; thumbs up cancels. Gesture names and the piece order are configurable.
 
-On foot, holding `Back` (the view button) shows the eight-piece menu. The D-pad selects, `A`
-queues `skate.piece <name>` and `B` queues cancellation. On Windows `SkateConsole` sends the
-F1/command/Enter/F1 sequence; if typing fails it attempts a clipboard fallback. A keyboard bind
-also works (`bind f7 "skate.piece quarterpipe"`). `Y` in the menu does not mount the board.
-Native gesture delivery and a standing park piece still need owner validation. Menu typing does
-not reach the game: in the game the typed keys are reported sent but the F1 console never opens
-(injected input appears to be ignored), so the menu's lines have to be typed by hand for now.
+The picker: on foot, holding `Back` (the view button) shows the eight pieces; the D-pad chooses,
+`LB`/`RB` turn the piece in 15° steps, `A` places it where the view meets the ground and `B`
+cancels. On the keyboard `P` opens the picker and steps to the next piece, `Q`/`E` turn it, `O`
+places it and `Backspace` closes it. While the picker is open the chosen piece's authored model
+is drawn where the view meets the ground, turned as asked, as a preview. Placing sends
+`skate.place <name> x y z yaw` to the server as a console packet on the client's own connection
+(`SkateConsole.Send`: the game's console class is renamed in this client build, but the network
+library keeps its names, so the packet is written the way the console writes it); the server
+builds the piece there (0.3.6, Codex). Where sending is not available the old route stays: `A`
+or `O` queue `skate.piece <name>` for typing and a foundation is placed. Typing through
+injected keys never reached the game's console, so that route depends on the player. `Y` in the
+menu does not mount the board. The send check (`send` step) shows whether sending reaches the
+server: a chat line that appears on the screen. Unverified in game as of this commit.
 
 ### Keys
 

@@ -332,6 +332,12 @@ public static class SkateParks
         Colliders += colliders;
         return "drawn at " + Out.V1(origin) + " yaw " + yaw.ToString("F0") + " with " + colliders + " colliders";
     }
+    // The preview moved to another place, as the aim moves.
+    public static void PreviewMove(Vector3 origin, float yaw)
+    {
+        if (preview == null) return;
+        preview.transform.position = origin + Vector3.up * Lift; preview.transform.rotation = Quaternion.Euler(0f, yaw, 0f);
+    }
     public static void PreviewClear()
     {
         if (preview == null) return;

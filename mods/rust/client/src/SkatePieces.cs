@@ -1,4 +1,10 @@
+// The park picker: a piece chosen on the controller or the keyboard, its authored model drawn
+// where the player aims as a preview, turned in steps, and placed with one press: the client sends
+// `skate.place <piece> x y z yaw` to the server as a console packet (SkateConsole.Send), and the
+// server builds the piece there. Where sending is not available the old route is kept: the line
+// is typed for the player (`skate.piece`), who then places a square foundation.
 using System;
+using System.Globalization;
 using Shortcut.RustMod;
 using UnityEngine;
 
@@ -6,37 +12,125 @@ public static class SkatePieces
 {
     public static readonly string[] Names = { "bank", "kicker", "quarterpipe", "ledge-low", "ledge-high", "long-ledge", "funbox", "halfpipe" };
     public const int MenuButton = SkatePad.Back;
-    public const float ShownSeconds = 6f, PlaceSeconds = 120f;
+    public const float ShownSeconds = 6f, PlaceSeconds = 120f, AimReach = 40f, TurnStep = 15f;
 
     public static bool Open;
     public static int Chosen;
-    public static string Asked = "", Said = "";
+    public static float Turn;
+    public static string Asked = "", Said = "", Status = "";
     public static float SaidAt = -99f, AskedAt = -99f;
-    public static int Sent;
+    public static int Sent, Placed;
+    // Where the preview stands: the point the player aims at on the ground, and the piece's yaw.
+    public static bool AimOk;
+    public static Vector3 Aim;
+    public static float Yaw;
+    private static bool keyboardOpen, wasP, wasQ, wasE, wasO, wasBack;
+    private static int previewKind = -1;
+    private static float previewYaw = 9999f; private static Vector3 previewAt;
 
     // Takes the controller's presses while the menu is open; returns the ones the ride may use.
     public static int Step(int padDown, float now)
     {
         var want = SkatePad.Shared && !SkateRide.On && (SkatePad.Buttons & MenuButton) != 0;
-        if (want != Open) { Open = want; if (Open) Out.Say("PIECES menu open"); }
-        if (!Open) return padDown;
+        var padOpen = Open && !keyboardOpen;
+        if (want != padOpen) { if (want) { Open = true; keyboardOpen = false; Out.Say("PIECES menu open"); } else if (!keyboardOpen) Close(); }
+        if (!Open || keyboardOpen) return padDown;
         if ((padDown & SkatePad.DpadDown) != 0 || (padDown & SkatePad.DpadRight) != 0) Chosen = (Chosen + 1) % Names.Length;
         if ((padDown & SkatePad.DpadUp) != 0 || (padDown & SkatePad.DpadLeft) != 0) Chosen = (Chosen + Names.Length - 1) % Names.Length;
-        if ((padDown & SkatePad.A) != 0) Ask(Names[Chosen], now);
+        if ((padDown & SkatePad.LeftBumper) != 0) Turn -= TurnStep;
+        if ((padDown & SkatePad.RightBumper) != 0) Turn += TurnStep;
+        if ((padDown & SkatePad.A) != 0) Place(now);
         if ((padDown & SkatePad.B) != 0) Ask("cancel", now);
-        return padDown & ~(SkatePad.DpadUp | SkatePad.DpadDown | SkatePad.DpadLeft | SkatePad.DpadRight | SkatePad.A | SkatePad.B | SkatePad.X | SkatePad.Y);
+        return padDown & ~(SkatePad.DpadUp | SkatePad.DpadDown | SkatePad.DpadLeft | SkatePad.DpadRight | SkatePad.A | SkatePad.B | SkatePad.X | SkatePad.Y | SkatePad.LeftBumper | SkatePad.RightBumper);
+    }
+
+    // The keyboard: P opens the picker and steps to the next piece, Q and E turn it, O places it,
+    // Backspace closes it. Only off the board.
+    public static void Keys(bool p, bool q, bool e, bool o, bool back)
+    {
+        if (SkateRide.On) { if (keyboardOpen) Close(); wasP = p; wasQ = q; wasE = e; wasO = o; wasBack = back; return; }
+        if (p && !wasP)
+        {
+            if (!Open) { Open = keyboardOpen = true; Out.Say("PIECES picker open (keyboard)"); }
+            else if (keyboardOpen) Chosen = (Chosen + 1) % Names.Length;
+        }
+        if (Open && keyboardOpen)
+        {
+            if (q && !wasQ) Turn -= TurnStep;
+            if (e && !wasE) Turn += TurnStep;
+            if (o && !wasO) Place(Time.realtimeSinceStartup);
+            if (back && !wasBack) Close();
+        }
+        wasP = p; wasQ = q; wasE = e; wasO = o; wasBack = back;
+    }
+
+    private static void Close()
+    {
+        Open = keyboardOpen = false;
+        SkateParks.PreviewClear(); previewKind = -1; previewYaw = 9999f;
+    }
+
+    // Each frame while the picker is open: the aim point under the camera's view, the preview there.
+    public static void Frame(float now)
+    {
+        if (!Open) { if (previewKind >= 0) { SkateParks.PreviewClear(); previewKind = -1; } return; }
+        AimOk = false;
+        try
+        {
+            var cam = Camera.main;
+            if (cam == null) return;
+            var from = cam.transform.position; var dir = cam.transform.forward;
+            RaycastHit hit;
+            if (!Physics.Raycast(from, dir, out hit, AimReach, SkateRide.GroundMask, QueryTriggerInteraction.Ignore)) return;
+            if (hit.normal.y < 0.5f) return;
+            AimOk = true; Aim = hit.point;
+            var e = cam.transform.eulerAngles;
+            Yaw = (float)Math.Round((e.y + Turn) / 5f) * 5f;
+        }
+        catch (Exception ex) { Status = "aim failed: " + ex.GetType().Name; return; }
+        var kind = (SkateParks.Kind)Chosen;
+        if ((int)kind != previewKind)
+        {
+            var line = SkateParks.PreviewAt(kind, Aim, Yaw);
+            previewKind = (int)kind; previewAt = Aim; previewYaw = Yaw;
+            Status = line.StartsWith("not drawn") ? line : "";
+        }
+        else if (Vector3.Distance(previewAt, Aim) > 0.01f || Math.Abs(previewYaw - Yaw) > 0.01f)
+        {
+            SkateParks.PreviewMove(Aim, Yaw); previewAt = Aim; previewYaw = Yaw;
+        }
+    }
+
+    // The chosen piece where the preview stands: sent to the server to build it there. Without a
+    // way to send, the old route: the piece is asked for by a typed line and a foundation.
+    public static void Place(float now)
+    {
+        var name = Names[Chosen];
+        if (!SkateConsole.CanSend) { Ask(name, now); return; }
+        if (!AimOk) { Said = "Aim at the ground first"; SaidAt = now; return; }
+        var ci = CultureInfo.InvariantCulture;
+        var line = "skate.place " + name + " " + Aim.x.ToString("F2", ci) + " " + Aim.y.ToString("F2", ci) + " " + Aim.z.ToString("F2", ci) + " " + Yaw.ToString("F0", ci);
+        if (SkateConsole.Send(line))
+        {
+            Placed++; SaidAt = now; Asked = "";
+            Said = "Asked the server for a " + name + " at " + Out.V1(Aim) + " (yaw " + Yaw.ToString("F0") + "); the server answers in F1";
+            return;
+        }
+        Said = "Not sent: " + SkateConsole.SendState; SaidAt = now;
     }
 
     public static void Ask(string name, float now)
     {
         var line = "skate.piece " + name;
-        var ok = SkateConsole.Queue(line, now);
+        var sending = SkateConsole.CanSend;
+        var ok = sending ? SkateConsole.Send(line) : SkateConsole.Queue(line, now);
         SaidAt = now;
-        if (!ok) { Said = "The console is still busy; press again in a moment"; return; }
+        if (!ok) { Said = sending ? "Not sent: " + SkateConsole.SendState : "The console is still busy; press again in a moment"; return; }
         Sent++;
-        if (name == "cancel") { Asked = ""; Said = "Typed in the console: " + line; return; }
+        var how = sending ? "Sent to the server: " : "Typed in the console: ";
+        if (name == "cancel") { Asked = ""; Said = how + line; return; }
         Asked = name; AskedAt = now;
-        Said = "Typed in the console: " + line + "  -  now place one square foundation with the building plan within " + (int)PlaceSeconds + " s (admin only; the server answers in F1)";
+        Said = how + line + "  -  now place one square foundation with the building plan within " + (int)PlaceSeconds + " s (admin only; the server answers in F1)";
     }
 
     // What the screen shows: the menu while open, the last answer for a few seconds, the pending piece.
@@ -46,12 +140,15 @@ public static class SkatePieces
         {
             var s = "PARK PIECE   ";
             for (var i = 0; i < Names.Length; i++) s += (i == Chosen ? "[" + Names[i].ToUpper() + "]" : Names[i]) + (i + 1 < Names.Length ? "   " : "");
-            return s + "      D-pad: choose   A: ask the server   B: cancel";
+            s += keyboardOpen ? "      P: next   Q/E: turn   O: place where you aim   Backspace: close" : "      D-pad: choose   LB/RB: turn   A: place where you aim   B: cancel";
+            if (!AimOk) s += "   (aim at the ground)";
+            if (Status.Length > 0) s += "   " + Status;
+            return s;
         }
         if (now - SaidAt < ShownSeconds) return Said;
         if (Asked != "" && now - AskedAt < PlaceSeconds) return "Park piece " + Asked + ": place a square foundation (" + (int)(PlaceSeconds - (now - AskedAt)) + " s left)";
         return "";
     }
 
-    public static void Reset() { Open = false; Asked = Said = ""; SaidAt = AskedAt = -99f; Chosen = 0; Sent = 0; }
+    public static void Reset() { Close(); Asked = Said = Status = ""; SaidAt = AskedAt = -99f; Chosen = 0; Sent = Placed = 0; Turn = 0f; AimOk = false; }
 }
