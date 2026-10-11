@@ -697,7 +697,7 @@ namespace Shortcut.RustMod
 
 namespace Oxide.Plugins
 {
-    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.6")]
+    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.7")]
     [Description("Player-scoped skateboard movement bounds and saved park assemblies.")]
     public sealed class ShortcutSkate : RustPlugin
     {
@@ -2318,7 +2318,7 @@ namespace Oxide.Plugins
             if (player == null || !player.IsAdmin)
             { arg.ReplyWith("Use this command as an in-game administrator."); return; }
             SkateParkKind kind;
-            bool explicitAnchor;
+            bool explicitSurface;
             double x, y, z, yaw;
             string failure;
             string[] arguments = null;
@@ -2327,7 +2327,7 @@ namespace Oxide.Plugins
                 arguments = new string[arg.Args.Length];
                 for (int i = 0; i < arguments.Length; i++) arguments[i] = arg.GetString(i);
             }
-            if (!SkateParkPlacement.TryRequest(arguments, out kind, out explicitAnchor, out x, out y, out z, out yaw, out failure))
+            if (!SkateParkPlacement.TryRequest(arguments, out kind, out explicitSurface, out x, out y, out z, out yaw, out failure))
             { arg.ReplyWith(failure); return; }
             try
             {
@@ -2347,7 +2347,7 @@ namespace Oxide.Plugins
                 ParkNativePart[] definitions;
                 ParkPrefabs(kind, failures, out definitions);
                 if (failures.Count != 0) { arg.ReplyWith(string.Join("\n", failures)); return; }
-                if (!explicitAnchor)
+                if (!explicitSurface)
                 {
                     Vector3 direction = player.eyes.HeadForward();
                     int mask = LayerMask.GetMask("Terrain", "Construction");
@@ -2360,13 +2360,16 @@ namespace Oxide.Plugins
                     Vector3 viewAngles = player.eyes.rotation.eulerAngles;
                     if (!Coordinate(viewAngles))
                     { arg.ReplyWith("The server view heading is unavailable."); return; }
-                    Bounds bounds = definitions[0].Construction.bounds;
-                    if (!SkateParkLayout.TrySupportedAnchor(kind, hit.point.y, bounds.center.y, bounds.center.z,
-                        bounds.size.y, bounds.size.z, out y))
-                    { arg.ReplyWith("The aim surface or supported native layout height is outside world-coordinate bounds."); return; }
-                    x = hit.point.x; z = hit.point.z;
+                    x = hit.point.x; y = hit.point.y; z = hit.point.z;
                     yaw = (viewAngles.y % 360 + 360) % 360;
                 }
+                Vector3 surface = new Vector3((float)x, (float)y, (float)z);
+                if (!Coordinate(surface) || Vector3.Distance(eye, surface) > MaximumParkPlacementDistance)
+                { arg.ReplyWith("The park surface must be within 25 metres of your server eye position."); return; }
+                Bounds bounds = definitions[0].Construction.bounds;
+                if (!SkateParkLayout.TrySupportedAnchor(kind, y, bounds.center.y, bounds.center.z,
+                    bounds.size.y, bounds.size.z, out y))
+                { arg.ReplyWith("The surface or supported native layout height is outside world-coordinate bounds."); return; }
                 Vector3 anchor = new Vector3((float)x, (float)y, (float)z);
                 if (!Coordinate(anchor) || Vector3.Distance(eye, anchor) > MaximumParkPlacementDistance)
                 { arg.ReplyWith("The park anchor must be within 25 metres of your server eye position."); return; }
