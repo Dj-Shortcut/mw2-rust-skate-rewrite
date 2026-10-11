@@ -18,6 +18,9 @@ public static class SkateKeys
     public const float PadRest = 0.5f, SteerDead = 0.18f, Straight = 0.35f, StickPush = 0.75f, SpinFrom = 0.5f, LeastPop = 0.7f, GrabStick = 0.6f;
     public static bool Scripted;
     public static bool Push, Brake, Left, Right, Crouch, Jump, Manual, NoseManual;
+    // Mongo: the push is with the front foot (X on the controller; A pushes with the back foot).
+    // A pop with a bumper held (Q or Z on the keyboard) is a no comply (left) or a boneless (right).
+    public static bool Mongo;
     // What a physics step has not seen yet. A pop comes with what the board does in it: whole flips
     // (a kickflip is +1) and degrees of shove under the feet (frontside is +). LateFlip is flips
     // asked for in the air. SpinPressed: the turn was asked for afresh, not held from before.
@@ -35,12 +38,12 @@ public static class SkateKeys
     public static SkateGrabKind Grab;
     private static bool wasPush, wasBrake, wasLeft, wasRight, wasJump, wasCrouch, wasToggle, wasCamera;
     private static float wasSpin;
-    private static bool crouchKeys = true, cameraKey = true, manualKey = true, taps = true, cursorKnown = true, failed;
+    private static bool popKeys = true, crouchKeys = true, cameraKey = true, manualKey = true, taps = true, cursorKnown = true, failed;
 
     public static void Reset()
     {
         Push = Brake = Left = Right = Crouch = Jump = Manual = NoseManual = Analog = Charging = false; Steer = Charge = Spin = wasSpin = 0f; PopScale = 1f;
-        Grab = SkateGrabKind.None; PopKind = SkatePopKind.Ollie;
+        Grab = SkateGrabKind.None; PopKind = SkatePopKind.Ollie; Mongo = false;
         EndStep(); JumpTap = ToggleTap = CameraTap = CrouchTap = false;
     }
 
@@ -62,7 +65,12 @@ public static class SkateKeys
                 return;
             }
             bool push = Down(kb.wKey), brake = Down(kb.sKey), left = Down(kb.aKey), right = Down(kb.dKey);
-            bool jump = Down(kb.spaceKey), toggle = Down(kb.kKey), crouch = false, camera = false, manual = false;
+            bool jump = Down(kb.spaceKey), toggle = Down(kb.kKey), crouch = false, camera = false, manual = false, noComply = false, boneless = false;
+            if (popKeys)
+            {
+                try { noComply = Down(kb.qKey); boneless = Down(kb.zKey); }
+                catch (Exception e) { popKeys = false; Out.Say("INPUT no comply and boneless keys unavailable: " + e.GetType().Name + ": " + e.Message); }
+            }
             if (crouchKeys)
             {
                 try { crouch = Down(kb.leftCtrlKey) || Down(kb.cKey); }
@@ -101,6 +109,7 @@ public static class SkateKeys
                 Analog = true;
                 Steer = Math.Abs(x) <= SteerDead ? 0f : (x - Math.Sign(x) * SteerDead) / (1f - SteerDead);
                 Push = (SkatePad.Buttons & (SkatePad.A | SkatePad.X)) != 0 || (straight && y > StickPush);
+                Mongo = (SkatePad.Buttons & SkatePad.X) != 0 && (SkatePad.Buttons & SkatePad.A) == 0;
                 Brake = (SkatePad.Buttons & SkatePad.B) != 0 || (straight && y < -StickPush);
                 Left = x < -SpinFrom; Right = x > SpinFrom;
                 Spin = Left ? -1f : Right ? 1f : 0f;
@@ -114,7 +123,7 @@ public static class SkateKeys
                 {
                     var flips = (int)Math.Round(pop.FlipTurns);
                     if (pop.Kind == SkatePopKind.None) LateFlip += flips;
-                    else { JumpPressed = true; PopKind = pop.Kind; PopFlip = flips; PopShove = (float)pop.ShoveDegrees; PopScale = LeastPop + (1f - LeastPop) * (float)pop.Strength; }
+                    else { JumpPressed = true; PopKind = PopWith(pop.Kind, (SkatePad.Buttons & SkatePad.LeftBumper) != 0, (SkatePad.Buttons & SkatePad.RightBumper) != 0); PopFlip = flips; PopShove = (float)pop.ShoveDegrees; PopScale = LeastPop + (1f - LeastPop) * (float)pop.Strength; }
                 }
             }
             else
@@ -125,7 +134,8 @@ public static class SkateKeys
                 Spin = Steer;
                 if (push && !wasPush) LateFlip++;
                 if (brake && !wasBrake) LateFlip--;
-                if (jump && !wasJump) { JumpPressed = true; PopKind = SkatePopKind.Ollie; PopFlip = 0; PopShove = 0f; PopScale = 1f; }
+                Mongo = false;
+                if (jump && !wasJump) { JumpPressed = true; PopKind = PopWith(SkatePopKind.Ollie, noComply, boneless); PopFlip = 0; PopShove = 0f; PopScale = 1f; }
                 if (crouch && !wasCrouch) CrouchTap = true;
                 Push = push; Brake = brake; Left = left; Right = right; Jump = jump; Crouch = crouch; Manual = manual;
                 Grab = crouch ? SkateGrabKind.Legacy : SkateGrabKind.None;
@@ -135,6 +145,13 @@ public static class SkateKeys
             wasPush = push; wasBrake = brake; wasLeft = left; wasRight = right; wasJump = jump; wasCrouch = crouch; wasToggle = toggle; wasCamera = camera;
         }
         catch (Exception e) { failed = true; Reset(); Out.Say("INPUT key read threw " + e.GetType().Name + ": " + e.Message); }
+    }
+
+    // A no comply or a boneless takes the place of an ollie; a nollie stays a nollie.
+    public static SkatePopKind PopWith(SkatePopKind kind, bool noComply, bool boneless)
+    {
+        if (kind != SkatePopKind.Ollie) return kind;
+        return noComply ? SkatePopKind.NoComply : boneless ? SkatePopKind.Boneless : kind;
     }
 
     public static void EndStep() { JumpPressed = SpinPressed = false; PopFlip = LateFlip = 0; PopShove = 0f; }

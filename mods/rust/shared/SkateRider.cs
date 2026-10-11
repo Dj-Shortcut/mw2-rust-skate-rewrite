@@ -22,6 +22,11 @@ namespace Shortcut.RustMod
         public readonly double Speed, LeanDegrees, Crouch, PushPhase, FlipDegrees, LookYawDegrees, DeckOffset;
         public readonly double GroundDrop, BailPhase;
         public readonly SkateGrabKind GrabKind;
+        // MongoPush: the front foot pushes and the back foot stays on the tail. FootPlant (0..1): the
+        // front foot is off the deck beside the board, as in a no comply or a boneless. GrabSeconds:
+        // how long the grab has been held; the body folds into it and tweaks as it is held.
+        public readonly bool MongoPush;
+        public readonly double FootPlant, GrabSeconds;
         public SkateRiderInput(SkateVector boardPosition, SkateVector boardForward, SkateVector boardUp,
                                SkateStance stance, bool ridingSwitch, double speed, double leanDegrees,
                                double crouch, bool airborne, bool pushing, double pushPhase,
@@ -47,7 +52,16 @@ namespace Shortcut.RustMod
                                double crouch, bool airborne, bool pushing, double pushPhase,
                                double flipDegrees, SkateGrabKind grabKind, bool bailed, double lookYawDegrees, double deckOffset,
                                double groundDrop, double bailPhase)
-        { BoardPosition = boardPosition; BoardForward = boardForward; BoardUp = boardUp; Stance = stance;
+            : this(boardPosition, boardForward, boardUp, stance, ridingSwitch, speed, leanDegrees,
+                   crouch, airborne, pushing, pushPhase, flipDegrees, grabKind, bailed, lookYawDegrees, deckOffset,
+                   groundDrop, bailPhase, false, 0, SkateRider.GrabIn) { }
+        public SkateRiderInput(SkateVector boardPosition, SkateVector boardForward, SkateVector boardUp,
+                               SkateStance stance, bool ridingSwitch, double speed, double leanDegrees,
+                               double crouch, bool airborne, bool pushing, double pushPhase,
+                               double flipDegrees, SkateGrabKind grabKind, bool bailed, double lookYawDegrees, double deckOffset,
+                               double groundDrop, double bailPhase, bool mongoPush, double footPlant, double grabSeconds)
+        { MongoPush = mongoPush; FootPlant = footPlant; GrabSeconds = grabSeconds;
+          BoardPosition = boardPosition; BoardForward = boardForward; BoardUp = boardUp; Stance = stance;
           Switch = ridingSwitch; Speed = speed; LeanDegrees = leanDegrees; Crouch = crouch; Airborne = airborne;
           Pushing = pushing; PushPhase = pushPhase; FlipDegrees = flipDegrees; GrabKind = grabKind; Grab = grabKind != SkateGrabKind.None;
           Bailed = bailed; LookYawDegrees = lookYawDegrees; DeckOffset = deckOffset;
@@ -122,10 +136,23 @@ namespace Shortcut.RustMod
             double backToe = RidingBackToe * Math.PI / 180;
             double grounded = 0, heel = 0;
             var leadAnkle = leadDeck; var backAnkle = backDeck;
-            if (pushing)
+            bool mongo = pushing && input.MongoPush;
+            if (mongo)
+            {
+                // The front foot pushes; the back foot stays on the tail and the toes stay forward.
+                leadAnkle = PushFoot(input.BoardPosition, travel, facing, up, input.PushPhase, input.GroundDrop, out grounded, out heel);
+                leadToe = RidingLeadToe * Math.PI / 180 + (Math.PI / 2 - RidingLeadToe * Math.PI / 180) * grounded;
+            }
+            else if (pushing)
             {
                 backAnkle = PushFoot(input.BoardPosition, travel, facing, up, input.PushPhase, input.GroundDrop, out grounded, out heel);
                 backToe = backToe + (Math.PI / 2 - backToe) * grounded;
+            }
+            if (input.FootPlant > 0 && input.Airborne && !input.Bailed)
+            {
+                // The front foot off the deck, stepped out beside the board at deck height.
+                var planted = input.BoardPosition + facing * 0.24 + travel * 0.18 + up * SkatePose.FootLift;
+                leadAnkle = leadAnkle + (planted - leadAnkle) * input.FootPlant;
             }
             double leanScale = 1, yawScale = input.Airborne ? AirYaw : 1;
             var pelvisAt = default(SkateVector); double pelvisDown = 0, chestPitch = 0, bailYaw = 0;
@@ -159,7 +186,7 @@ namespace Shortcut.RustMod
             if (input.Bailed) centre = pelvisAt;
             else
             {
-                double onLead = 0.5 + PushWeight * turn;
+                double onLead = 0.5 + PushWeight * turn * (mongo ? -1 : 1);
                 centre = Project(leadDeck * onLead + backDeck * (1 - onLead) - input.BoardPosition, up) + input.BoardPosition;
                 centre += right * (rig.PelvisHeight * Math.Sin(lean) * (grabbing ? 0.1 : 0.45)) + travel * (0.035 * speed);
                 centre -= facing * (rig.SpineLength * balance * (grabbing ? 3 : 1));
@@ -173,8 +200,12 @@ namespace Shortcut.RustMod
                 !HeightRange(rightHipBase, rightAnkle, up, rig.ThighLength, rig.ShinLength, ref minimum, ref maximum))
             { error = "Skate rider legs cannot reach the foot positions."; return false; }
             double requested = rig.PelvisHeight - Math.Min(SkatePose.CrouchDrop, rig.PelvisHeight * 0.65) * crouch - PushDip * turn;
+            double folded = grabbing ? Math.Min(1, input.GrabSeconds / GrabIn) : 0;
+            folded = folded * folded * (3 - 2 * folded);
+            double riding = requested;
             if (grabbing) requested = minimum + GrabTuckMargin;
             if (namedGrab) requested = grip.Extension > 0 ? minimum + (maximum - minimum) * grip.Extension : minimum + grip.Tuck;
+            if (grabbing) requested = riding + (requested - riding) * folded;
             if (input.Bailed) requested = rig.PelvisHeight - pelvisDown;
             double height = Math.Max(minimum, Math.Min(maximum, requested));
             var pelvis = centre + up * height;
@@ -207,7 +238,8 @@ namespace Shortcut.RustMod
             double roll = 0;
             if (grabbing)
             {
-                roll = namedGrab && grip.Both ? 0 : GrabRoll * (grabLeft ? -1 : 1);
+                // The roll toward the grabbing hand comes in with the fold and grows a little as it is held: the tweak.
+                roll = namedGrab && grip.Both ? 0 : GrabRoll * (grabLeft ? -1 : 1) * (0.4 + 0.6 * folded) * (1 + 0.25 * Math.Min(1, Math.Max(0, input.GrabSeconds - GrabIn) / 0.6));
                 pitch = namedGrab && grip.Across < 0 && !grip.Both
                     ? -GrabPitch(pelvis, carved, ahead * -1, grab, rig, -roll, !grabLeft, pitch)
                     : GrabPitch(pelvis, carved, ahead, grab, rig, roll, grabLeft, pitch);
@@ -242,10 +274,13 @@ namespace Shortcut.RustMod
                 - along * (backIsLeft ? 0.10 : 0.05) - counterSwing;
             if (grabbing)
             {
-                var free = up * (armLength * 0.15) + chestForward * (armLength * 0.2);
+                // The free arm is thrown up and out as the grab is held, and sways a little.
+                double held = Math.Min(1, Math.Max(0, input.GrabSeconds - GrabIn) / (GrabIn * 2));
+                double sway = Math.Sin(input.GrabSeconds * 7) * 0.08 * held;
+                var free = up * (armLength * (0.15 + 0.35 * held + sway)) + chestForward * (armLength * (0.2 - 0.1 * held));
                 if (namedGrab)
                 {
-                    free = up * (armLength * grip.FreeUp) + chestForward * (armLength * 0.15) -
+                    free = up * (armLength * (grip.FreeUp + 0.3 * held + sway)) + chestForward * (armLength * 0.15) -
                         Project(grab - input.BoardPosition, up) * 0.3;
                     if (grabLeft) { leftTarget = grab; rightTarget = grip.Both ? secondGrab : rightShoulder + chestRight * (armLength * 0.75) + free; }
                     else { rightTarget = grab; leftTarget = grip.Both ? secondGrab : leftShoulder - chestRight * (armLength * 0.75) + free; }
@@ -281,6 +316,8 @@ namespace Shortcut.RustMod
         private const double AirYaw = 0.35, PushWeight = 0.28, PushSide = 0.03, PushDip = 0.06, PushLean = 0.22, PushSwing = 0.28;
         private const double PushPlant = 0.10, PushSweep = 0.36, PushHeel = 0.07;
         private const double GrabRoll = 0.4, GrabFoldLimit = 1.0, GrabTuckMargin = 0.05;
+        // A grab folds in over GrabIn seconds; held longer it tweaks. The older inputs pose a grab just folded in.
+        public const double GrabIn = 0.18;
 
         private struct GrabGrip
         {
@@ -499,6 +536,7 @@ namespace Shortcut.RustMod
             Math.Abs(input.FlipDegrees) <= 3600000 && Finite(input.LookYawDegrees) && Math.Abs(input.LookYawDegrees) <= 3600000 &&
             Finite(input.DeckOffset) && Math.Abs(input.DeckOffset) <= MaximumMeasurement &&
             Finite(input.GroundDrop) && input.GroundDrop >= 0 && input.GroundDrop <= MaximumMeasurement &&
+            Fraction(input.FootPlant) && Finite(input.GrabSeconds) && input.GrabSeconds >= 0 && input.GrabSeconds <= 86400 &&
             Fraction(input.BailPhase) && input.GrabKind >= SkateGrabKind.None && input.GrabKind <= SkateGrabKind.Tailbone; }
         private static bool Finite(SkateRiderPose p)
         { return Vector(p.Pelvis) && Vector(p.LeftHip) && Vector(p.RightHip) && Vector(p.LeftKnee) && Vector(p.RightKnee) &&

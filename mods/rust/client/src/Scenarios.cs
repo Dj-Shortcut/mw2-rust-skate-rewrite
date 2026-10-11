@@ -304,9 +304,9 @@ public static class Scenarios
         }
     }
 
-    private static readonly float[] trickAt = { 3f, 6f, 8.9f, 9f, 9.4f, 11f, 14f, 16.9f, 17f, 17.5f, 20f, 20.12f, 23f, 23.45f, 25f, 27f, 29f, 30.6f, 32.2f, 33.5f, 35.5f, 35.5f, 37.5f, 39f, 41.5f };
+    private static readonly float[] trickAt = { 3f, 6f, 8.9f, 9f, 9.4f, 11f, 14f, 16.9f, 17f, 17.5f, 20f, 20.12f, 23f, 23.45f, 25f, 27f, 29f, 30.6f, 32.2f, 33.5f, 35.5f, 35.5f, 37.5f, 39.5f, 41.5f, 43.5f, 46f };
     private static readonly string[] trickDo = { "ollie", "ollie+kick", "left", "ollie", "release", "turn", "ollie+heel", "right+grab", "ollie", "release", "ollie+kick", "kick", "ollie", "kick",
-        "ollie+shove", "ollie+kick+shove", "ollie+kick+shove+shove", "manual", "release", "ollie+shove+shove", "ollie", "revert", "nollie", "brake", "finish" };
+        "ollie+shove", "ollie+kick+shove", "ollie+kick+shove+shove", "manual", "release", "ollie+shove+shove", "ollie", "revert", "nollie", "nocomply ollie", "boneless ollie", "brake", "finish" };
     private static bool wantRevert; private static int landsAtRevert; private static float revertRelease = -1f;
 
     private static void Trick(float s)
@@ -317,7 +317,7 @@ public static class Scenarios
             SkateRig.MountNow(yaw0);
             SkateCamera.Fixed = true; SkateCamera.Bearing = 100f; SkateCamera.FixedDistance = 4.4f; SkateCamera.FixedHeight = 1.4f;
         }
-        SkateKeys.Push = !SkateKeys.Brake && SkateRide.Mode == RideMode.Ground && SkateRide.Speed < 2.4f;
+        SkateKeys.Push = !SkateKeys.Brake && SkateRide.Mode == RideMode.Ground && Math.Abs(SkateRide.Speed) < 2.4f;
         // The revert is a turn pressed the moment the board is down again: timed by the landing, not the clock.
         if (wantRevert && SkateRide.Mode == RideMode.Ground && SkateRide.Lands > landsAtRevert)
         { wantRevert = false; SkateKeys.Spin = 1f; SkateKeys.SpinPressed = true; revertRelease = s + 0.15f; Say("press revert | " + SkateRide.Status()); }
@@ -331,7 +331,7 @@ public static class Scenarios
             // With the pop: the flip and the board's turn under the feet, a backside half turn for each "shove".
             if (what.Contains("ollie"))
             {
-                SkateKeys.JumpPressed = true; SkateKeys.PopKind = what.StartsWith("nollie") ? SkatePopKind.Nollie : SkatePopKind.Ollie; SkateKeys.PopScale = 1f; SkateKeys.PopFlip = flip;
+                SkateKeys.JumpPressed = true; SkateKeys.PopKind = what.StartsWith("nollie") ? SkatePopKind.Nollie : what.StartsWith("nocomply") ? SkatePopKind.NoComply : what.StartsWith("boneless") ? SkatePopKind.Boneless : SkatePopKind.Ollie; SkateKeys.PopScale = 1f; SkateKeys.PopFlip = flip;
                 SkateKeys.PopShove = what.EndsWith("shove+shove") ? -360f : what.Contains("shove") ? -180f : 0f;
             }
             else if (what == "revert") { wantRevert = true; landsAtRevert = SkateRide.Lands; }

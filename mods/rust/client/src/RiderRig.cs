@@ -9,6 +9,7 @@ using UnityEngine;
 
 public static class RiderRig
 {
+    private static float grabSince = -1f;
     public const float AnkleHeight = 0.095f, ToeHeight = 0.025f, DeckTop = 0.092f, HeelShift = 0.055f;
     public const float HeadLiftFrom = 20f, HeadLiftShare = 0.8f, HeadLiftMost = 50f;
     public static bool Bound;
@@ -439,7 +440,7 @@ public static class RiderRig
             var mode = SkateRide.Mode;
             // In a jump the legs fold by as much as the board has come up, so the body keeps its line.
             var inAir = SkateRide.Grabbing ? 0.95f : SkateRide.Jumped ? 0.2f + SkateBoard.Pop / (float)SkatePose.CrouchDrop : 0.45f;
-            var want = mode == RideMode.Air ? inAir : mode == RideMode.Grind ? 0.38f : SkateRide.Braking ? 0.4f : 0.18f;
+            var want = mode == RideMode.Air ? inAir : SkateRide.Handplant ? 0.95f : mode == RideMode.Grind ? 0.38f : SkateRide.Braking ? 0.4f : 0.18f;
             // A right stick held back is the rider gathering for the pop; a trigger held is the crouch of a pump.
             if (SkateKeys.Charging && mode == RideMode.Ground) want = Math.Max(want, 0.3f + 0.3f * SkateKeys.Charge);
             if (mode == RideMode.Ground && SkateRide.PumpHeld > 0f) want = Math.Max(want, 0.25f + 0.45f * SkateRide.PumpHeld / SkateRide.PumpCharge);
@@ -451,10 +452,15 @@ public static class RiderRig
             // The module leans toward the board's own right; the ride leans toward the right of travel.
             var lean = SkateRide.Clamp(SkateRide.Trick.Switch ? -SkateRide.Lean : SkateRide.Lean, -(float)SkatePose.MaximumLean, (float)SkatePose.MaximumLean);
             var speed = Math.Min((float)SkateMotion.MaximumGroundSpeed, Math.Abs(SkateRide.Speed));
+            // A handplant is posed as a tucked grab with a hand down at the edge.
+            var grab = mode == RideMode.Air ? SkateRide.Grab : SkateRide.Handplant ? SkateGrabKind.Legacy : SkateGrabKind.None;
+            if (grab == SkateGrabKind.None) grabSince = -1f; else if (grabSince < 0f) grabSince = now;
+            var plant = SkateRide.FootPlanted ? SkateRide.Clamp((SkateRide.PlantedUntil - now) / SkateRide.PlantSeconds * 1.5f, 0f, 1f) : 0f;
             var input = new SkateRiderInput(new SkateVector(plane.x, plane.y, plane.z), new SkateVector(fx, fy, fz), new SkateVector(ux, uy, uz), SkateStance.Regular, SkateRide.TailFirst,
-                speed, lean, Crouch, mode == RideMode.Air, mode == RideMode.Ground && SkateRide.PushPhase > 0f, SkateRide.Clamp(SkateRide.PushPhase, 0f, 1f),
-                SkateRide.FlipDeg, mode == RideMode.Air ? SkateRide.Grab : SkateGrabKind.None, mode == RideMode.Bail, SkateKeys.LookYaw % 360f, SkatePose.FootLift - AnkleHeight,
-                DeckTop, mode == RideMode.Bail ? SkateRide.Clamp((now - SkateRide.ModeAt) / SkateRide.BailSeconds, 0f, 1f) : 0f);
+                speed, lean, Crouch, mode == RideMode.Air || SkateRide.Handplant, mode == RideMode.Ground && SkateRide.PushPhase > 0f, SkateRide.Clamp(SkateRide.PushPhase, 0f, 1f),
+                SkateRide.FlipDeg, grab, mode == RideMode.Bail, SkateKeys.LookYaw % 360f, SkatePose.FootLift - AnkleHeight,
+                DeckTop, mode == RideMode.Bail ? SkateRide.Clamp((now - SkateRide.ModeAt) / SkateRide.BailSeconds, 0f, 1f) : 0f,
+                SkateRide.PushMongo, plant, grabSince < 0f ? 0f : now - grabSince);
             SkateRiderPose pose; string error;
             if (!SkateRider.TryCreate(Rig, input, out pose, out error))
             {

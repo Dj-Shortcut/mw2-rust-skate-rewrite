@@ -2,7 +2,9 @@ using System;
 
 namespace Shortcut.RustMod
 {
-    public enum SkatePopKind { None = 0, Ollie = 1, Nollie = 2 }
+    // A no comply pops the board off the back foot with the front foot stepped down; a boneless
+    // plants the front foot and jumps up with the board. The flick module itself only reads ollies and nollies.
+    public enum SkatePopKind { None = 0, Ollie = 1, Nollie = 2, NoComply = 3, Boneless = 4 }
 
     public struct SkatePop
     {
