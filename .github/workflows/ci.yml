@@ -19,6 +19,25 @@ env:
   CARGO_INCREMENTAL: 0
 
 jobs:
+  skate-installer:
+    name: Skate plugin source installation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    container: ubuntu:24.04
+    steps:
+      - name: Install source-check tools
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            bash ca-certificates curl coreutils passwd util-linux python3 shellcheck git
+      - uses: actions/checkout@v4
+      - name: Installer syntax and shell checks
+        run: |
+          bash -n mods/rust/server/add-skate.sh
+          shellcheck mods/rust/server/add-skate.sh
+      - name: Approved source-installation scenario
+        run: python3 crates/approved_tests/skate/SkateServerPluginInstallScenario.py
+
   gates:
     name: Publish and asset gates
     runs-on: ubuntu-latest
