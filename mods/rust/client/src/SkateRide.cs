@@ -456,7 +456,7 @@ public class LateDriver : MonoBehaviour
     private void FixedUpdate()
     {
         Calls++;
-        SkateRide.Step();
+        var t0 = SkateClock.Now(); SkateRide.Step(); SkateClock.Add(SkateClock.Ride, t0);
     }
 
     private void LateUpdate()

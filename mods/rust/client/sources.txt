@@ -3,6 +3,7 @@
 # that commit and must match the hash (shared code that is ahead on another branch).
 mods/rust/client/src/Plugin.cs
 mods/rust/client/src/SkateRig.cs
+mods/rust/client/src/SkateClock.cs
 mods/rust/client/src/SkateKeys.cs
 mods/rust/client/src/SkateRide.cs
 mods/rust/client/src/SkateGrind.cs

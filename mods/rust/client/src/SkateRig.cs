@@ -36,7 +36,8 @@ public class SkateRig : MonoBehaviour
     private void Update()
     {
         var now = Time.realtimeSinceStartup;
-        SkateKeys.Poll();
+        SkateClock.Frame();
+        var t0 = SkateClock.Now(); SkateKeys.Poll(); SkateClock.Add(SkateClock.Keys, t0);
         if (SkateRide.On)
         {
             // The game switches its walk component off when something else moves the player (a seat, a vehicle).
@@ -59,7 +60,7 @@ public class SkateRig : MonoBehaviour
                 if ((SkateKeys.ToggleTap || twice) && CanMount) MountNow(SkateCamera.LookYaw);
             }
         }
-        if (SkateRide.On && now >= nextLog) { nextLog = now + 1f; Say(SkateRide.Status()); }
+        if (SkateRide.On && now >= nextLog) { nextLog = now + 1f; Say(SkateRide.Status() + " | " + SkateClock.Report()); }
         if (wasOn && !SkateRide.On) { offAt = now; Say("OFF (" + SkateRide.OffReason + ") top=" + SkateRide.Top.ToString("F1") + " pull-backs=" + SkateRide.Resets + " score=" + SkateRide.Trick.TotalPoints); }
         wasOn = SkateRide.On;
         if (Scenarios.Active && Ready && late != null)
@@ -168,23 +169,27 @@ public class SkateRig : MonoBehaviour
         SkateBoard.Pop += (rise - SkateBoard.Pop) * SkateRide.Clamp(frame * 18f, 0f, 1f);
         if (board != null)
         {
+            var t0 = SkateClock.Now();
             try { SkateBoard.Follow(board, LocalT); }
             catch (Exception e) { Say("board update threw " + e.GetType().Name + ": " + e.Message); board = null; }
+            SkateClock.Add(SkateClock.Board, t0);
         }
         var third = SkateRide.On && LocalT != null && (SkateCamera.Chase || SkateCamera.Fixed);
-        RiderRig.Look(third);
+        var t1 = SkateClock.Now(); RiderRig.Look(third); SkateClock.Add(SkateClock.Look, t1);
         if (!SkateRide.On || LocalT == null) return;
         var at = SkateBoard.Contact(LocalT);
         var feet = at; var up = SkateRide.ViewNormal;
         SkateBoard.Tilt(ref feet, ref up);
-        RiderRig.Frame(feet, up, !third, frame);
-        SkateCamera.Apply(at - Vector3.up * SkateBoard.Pop);
+        var t2 = SkateClock.Now(); RiderRig.Frame(feet, up, !third, frame); SkateClock.Add(SkateClock.Rider, t2);
+        var t3 = SkateClock.Now(); SkateCamera.Apply(at - Vector3.up * SkateBoard.Pop); SkateClock.Add(SkateClock.Camera, t3);
     }
 
     private void OnGUI()
     {
         if (hudFailed) return;
+        var t0 = SkateClock.Now();
         try { SkateHud.Draw(); }
         catch (Exception e) { hudFailed = true; Say("text threw " + e.GetType().Name + ": " + e.Message); }
+        SkateClock.Add(SkateClock.Hud, t0);
     }
 }
