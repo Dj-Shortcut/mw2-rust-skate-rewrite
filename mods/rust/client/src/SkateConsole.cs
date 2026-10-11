@@ -12,8 +12,10 @@ using UnityEngine;
 public static class SkateConsole
 {
     public const float StepSeconds = 0.12f;
-    private const ushort VkF1 = 0x70, VkReturn = 0x0D;
-    private const uint InputKeyboard = 1, KeyUp = 0x0002, Unicode = 0x0004;
+    // The game reads keys by their scan code (raw input), so a key is sent as a scan code: a virtual
+    // key alone arrives with scan code 0 and the game sees no key at all.
+    private const ushort VkF1 = 0x70, VkReturn = 0x0D, ScanF1 = 0x3B, ScanReturn = 0x1C;
+    private const uint InputKeyboard = 1, KeyUp = 0x0002, Unicode = 0x0004, ScanCode = 0x0008;
 
     [StructLayout(LayoutKind.Sequential)]
     private struct KeyboardInput { public ushort Vk, Scan; public uint Flags, Time; public IntPtr Extra; }
@@ -49,10 +51,10 @@ public static class SkateConsole
         if (step < 0 || now < nextAt) return;
         try
         {
-            if (step == 0) { if (!LeftOpen) Tap(VkF1); }
+            if (step == 0) { if (!LeftOpen) Tap(VkF1, ScanF1); }
             else if (step == 1) Text(pending);
-            else if (step == 2) Tap(VkReturn);
-            else if (step == 3) { if (!KeepOpen) Tap(VkF1); LeftOpen = KeepOpen; Typed++; Out.Say("CONSOLE typed: " + pending); }
+            else if (step == 2) Tap(VkReturn, ScanReturn);
+            else if (step == 3) { if (!KeepOpen) Tap(VkF1, ScanF1); LeftOpen = KeepOpen; Typed++; Out.Say("CONSOLE typed: " + pending); }
             step = step < 3 ? step + 1 : -1; nextAt = now + StepSeconds;
         }
         catch (Exception e)
@@ -63,11 +65,11 @@ public static class SkateConsole
         }
     }
 
-    private static void Tap(ushort vk)
+    private static void Tap(ushort vk, ushort scan)
     {
         var inputs = new Input[2];
-        inputs[0].Type = InputKeyboard; inputs[0].Key.Vk = vk;
-        inputs[1].Type = InputKeyboard; inputs[1].Key.Vk = vk; inputs[1].Key.Flags = KeyUp;
+        inputs[0].Type = InputKeyboard; inputs[0].Key.Vk = vk; inputs[0].Key.Scan = scan; inputs[0].Key.Flags = ScanCode;
+        inputs[1].Type = InputKeyboard; inputs[1].Key.Vk = vk; inputs[1].Key.Scan = scan; inputs[1].Key.Flags = ScanCode | KeyUp;
         Send(inputs);
     }
 
