@@ -96,12 +96,12 @@
     {
       "name": "skate_bank",
       "file": "skate_bank.glb",
-      "vertices": 344,
-      "triangles": 636,
+      "vertices": 128,
+      "triangles": 224,
       "bounds": [
         [
           -1.6059999465942383,
-          -3.6844427585601807,
+          -2.964442729949951,
           -0.14000000059604645
         ],
         [
@@ -118,12 +118,12 @@
       "default_scene": "Visual",
       "collision_scene": "CollisionProxies",
       "collision": {
-        "vertices": 48,
-        "triangles": 84,
+        "vertices": 40,
+        "triangles": 72,
         "bounds": [
           [
             -1.5,
-            -3.6844427585601807,
+            -2.964442729949951,
             -0.14000000059604645
           ],
           [
@@ -140,20 +140,27 @@
         "slope_degrees": 12,
         "rise": 0.623735072453278,
         "slope_run": 2.934442802201417,
-        "platform_length": 0.75
+        "ride_length": 2.934442802201417,
+        "platform_length": 0.0,
+        "profile_reference": "nominal native floor centre plane",
+        "native_anchor_offset": {
+          "right": 0.0,
+          "up": 0.0,
+          "forward": -1.4672214011007085
+        }
       },
-      "sha256": "b19eac5f411a26eaf250453a7d43018b12d1819e0518b8e8dd30108f3ca58f5c",
-      "bytes": 56040
+      "sha256": "cc379af1a38f2d125c0e3ba4028df5d0976556a2d5b2b071ae33b9bf3e84bff9",
+      "bytes": 21888
     },
     {
       "name": "skate_kicker",
       "file": "skate_kicker.glb",
-      "vertices": 344,
-      "triangles": 636,
+      "vertices": 128,
+      "triangles": 224,
       "bounds": [
         [
           -1.6059999465942383,
-          -3.468923330307007,
+          -2.7489233016967773,
           -0.14000000059604645
         ],
         [
@@ -170,12 +177,12 @@
       "default_scene": "Visual",
       "collision_scene": "CollisionProxies",
       "collision": {
-        "vertices": 48,
-        "triangles": 84,
+        "vertices": 40,
+        "triangles": 72,
         "bounds": [
           [
             -1.5,
-            -3.468923330307007,
+            -2.7489233016967773,
             -0.14000000059604645
           ],
           [
@@ -192,26 +199,33 @@
         "slope_degrees": 25,
         "rise": 1.2678547852220983,
         "slope_run": 2.7189233611099497,
-        "platform_length": 0.75
+        "ride_length": 2.7189233611099497,
+        "platform_length": 0.0,
+        "profile_reference": "nominal native floor centre plane",
+        "native_anchor_offset": {
+          "right": 0.0,
+          "up": 0.0,
+          "forward": -1.3594616805549748
+        }
       },
-      "sha256": "473f563f232ac6881bd1587518c886e22a3405cbcf900f26c88c550d0a32b88a",
-      "bytes": 56060
+      "sha256": "7655b3b0d8204918e4a69fcc3f72b51625fb64426608056234fdb17480cc44a4",
+      "bytes": 21908
     },
     {
       "name": "skate_quarterpipe",
       "file": "skate_quarterpipe.glb",
-      "vertices": 2538,
-      "triangles": 4936,
+      "vertices": 1212,
+      "triangles": 2360,
       "bounds": [
         [
           -1.6059999465942383,
-          -4.0,
+          -5.3852338790893555,
           -0.14000000059604645
         ],
         [
           1.6059999465942383,
           0.0,
-          3.3600001335144043
+          2.527186393737793
         ]
       ],
       "bounds_space": "Blender Z-up, forward -Y",
@@ -222,18 +236,18 @@
       "default_scene": "Visual",
       "collision_scene": "CollisionProxies",
       "collision": {
-        "vertices": 214,
-        "triangles": 396,
+        "vertices": 172,
+        "triangles": 336,
         "bounds": [
           [
             -1.5,
-            -4.0,
+            -5.3852338790893555,
             -0.14000000059604645
           ],
           [
             1.5,
             0.0,
-            3.3600001335144043
+            2.527186393737793
           ]
         ]
       },
@@ -241,13 +255,26 @@
         "kind": "quarterpipe",
         "pivot": "low-entry midpoint on riding plane",
         "ride_width": 3.0,
-        "transition_radius": 2.5,
-        "rise": 2.5,
-        "transition_run": 2.5,
-        "platform_length": 1.5
+        "rise": 2.4971864443607004,
+        "transition_run": 5.35523361173418,
+        "ride_length": 5.35523361173418,
+        "platform_length": 0.0,
+        "native_slopes_degrees": [
+          15,
+          35
+        ],
+        "profile_knots": 35,
+        "profile_reference": "nominal native floor centre plane",
+        "profile_continuity": "C1",
+        "maximum_profile_deviation": 0.010806458644464676,
+        "native_anchor_offset": {
+          "right": 0.0,
+          "up": 0.0,
+          "forward": -1.4488887394336025
+        }
       },
-      "sha256": "758d83d077a2eb2c12aeaf18ce4b28dcb64449cb16cb626f5bce3d10176c9700",
-      "bytes": 268484
+      "sha256": "936ea89d63ab5c9688304496f0b00bcf801733edc3122e490b4a8863fcf26cb6",
+      "bytes": 105140
     },
     {
       "name": "skate_ledge_low",
@@ -294,7 +321,13 @@
         "pivot": "base centre",
         "ride_width": 3.0,
         "ride_length": 3.0,
-        "rise": 0.4
+        "rise": 0.4,
+        "profile_reference": "nominal native floor centre plane",
+        "native_anchor_offset": {
+          "right": 0.0,
+          "up": 0.0,
+          "forward": 0.0
+        }
       },
       "sha256": "bb71eb0239844a513a0fdf37066db6784a99a6eafb061be54d280ed348963c5d",
       "bytes": 74952
@@ -344,7 +377,13 @@
         "pivot": "base centre",
         "ride_width": 3.0,
         "ride_length": 3.0,
-        "rise": 0.8
+        "rise": 0.8,
+        "profile_reference": "nominal native floor centre plane",
+        "native_anchor_offset": {
+          "right": 0.0,
+          "up": 0.0,
+          "forward": 0.0
+        }
       },
       "sha256": "8a3bf3f0ccf7260280a28e15b4ed5749c66939cc4a87372a99da8cf3b4bfe03f",
       "bytes": 73680
@@ -394,7 +433,13 @@
         "pivot": "base centre",
         "ride_width": 9.0,
         "ride_length": 3.0,
-        "rise": 0.4
+        "rise": 0.4,
+        "profile_reference": "nominal native floor centre plane",
+        "native_anchor_offset": {
+          "right": 0.0,
+          "up": 0.0,
+          "forward": 0.0
+        }
       },
       "sha256": "da1e282b2e29ba20e74e86ad32513fe4807a2e1290ae77d890dfb2c1a01c47dc",
       "bytes": 73688
@@ -446,7 +491,13 @@
         "rise": 0.7764571353075622,
         "flat_length": 3.0,
         "ride_length": 8.79555495773441,
-        "slope_degrees": 15
+        "slope_degrees": 15,
+        "profile_reference": "nominal native floor centre plane",
+        "native_anchor_offset": {
+          "right": 0.0,
+          "up": 0.0,
+          "forward": 0.0
+        }
       },
       "sha256": "0bb1415ec1950f2056c7e481d5a0f1b1e6333613112fa18bff8c1fa34ab53733",
       "bytes": 48580
@@ -454,18 +505,18 @@
     {
       "name": "skate_halfpipe",
       "file": "skate_halfpipe.glb",
-      "vertices": 5108,
-      "triangles": 9920,
+      "vertices": 5064,
+      "triangles": 9808,
       "bounds": [
         [
           -3.1059999465942383,
-          -7.0,
+          -11.355233192443848,
           -0.14000000059604645
         ],
         [
           3.1059999465942383,
-          7.0,
-          3.3600001335144043
+          11.355233192443848,
+          3.3571865558624268
         ]
       ],
       "bounds_space": "Blender Z-up, forward -Y",
@@ -476,18 +527,18 @@
       "default_scene": "Visual",
       "collision_scene": "CollisionProxies",
       "collision": {
-        "vertices": 436,
-        "triangles": 804,
+        "vertices": 576,
+        "triangles": 1084,
         "bounds": [
           [
             -3.0,
-            -7.0,
+            -11.355233192443848,
             -0.14000000059604645
           ],
           [
             3.0,
-            7.0,
-            3.3600001335144043
+            11.355233192443848,
+            3.3571865558624268
           ]
         ]
       },
@@ -497,13 +548,26 @@
         "ride_width": 6.0,
         "flat_width": 6.0,
         "flat_length": 6.0,
-        "transition_radius": 2.5,
-        "rise": 2.5,
-        "platform_length": 1.5,
-        "ride_length": 14.0
+        "rise": 2.4971864443607004,
+        "transition_run": 5.35523361173418,
+        "platform_length": 3.0,
+        "ride_length": 22.71046722346836,
+        "native_slopes_degrees": [
+          15,
+          35
+        ],
+        "transition_profile_knots": 51,
+        "profile_reference": "nominal native floor centre plane",
+        "profile_continuity": "C1",
+        "maximum_profile_deviation": 0.020746890021028436,
+        "native_anchor_offset": {
+          "right": 1.5,
+          "up": 0.0,
+          "forward": 1.5
+        }
       },
-      "sha256": "e4028a0d1d237ceff4bf6b9beea5f9180bd519147e9b342e73c17420e1ff4798",
-      "bytes": 538152
+      "sha256": "70d3a48ba21012dfdfed0a590b910dfb97a865de2e164fa2aa16dc4c1a16fe57",
+      "bytes": 540932
     }
   ]
 }

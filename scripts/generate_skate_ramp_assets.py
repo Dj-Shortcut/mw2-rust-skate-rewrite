@@ -22,8 +22,16 @@ NAMES = (
     "skate_bank", "skate_kicker", "skate_quarterpipe", "skate_ledge_low",
     "skate_ledge_high", "skate_long_ledge", "skate_funbox", "skate_halfpipe",
 )
-RADIUS = 2.5
-CURVE_STEPS = 64
+LOWER_RUN = 3 * math.cos(math.radians(15))
+LOWER_RISE = 3 * math.sin(math.radians(15))
+TRANSITION_RUN = LOWER_RUN + 3 * math.cos(math.radians(35))
+TRANSITION_RISE = LOWER_RISE + 3 * math.sin(math.radians(35))
+LOWER_SLOPE = math.tan(math.radians(15))
+UPPER_SLOPE = math.tan(math.radians(35))
+ENTRY_BLEND = 0.25
+MIDDLE_HALF_BLEND = 0.10
+EXIT_BLEND = 0.20
+BLEND_STEPS = 16
 SKIN = 0.14
 COPING_RADIUS = 0.03
 SOURCE = "scripts/generate_skate_ramp_assets.py"
@@ -130,8 +138,27 @@ def cylinder(name, start, end, radius, mat, collision=False, sides=20):
     return finish(obj, name, mat, collision)
 
 
-def solid_profile(name, profile, width, bottom, mat, collision=False, smooth=False):
+def solid_profile(name, profile, width, bottom, mat, collision=False, smooth=False,
+        sectioned=False):
     # Each strip is closed independently; a whole-bowl convex hull would fill its opening.
+    if sectioned:
+        # Side n-gons can tessellate nearly collinear curve knots into slivers.
+        # Keep each station connected to its own base edge instead.
+        count = len(profile)
+        vertices = [point(side, forward, height if top else bottom)
+            for top in (True, False) for side in (-width / 2, width / 2)
+            for forward, height in profile]
+        faces = []
+        for i in range(count - 1):
+            j = i + 1
+            faces.extend(((i, j, count + j, count + i),
+                (2 * count + i, 3 * count + i, 3 * count + j, 2 * count + j),
+                (i, 2 * count + i, 2 * count + j, j),
+                (count + i, count + j, 3 * count + j, 3 * count + i)))
+        faces.extend(((0, count, 3 * count, 2 * count),
+            (count - 1, 2 * count - 1, 4 * count - 1, 3 * count - 1)))
+        top_faces = range(0, 4 * (count - 1), 4) if smooth else ()
+        return mesh(name, vertices, faces, mat, collision, top_faces)
     outline = profile + [(profile[-1][0], bottom), (profile[0][0], bottom)]
     count = len(outline)
     vertices = [point(side, forward, height)
@@ -144,7 +171,7 @@ def solid_profile(name, profile, width, bottom, mat, collision=False, smooth=Fal
     return mesh(name, vertices, faces, mat, collision, top)
 
 
-def strip(name, profile, width, thickness, mat, smooth=False):
+def strip(name, profile, width, thickness, mat, smooth=False, top_slopes=None):
     count = len(profile)
     vertices = [point(x, forward, height - depth)
         for depth in (0.0, thickness) for x in (-width / 2, width / 2)
@@ -159,14 +186,26 @@ def strip(name, profile, width, thickness, mat, smooth=False):
     faces.extend(((0, count, 3 * count, 2 * count),
         (count - 1, 2 * count - 1, 4 * count - 1, 3 * count - 1)))
     obj = mesh(name, vertices, faces, mat, smooth_faces=range(0, 4 * (count - 1), 4) if smooth else ())
+    if top_slopes is not None:
+        if not smooth or len(top_slopes) != count:
+            raise ValueError(name + ": top slopes require a matching smooth strip")
+        data = obj.data
+        normals = [(0.0, 0.0, 0.0)] * len(data.loops)
+        for index in range(0, 4 * (count - 1), 4):
+            polygon = data.polygons[index]
+            for loop_index in polygon.loop_indices:
+                slope = top_slopes[data.loops[loop_index].vertex_index % count]
+                length = math.sqrt(1 + slope * slope)
+                normals[loop_index] = (0.0, slope / length, 1 / length)
+        data.normals_split_custom_set(normals)
     obj["ride_surface"] = True
     return obj
 
 
-def cladding(name, profile, width, mats):
+def cladding(name, profile, width, mats, sectioned=False):
     for side in (-1, 1):
         obj = solid_profile(name + ("_left" if side < 0 else "_right"), profile,
-            0.10, -SKIN, mats["wood_light"])
+            0.10, -SKIN, mats["wood_light"], sectioned=sectioned)
         obj.location.x = side * (width / 2 + 0.05)
     for forward, height in profile[::max(1, len(profile) // 8)]:
         if height > 0.12:
@@ -208,27 +247,67 @@ def backrail(name, width, forward, height, mats):
         box(name + "_rail", (0, forward, height + level), (width, 0.085, 0.12), None, collision=True)
 
 
-def curved_profile(start, direction=1):
-    return [(start + direction * RADIUS * math.sin(i * math.pi / (2 * CURVE_STEPS)),
-        RADIUS * (1 - math.cos(i * math.pi / (2 * CURVE_STEPS)))) for i in range(CURVE_STEPS + 1)]
+def transition_height(along, flat_top):
+    if along <= ENTRY_BLEND:
+        u = along / ENTRY_BLEND
+        return (LOWER_SLOPE * ENTRY_BLEND * (2 * u * u - u * u * u),
+            LOWER_SLOPE * (4 * u - 3 * u * u))
+    if along < LOWER_RUN - MIDDLE_HALF_BLEND:
+        return LOWER_SLOPE * along, LOWER_SLOPE
+    if along <= LOWER_RUN + MIDDLE_HALF_BLEND:
+        t = along - (LOWER_RUN - MIDDLE_HALF_BLEND)
+        delta = UPPER_SLOPE - LOWER_SLOPE
+        return (LOWER_RISE - LOWER_SLOPE * MIDDLE_HALF_BLEND + LOWER_SLOPE * t +
+            delta * t * t / (4 * MIDDLE_HALF_BLEND),
+            LOWER_SLOPE + delta * t / (2 * MIDDLE_HALF_BLEND))
+    if not flat_top or along < TRANSITION_RUN - EXIT_BLEND:
+        return LOWER_RISE + UPPER_SLOPE * (along - LOWER_RUN), UPPER_SLOPE
+    u = (along - (TRANSITION_RUN - EXIT_BLEND)) / EXIT_BLEND
+    return (TRANSITION_RISE - UPPER_SLOPE * EXIT_BLEND +
+        UPPER_SLOPE * EXIT_BLEND * (u + u * u - u * u * u),
+        UPPER_SLOPE * (1 + 2 * u - 3 * u * u))
 
 
-def transition(name, width, start, direction, mats):
-    profile = curved_profile(start, direction)
+def transition_profile(start, direction, flat_top):
+    stations = [0.0]
+
+    def span(end, count):
+        first = stations[-1]
+        stations.extend(first + (end - first) * i / count for i in range(1, count + 1))
+        stations[-1] = end
+
+    span(ENTRY_BLEND, BLEND_STEPS)
+    span(LOWER_RUN - MIDDLE_HALF_BLEND, 1)
+    span(LOWER_RUN + MIDDLE_HALF_BLEND, BLEND_STEPS)
+    if flat_top:
+        span(TRANSITION_RUN - EXIT_BLEND, 1)
+        span(TRANSITION_RUN, BLEND_STEPS)
+    else:
+        span(TRANSITION_RUN, 1)
+    samples = []
+    for along in stations:
+        height, slope = transition_height(along, flat_top)
+        samples.append((start + direction * along, height, direction * slope))
     if direction < 0:
-        profile.reverse()
+        samples.reverse()
+    return [(f, h) for f, h, _ in samples], [slope for _, _, slope in samples]
+
+
+def transition(name, width, start, direction, mats, flat_top=False):
+    profile, slopes = transition_profile(start, direction, flat_top)
     solid_profile(name + "_structure", [(f, z - 0.025) for f, z in profile],
-        width, -SKIN, mats["dark"])
-    solid_profile(name, profile, width, -SKIN, None, collision=True)
-    strip(name + "_ride", profile, width, 0.025, mats["metal"], smooth=True)
-    cladding(name + "_sides", profile, width, mats)
-    end = start + direction * RADIUS
-    coping(name + "_coping", width, end, RADIUS, mats)
-    seam_profile = [(f - direction * 0.0005 * abs(f - start) / RADIUS,
-        z + 0.0005 * (1 - z / RADIUS)) for f, z in profile]
+        width, -SKIN, mats["dark"], sectioned=True)
+    solid_profile(name, profile, width, -SKIN, None, collision=True, sectioned=True)
+    strip(name + "_ride", profile, width, 0.025, mats["metal"], smooth=True, top_slopes=slopes)
+    cladding(name + "_sides", profile, width, mats, sectioned=True)
+    end = start + direction * TRANSITION_RUN
+    coping(name + "_coping", width, end, TRANSITION_RISE, mats)
+    seam_profile = [(f - 0.0005 * slope / math.sqrt(1 + slope * slope),
+        h + 0.0005 / math.sqrt(1 + slope * slope)) for (f, h), slope in zip(profile, slopes)]
     for fraction in (0.25, 0.5, 0.75):
         x = (fraction - 0.5) * width
-        edge = strip(name + "_panel_seam", seam_profile, 0.006, 0.026, mats["dark"], smooth=True)
+        edge = strip(name + "_panel_seam", seam_profile, 0.006, 0.026, mats["dark"],
+            smooth=True, top_slopes=slopes)
         edge.location.x = x
 
 
@@ -242,10 +321,11 @@ def ramp(mats, angle, name):
     strip(name + "_ride", profile, width, 0.025, mats["wood"])
     cladding(name + "_sides", profile, width, mats)
     coping(name + "_lip", width, run, rise, mats)
-    deck(name + "_platform", width, run, run + 0.75, rise, mats)
     box(name + "_entry", (0, 0.04, -0.012), (width, 0.08, 0.018), mats["metal"])
     return {"kind": name, "pivot": "low-entry midpoint on riding plane", "ride_width": width,
-        "slope_degrees": angle, "rise": rise, "slope_run": run, "platform_length": 0.75}
+        "slope_degrees": angle, "rise": rise, "slope_run": run, "ride_length": run,
+        "platform_length": 0.0, "profile_reference": "nominal native floor centre plane",
+        "native_anchor_offset": {"right": 0.0, "up": 0.0, "forward": -run / 2}}
 
 
 def ledge(mats, width, height, kind):
@@ -261,16 +341,20 @@ def ledge(mats, width, height, kind):
         box("height_marker", (x, -depth / 2 - 0.001, height * 0.45),
             (0.06, 0.004, height * 0.60), mats["mark"])
     return {"kind": kind, "pivot": "base centre", "ride_width": width,
-        "ride_length": depth, "rise": height}
+        "ride_length": depth, "rise": height,
+        "profile_reference": "nominal native floor centre plane",
+        "native_anchor_offset": {"right": 0.0, "up": 0.0, "forward": 0.0}}
 
 
 def quarterpipe(mats):
     width = 3.0
     transition("quarter", width, 0.0, 1, mats)
-    deck("top_deck", width, RADIUS, RADIUS + 1.5, RADIUS, mats)
-    backrail("back", width, RADIUS + 1.45, RADIUS, mats)
     return {"kind": "quarterpipe", "pivot": "low-entry midpoint on riding plane", "ride_width": width,
-        "transition_radius": RADIUS, "rise": RADIUS, "transition_run": RADIUS, "platform_length": 1.5}
+        "rise": TRANSITION_RISE, "transition_run": TRANSITION_RUN, "ride_length": TRANSITION_RUN,
+        "platform_length": 0.0, "native_slopes_degrees": [15, 35], "profile_knots": 35,
+        "profile_reference": "nominal native floor centre plane", "profile_continuity": "C1",
+        "maximum_profile_deviation": (UPPER_SLOPE - LOWER_SLOPE) * MIDDLE_HALF_BLEND / 4,
+        "native_anchor_offset": {"right": 0.0, "up": 0.0, "forward": -LOWER_RUN / 2}}
 
 
 def funbox(mats):
@@ -292,29 +376,35 @@ def funbox(mats):
     for f in (-0.9, -0.3, 0.3, 0.9):
         box("deck_seam", (0, f, height - 0.001), (width, 0.007, 0.003), mats["wood_dark"])
     return {"kind": "funbox", "pivot": "base centre below flat deck", "ride_width": width,
-        "rise": height, "flat_length": 3.0, "ride_length": 3.0 + 2 * run, "slope_degrees": 15}
+        "rise": height, "flat_length": 3.0, "ride_length": 3.0 + 2 * run, "slope_degrees": 15,
+        "profile_reference": "nominal native floor centre plane",
+        "native_anchor_offset": {"right": 0.0, "up": 0.0, "forward": 0.0}}
 
 
 def halfpipe(mats):
-    width, half, platform = 6.0, 3.0, 1.5
+    width, half, platform = 6.0, 3.0, 3.0
     flat = box("flat", (0, 0, -SKIN / 2), (width, 6.0, SKIN), mats["concrete"])
     flat["ride_surface"] = True
     box("flat", (0, 0, -SKIN / 2), (width, 6.0, SKIN), None, collision=True)
     for direction in (-1, 1):
         name = "front" if direction > 0 else "back"
-        transition(name, width, direction * half, direction, mats)
-        edge = direction * (half + RADIUS)
+        transition(name, width, direction * half, direction, mats, flat_top=True)
+        edge = direction * (half + TRANSITION_RUN)
         end = edge + direction * platform
-        deck(name + "_deck", width, edge, end, RADIUS, mats)
-        backrail(name + "_rail", width, end - direction * 0.05, RADIUS, mats)
+        deck(name + "_deck", width, edge, end, TRANSITION_RISE, mats)
+        backrail(name + "_rail", width, end - direction * 0.05, TRANSITION_RISE, mats)
     box("flat_joint", (0, 0, -0.0005), (width, 0.006, 0.002), mats["dark"])
     for direction in (-1, 1):
         box("flat_joint", (0, direction * (half + 0.003) / 2, -0.0005),
             (0.006, half - 0.003, 0.002), mats["dark"])
     return {"kind": "halfpipe", "pivot": "centre of the 6 x 6 m flat riding plane",
         "ride_width": width, "flat_width": 6.0, "flat_length": 6.0,
-        "transition_radius": RADIUS, "rise": RADIUS, "platform_length": platform,
-        "ride_length": 2 * half + 2 * RADIUS + 2 * platform}
+        "rise": TRANSITION_RISE, "transition_run": TRANSITION_RUN, "platform_length": platform,
+        "ride_length": 2 * half + 2 * TRANSITION_RUN + 2 * platform,
+        "native_slopes_degrees": [15, 35], "transition_profile_knots": 51,
+        "profile_reference": "nominal native floor centre plane", "profile_continuity": "C1",
+        "maximum_profile_deviation": 4 * UPPER_SLOPE * EXIT_BLEND / 27,
+        "native_anchor_offset": {"right": 1.5, "up": 0.0, "forward": 1.5}}
 
 
 GENERATORS = {
