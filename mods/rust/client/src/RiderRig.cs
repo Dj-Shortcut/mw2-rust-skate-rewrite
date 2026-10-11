@@ -23,7 +23,9 @@ public static class RiderRig
     public static SkateRiderRig Rig;
     public static float Thigh, Shin, Foot, UpperArm, Forearm, Crouch = 0.18f;
     public static float Miss;
-    public static string MissAt = "", Error = "";
+    public static string MissAt = "", Error = "", MotionError = "";
+    private static SkateRiderMotionState motion;
+    private static RideMode motionMode = RideMode.Ground;
     public static int Applied, Refusals;
     private static Transform[] spine = new Transform[0];
     private static Vector3 lSole, rSole;
@@ -482,6 +484,21 @@ public static class RiderRig
             {
                 if (Refusals++ == 0 || error != Error) Say("pose refused: " + error);
                 Error = error; return;
+            }
+            // Secondary motion: the pelvis springs and the shoulders and hands lag a little behind
+            // the pose, so the body is not rigid. Not while a hand is on the board or the ground (a
+            // grab, a handplant), when it must stay there, nor in the air, where the legs' own spring
+            // carries the pop and the module's pelvis spring would bob on top of it: the motion is
+            // reset and the pose shown as is.
+            var contact = grab != SkateGrabKind.None || SkateRide.Handplant || mode == RideMode.Bail || mode == RideMode.Air;
+            if (contact || mode != motionMode) motion = default(SkateRiderMotionState);
+            motionMode = mode;
+            if (!contact)
+            {
+                SkateRiderPose shown; SkateRiderMotionState next; string motionError;
+                if (SkateRiderMotion.TryStep(motion, Rig, pose, SkateRide.Clamp(frameSeconds, (float)SkateRiderMotion.MinimumDelta, (float)SkateRiderMotion.MaximumDelta), out shown, out next, out motionError))
+                { pose = shown; motion = next; }
+                else { motion = default(SkateRiderMotionState); if (motionError != MotionError) { MotionError = motionError; Say("secondary motion refused: " + motionError); } }
             }
             // In a handplant the board is overhead, against the feet: the board follows the pose.
             SkateBoard.Held = SkateRide.Handplant;

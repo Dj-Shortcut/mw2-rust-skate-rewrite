@@ -69,6 +69,7 @@ game; see [The controller](#the-controller).
 | Left stick, right after landing a trick | Revert: the board turns round under the rider, who rolls on switch; it joins the combo. | |
 | Right stick back or forward, on an edge | 5-0 or nosegrind instead of the 50-50. | |
 | Coming down on an edge square to it, or slowly along it | A stall: the board stops on the edge. Square: a board stall, with the right stick back a tail stall, forward a nose stall, with `LB` or `RB` held a frontside or backside handplant; slowly along it a 50-50 stall. A pop leaves it; after 2.5 s the board rolls off. Out of a stall the rider goes back the way he came, tail first; out of a handplant he comes round and rolls back nose first. | |
+| In a grind or a stall | The deck sits on the edge the way that grind does: a 5-0 on the back truck with the nose up, a nosegrind the other way round, a smith with the nose dipped past the edge, a feeble over it, a crooked on its edge; a tail stall hangs the tail over the coping. The rider stands over the low end with the arms out. | |
 
 The right stick pops the board, and how it moves says what the board does in the jump. The sides
 are those of a regular rider going nose first, whose heels are on the stick's left; riding tail
