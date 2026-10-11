@@ -173,8 +173,11 @@ public static class SkateParks
             BuildingBlock b;
             try { b = c.GetComponentInParent<BuildingBlock>(); } catch (Exception) { continue; }
             if (b == null || !seen.Add(b.GetInstanceID())) continue;
+            // The game names an entity's object after its prefab.
             string prefab;
-            try { prefab = b.PrefabName; } catch (Exception) { continue; }
+            try { prefab = b.gameObject.name; } catch (Exception) { continue; }
+            if (prefab == null) continue;
+            if (prefab.EndsWith(" (Clone)")) prefab = prefab.Substring(0, prefab.Length - 8);
             if (prefab != FloorPrefab && prefab != LowWallPrefab && prefab != HalfWallPrefab && prefab != FoundationPrefab) continue;
             var t = b.transform; var e = t.rotation.eulerAngles;
             float top = 0f, bottom = 0f;
