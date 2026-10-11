@@ -30,6 +30,9 @@ namespace Shortcut.RustMod
         // Handplant (0..1): the rider upside down on one straight arm, the hand on the edge at
         // BoardPosition, the board held overhead; 0 is the ordinary pose, values between blend in.
         public readonly double Handplant;
+        // DeckPitch (radians): the deck pitched about its middle, the end that leads up; a manual, a
+        // 5-0 or a tail stall. The body stays on BoardUp and the feet go with the deck.
+        public readonly double DeckPitch;
         public SkateRiderInput(SkateVector boardPosition, SkateVector boardForward, SkateVector boardUp,
                                SkateStance stance, bool ridingSwitch, double speed, double leanDegrees,
                                double crouch, bool airborne, bool pushing, double pushPhase,
@@ -71,7 +74,16 @@ namespace Shortcut.RustMod
                                double crouch, bool airborne, bool pushing, double pushPhase,
                                double flipDegrees, SkateGrabKind grabKind, bool bailed, double lookYawDegrees, double deckOffset,
                                double groundDrop, double bailPhase, bool mongoPush, double footPlant, double grabSeconds, double handplant)
-        { MongoPush = mongoPush; FootPlant = footPlant; GrabSeconds = grabSeconds; Handplant = handplant;
+            : this(boardPosition, boardForward, boardUp, stance, ridingSwitch, speed, leanDegrees,
+                   crouch, airborne, pushing, pushPhase, flipDegrees, grabKind, bailed, lookYawDegrees, deckOffset,
+                   groundDrop, bailPhase, mongoPush, footPlant, grabSeconds, handplant, 0) { }
+        public SkateRiderInput(SkateVector boardPosition, SkateVector boardForward, SkateVector boardUp,
+                               SkateStance stance, bool ridingSwitch, double speed, double leanDegrees,
+                               double crouch, bool airborne, bool pushing, double pushPhase,
+                               double flipDegrees, SkateGrabKind grabKind, bool bailed, double lookYawDegrees, double deckOffset,
+                               double groundDrop, double bailPhase, bool mongoPush, double footPlant, double grabSeconds, double handplant,
+                               double deckPitch)
+        { DeckPitch = deckPitch; MongoPush = mongoPush; FootPlant = footPlant; GrabSeconds = grabSeconds; Handplant = handplant;
           BoardPosition = boardPosition; BoardForward = boardForward; BoardUp = boardUp; Stance = stance;
           Switch = ridingSwitch; Speed = speed; LeanDegrees = leanDegrees; Crouch = crouch; Airborne = airborne;
           Pushing = pushing; PushPhase = pushPhase; FlipDegrees = flipDegrees; GrabKind = grabKind; Grab = grabKind != SkateGrabKind.None;
@@ -126,7 +138,7 @@ namespace Shortcut.RustMod
             bool grabbing = input.Grab && input.Airborne && !input.Bailed;
             double plantDown = input.Airborne && !input.Bailed ? input.FootPlant * (input.GroundDrop + PlantDrop) : 0;
             var floor = input.BoardPosition + up * (Math.Min(0, input.DeckOffset) -
-                (input.Bailed || pushing ? input.GroundDrop : 0) - plantDown);
+                (input.Bailed || pushing ? input.GroundDrop : 0) - plantDown - Math.Abs(SkatePose.FootOffset * Math.Sin(input.DeckPitch)));
             bool backIsLeft = (input.Stance == SkateStance.Goofy) != input.Switch;
             bool namedGrab = grabbing && input.GrabKind != SkateGrabKind.Legacy;
             var grip = namedGrab ? Grip(input.GrabKind, backIsLeft, input.Stance == SkateStance.Regular) : default(GrabGrip);
@@ -145,6 +157,18 @@ namespace Shortcut.RustMod
             var deck = input.BoardPosition + up * lift;
             var leftAnkle = deck + forward * (side * SkatePose.FootOffset);
             var rightAnkle = deck - forward * (side * SkatePose.FootOffset);
+            double pitchDrop = 0;
+            if (input.DeckPitch != 0)
+            {
+                // The deck pitched about its middle: the leading foot up, the trailing one down, and both
+                // a little in toward the middle.
+                double ps = Math.Sin(input.DeckPitch), pc = Math.Cos(input.DeckPitch);
+                double leftAlong = SkateVector.Dot(leftAnkle - input.BoardPosition, travel);
+                double rightAlong = SkateVector.Dot(rightAnkle - input.BoardPosition, travel);
+                leftAnkle = leftAnkle + up * (leftAlong * ps) - travel * (leftAlong * (1 - pc));
+                rightAnkle = rightAnkle + up * (rightAlong * ps) - travel * (rightAlong * (1 - pc));
+                pitchDrop = Math.Abs(SkatePose.FootOffset * ps);
+            }
             if (flipping > 0)
             {
                 var spread = forward * (side * FlipSpread * flipping);
@@ -213,6 +237,8 @@ namespace Shortcut.RustMod
                 centre -= facing * (rig.SpineLength * balance * (grabbing ? 3 : 1));
                 centre += facing * (PushSide * turn);
                 if (namedGrab) centre += forward * grip.LegShift - facing * grip.BodyShift;
+                // On a pitched deck the weight goes over the end that is down.
+                centre -= travel * (PitchWeight * Math.Sin(input.DeckPitch));
             }
             var leftHipBase = centre - pelvisRight * (rig.HipWidth * 0.5);
             var rightHipBase = centre + pelvisRight * (rig.HipWidth * 0.5);
@@ -348,7 +374,33 @@ namespace Shortcut.RustMod
         private const double PushPlant = 0.10, PushSweep = 0.36, PushHeel = 0.07;
         private const double GrabRoll = 0.4, GrabFoldLimit = 1.0, GrabTuckMargin = 0.05, PlantDrop = 0.3, GrabBackLimit = 0.55, HeelTurn = 1.2;
         private const double HeelTurnSign = 1;
-        private const double FlipTuck = 0.14, FlipSpread = 0.05;
+        private const double FlipTuck = 0.14, FlipSpread = 0.05, PitchWeight = 0.18;
+        public const double MaximumDeckPitch = 0.8;
+
+        // How a grind or a stall holds the deck, degrees: the end that leads up (a 5-0 and a tail
+        // stall sit on the back truck or the tail, the nose up), the toe edge up (a smith dips the
+        // front truck down past the edge on the heel side, a feeble over it on the toe side, a
+        // crooked rides the nose with the deck on its edge). And how deep the rider crouches in it.
+        public static void GrindDeck(SkateGrindKind kind, out double pitchDegrees, out double rollDegrees, out double crouch)
+        {
+            pitchDegrees = 0; rollDegrees = 0; crouch = 0.38;
+            switch (kind)
+            {
+                case SkateGrindKind.FiveO: pitchDegrees = 14; crouch = 0.35; break;
+                case SkateGrindKind.Nosegrind: pitchDegrees = -14; crouch = 0.42; break;
+                case SkateGrindKind.Crooked: pitchDegrees = -12; rollDegrees = 14; crouch = 0.5; break;
+                case SkateGrindKind.Smith: pitchDegrees = -10; rollDegrees = -18; crouch = 0.52; break;
+                case SkateGrindKind.Feeble: pitchDegrees = -8; rollDegrees = 16; crouch = 0.45; break;
+                case SkateGrindKind.Tailslide: pitchDegrees = 8; crouch = 0.4; break;
+                case SkateGrindKind.Noseslide: pitchDegrees = -8; crouch = 0.42; break;
+                case SkateGrindKind.Boardslide: case SkateGrindKind.Lipslide: crouch = 0.45; break;
+                case SkateGrindKind.TailStall: pitchDegrees = 27; crouch = 0.32; break;
+                case SkateGrindKind.NoseStall: pitchDegrees = -27; crouch = 0.32; break;
+                case SkateGrindKind.BoardStall: crouch = 0.55; break;
+                case SkateGrindKind.FiftyFiftyStall: crouch = 0.45; break;
+                case SkateGrindKind.Handplant: crouch = 0.38; break;
+            }
+        }
         // A grab folds in over GrabIn seconds; held longer it tweaks. The older inputs pose a grab just folded in.
         public const double GrabIn = 0.18;
 
@@ -635,6 +687,7 @@ namespace Shortcut.RustMod
             Finite(input.DeckOffset) && Math.Abs(input.DeckOffset) <= MaximumMeasurement &&
             Finite(input.GroundDrop) && input.GroundDrop >= 0 && input.GroundDrop <= MaximumMeasurement &&
             Fraction(input.FootPlant) && Fraction(input.Handplant) && Finite(input.GrabSeconds) && input.GrabSeconds >= 0 && input.GrabSeconds <= 86400 &&
+            Finite(input.DeckPitch) && Math.Abs(input.DeckPitch) <= MaximumDeckPitch &&
             Fraction(input.BailPhase) && input.GrabKind >= SkateGrabKind.None && input.GrabKind <= SkateGrabKind.Tailbone; }
         private static bool Finite(SkateRiderPose p)
         { return Vector(p.Pelvis) && Vector(p.LeftHip) && Vector(p.RightHip) && Vector(p.LeftKnee) && Vector(p.RightKnee) &&

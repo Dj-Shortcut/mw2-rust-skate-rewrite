@@ -156,8 +156,12 @@ public class SkateRig : MonoBehaviour
         // With a controller the rider looks where the board goes, a little into the turn; the view
         // itself is turned by the right stick's flicks and says nothing.
         if (!SkateKeys.Scripted) SkateKeys.LookYaw = SkateKeys.Pad && SkateRide.On ? SkateRide.Yaw + SkateKeys.Steer * 35f : SkateCamera.LookYaw;
-        SkateBoard.Tip += ((!SkateRide.On ? 0f : SkateRide.Stalling && SkateRide.GrindKind == Shortcut.RustMod.SkateGrindKind.TailStall ? SkateBoard.StallTip
-            : SkateRide.Stalling && SkateRide.GrindKind == Shortcut.RustMod.SkateGrindKind.NoseStall ? -SkateBoard.StallTip : SkateRide.Manual ? 1f : SkateRide.NoseManual ? -1f : 0f) - SkateBoard.Tip) * SkateRide.Clamp(frame * 9f, 0f, 1f);
+        var grinding = SkateRide.On && SkateRide.Mode == RideMode.Grind;
+        SkateBoard.Tip += ((!SkateRide.On || grinding ? 0f : SkateRide.Manual ? 1f : SkateRide.NoseManual ? -1f : 0f) - SkateBoard.Tip) * SkateRide.Clamp(frame * 9f, 0f, 1f);
+        double gp = 0, gr = 0, gc;
+        if (grinding) Shortcut.RustMod.SkateRider.GrindDeck(SkateRide.GrindKind, out gp, out gr, out gc);
+        SkateBoard.GrindPitch += ((float)gp - SkateBoard.GrindPitch) * SkateRide.Clamp(frame * 12f, 0f, 1f);
+        SkateBoard.GrindRoll += ((float)gr - SkateBoard.GrindRoll) * SkateRide.Clamp(frame * 12f, 0f, 1f);
         // In a jump the knees come up: the board rises toward the rider around the top and is back
         // at the legs' full reach when it moves at take-off speed, going up or coming down. The
         // player itself is where the game has it; only the board and the feet are drawn higher.
@@ -181,8 +185,10 @@ public class SkateRig : MonoBehaviour
         var t1 = SkateClock.Now(); RiderRig.Look(third); SkateClock.Add(SkateClock.Look, t1);
         if (!SkateRide.On || LocalT == null) return;
         var at = SkateBoard.Contact(LocalT);
-        var feet = at; var up = SkateRide.ViewNormal;
-        SkateBoard.Tilt(ref feet, ref up);
+        // The rider stands on the deck's middle where the pitch puts it, but the body keeps the
+        // unpitched up; the module puts the feet on the pitched deck.
+        var feet = at; var up = SkateRide.ViewNormal; var tilted = up;
+        SkateBoard.Tilt(ref feet, ref tilted);
         var t2 = SkateClock.Now(); RiderRig.Frame(feet, up, !third, frame); SkateClock.Add(SkateClock.Rider, t2);
         var t3 = SkateClock.Now(); SkateCamera.Apply(at - Vector3.up * SkateBoard.Pop); SkateClock.Add(SkateClock.Camera, t3);
     }

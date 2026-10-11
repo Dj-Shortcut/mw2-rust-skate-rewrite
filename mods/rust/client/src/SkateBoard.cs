@@ -9,8 +9,6 @@ using UnityEngine;
 public static class SkateBoard
 {
     public const float TipDegrees = 15f, Axle = 0.23f;
-    // A tail or nose stall hangs the board steeper over the edge than a manual does.
-    public const float StallTip = 1.8f;
     public const string LitShader = "Rust/Standard", PlainShader = "Hidden/Internal-Colored";
     public const float Gloss = 0.2f, BailTurn = 0.5f, BailBehind = 0.9f, BailRest = 0.045f, PopMost = 0.22f, LieSeconds = 6f;
     // The wheels of the shared mesh, and how far a truck turns per degree the board leans.
@@ -68,17 +66,36 @@ public static class SkateBoard
         return SkateRide.Turn(-grabRoll[g] * GrabFold, nose) * SkateRide.Turn(-grabPitch[g] * GrabFold, toe);
     }
 
+    // A grind or a stall holds the deck its own way (SkateRider.GrindDeck): eased toward it while
+    // grinding, back to flat after. Degrees, the leading end up and the toe edge up.
+    public static float GrindPitch, GrindRoll;
+
+    // The deck's pitch, degrees, the leading end up: a manual's and a grind's together.
+    public static float PitchDegrees { get { return Tip * TipDegrees + GrindPitch; } }
+
     public static void Tilt(ref Vector3 at, ref Vector3 up)
     {
-        if (Math.Abs(Tip) < 0.001f) return;
-        var lead = SkateRide.Dir(SkateRide.Yaw);
-        lead = lead - up * Vector3.Dot(lead, up);
-        if (lead.sqrMagnitude < 0.0001f) return;
-        lead = SkateRide.Speed >= 0f ? lead.normalized : -lead.normalized;
-        var turn = SkateRide.Turn(Tip * TipDegrees, Vector3.Cross(lead, up));
-        var pivot = at - lead * (Tip > 0f ? Axle : -Axle);
-        at = pivot + turn * (at - pivot);
-        up = turn * up;
+        var pitch = PitchDegrees;
+        if (Math.Abs(pitch) > 0.01f)
+        {
+            var lead = SkateRide.Dir(SkateRide.Yaw);
+            lead = lead - up * Vector3.Dot(lead, up);
+            if (lead.sqrMagnitude > 0.0001f)
+            {
+                lead = SkateRide.Speed >= 0f ? lead.normalized : -lead.normalized;
+                var turn = SkateRide.Turn(pitch, Vector3.Cross(lead, up));
+                // A manual and a stall on one end pitch about the axle that stays down; a grind on a
+                // truck about that truck, which is where the edge is.
+                var pivot = at - lead * (pitch > 0f ? Axle : -Axle);
+                at = pivot + turn * (at - pivot);
+                up = turn * up;
+            }
+        }
+        if (Math.Abs(GrindRoll) > 0.01f)
+        {
+            var nose = SkateRide.Dir(SkateRide.NoseYaw); nose = nose - up * Vector3.Dot(nose, up);
+            if (nose.sqrMagnitude > 0.0001f) up = SkateRide.Turn(-GrindRoll, nose.normalized) * up;
+        }
     }
 
     public static void Follow(GameObject board, Transform playerT)

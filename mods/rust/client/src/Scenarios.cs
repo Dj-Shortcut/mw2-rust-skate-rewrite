@@ -175,6 +175,10 @@ public static class Scenarios
         new View("board stall on an edge", 90f, "stall", (float)SkateGrindKind.BoardStall), new View("tail stall on an edge", 90f, "stall", (float)SkateGrindKind.TailStall),
         new View("nose stall on an edge", 90f, "stall", (float)SkateGrindKind.NoseStall), new View("handplant", 90f, "stall", (float)SkateGrindKind.Handplant),
         new View("handplant, seen from behind", 180f, "stall", (float)SkateGrindKind.Handplant),
+        new View("5-0 grind", 90f, "grind", (float)SkateGrindKind.FiveO), new View("nosegrind", 90f, "grind", (float)SkateGrindKind.Nosegrind),
+        new View("smith grind", 90f, "grind", (float)SkateGrindKind.Smith), new View("feeble grind", 90f, "grind", (float)SkateGrindKind.Feeble),
+        new View("crooked grind", 90f, "grind", (float)SkateGrindKind.Crooked), new View("boardslide, seen along the rail", 180f, "grind", (float)SkateGrindKind.Boardslide),
+        new View("tailslide", 90f, "grind", (float)SkateGrindKind.Tailslide),
         new View("moving, pushing off", 115f, "move", 0f), new View("moving, turning round", 115f, "turn", 0f),
         new View("finish", 90f, "end", 0f) };
     private static float stepAt, nearAt, hudAt;
@@ -240,13 +244,13 @@ public static class Scenarios
         SkateRide.Speed = v.State == "fakie" ? -2f : 0f;
         SkateRide.PlantedUntil = v.State == "plant" ? now + 999f : -99f;
         SkateRide.Stalling = v.State == "stall";
-        SkateRide.GrindKind = v.State == "stall" ? (SkateGrindKind)(int)v.Value : SkateGrindKind.None;
+        SkateRide.GrindKind = v.State == "stall" || v.State == "grind" ? (SkateGrindKind)(int)v.Value : SkateGrindKind.None;
         if (v.State == "grabin") RiderRig.GrabFor(0.09f);
         SkateRide.FlipDeg = v.State == "flip" ? (int)v.Value : 0;
         SkateRide.Grab = v.State == "grab" || v.State == "grabin" ? (SkateGrabKind)(int)v.Value : SkateGrabKind.None;
         SkateRide.ShoveDeg = v.State == "shove" ? v.Value : 0;
-        SkateRide.Manual = v.State == "manual" || (v.State == "stall" && v.Value == (float)SkateGrindKind.TailStall);
-        SkateRide.NoseManual = v.State == "nose" || (v.State == "stall" && v.Value == (float)SkateGrindKind.NoseStall);
+        SkateRide.Manual = v.State == "manual";
+        SkateRide.NoseManual = v.State == "nose";
         SkateBoard.ShowLift = air ? 0.7f : 0f;
         SkateRide.Trick = new SkateTrickState(v.State == "switch");
         if (v.State == "bail") SkateRide.ModeAt = now - v.Value * SkateRide.BailSeconds;
