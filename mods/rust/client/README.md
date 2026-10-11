@@ -182,6 +182,7 @@ file it runs `skate`.
 | `pose` | Scripted: rider and board in each state, standing still, from fixed cameras, then the score display in nine made-up states; `K` steps on. |
 | `trick` | Scripted: ollie, kickflip, heelflip, both spins, a grab, two presses that come too late and a manual. |
 | `pad` | Scripted: the ride with a controller, played into the plugin without one. |
+| `status` | Scripted: a short ride, then the server's own view of the rider typed into the F1 console (`skate.status`, its speed and fly checks, its plugins), the console left open. |
 | `mute` | Turns the whole client down until nothing can be heard. |
 | `nogrind` | No grinding. |
 | `clips` | When the audio starts, the game's own audio clips of a skateboard's kind are listed in the log (names and lengths), for choosing sounds. |

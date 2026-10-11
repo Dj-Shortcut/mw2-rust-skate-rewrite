@@ -43,6 +43,7 @@ public static class Scenarios
         if (SkateRide.Lands != lands) { lands = SkateRide.Lands; Say("landed: " + SkateRide.LastAir + " | mode=" + SkateRide.Mode + " switch=" + SkateRide.Trick.Switch + " pos=" + Out.V1(SkateRide.Position)); }
         if (Name == "ride") Ride(game);
         else if (Name == "piece") Piece(s);
+        else if (Name == "status") Status(game, s);
         else if (Name == "pose") Pose(s, now);
         else if (Name == "pad") Pad(game, now);
         else Trick(game);
@@ -114,6 +115,27 @@ public static class Scenarios
         if (phase == 1) { SkateConsole.KeepOpen = true; SkatePieces.Ask("bank", Time.realtimeSinceStartup); }
         if (phase == 2) Say("console: typed=" + SkateConsole.Typed + " failed=" + SkateConsole.Failed + " last=" + SkateConsole.Last + " | " + SkatePieces.Line(Time.realtimeSinceStartup));
         if (phase == 3) Finish();
+    }
+
+    // What the server says about a rider it puts back: a ride long enough to be put back, then the
+    // plugin's own report and the server's speed checks typed into the F1 console, which is left
+    // open, one line at a time with time for a screenshot of each answer.
+    public static readonly string[] StatusLines = { "skate.status", "antihack.speedhack_protection", "antihack.flyhack_protection", "oxide.plugins" };
+    private static void Status(float game, float s)
+    {
+        var to = game < 1f ? 1 : game < 6f ? 2 : game < 7f ? 3 : 4 + (int)((game - 7f) / 8f);
+        if (to > 4 + StatusLines.Length) to = 4 + StatusLines.Length;
+        if (!Enter(to, to == 1 ? "get on" : to == 2 ? "push" : to == 3 ? "stop" : to < 4 + StatusLines.Length ? "type " + StatusLines[to - 4] : "finish")) return;
+        if (phase == 1) SkateRig.MountNow(yaw0);
+        SkateKeys.Push = phase == 2; SkateKeys.Brake = phase == 3;
+        if (phase == 3) Say("ridden: put back " + SkateRide.Resets + " times, top " + SkateRide.Top.ToString("F1") + " m/s");
+        if (phase == 4) { SkateRide.Dismount("the scenario stepped off to ask the server"); SkateConsole.KeepOpen = true; }
+        if (phase >= 4 && phase < 4 + StatusLines.Length)
+        {
+            var ok = SkateConsole.Queue(StatusLines[phase - 4], Time.realtimeSinceStartup);
+            Say("console: asked " + StatusLines[phase - 4] + " queued=" + ok + " typed=" + SkateConsole.Typed + " failed=" + SkateConsole.Failed);
+        }
+        if (phase == 4 + StatusLines.Length) Finish();
     }
 
     private struct View

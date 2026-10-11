@@ -24,6 +24,8 @@ public static class SkateConsole
     public static Func<string, bool> Typist;
     // A check leaves the console open, so the answer is on the screen.
     public static bool KeepOpen;
+    // Left open by the last line (KeepOpen): the next line must not press F1, which would close it.
+    public static bool LeftOpen;
     public static int Typed, Failed;
     public static string Last = "";
     private static string pending = "";
@@ -47,10 +49,10 @@ public static class SkateConsole
         if (step < 0 || now < nextAt) return;
         try
         {
-            if (step == 0) Tap(VkF1);
+            if (step == 0) { if (!LeftOpen) Tap(VkF1); }
             else if (step == 1) Text(pending);
             else if (step == 2) Tap(VkReturn);
-            else if (step == 3) { if (!KeepOpen) Tap(VkF1); Typed++; Out.Say("CONSOLE typed: " + pending); }
+            else if (step == 3) { if (!KeepOpen) Tap(VkF1); LeftOpen = KeepOpen; Typed++; Out.Say("CONSOLE typed: " + pending); }
             step = step < 3 ? step + 1 : -1; nextAt = now + StepSeconds;
         }
         catch (Exception e)
@@ -86,5 +88,5 @@ public static class SkateConsole
         if (sent != inputs.Length) throw new InvalidOperationException("SendInput sent " + sent + " of " + inputs.Length + " (error " + Marshal.GetLastWin32Error() + ")");
     }
 
-    public static void Reset() { pending = ""; step = -1; Typed = Failed = 0; Last = ""; }
+    public static void Reset() { pending = ""; step = -1; Typed = Failed = 0; Last = ""; LeftOpen = false; }
 }
