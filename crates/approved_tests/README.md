@@ -21,12 +21,12 @@ workspace.
 | `skate_air_pullback_ollie` | owner-recorded airborne pull-back and forward flick produce one Ollie |
 | `skate_ground_diagonal_kickflip` | owner-recorded grounded diagonal flick produces one Ollie with Kickflip |
 | `skate_ground_roll_ollie_no_manual` | owner-recorded grounded rim roll and recoil produce one Ollie and no manual |
-| `skate_park_piece_layouts` | bank, kicker, quarterpipe, ledges and funbox block positions, pitches and adjoining edges |
+| `skate_park_piece_layouts` | bank, kicker, quarterpipe, ledges, funbox and full halfpipe block positions, orientations, materials and adjoining edges |
 | `skate_park_anchor_yaw_and_snap` | translate and rotate each layout from an existing native snapped building anchor |
 
 The three engine-free C# skate scenarios are specified in [issue #337](https://github.com/Dj-Shortcut/mw2-rust-rust-rewrite/issues/337#issuecomment-6098063930). Their separate runner and exact trace data live in [skate/](skate/README.md); they do not start the parked standalone runtime.
 
-The two park-layout scenarios were approved by name by the owner for [Task 4](https://github.com/Dj-Shortcut/mw2-rust-skate-rewrite/issues/337#issuecomment-6099499139). They execute the actual server plugin's engine-free layout helpers; native placement, save/load and demolition remain separate verification.
+The two park-layout scenarios were approved by name by the owner for [Task 4](https://github.com/Dj-Shortcut/mw2-rust-skate-rewrite/issues/337#issuecomment-6099499139). They execute the actual server plugin's engine-free layout helpers; native placement, save/load and demolition remain separate verification. The owner subsequently authorized adding the complete halfpipe to the same two scenarios.
 
 The scenario's steps are in `src/scenarios/heavy_gameplay_lifecycle.rs` and
 nowhere else: maps, seed rule, scenes, positions, angles, weapons, durations
