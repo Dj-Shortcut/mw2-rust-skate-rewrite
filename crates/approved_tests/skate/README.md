@@ -19,6 +19,21 @@ An alternate built DLL can be supplied with `-p:SkateLibraryPath=/absolute/path/
 
 These scenarios check gesture recognition and its compositional/legacy outputs. They do not start the Rust client or server and do not establish controller feel, animation or a landed native trick.
 
+## Ride physics
+
+The owner approved three scenarios by name on 11 October 2026 for [Task 5](https://github.com/Dj-Shortcut/mw2-rust-skate-rewrite/issues/337#issuecomment-6106747983):
+
+- `skate_transition_pumping`: descent-to-bottom crouch/release timing, slope-dependent energy capped per traversal, a six-metre flat crossing, spam refusal, rearm, timeout, loss of support and physical reversal.
+- `skate_drop_in_and_launch`: uphill/downhill gravity, stall/reversal, heading-preserving tangent velocity, mechanical energy, inherited ramp velocity and vertical pop.
+- `skate_surface_landing`: straight/backwards/sideways roll retention, full velocity projected against the surface for bail impact, and downhill fall converted to roll without creating energy.
+
+```sh
+dotnet build mods/rust/shared/SkateMotion.csproj -p:RustManagedPath=/absolute/path/to/managed
+dotnet run --project crates/approved_tests/skate/SkateRidePhysicsScenarios.csproj -p:SkateLibraryPath=/absolute/path/to/SkateMotion.dll
+```
+
+The runner uses the actual compiled shared DLL, prints its path/SHA-256 and compares independent analytical fixtures. Outputs stay in ignored `context/`. Its ideal halfpipe-energy fixture brackets the authored deck after one/two full pumps at six m/s, without drag or collisions; it does not prove a first-pump limit for every entry speed or native rideability. These tests never start the Rust client, server or Shadow PC. See the [API and numbered adapter review](../../../docs/RUST-SKATE-RIDE-PHYSICS.md) for integration work still missing.
+
 ## Park layouts
 
 The owner approved two layout scenarios by name for [Task 4](https://github.com/Dj-Shortcut/mw2-rust-skate-rewrite/issues/337#issuecomment-6099499139):

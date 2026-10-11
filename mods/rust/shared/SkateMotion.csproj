@@ -20,6 +20,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="SkateMotion.cs" />
+    <Compile Include="SkateRidePhysics.cs" />
     <Compile Include="SkateDrive.cs" />
     <Compile Include="SkateTricks.cs" />
     <Compile Include="SkateFlick.cs" />

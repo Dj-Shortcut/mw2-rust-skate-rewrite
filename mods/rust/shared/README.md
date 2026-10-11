@@ -2,6 +2,18 @@
 
 Engine-free C#7.3 source for [#335](https://github.com/Dj-Shortcut/mw2-rust-rust-rewrite/issues/335) and [#337](https://github.com/Dj-Shortcut/mw2-rust-rust-rewrite/issues/337), namespace `Shortcut.RustMod`. These are client integration building blocks; no Unity/Oxide types occur here. Build `SkateMotion.csproj` with a genuine `RustManagedPath` as for the existing shared motion library. The separate [server acceptance plugin](../plugins/SKATE.md) handles scoped movement bounds; [client architecture](../../../docs/RUST-SKATE-CLIENT.md) records reported native observations and remaining gates.
 
+## Ride physics API
+
+`SkateRidePhysics` provides pure value inputs/results for the reported client's transition pumping, ramp exit and landing calculations. It does not run a controller or query the world. The [API contract and numbered client review](../../../docs/RUST-SKATE-RIDE-PHYSICS.md) describe the required adapter changes; that integration is still missing. Existing `SkateTricks`, motion and drive APIs retain their behavior.
+
+`TrySlope(input, dt, out result, out error)` accepts an upward unit surface normal, horizontal nose heading, signed speed along its surface tangent and explicit gravity. It preserves horizontal heading, applies gravity along the unit tangent and returns full velocity, signed tangent speed, horizontal speed and travel-relative slope. `TryLaunch(input, out result, out error)` retains the full surface velocity and adds only the requested vertical pop; passive exit uses zero pop. The adapter applies subsequent air gravity once.
+
+`TryPump(state, input, dt, out result, out error)` observes support, crouch, slope along actual travel, nonnegative tangent-speed magnitude and actual horizontal travel direction. Crouching during descent charges up to 0.4 seconds; release in the bottom window grants slope-dependent energy, capped at 12 J/kg per traversal. Flat-only or constant-steep button spam grants none. A completed ascent/new descent can rearm. Air, stopping and a physical turn/reversal clear charge; visual nose/stance changes must not be substituted for actual travel. Retain `result.State` only on success and consume the returned speed.
+
+`TryLand(input, out result, out error)` accepts incoming velocity, contact normal, final horizontal deck nose, impact threshold and vertical-to-roll weight. It computes impact from the whole incoming velocity against the normal, projects onto the surface and rolling axis, retains straight/180-degree travel, scrubs sideways speed and converts part of a downhill fall to roll. `Bailed` is an accepted physical result, distinct from invalid input. On bail the adapter takes its bail path instead of applying roll velocity. Pass `NormalImpact` and the same configured maximum impact to the existing explicit-limit `SkateTricks.TryStep` overload; no scoring API is changed.
+
+Defaults are gravity 16 m/s², vertical pop 6 m/s, maximum impact 12 m/s and fall-to-roll 0.8. Gravity 16 is a retained design value, not a measured native gravity. `SkateMotion`/`SkateDrive` remain separate alternatives with their existing constants. Steps accept `(0, 0.05]` seconds; invalid inputs return a static English error and preserve supplied pump state. No per-call allocation or native type is introduced.
+
 ## Drive API
 
 Create `new SkateDriveState(initialYawDegrees)` and keep each successful returned state.
