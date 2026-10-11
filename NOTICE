@@ -79,6 +79,12 @@ mods/rust/client/generator/interop/pointer-byref.patch — a two-predicate
   exact patch and build inputs alongside its Generator candidate; no upstream
   DLL, generated client assembly or proprietary game file is committed here.
 
+mods/rust/shared/SkateAudio.cs — original project-authored procedural audio.
+  Wheel, truck/deck-contact and event PCM is generated from seeded oscillators,
+  filtered noise and damped resonators. No sampled game audio, commercial sample
+  library, synthesizer preset or third-party sound asset is distributed. This
+  source and its generated original waveforms use the project's Apache-2.0 licence.
+
 Bundled inherited/generated data with open provenance:
 
 crates/fx_iw4/data/fx_random_table.bin

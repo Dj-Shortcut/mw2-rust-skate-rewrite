@@ -26,12 +26,18 @@ workspace.
 | `skate_surface_landing` | board-yaw roll retention, full surface-normal impact bail and downhill fall-to-roll conversion |
 | `skate_park_piece_layouts` | bank, kicker, quarterpipe, ledges, funbox and full halfpipe block positions, orientations, materials and adjoining edges |
 | `skate_park_anchor_yaw_and_snap` | translate and rotate each layout from an existing native snapped building anchor |
+| `skate_park_gesture_selection` | admin-only configurable park-piece cycling, cancel, expiry and retained pending selection |
+| `skate_audio_surfaces_and_events` | authored wheel, truck/deck contact and event PCM: duration, peak/DC, determinism, loop seams and invalid requests |
 
 The owner approved `skate_transition_pumping`, `skate_drop_in_and_launch` and `skate_surface_landing` by name on 11 October 2026 for [Task 5](https://github.com/Dj-Shortcut/mw2-rust-skate-rewrite/issues/337#issuecomment-6106747983). They execute the actual shared C# library. Native adapter integration, contact sensing and ride feel remain separate validation.
 
 The three recorded-gesture C# skate scenarios are specified in [issue #337](https://github.com/Dj-Shortcut/mw2-rust-rust-rewrite/issues/337#issuecomment-6098063930). Their separate runner and exact trace data live in [skate/](skate/README.md); they do not start the parked standalone runtime.
 
 The two park-layout scenarios were approved by name by the owner for [Task 4](https://github.com/Dj-Shortcut/mw2-rust-skate-rewrite/issues/337#issuecomment-6099499139). They execute the actual server plugin's engine-free layout helpers; native placement, save/load and demolition remain separate verification. The owner subsequently authorized adding the complete halfpipe to the same two scenarios.
+
+The owner approved `skate_audio_surfaces_and_events` by name on 11 October 2026 in the handover chat for Task 8. It executes the actual shared C# DLL; waveform properties do not establish native playback or perceived sound quality.
+
+The owner approved `skate_park_gesture_selection` by name on 11 October 2026 for [Task 6](https://github.com/Dj-Shortcut/mw2-rust-skate-rewrite/issues/337#issuecomment-6106613104). It executes the plugin's pure selection policy; native gesture dispatch and admin chat remain separate verification.
 
 The scenario's steps are in `src/scenarios/heavy_gameplay_lifecycle.rs` and
 nowhere else: maps, seed rule, scenes, positions, angles, weapons, durations

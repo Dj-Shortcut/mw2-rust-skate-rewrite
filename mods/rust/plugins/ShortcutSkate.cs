@@ -5,6 +5,8 @@ using System.IO;
 using System.Globalization;
 using System.Text;
 using System.Linq;
+using System.Reflection;
+using System.Reflection.Emit;
 using HarmonyLib;
 using Newtonsoft.Json;
 using Oxide.Core;
@@ -349,6 +351,89 @@ namespace Shortcut.RustMod
     public enum SkateParkKind { Bank, Kicker, QuarterPipe, LedgeLow, LedgeHigh, LongLedge, Funbox, Halfpipe }
     public enum SkateParkMaterial { Stone, Metal, Wood }
 
+    public enum SkateParkSelectionAction { Next, Cancel, PlacementFailed, PlacementSucceeded }
+
+    public struct SkateParkSelectionState
+    {
+        public readonly bool Selected;
+        public readonly SkateParkKind Kind;
+        public readonly double Expires;
+        public SkateParkSelectionState(bool selected, SkateParkKind kind, double expires)
+        { Selected = selected; Kind = kind; Expires = expires; }
+    }
+
+    public static class SkateParkSelections
+    {
+        public const double LifetimeSeconds = 120;
+        public static bool ValidOrder(SkateParkKind[] order)
+        {
+            if (order == null || order.Length < 1 || order.Length > 8) return false;
+            for (int i = 0; i < order.Length; i++)
+            {
+                if (SkateParkLayout.Name(order[i]) == null) return false;
+                for (int j = 0; j < i; j++) if (order[i] == order[j]) return false;
+            }
+            return true;
+        }
+        private static bool Clock(double now) { return SkateSessionBounds.Finite(now) && now >= 0; }
+        private static bool Valid(SkateParkSelectionState state)
+        { return SkateParkLayout.Name(state.Kind) != null && SkateSessionBounds.Finite(state.Expires) &&
+            state.Expires >= 0 && (!state.Selected || state.Expires > 0); }
+        public static bool Active(SkateParkSelectionState state, double now)
+        { return Valid(state) && Clock(now) && state.Selected && now <= state.Expires; }
+        public static bool TrySelect(SkateParkKind kind, bool admin, bool ready, double now, out SkateParkSelectionState state)
+        {
+            state = new SkateParkSelectionState();
+            double deadline = now + LifetimeSeconds;
+            if (!admin || !ready || !Clock(now) || !SkateSessionBounds.Finite(deadline) || deadline <= now ||
+                SkateParkLayout.Name(kind) == null) return false;
+            state = new SkateParkSelectionState(true, kind, deadline);
+            return true;
+        }
+        public static bool TryApply(SkateParkSelectionState state, SkateParkSelectionAction action, bool admin,
+            bool ready, double now, SkateParkKind[] order, out SkateParkSelectionState result)
+        {
+            result = state;
+            if (!admin || !Clock(now) || !Valid(state)) return false;
+            switch (action)
+            {
+                case SkateParkSelectionAction.Next:
+                    if (!ready || !ValidOrder(order)) return false;
+                    int next = 0;
+                    if (Active(state, now))
+                        for (int i = 0; i < order.Length; i++)
+                            if (order[i] == state.Kind) { next = (i + 1) % order.Length; break; }
+                    SkateParkSelectionState selected;
+                    if (!TrySelect(order[next], admin, ready, now, out selected)) return false;
+                    result = selected; return true;
+                case SkateParkSelectionAction.Cancel:
+                    result = new SkateParkSelectionState(false, state.Kind, 0); return true;
+                case SkateParkSelectionAction.PlacementFailed: return true;
+                case SkateParkSelectionAction.PlacementSucceeded:
+                    if (!ready || !Active(state, now)) return false;
+                    result = new SkateParkSelectionState(false, state.Kind, 0); return true;
+                default: return false;
+            }
+        }
+        public static bool ValidGestureName(string name)
+        { return !string.IsNullOrWhiteSpace(name) && name.Length <= 128 && name == name.Trim() && !name.Any(char.IsControl); }
+        public static bool TryGesture(string name, string[][] aliases, out int index, out string error)
+        {
+            index = -1; error = null;
+            if (!ValidGestureName(name)) { error = "Configured gesture name is invalid."; return false; }
+            if (aliases == null) { error = "Gesture catalog is unavailable."; return false; }
+            for (int i = 0; i < aliases.Length; i++)
+            {
+                if (aliases[i] == null || !aliases[i].Any(alias => string.Equals(alias, name, StringComparison.OrdinalIgnoreCase))) continue;
+                if (index >= 0) { index = -1; error = "Gesture '" + name + "' is ambiguous."; return false; }
+                index = i;
+            }
+            if (index >= 0) return true;
+            error = "Gesture '" + name + "' was not found in the native catalog.";
+            return false;
+        }
+    }
+
     public struct SkateParkPart
     {
         public double Right, Forward, Height, Pitch, Yaw;
@@ -502,6 +587,28 @@ namespace Shortcut.RustMod
             transform = new SkateParkTransform { X = x, Y = y, Z = z, Yaw = partYaw, Pitch = part.Pitch };
             return true;
         }
+        public static bool TrySupportedAnchor(SkateParkKind kind, double supportTop, double floorCenterY,
+            double floorCenterZ, double floorSizeY, double floorSizeZ, out double anchorY)
+        {
+            anchorY = 0;
+            if (PartCount(kind) == 0 || !Coordinate(supportTop) || !Coordinate(floorCenterY) ||
+                !Coordinate(floorCenterZ) || !Coordinate(floorSizeY) || !Coordinate(floorSizeZ) ||
+                floorSizeY <= 0 || floorSizeZ <= 0) return false;
+            double baseline = supportTop - (floorCenterY - floorSizeY / 2) + 0.025;
+            for (int i = 0; i < PartCount(kind); i++)
+            {
+                SkateParkPart part;
+                if (!TryPart(kind, i, out part)) return false;
+                if (part.Prefab != FloorPrefab) continue;
+                double cos = Math.Cos(part.Pitch * Degrees), sin = Math.Sin(part.Pitch * Degrees);
+                double bottom = part.Height + floorCenterY * cos - floorCenterZ * sin -
+                    floorSizeY / 2 * Math.Abs(cos) - floorSizeZ / 2 * Math.Abs(sin);
+                baseline = Math.Max(baseline, supportTop + 0.025 - bottom);
+            }
+            if (!Coordinate(baseline)) return false;
+            anchorY = baseline;
+            return true;
+        }
         private static bool Coordinate(double value)
         { return SkateSessionBounds.Finite(value) && Math.Abs(value) <= 100000; }
     }
@@ -538,7 +645,7 @@ namespace Shortcut.RustMod
 
 namespace Oxide.Plugins
 {
-    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.1")]
+    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.3")]
     [Description("Player-scoped skateboard movement bounds and saved building-plan park assemblies.")]
     public sealed class ShortcutSkate : RustPlugin
     {
@@ -564,14 +671,27 @@ namespace Oxide.Plugins
         private const int MaximumParkGroups = 256;
         private const int MaximumParkSelections = 128;
         private const int MaximumParkDataLength = 1048576;
+        private const string ParkFoundationPrefab = "assets/prefabs/building core/foundation/foundation.prefab";
         private readonly Dictionary<ulong, ParkSelection> parkSelections = new Dictionary<ulong, ParkSelection>();
+        private object parkSelectionEpoch = new object();
         private readonly Dictionary<ulong, ParkGroup> parkMembers = new Dictionary<ulong, ParkGroup>();
         private readonly List<BaseEntity> parkRollback = new List<BaseEntity>();
         private ParkData parkData;
         private bool parkDataBroken;
+        private bool parkStorageFailed;
+        private string parkStorageError;
         private bool parkReady;
         private bool parkBusy;
+        private bool parkRefreshing;
         private bool parkClosing;
+        private const string GesturePatchId = "ShortcutSkate.ParkGestures";
+        private Harmony gestureHarmony;
+        private bool gestureAvailable;
+        private bool gestureShape;
+        private bool gestureNativeHook;
+        private string gestureFailure = "Gesture selection has not initialized.";
+        private GestureConfig parkNextGesture, parkCancelGesture;
+        private SkateParkKind[] parkGestureOrder;
         private readonly HashSet<string> parkDemolitionPending = new HashSet<string>(StringComparer.Ordinal);
         private BuildingBlock parkDemolitionHookBlock;
         private BasePlayer parkDemolitionHookPlayer;
@@ -625,23 +745,18 @@ namespace Oxide.Plugins
         private sealed class ParkSelection
         {
             public BasePlayer Player;
-            public SkateParkKind Kind;
-            public double Expires;
+            public SkateParkSelectionState State;
+            public SkateParkKind Kind { get { return State.Kind; } }
+            public double Expires { get { return State.Expires; } }
+            public bool Pending;
         }
 
         private sealed class ParkAnchorSnapshot
         {
             public Vector3 Position;
             public Quaternion Rotation;
-            public BuildingGrade.Enum Grade;
-            public float Health;
-            public ulong Owner, Skin;
-            public bool Grounded, Saving;
+            public ulong Owner;
             public uint Building;
-            public float Stability;
-            public int Distance;
-            public float TimePlaced;
-            public uint Colour;
         }
 
         private sealed class ParkNativePart
@@ -714,6 +829,10 @@ namespace Oxide.Plugins
             [JsonProperty(Required = Required.Always)] public double MaximumAirtime;
             [JsonProperty(Required = Required.DisallowNull)] public bool AutomaticEligiblePlayers = true;
             [JsonProperty(Required = Required.DisallowNull)] public double AutomaticRearmSeconds = 1.5;
+            [JsonProperty(Required = Required.DisallowNull)] public string ParkNextGesture = "I need wood";
+            [JsonProperty(Required = Required.DisallowNull)] public string ParkCancelGesture = "Thumbs up";
+            [JsonProperty(Required = Required.DisallowNull)] public string[] ParkPieceOrder =
+                { "halfpipe", "bank", "kicker", "quarterpipe", "ledge-low", "ledge-high", "long-ledge", "funbox" };
         }
 
         private sealed class Session
@@ -742,6 +861,8 @@ namespace Oxide.Plugins
             ready = false;
             unavailableReason = SkateSessionReason.Unavailable;
             settings = null;
+            gestureAvailable = false;
+            gestureFailure = "Valid gesture configuration is required.";
             try
             {
                 base.LoadConfig();
@@ -767,6 +888,15 @@ namespace Oxide.Plugins
                 !SkateSessionBounds.Finite(value.AutomaticRearmSeconds) ||
                 value.AutomaticRearmSeconds < 0.5 || value.AutomaticRearmSeconds > 10)
                 throw new InvalidDataException("Use Version 1, speed 1-50 m/s, airtime 0.1-2 seconds and rearm 0.5-10 seconds.");
+            if (!SkateParkSelections.ValidGestureName(value.ParkNextGesture) || !SkateParkSelections.ValidGestureName(value.ParkCancelGesture) ||
+                string.Equals(value.ParkNextGesture, value.ParkCancelGesture, StringComparison.OrdinalIgnoreCase) ||
+                value.ParkPieceOrder == null || value.ParkPieceOrder.Length < 1 || value.ParkPieceOrder.Length > 8)
+                throw new InvalidDataException("Use distinct valid gesture names and a unique park-piece order containing 1-8 pieces.");
+            var order = new SkateParkKind[value.ParkPieceOrder.Length];
+            for (int i = 0; i < order.Length; i++)
+                if (!SkateParkLayout.TryKind(value.ParkPieceOrder[i], out order[i]))
+                    throw new InvalidDataException("ParkPieceOrder contains an unknown park piece.");
+            if (!SkateParkSelections.ValidOrder(order)) throw new InvalidDataException("ParkPieceOrder contains duplicate park pieces.");
             return value;
         }
 
@@ -781,6 +911,7 @@ namespace Oxide.Plugins
         private void OnServerInitialized()
         {
             InitializeParks();
+            InitializeParkGestures();
             ready = settings != null && groundMask != 0 && Patched("ValidateMoves", typeof(MovePatch), false) &&
                 Patched("AreSpeeding", typeof(SpeedPatch), true) && Patched("AreFlying", typeof(FlyPatch), true);
             if (!ready) PrintError("Skating is disabled: matching movement patches and valid config are required.");
@@ -794,6 +925,187 @@ namespace Oxide.Plugins
             if (info == null) return false;
             return (postfix ? info.Postfixes : info.Prefixes).Any(p => p.PatchMethod.DeclaringType == patch) &&
                 (postfix || info.Finalizers.Any(p => p.PatchMethod.DeclaringType == patch));
+        }
+
+        private void InitializeParkGestures()
+        {
+            gestureAvailable = false; gestureShape = false; gestureNativeHook = false;
+            parkNextGesture = parkCancelGesture = null; parkGestureOrder = null;
+            try
+            {
+                if (settings == null) throw new InvalidDataException("Valid gesture configuration is required.");
+                var collection = GestureCollection.Instance;
+                if (collection == null || collection.AllGestures == null)
+                    throw new InvalidDataException("GestureCollection.Instance.AllGestures is unavailable.");
+                var configs = new List<GestureConfig>();
+                foreach (GestureConfig gesture in collection.AllGestures)
+                    if (gesture != null && !configs.Any(item => ReferenceEquals(item, gesture))) configs.Add(gesture);
+                var aliases = new string[configs.Count][];
+                for (int i = 0; i < configs.Count; i++)
+                {
+                    var gesture = configs[i];
+                    aliases[i] = new[] { gesture.gestureName == null ? null : gesture.gestureName.english,
+                        gesture.gestureName == null ? null : gesture.gestureName.token, gesture.convarName, gesture.gestureCommand };
+                }
+                int next, cancel;
+                string error;
+                if (!SkateParkSelections.TryGesture(settings.ParkNextGesture, aliases, out next, out error))
+                    throw new InvalidDataException("Next: " + error);
+                if (!SkateParkSelections.TryGesture(settings.ParkCancelGesture, aliases, out cancel, out error))
+                    throw new InvalidDataException("Cancel: " + error);
+                if (next == cancel) throw new InvalidDataException("Next and cancel resolve to the same native gesture.");
+                parkNextGesture = configs[next]; parkCancelGesture = configs[cancel];
+                parkGestureOrder = new SkateParkKind[settings.ParkPieceOrder.Length];
+                for (int i = 0; i < parkGestureOrder.Length; i++)
+                    if (!SkateParkLayout.TryKind(settings.ParkPieceOrder[i], out parkGestureOrder[i]))
+                        throw new InvalidDataException("ParkPieceOrder contains an unknown park piece.");
+                if (!SkateParkSelections.ValidOrder(parkGestureOrder)) throw new InvalidDataException("ParkPieceOrder is invalid.");
+                MethodInfo method = typeof(BasePlayer).GetMethod("Server_StartGesture", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+                    null, new[] { typeof(GestureConfig), typeof(BasePlayer.GestureStartSource), typeof(bool) }, null);
+                if (method == null || method.ReturnType != typeof(void))
+                    throw new InvalidDataException("The native accepted-start method is unavailable.");
+                gestureHarmony = new Harmony(GesturePatchId);
+                gestureHarmony.UnpatchAll(GesturePatchId);
+                gestureHarmony.Patch(method, transpiler: new HarmonyMethod(typeof(ShortcutSkate).GetMethod(
+                    "GestureTranspiler", BindingFlags.Static | BindingFlags.NonPublic)));
+                var patches = Harmony.GetPatchInfo(method);
+                if (!gestureShape || patches == null || !patches.Transpilers.Any(p => p.owner == GesturePatchId))
+                    throw new InvalidDataException(gestureFailure ?? "The accepted-start bridge was not registered.");
+                gestureAvailable = true; gestureFailure = null;
+            }
+            catch (Exception error)
+            { gestureFailure = error.Message; PrintWarning("Park gesture selection is unavailable: " + gestureFailure); }
+        }
+
+        internal static IList<CodeInstruction> BridgeInstructions(IList<CodeInstruction> instructions, FieldInfo field,
+            MethodInfo dispatcher, out bool nativeHook, out string reason)
+        {
+            nativeHook = false; reason = null;
+            if (instructions == null || instructions.Any(i => i == null || i.labels == null || i.blocks == null) || field == null || field.IsStatic ||
+                dispatcher == null || !dispatcher.IsStatic || dispatcher.ReturnType != typeof(void))
+            { reason = "Accepted-start bridge inputs are unavailable."; return instructions; }
+            var parameters = dispatcher.GetParameters();
+            if (parameters.Length != 2 || parameters[0].ParameterType != field.DeclaringType || parameters[1].ParameterType != field.FieldType)
+            { reason = "Accepted-start dispatcher signature is incompatible."; return instructions; }
+            int store = -1, stores = 0;
+            for (int i = 0; i < instructions.Count; i++)
+                if (instructions[i].opcode == OpCodes.Stfld && Equals(instructions[i].operand, field)) { store = i; stores++; }
+            if (stores != 1 || store < 2 || store + 1 >= instructions.Count ||
+                instructions[store - 2].opcode != OpCodes.Ldarg_0 || instructions[store - 1].opcode != OpCodes.Ldarg_1)
+            { reason = "The accepted currentGesture assignment is unavailable or ambiguous."; return instructions; }
+            foreach (CodeInstruction instruction in instructions)
+            {
+                if (instruction.operand is Label && instructions[store + 1].labels.Contains((Label)instruction.operand))
+                { reason = "A branch can bypass the accepted-start dispatch point."; return instructions; }
+                var labels = instruction.operand as Label[];
+                if (labels != null && labels.Any(label => instructions[store + 1].labels.Contains(label)))
+                { reason = "A switch can bypass the accepted-start dispatch point."; return instructions; }
+            }
+            int hook = -1, hooks = 0;
+            for (int i = 0; i < instructions.Count; i++)
+                if (instructions[i].opcode == OpCodes.Ldstr && Equals(instructions[i].operand, "OnPlayerGestureStarted")) { hook = i; hooks++; }
+            if (hooks != 0)
+            {
+                MethodInfo call = hook >= 0 && hook + 4 < instructions.Count ? instructions[hook + 3].operand as MethodInfo : null;
+                var args = call == null ? null : call.GetParameters();
+                if (hooks != 1 || hook != store + 1 || hook + 4 >= instructions.Count ||
+                    instructions[hook + 1].opcode != OpCodes.Ldarg_0 || instructions[hook + 2].opcode != OpCodes.Ldarg_1 ||
+                    instructions[hook + 3].opcode != OpCodes.Call || instructions[hook + 4].opcode != OpCodes.Pop ||
+                    call == null || !call.IsStatic || call.DeclaringType != typeof(Interface) || call.Name != "CallHook" || call.ReturnType != typeof(object) ||
+                    args.Length != 3 || args[0].ParameterType != typeof(string) || args[1].ParameterType != typeof(object) || args[2].ParameterType != typeof(object))
+                { reason = "An unrecognized native started-hook dispatcher prevents safe bridging."; return instructions; }
+                for (int i = hook + 1; i <= hook + 4; i++)
+                    foreach (CodeInstruction instruction in instructions)
+                    {
+                        if (instruction.operand is Label && instructions[i].labels.Contains((Label)instruction.operand))
+                        { reason = "A branch enters the native started-hook dispatcher."; return instructions; }
+                        var labels = instruction.operand as Label[];
+                        if (labels != null && labels.Any(label => instructions[i].labels.Contains(label)))
+                        { reason = "A switch enters the native started-hook dispatcher."; return instructions; }
+                    }
+                nativeHook = true; return instructions;
+            }
+            var result = new List<CodeInstruction>(instructions.Count + 3);
+            for (int i = 0; i < instructions.Count; i++)
+            {
+                result.Add(instructions[i]);
+                if (i == store)
+                {
+                    result.Add(new CodeInstruction(OpCodes.Ldarg_0));
+                    result.Add(new CodeInstruction(OpCodes.Ldarg_1));
+                    result.Add(new CodeInstruction(OpCodes.Call, dispatcher));
+                }
+            }
+            return result;
+        }
+
+        private static IEnumerable<CodeInstruction> GestureTranspiler(IEnumerable<CodeInstruction> instructions)
+        {
+            var original = instructions.ToList();
+            bool nativeHook;
+            string reason;
+            var result = BridgeInstructions(original, typeof(BasePlayer).GetField("currentGesture", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic),
+                typeof(ShortcutSkate).GetMethod("GestureDispatch", BindingFlags.Static | BindingFlags.NonPublic), out nativeHook, out reason);
+            if (instance != null)
+            { instance.gestureShape = reason == null; instance.gestureNativeHook = nativeHook; instance.gestureFailure = reason; }
+            return result;
+        }
+
+        private static void GestureDispatch(BasePlayer player, GestureConfig gesture)
+        {
+            try
+            {
+                if (instance != null && instance.gestureAvailable && !instance.parkClosing)
+                    instance.OnPlayerGestureStarted(player, gesture);
+            }
+            catch
+            {
+                try { if (instance != null) { instance.gestureAvailable = false; instance.gestureFailure = "The gesture handler failed; reload the plugin."; } }
+                catch { }
+            }
+        }
+
+        private void OnPlayerGestureStarted(BasePlayer player, GestureConfig gesture)
+        {
+            if (player == null || !player.IsAdmin || player.IsNpc || !player.IsConnected || !gestureAvailable || parkClosing) return;
+            try { HandleParkGesture(player, gesture); }
+            catch { gestureAvailable = false; gestureFailure = "The gesture handler failed; reload the plugin."; }
+        }
+
+        private void HandleParkGesture(BasePlayer player, GestureConfig gesture)
+        {
+            bool cancel = ReferenceEquals(gesture, parkCancelGesture);
+            if (!cancel && !ReferenceEquals(gesture, parkNextGesture)) return;
+            ParkSelection previous;
+            bool existing = parkSelections.TryGetValue(player.userID, out previous) && ReferenceEquals(previous.Player, player);
+            SkateParkSelectionState state = existing ? previous.State : new SkateParkSelectionState();
+            SkateParkSelectionState selected;
+            if (cancel)
+            {
+                if (SkateParkSelections.TryApply(state, SkateParkSelectionAction.Cancel, true, false,
+                    clock.Elapsed.TotalSeconds, null, out selected))
+                { parkSelectionEpoch = new object(); parkSelections.Remove(player.userID); player.ChatMessage("Park selection cancelled."); }
+                return;
+            }
+            string failure;
+            if (!Eligible(player)) { player.ChatMessage("Park placement is unavailable; be alive, awake, unmounted and on dry land."); return; }
+            object epoch = parkSelectionEpoch = new object();
+            if (!RefreshParkWorld(out failure)) { if (player.IsAdmin) player.ChatMessage(failure); return; }
+            if (!player.IsAdmin) return;
+            if (!ReferenceEquals(epoch, parkSelectionEpoch) || !ReferenceEquals(instance, this) || parkClosing ||
+                !gestureAvailable || !Eligible(player))
+            { player.ChatMessage("The selection request was superseded or the administrator became unavailable."); return; }
+            PruneParkSelections();
+            state = parkSelections.TryGetValue(player.userID, out previous) && ReferenceEquals(previous.Player, player) ?
+                previous.State : new SkateParkSelectionState();
+            if (parkData.Groups.Count >= MaximumParkGroups ||
+                (!parkSelections.ContainsKey(player.userID) && parkSelections.Count >= MaximumParkSelections))
+            { player.ChatMessage("The park group or pending-selection limit has been reached."); return; }
+            if (!SkateParkSelections.TryApply(state, SkateParkSelectionAction.Next, true, true,
+                clock.Elapsed.TotalSeconds, parkGestureOrder, out selected)) return;
+            parkSelections[player.userID] = new ParkSelection { Player = player, State = selected };
+            player.ChatMessage("Selected park " + SkateParkLayout.Name(selected.Kind) + ". Place a normal square foundation within 120 seconds. Use " +
+                settings.ParkNextGesture + " for next or " + settings.ParkCancelGesture + " to cancel.");
         }
 
         private bool Permitted(BasePlayer player)
@@ -852,9 +1164,17 @@ namespace Oxide.Plugins
             if (!diagnostics.TryGet(player.userID, player, out history))
                 history = diagnostics.GetOrCreate(player.userID, player);
             if (candidate) session.History = history;
+            ParkSelection selection;
+            double now = clock.Elapsed.TotalSeconds;
+            bool pending = parkSelections.TryGetValue(player.userID, out selection) && ReferenceEquals(selection.Player, player) &&
+                SkateParkSelections.Active(selection.State, now);
             arg.ReplyWith(state + "\nSteam ID " + target.ToString(CultureInfo.InvariantCulture) +
                 "; ready=" + ready + "; unavailable-reason=" + (ready ? SkateSessionReason.None : unavailableReason) + "; mode=" + (candidate ? (session.Manual ? "manual" : "automatic") : "inactive") +
                 "; last-batch-allowed=" + (candidate && session.Allowed) +
+                "; park-selection=" + (pending ? SkateParkLayout.Name(selection.Kind) : "none") +
+                "; park-selection-remaining=" + (pending ? SkateStatusReport.Number(selection.Expires - now) : "0") + "s" +
+                "; park-gestures=" + gestureAvailable + "; gesture-source=" + (gestureAvailable ? (gestureNativeHook ? "native" : "bridge") : "unavailable") +
+                "; gesture-diagnostic=" + (gestureAvailable ? "none" : gestureFailure) +
                 "; speed-limit=" + SkateStatusReport.Number(settings == null ? double.NaN : settings.MaximumHorizontalSpeed) +
                 "m/s; air-limit=" + SkateStatusReport.Number(settings == null ? double.NaN : settings.MaximumAirtime) +
                 "s; automatic=" + (settings != null && settings.AutomaticEligiblePlayers) +
@@ -999,6 +1319,9 @@ namespace Oxide.Plugins
         private void Unload()
         {
             parkClosing = true;
+            gestureAvailable = false;
+            try { if (gestureHarmony != null) gestureHarmony.UnpatchAll(GesturePatchId); }
+            catch (Exception error) { PrintError("The park gesture patch could not be removed: " + error.Message); }
             parkReady = false;
             parkSelections.Clear();
             parkDemolitionPending.Clear();
@@ -1131,11 +1454,75 @@ namespace Oxide.Plugins
             }
         }
 
-        private static bool SameParkWorld(ParkData data)
+        private static bool SameParkGeneration(ParkData data)
         {
             return data != null && !string.IsNullOrEmpty(SaveRestore.WipeId) &&
                 data.WipeId == SaveRestore.WipeId && data.SaveCreatedTicks == ParkSaveTicks() &&
-                data.Seed == World.Seed && data.Size == World.Size && data.Checksum == (World.Checksum ?? "");
+                data.Seed == World.Seed && data.Size == World.Size;
+        }
+
+        private static bool SameParkWorld(ParkData data)
+        { return SameParkGeneration(data) && data.Checksum == (World.Checksum ?? ""); }
+
+        internal static bool SameParkGeneration(ParkData data, ParkData current)
+        {
+            return data != null && current != null && !string.IsNullOrEmpty(current.WipeId) &&
+                current.WipeId.Length <= 128 && current.SaveCreatedTicks > 0 && current.SaveCreatedTicks <= DateTime.MaxValue.Ticks &&
+                current.SaveCreatedTicks % TimeSpan.TicksPerSecond == 0 && data.WipeId == current.WipeId &&
+                data.SaveCreatedTicks == current.SaveCreatedTicks && data.Seed == current.Seed && data.Size == current.Size;
+        }
+
+        internal static List<string> ParkIdentityChanges(ParkData data, ParkData current)
+        {
+            var failures = new List<string>();
+            if (current == null) { failures.Add("Current native save/world identity is unavailable."); return failures; }
+            if (string.IsNullOrEmpty(current.WipeId)) failures.Add("SaveRestore.WipeId is unavailable.");
+            else if (current.WipeId.Length > 128) failures.Add("SaveRestore.WipeId exceeds 128 characters.");
+            if (current.SaveCreatedTicks <= 0) failures.Add("SaveRestore.SaveCreatedTime is unavailable: ticks=" +
+                current.SaveCreatedTicks.ToString(CultureInfo.InvariantCulture) + ".");
+            else if (current.SaveCreatedTicks > DateTime.MaxValue.Ticks || current.SaveCreatedTicks % TimeSpan.TicksPerSecond != 0)
+                failures.Add("SaveRestore.SaveCreatedTime is not a valid whole-second identity: ticks=" +
+                    current.SaveCreatedTicks.ToString(CultureInfo.InvariantCulture) + ".");
+            if (current.Checksum == null) failures.Add("World.Checksum snapshot is unavailable.");
+            else if (current.Checksum.Length > 256) failures.Add("World.Checksum exceeds 256 characters.");
+            if (data == null) return failures;
+            if (data.WipeId != current.WipeId) failures.Add("SaveRestore.WipeId changed: stored=" + data.WipeId + "; current=" + current.WipeId + ".");
+            if (data.SaveCreatedTicks != current.SaveCreatedTicks) failures.Add("SaveRestore.SaveCreatedTime changed: stored=" +
+                data.SaveCreatedTicks.ToString(CultureInfo.InvariantCulture) + "; current=" + current.SaveCreatedTicks.ToString(CultureInfo.InvariantCulture) + ".");
+            if (data.Seed != current.Seed) failures.Add("World.Seed changed: stored=" + data.Seed.ToString(CultureInfo.InvariantCulture) +
+                "; current=" + current.Seed.ToString(CultureInfo.InvariantCulture) + ".");
+            if (data.Size != current.Size) failures.Add("World.Size changed: stored=" + data.Size.ToString(CultureInfo.InvariantCulture) +
+                "; current=" + current.Size.ToString(CultureInfo.InvariantCulture) + ".");
+            if (data.Checksum != current.Checksum) failures.Add("World.Checksum changed: stored=" + data.Checksum +
+                "; current=" + current.Checksum + ".");
+            return failures;
+        }
+
+        private static List<string> ParkWorldProblems(ParkData data, bool compare)
+        { return ParkIdentityChanges(compare ? data : null, NewParkData()); }
+
+        private bool RefreshParkWorld(out string failure)
+        {
+            failure = null;
+            if (parkClosing || parkDataBroken)
+            { failure = "Park metadata is unavailable; the original file is preserved. Check the server log."; return false; }
+            if (parkStorageFailed)
+            { failure = "Park metadata storage failed; reload the plugin after fixing the storage error: " + parkStorageError; return false; }
+            if (parkRefreshing)
+            { failure = "Park save/world verification is already in progress; try again after it finishes."; return false; }
+            List<string> problems = ParkWorldProblems(null, false);
+            if (problems.Count != 0) { failure = string.Join("\n", problems); return false; }
+            if (parkBusy)
+            {
+                if (parkReady && SameParkWorld(parkData)) return true;
+                failure = "Park placement is busy; its save/world identity cannot be refreshed during a transaction.";
+                return false;
+            }
+            if (!parkReady || !SameParkWorld(parkData)) InitializeParks();
+            if (parkReady && SameParkWorld(parkData)) return true;
+            failure = parkStorageFailed ? "Park metadata storage failed; reload the plugin after fixing the storage error: " + parkStorageError :
+                "Park metadata could not be refreshed for the current save/world. Check the server log.";
+            return false;
         }
 
         private static ParkData NewParkData()
@@ -1184,7 +1571,7 @@ namespace Oxide.Plugins
         // OwnerID has not loaded yet; validate the saved protobuf owner, ID, prefab and pose instead.
         private void OnSaveLoad(Dictionary<BaseEntity, ProtoBuf.Entity> entities)
         {
-            if (parkDataBroken || parkData == null || !SameParkWorld(parkData) || entities == null) return;
+            if (parkDataBroken || parkData == null || !SameParkGeneration(parkData) || entities == null) return;
             try
             {
                 var saved = new Dictionary<ulong, KeyValuePair<BaseEntity, ProtoBuf.Entity>>();
@@ -1216,16 +1603,22 @@ namespace Oxide.Plugins
         private void InitializeParks()
         {
             parkReady = false;
-            if (parkDataBroken || parkClosing) return;
+            if (parkDataBroken || parkClosing || parkStorageFailed || parkRefreshing) return;
+            parkRefreshing = true;
             try
             {
-                if (string.IsNullOrEmpty(SaveRestore.WipeId) || SaveRestore.SaveCreatedTime.Ticks <= 0)
-                    throw new InvalidDataException("A loaded native save identity is required.");
-                if (parkData == null || !SameParkWorld(parkData))
+                ParkData current = NewParkData();
+                List<string> problems = ParkIdentityChanges(null, current);
+                if (problems.Count != 0) throw new InvalidDataException(string.Join("\n", problems));
+                if (parkData == null || !SameParkGeneration(parkData, current))
                 {
                     // Never adopt a reused network ID from a different save/world or recreate old pieces.
-                    if (parkData != null) PrintWarning("Old park grouping belongs to another world/save; no old entity IDs were adopted.");
-                    parkData = NewParkData();
+                    if (parkData != null)
+                    {
+                        foreach (string problem in ParkIdentityChanges(parkData, current)) PrintWarning(problem);
+                        PrintWarning("Old park grouping belongs to another save/world generation; no old entity IDs were adopted.");
+                    }
+                    parkData = current;
                 }
                 parkMembers.Clear();
                 foreach (ParkGroup group in parkData.Groups.ToArray())
@@ -1241,34 +1634,62 @@ namespace Oxide.Plugins
                     }
                     if (group.Members.Count == 0) parkData.Groups.Remove(group);
                 }
+                foreach (ParkGroup group in parkData.Groups.ToArray())
+                {
+                    foreach (ParkMember member in group.Members.ToArray())
+                        if (!ParkMatches(FindParkBlock(member.Id), group, member))
+                        { group.Members.Remove(member); parkMembers.Remove(member.Id); }
+                    if (group.Members.Count == 0) parkData.Groups.Remove(group);
+                }
+                current = NewParkData();
+                if (!SameParkGeneration(parkData, current))
+                    throw new InvalidDataException("Save/world generation changed during park verification.\n" +
+                        string.Join("\n", ParkIdentityChanges(parkData, current)));
+                if (parkData.Checksum != current.Checksum)
+                {
+                    foreach (string problem in ParkIdentityChanges(parkData, current)) PrintWarning(problem);
+                    parkData.Checksum = current.Checksum;
+                }
                 SaveParkData();
                 parkReady = true;
             }
             catch (Exception error)
             { PrintError("Park creation is unavailable; verified existing support is retained. " + error.Message); }
+            finally { parkRefreshing = false; }
         }
 
         private void SaveParkData()
         {
             if (parkDataBroken || parkData == null || !SameParkWorld(parkData))
-                throw new InvalidDataException("Park metadata has no matching native save identity.");
-            string json = JsonConvert.SerializeObject(parkData, Formatting.Indented);
-            ParseParkData(json);
+                throw new InvalidDataException("Park metadata has no matching native save/world identity.\n" +
+                    string.Join("\n", ParkWorldProblems(parkData, true)));
+            string json;
+            try { json = JsonConvert.SerializeObject(parkData, Formatting.Indented); }
+            catch (Exception error) { parkStorageFailed = true; parkStorageError = error.Message; throw; }
+            if (json.Length > MaximumParkDataLength || Encoding.UTF8.GetByteCount(json) > MaximumParkDataLength)
+                throw new InvalidDataException("Park metadata exceeds its one MiB capacity; no metadata file was written.");
+            try { ParseParkData(json); }
+            catch (Exception error) { parkStorageFailed = true; parkStorageError = error.Message; throw; }
             string filename = ParkFilename;
             string temporary = filename + ".writing";
             try
             {
-                using (var stream = new FileStream(temporary, FileMode.Create, FileAccess.Write, FileShare.None))
+                try
                 {
-                    byte[] bytes = new UTF8Encoding(false).GetBytes(json);
-                    stream.Write(bytes, 0, bytes.Length);
-                    stream.Flush(true);
+                    using (var stream = new FileStream(temporary, FileMode.Create, FileAccess.Write, FileShare.None))
+                    {
+                        byte[] bytes = new UTF8Encoding(false).GetBytes(json);
+                        stream.Write(bytes, 0, bytes.Length);
+                        stream.Flush(true);
+                    }
+                    if (File.Exists(filename)) File.Replace(temporary, filename, null);
+                    else File.Move(temporary, filename);
+                    if (File.ReadAllText(filename) != json) throw new IOException("Park metadata readback did not match.");
                 }
-                if (File.Exists(filename)) File.Replace(temporary, filename, null);
-                else File.Move(temporary, filename);
-                if (File.ReadAllText(filename) != json) throw new IOException("Park metadata readback did not match.");
+                finally { if (File.Exists(temporary)) File.Delete(temporary); }
             }
-            finally { if (File.Exists(temporary)) File.Delete(temporary); }
+            catch (IOException error) { parkStorageFailed = true; parkStorageError = error.Message; throw; }
+            catch (UnauthorizedAccessException error) { parkStorageFailed = true; parkStorageError = error.Message; throw; }
         }
 
         private void SaveParksSafely()
@@ -1281,7 +1702,7 @@ namespace Oxide.Plugins
             }
         }
 
-        private void OnServerSave() { if (!parkBusy && !parkDataBroken && parkData != null) SaveParksSafely(); }
+        private void OnServerSave() { if (!parkBusy && !parkRefreshing && !parkDataBroken && parkData != null) SaveParksSafely(); }
 
         [ConsoleCommand("skate.piece")]
         private void SelectParkPiece(ConsoleSystem.Arg arg)
@@ -1292,19 +1713,36 @@ namespace Oxide.Plugins
             if (arg.Args == null || arg.Args.Length != 1)
             { arg.ReplyWith("Usage: skate.piece <bank|kicker|quarterpipe|ledge-low|ledge-high|long-ledge|funbox|halfpipe|cancel>."); return; }
             if (string.Equals(arg.GetString(0), "cancel", StringComparison.OrdinalIgnoreCase))
-            { parkSelections.Remove(player.userID); arg.ReplyWith("Park selection cancelled."); return; }
+            {
+                ParkSelection previous;
+                SkateParkSelectionState state = parkSelections.TryGetValue(player.userID, out previous) && ReferenceEquals(previous.Player, player) ?
+                    previous.State : new SkateParkSelectionState();
+                SkateParkSelectionState cancelled;
+                if (SkateParkSelections.TryApply(state, SkateParkSelectionAction.Cancel, true, false,
+                    clock.Elapsed.TotalSeconds, null, out cancelled))
+                { parkSelectionEpoch = new object(); parkSelections.Remove(player.userID); arg.ReplyWith("Park selection cancelled."); }
+                return;
+            }
             SkateParkKind kind;
             if (!SkateParkLayout.TryKind(arg.GetString(0), out kind))
             { arg.ReplyWith("Unknown park piece. Use bank, kicker, quarterpipe, ledge-low, ledge-high, long-ledge, funbox or halfpipe."); return; }
-            if (!parkReady || parkClosing || parkBusy || !Eligible(player))
+            string failure;
+            if (!Eligible(player))
             { arg.ReplyWith("Park placement is unavailable; be alive, awake, unmounted and on dry land."); return; }
+            object epoch = parkSelectionEpoch = new object();
+            if (!RefreshParkWorld(out failure)) { arg.ReplyWith(failure); return; }
+            if (!ReferenceEquals(epoch, parkSelectionEpoch) || !ReferenceEquals(instance, this) || parkClosing ||
+                !player.IsAdmin || !Eligible(player))
+            { arg.ReplyWith("The selection request was superseded or the administrator became unavailable."); return; }
             PruneParkSelections();
             if (parkData.Groups.Count >= MaximumParkGroups ||
                 (!parkSelections.ContainsKey(player.userID) && parkSelections.Count >= MaximumParkSelections))
             { arg.ReplyWith("The park group or pending-selection limit has been reached."); return; }
-            parkSelections[player.userID] = new ParkSelection { Player = player, Kind = kind,
-                Expires = clock.Elapsed.TotalSeconds + 120 };
-            arg.ReplyWith("Selected " + SkateParkLayout.Name(kind) + ". Place one normal horizontal square floor with a building plan within 120 seconds. The next placement consumes this selection; " +
+            SkateParkSelectionState selected;
+            if (!SkateParkSelections.TrySelect(kind, true, true, clock.Elapsed.TotalSeconds, out selected))
+            { arg.ReplyWith("Park selection time is unavailable."); return; }
+            parkSelections[player.userID] = new ParkSelection { Player = player, State = selected };
+            arg.ReplyWith("Selected " + SkateParkLayout.Name(kind) + ". Place one normal horizontal square foundation with a building plan within 120 seconds. Failed attempts retain this selection until its original expiry; " +
                 (kind == SkateParkKind.Halfpipe ? "the halfpipe uses a Stone flat, Metal transitions/decks/sides and Wood back rails." : "the assembly will be Stone."));
         }
 
@@ -1324,8 +1762,8 @@ namespace Oxide.Plugins
                 (actor == null && arg.IsServerside && arg.Connection == null);
             if (!privileged) { arg.ReplyWith("Only an administrator may list park groups."); return; }
             if (arg.Args != null && arg.Args.Length != 0) { arg.ReplyWith("Usage: skate.pieces."); return; }
-            if (parkDataBroken || parkData == null || !SameParkWorld(parkData))
-            { arg.ReplyWith("Park grouping has no verified data for this world/save. Check the server log."); return; }
+            string failure;
+            if (!RefreshParkWorld(out failure)) { arg.ReplyWith(failure); return; }
             var text = new StringBuilder("Park groups: ").Append(parkData.Groups.Count.ToString(CultureInfo.InvariantCulture))
                 .Append("/256; new placement ready=").Append(parkReady).Append('.');
             foreach (SkateParkKind kind in Enum.GetValues(typeof(SkateParkKind)))
@@ -1344,96 +1782,214 @@ namespace Oxide.Plugins
             arg.ReplyWith(text.ToString());
         }
 
+        private bool CurrentParkSelection(BasePlayer player, ParkSelection selection)
+        {
+            ParkSelection current;
+            return player != null && ReferenceEquals(selection.Player, player) &&
+                parkSelections.TryGetValue(player.userID, out current) && ReferenceEquals(current, selection) &&
+                SkateParkSelections.Active(selection.State, clock.Elapsed.TotalSeconds);
+        }
+
         private void OnEntityBuilt(Planner planner, GameObject gameObject)
         {
             BasePlayer player = planner == null ? null : planner.GetOwnerPlayer();
             if (player == null) return;
             ParkSelection selection;
             if (!parkSelections.TryGetValue(player.userID, out selection)) return;
-            parkSelections.Remove(player.userID);
-            if (!ReferenceEquals(selection.Player, player) || clock.Elapsed.TotalSeconds > selection.Expires) return;
+            if (!CurrentParkSelection(player, selection))
+            { if (ReferenceEquals(selection.Player, player)) parkSelections.Remove(player.userID); return; }
             BuildingBlock anchor = gameObject == null ? null : gameObject.GetComponent<BuildingBlock>();
+            if (anchor == null || anchor.PrefabName != ParkFoundationPrefab || selection.Pending) return;
+            selection.Pending = true;
             ulong id = ParkId(anchor);
             // Planner still has normal item/material bookkeeping to do after this hook.
-            NextTick(() => BuildParkPiece(player, planner, anchor, id, selection.Kind));
+            NextTick(() =>
+            {
+                try { BuildParkPiece(player, planner, anchor, id, selection); }
+                catch (Exception error) { ReportParkFailures(player, new[] { "Park placement failed: " + error.Message }); }
+                finally { selection.Pending = false; }
+            });
         }
 
-        private static bool HorizontalParkAnchor(BuildingBlock anchor)
+        private static bool HorizontalParkFoundation(BuildingBlock anchor)
         {
             return anchor != null && !anchor.IsDestroyed && anchor.net != null && anchor.enableSaving &&
-                anchor.PrefabName == SkatePracticeLayout.FloorPrefab && anchor.GetParentEntity() == null &&
+                anchor.PrefabName == ParkFoundationPrefab && anchor.GetParentEntity() == null &&
                 Coordinate(anchor.transform.position) && Vector3.Dot(anchor.transform.up, Vector3.up) >= (1f - 1e-5f);
         }
 
-        private static bool ParkPrefab(SkateParkPart part, out ParkNativePart definition)
+        private static bool ParkFoundationMatches(BuildingBlock anchor, ulong id, ParkAnchorSnapshot snapshot)
+        {
+            return HorizontalParkFoundation(anchor) && ParkId(anchor) == id && anchor.OwnerID == snapshot.Owner &&
+                anchor.buildingID == snapshot.Building &&
+                (anchor.transform.position - snapshot.Position).sqrMagnitude <= 0.000001f &&
+                Quaternion.Angle(anchor.transform.rotation, snapshot.Rotation) <= 0.01f;
+        }
+
+        private static double ParkFoundationTop(BuildingBlock anchor, Bounds bounds)
+        {
+            double top = double.NegativeInfinity;
+            for (int x = -1; x <= 1; x += 2)
+                for (int y = -1; y <= 1; y += 2)
+                    for (int z = -1; z <= 1; z += 2)
+                    {
+                        Vector3 point = anchor.transform.position + anchor.transform.rotation *
+                            (bounds.center + Vector3.Scale(bounds.extents, new Vector3(x, y, z)));
+                        if (!Coordinate(point)) return double.NaN;
+                        top = Math.Max(top, point.y);
+                    }
+            return top;
+        }
+
+        private void ReportParkFailures(BasePlayer player, IEnumerable<string> failures)
+        {
+            foreach (string failure in failures)
+            {
+                PrintWarning(failure);
+                if (player != null && player.IsConnected) player.ConsoleMessage(failure);
+            }
+        }
+
+        private static bool ParkPrefab(SkateParkPart part, List<string> failures, out ParkNativePart definition)
         {
             string path = part.Prefab;
+            string role = path + " material=" + part.Material;
+            int before = failures.Count;
             definition = null;
-            var manifest = GameManifest.Current;
-            var prefab = GameManager.server.FindPrefab(path);
-            if (manifest == null || manifest.entities == null ||
-                !manifest.entities.Any(p => string.Equals(p, path, StringComparison.Ordinal)) ||
-                prefab == null || prefab.GetComponent<BuildingBlock>() == null) return false;
-            uint id = StringPool.Get(path);
-            Construction construction = PrefabAttribute.server.Find<Construction>(id);
+            Construction construction;
+            DeployVolume[] volumes;
+            ParkNativeMetadata(path, role, failures, out construction, out volumes);
             BuildingGrade.Enum grade;
             switch (part.Material)
             {
                 case SkateParkMaterial.Stone: grade = BuildingGrade.Enum.Stone; break;
                 case SkateParkMaterial.Metal: grade = BuildingGrade.Enum.Metal; break;
                 case SkateParkMaterial.Wood: grade = BuildingGrade.Enum.Wood; break;
-                default: return false;
+                default: failures.Add(role + ": material is unsupported."); return false;
             }
-            // Grade lookup can fall back; require the exact requested material and default skin.
-            var selected = construction == null ? null : construction.GetGrade(grade, 0);
-            if (selected == null || selected.gradeBase == null || selected.gradeBase.type != grade || selected.gradeBase.skin != 0) return false;
-            Bounds bounds = construction.bounds;
-            if (!Coordinate(bounds.center) || !Coordinate(bounds.size) || bounds.size.x < 2.9f || bounds.size.x > 3.1f ||
-                Math.Abs(bounds.center.x) > 0.05f) return false;
-            if (path == SkateParkLayout.FloorPrefab)
+            if (construction != null)
             {
-                if (bounds.size.z < 2.9f || bounds.size.z > 3.1f || bounds.size.y <= 0 || bounds.size.y > 1 ||
-                    Math.Abs(bounds.center.z) > 0.05f || Math.Abs(bounds.center.y) > 0.5f) return false;
+                // Material lookup can silently fall back; require the exact requested grade and default skin.
+                var selected = construction.GetGrade(grade, 0);
+                if (selected == null) failures.Add(role + ": Construction.GetGrade is unavailable.");
+                else if (selected.gradeBase == null) failures.Add(role + ": gradeBase is unavailable.");
+                else
+                {
+                    if (selected.gradeBase.type != grade) failures.Add(role + ": gradeBase.type=" + selected.gradeBase.type + "; required=" + grade + ".");
+                    if (selected.gradeBase.skin != 0) failures.Add(role + ": gradeBase.skin=" + selected.gradeBase.skin.ToString(CultureInfo.InvariantCulture) + "; required=0.");
+                }
+                Bounds bounds = construction.bounds;
+                CheckParkBound(failures, role, "bounds.size.x", bounds.size.x, 2.9, 3.1);
+                CheckParkBound(failures, role, "bounds.center.x", bounds.center.x, -0.05, 0.05);
+                if (path == SkateParkLayout.FloorPrefab)
+                {
+                    CheckParkBound(failures, role, "bounds.size.z", bounds.size.z, 2.9, 3.1);
+                    CheckParkBound(failures, role, "bounds.size.y", bounds.size.y, 0, 1, true);
+                    CheckParkBound(failures, role, "bounds.center.z", bounds.center.z, -0.05, 0.05);
+                    CheckParkBound(failures, role, "bounds.center.y", bounds.center.y, -0.5, 0.5);
+                }
+                else if (path == SkateParkLayout.LowWallPrefab || path == SkateParkLayout.HalfWallPrefab)
+                {
+                    double height = path == SkateParkLayout.LowWallPrefab ? 1 : 1.5;
+                    CheckParkBound(failures, role, "bounds.size.y", bounds.size.y, height - 0.1, height + 0.1);
+                    CheckParkBound(failures, role, "bounds.size.z", bounds.size.z, 0, 0.6, true);
+                    CheckParkBound(failures, role, "bounds.center.z", bounds.center.z, -0.05, 0.05);
+                    CheckParkBound(failures, role, "bounds.min.y", bounds.min.y, -0.05, 0.05);
+                }
+                else failures.Add(role + ": prefab role is unsupported.");
             }
-            else if (path == SkateParkLayout.LowWallPrefab || path == SkateParkLayout.HalfWallPrefab)
-            {
-                double height = path == SkateParkLayout.LowWallPrefab ? 1 : 1.5;
-                if (Math.Abs(bounds.size.y - height) > 0.1 || bounds.size.z <= 0 || bounds.size.z > 0.6f ||
-                    Math.Abs(bounds.center.z) > 0.05f || Math.Abs(bounds.min.y) > 0.05f) return false;
-            }
-            else return false;
-            DeployVolume[] volumes = PrefabAttribute.server.FindAll<DeployVolume>(id);
-            if (volumes == null || TerrainMeta.HeightMap == null) return false;
+            if (failures.Count != before) return false;
             definition = new ParkNativePart { Prefab = path, Construction = construction, Volumes = volumes, Grade = grade };
             return true;
         }
 
-        private static bool ParkPrefabs(SkateParkKind kind, out ParkNativePart[] definitions)
+        private static void CheckParkBound(List<string> failures, string role, string field, double actual, double minimum, double maximum, bool exclusiveMinimum = false)
+        {
+            if (!SkateSessionBounds.Finite(actual) || actual < minimum || (exclusiveMinimum && actual == minimum) || actual > maximum)
+                failures.Add(role + ": " + field + "=" + actual.ToString("R", CultureInfo.InvariantCulture) + "; required=" + (exclusiveMinimum ? "(" : "[") +
+                    minimum.ToString("R", CultureInfo.InvariantCulture) + "," + maximum.ToString("R", CultureInfo.InvariantCulture) + "].");
+        }
+
+        private static void ParkNativeMetadata(string path, string role, List<string> failures,
+            out Construction construction, out DeployVolume[] volumes)
+        {
+            construction = null; volumes = null;
+            var manifest = GameManifest.Current;
+            if (manifest == null) failures.Add(role + ": GameManifest.Current is unavailable.");
+            else if (manifest.entities == null) failures.Add(role + ": GameManifest.Current.entities is unavailable.");
+            else if (!manifest.entities.Any(p => string.Equals(p, path, StringComparison.Ordinal)))
+                failures.Add(role + ": GameManifest.Current.entities does not contain the prefab.");
+            if (GameManager.server == null) failures.Add(role + ": GameManager.server is unavailable.");
+            else
+            {
+                var prefab = GameManager.server.FindPrefab(path);
+                if (prefab == null) failures.Add(role + ": GameManager.FindPrefab is unavailable.");
+                else if (prefab.GetComponent<BuildingBlock>() == null) failures.Add(role + ": native BuildingBlock component is unavailable.");
+            }
+            uint id = StringPool.Get(path);
+            if (id == 0) failures.Add(role + ": StringPool prefab ID is unavailable.");
+            else if (StringPool.Get(id) != path) failures.Add(role + ": StringPool prefab ID does not resolve to the required path.");
+            if (PrefabAttribute.server == null) failures.Add(role + ": PrefabAttribute.server is unavailable.");
+            else if (id != 0 && StringPool.Get(id) == path)
+            {
+                construction = PrefabAttribute.server.Find<Construction>(id);
+                volumes = PrefabAttribute.server.FindAll<DeployVolume>(id);
+                if (construction == null) failures.Add(role + ": Construction is unavailable.");
+                if (volumes == null) failures.Add(role + ": DeployVolume array is unavailable.");
+                else for (int i = 0; i < volumes.Length; i++)
+                    if (volumes[i] == null) failures.Add(role + ": DeployVolume[" + i.ToString(CultureInfo.InvariantCulture) + "] is unavailable.");
+            }
+        }
+
+        private static bool ParkPrefabs(SkateParkKind kind, List<string> failures, out ParkNativePart[] definitions)
         {
             definitions = new ParkNativePart[SkateParkLayout.PartCount(kind)];
-            if (definitions.Length == 0) return false;
+            if (definitions.Length == 0) { failures.Add("Park layout kind is unavailable."); return false; }
+            if (TerrainMeta.HeightMap == null) failures.Add("TerrainMeta.HeightMap is unavailable.");
+            if (LayerMask.GetMask("World", "Construction", "Deployed", "Player (Server)") == 0)
+                failures.Add("Park occupancy layer mask is unavailable.");
             var cache = new Dictionary<string, ParkNativePart>(StringComparer.Ordinal);
             for (int i = 0; i < definitions.Length; i++)
             {
                 SkateParkPart part;
-                if (!SkateParkLayout.TryPart(kind, i, out part)) return false;
+                if (!SkateParkLayout.TryPart(kind, i, out part))
+                { failures.Add("Park layout part[" + i.ToString(CultureInfo.InvariantCulture) + "] is unavailable."); continue; }
                 string key = part.Prefab + ":" + ((int)part.Material).ToString(CultureInfo.InvariantCulture);
                 ParkNativePart definition;
                 if (!cache.TryGetValue(key, out definition))
                 {
-                    if (!ParkPrefab(part, out definition)) return false;
+                    ParkPrefab(part, failures, out definition);
                     cache.Add(key, definition);
                 }
                 definitions[i] = definition;
             }
-            return true;
+            return failures.Count == 0;
+        }
+
+        private static bool ParkFoundation(BuildingBlock anchor, List<string> failures, out Construction construction)
+        {
+            int before = failures.Count;
+            DeployVolume[] volumes;
+            string role = ParkFoundationPrefab + " material=" + anchor.grade;
+            ParkNativeMetadata(ParkFoundationPrefab, role, failures, out construction, out volumes);
+            if (construction != null)
+            {
+                Bounds bounds = construction.bounds;
+                CheckParkBound(failures, role, "bounds.size.x", bounds.size.x, 2.9, 3.1);
+                CheckParkBound(failures, role, "bounds.size.z", bounds.size.z, 2.9, 3.1);
+                CheckParkBound(failures, role, "bounds.size.y", bounds.size.y, 0, 6, true);
+                CheckParkBound(failures, role, "bounds.center.x", bounds.center.x, -0.05, 0.05);
+                CheckParkBound(failures, role, "bounds.center.z", bounds.center.z, -0.05, 0.05);
+                CheckParkBound(failures, role, "bounds.center.y", bounds.center.y, -100000, 100000);
+                if (!ReferenceEquals(anchor.blockDefinition, construction)) failures.Add(role + ": placed blockDefinition does not match native Construction.");
+            }
+            return failures.Count == before;
         }
 
         private static bool ParkProximity(BasePlayer player, Construction construction, Vector3 position,
             Quaternion rotation, BuildingBlock anchor, List<BuildingBlock> transactionParts = null)
         {
-            // Native BuildingProximity.Check has no ignored-entity argument. Retain its exact
-            // neighbour rule while skipping only the normally placed anchor being converted.
+            // Exclude only the normal support and this transaction's parts; unrelated neighbours still apply.
             var obb = new OBB(position, rotation, construction.bounds);
             var neighbours = new List<BuildingBlock>();
             Vis.Entities(obb.position, obb.extents.magnitude + 2, neighbours, 2097152, QueryTriggerInteraction.Collide);
@@ -1527,10 +2083,7 @@ namespace Oxide.Plugins
         private static ParkAnchorSnapshot CaptureParkAnchor(BuildingBlock anchor)
         {
             return new ParkAnchorSnapshot { Position = anchor.transform.position, Rotation = anchor.transform.rotation,
-                Grade = anchor.grade, Health = anchor.Health(), Owner = anchor.OwnerID, Skin = anchor.skinID,
-                Grounded = anchor.grounded, Saving = anchor.enableSaving, Building = anchor.buildingID,
-                Stability = anchor.cachedStability, Distance = anchor.cachedDistanceFromGround,
-                TimePlaced = anchor.timePlaced, Colour = anchor.customColour };
+                Owner = anchor.OwnerID, Building = anchor.buildingID };
         }
 
         private static void RefreshParkBlock(BuildingBlock block, Bounds oldBounds)
@@ -1551,109 +2104,88 @@ namespace Oxide.Plugins
             return new Bounds(obb.position, Vector3.one * (obb.extents.magnitude * 2));
         }
 
-        private void RestoreParkAnchor(BuildingBlock anchor, ParkAnchorSnapshot snapshot, ulong id)
+        private void BuildParkPiece(BasePlayer player, Planner planner, BuildingBlock anchor, ulong anchorId, ParkSelection selection)
         {
-            if (anchor == null || anchor.IsDestroyed || ParkId(anchor) != id)
-                throw new InvalidDataException("The original placed anchor no longer exists; it cannot be restored.");
-            Bounds oldBounds = ParkWorldBounds(anchor);
-            anchor.ServerWorldPosition = snapshot.Position;
-            anchor.ServerRotation = snapshot.Rotation;
-            anchor.OwnerID = snapshot.Owner;
-            anchor.skinID = snapshot.Skin;
-            anchor.grounded = snapshot.Grounded;
-            anchor.SetGrade(snapshot.Grade);
-            anchor.SetHealth(snapshot.Health);
-            anchor.AttachToBuilding(snapshot.Building);
-            anchor.cachedStability = snapshot.Stability;
-            anchor.cachedDistanceFromGround = snapshot.Distance;
-            anchor.EnableSaving(snapshot.Saving);
-            RefreshParkBlock(anchor, oldBounds);
-            anchor.SetCustomColour(snapshot.Colour);
-            anchor.timePlaced = snapshot.TimePlaced;
-            anchor.SetHealth(snapshot.Health);
-            if (anchor.IsDestroyed || ParkId(anchor) != id || anchor.OwnerID != snapshot.Owner ||
-                anchor.grade != snapshot.Grade || anchor.skinID != snapshot.Skin || anchor.grounded != snapshot.Grounded ||
-                anchor.enableSaving != snapshot.Saving || anchor.buildingID != snapshot.Building ||
-                anchor.timePlaced != snapshot.TimePlaced || anchor.customColour != snapshot.Colour ||
-                (anchor.transform.position - snapshot.Position).sqrMagnitude > 0.000001f ||
-                Quaternion.Angle(anchor.transform.rotation, snapshot.Rotation) > 0.01f ||
-                Math.Abs(anchor.Health() - snapshot.Health) > 0.01f)
-                throw new InvalidDataException("The original anchor did not retain its rollback state.");
-        }
-
-        private void BuildParkPiece(BasePlayer player, Planner planner, BuildingBlock anchor, ulong anchorId, SkateParkKind kind)
-        {
-            if (parkClosing) return;
-            if (!parkReady || parkBusy || SaveRestore.IsSaving || player == null || !player.IsAdmin || !Eligible(player) || planner == null ||
-                !ReferenceEquals(planner.GetOwnerPlayer(), player) || !HorizontalParkAnchor(anchor) ||
+            if (!CurrentParkSelection(player, selection) || parkClosing) return;
+            string failure;
+            if (!RefreshParkWorld(out failure))
+            { ReportParkFailures(player, failure.Split('\n')); return; }
+            if (parkBusy || SaveRestore.IsSaving || !player.IsAdmin || !Eligible(player) || planner == null ||
+                !ReferenceEquals(planner.GetOwnerPlayer(), player) || !HorizontalParkFoundation(anchor) ||
                 ParkId(anchor) != anchorId || anchor.OwnerID != (ulong)player.userID || parkMembers.ContainsKey(anchorId))
-            { if (player != null && player.IsConnected) player.ConsoleMessage("Park selection consumed; place a new normal horizontal square floor after selecting again."); return; }
+            { ReportParkFailures(player, new[] { "Park placement refused; use a new normal horizontal square foundation while alive, awake, unmounted and on dry land. The selection remains until its original expiry." }); return; }
+            if (parkData.Groups.Count >= MaximumParkGroups)
+            { ReportParkFailures(player, new[] { "Park group limit reached: 256. The selection remains until its original expiry." }); return; }
+            var failures = new List<string>();
             ParkNativePart[] definitions;
-            if (parkData.Groups.Count >= MaximumParkGroups || !SameParkWorld(parkData) || !ParkPrefabs(kind, out definitions))
-            { player.ConsoleMessage("Park selection consumed; save identity, group capacity or required native prefab/material/bounds data is unavailable."); return; }
+            ParkPrefabs(selection.Kind, failures, out definitions);
+            Construction foundation;
+            ParkFoundation(anchor, failures, out foundation);
+            if (failures.Count != 0) { ReportParkFailures(player, failures); return; }
+            if (!CurrentParkSelection(player, selection)) return;
             ParkAnchorSnapshot snapshot = CaptureParkAnchor(anchor);
+            Bounds floorBounds = definitions[0].Construction.bounds;
+            double baseline;
+            if (!SkateParkLayout.TrySupportedAnchor(selection.Kind, ParkFoundationTop(anchor, foundation.bounds),
+                floorBounds.center.y, floorBounds.center.z, floorBounds.size.y, floorBounds.size.z, out baseline))
+            { ReportParkFailures(player, new[] { "Park foundation top or supported layout height is invalid or outside world-coordinate bounds." }); return; }
             var group = new ParkGroup { Id = Guid.NewGuid().ToString("N"), Owner = player.userID,
-                Kind = SkateParkLayout.Name(kind), AnchorX = snapshot.Position.x, AnchorY = snapshot.Position.y,
+                Kind = SkateParkLayout.Name(selection.Kind), AnchorX = snapshot.Position.x, AnchorY = baseline,
                 AnchorZ = snapshot.Position.z, AnchorYaw = snapshot.Rotation.eulerAngles.y, Members = new List<ParkMember>() };
-            var parts = new ParkMember[SkateParkLayout.PartCount(kind)];
+            var parts = new ParkMember[SkateParkLayout.PartCount(selection.Kind)];
             for (int i = 0; i < parts.Length; i++)
             {
                 SkateParkTransform transform;
-                if (!SkateParkLayout.TryTransform(kind, i, group.AnchorX, group.AnchorY, group.AnchorZ, group.AnchorYaw, out transform)) return;
+                if (!SkateParkLayout.TryTransform(selection.Kind, i, group.AnchorX, group.AnchorY, group.AnchorZ, group.AnchorYaw, out transform))
+                { ReportParkFailures(player, new[] { "Park layout part[" + i.ToString(CultureInfo.InvariantCulture) + "] exceeds world-coordinate bounds." }); return; }
                 parts[i] = new ParkMember { Index = i, Prefab = StringPool.Get(definitions[i].Prefab), X = transform.X, Y = transform.Y,
                     Z = transform.Z, Yaw = transform.Yaw, Pitch = transform.Pitch };
             }
             var created = new List<BuildingBlock>();
-            bool mutated = false, recorded = false, committed = false;
+            bool recorded = false, committed = false;
             parkBusy = true;
             try
             {
-                string failure;
                 if (!ParkPreflight(player, planner, anchor, definitions, parts, out failure))
                     throw new InvalidDataException(failure);
-                // A CanBuild hook may reenter or mutate the original anchor. Confirm the snapshot after all hooks.
-                if (parkClosing || !Eligible(player) || !player.IsAdmin || !HorizontalParkAnchor(anchor) ||
-                    ParkId(anchor) != anchorId || anchor.OwnerID != group.Owner ||
-                    (anchor.transform.position - snapshot.Position).sqrMagnitude > 0.000001f ||
-                    Quaternion.Angle(anchor.transform.rotation, snapshot.Rotation) > 0.01f)
-                    throw new InvalidDataException("The placed anchor or administrator changed during preflight.");
-                snapshot = CaptureParkAnchor(anchor);
-                anchor.EnableSaving(false);
-                mutated = true;
-                for (int i = 1; i < parts.Length; i++)
+                // Hooks may cancel/reselect or change the normally placed support before any part exists.
+                if (!CurrentParkSelection(player, selection) || parkClosing || !Eligible(player) || !player.IsAdmin ||
+                    !SameParkWorld(parkData) || !ParkFoundationMatches(anchor, anchorId, snapshot))
+                    throw new InvalidDataException("The selection, save/world, placed foundation or administrator changed during preflight.");
+                for (int i = 0; i < parts.Length; i++)
                 {
+                    if (!CurrentParkSelection(player, selection) || parkClosing || !Eligible(player) || !player.IsAdmin ||
+                        !SameParkWorld(parkData) || !ParkFoundationMatches(anchor, anchorId, snapshot))
+                        throw new InvalidDataException("The selection, save/world, foundation or administrator changed during creation.");
                     BaseEntity entity = GameManager.server.CreateEntity(definitions[i].Prefab,
                         ParkPosition(parts[i]), ParkRotation(parts[i]), true);
-                    if (entity == null) throw new InvalidDataException("A park part could not be created.");
-                    parkRollback.Add(entity); // Track before cast, Spawn and all reentrant hooks.
+                    if (entity == null) throw new InvalidDataException("A park part could not be created: " + definitions[i].Prefab + ".");
+                    parkRollback.Add(entity); // Track before casting and native initialization; hooks can reenter.
                     BuildingBlock block = entity as BuildingBlock;
-                    if (block == null) throw new InvalidDataException("A park prefab is not a native building block.");
+                    if (block == null) throw new InvalidDataException("A park prefab is not a native building block: " + definitions[i].Prefab + ".");
                     created.Add(block);
                     block.enableSaving = false;
                     block.CullBushes = false;
                     block.grounded = true;
                     block.OwnerID = group.Owner;
+                    block.skinID = 0;
                     block.Spawn();
                     if (block.IsDestroyed || block.net == null || block.blockDefinition == null)
-                        throw new InvalidDataException("A park part failed to initialize.");
+                        throw new InvalidDataException("A park part failed to initialize: " + definitions[i].Prefab + ".");
+                    if (!CurrentParkSelection(player, selection) || parkClosing || !SameParkWorld(parkData) ||
+                        !ParkFoundationMatches(anchor, anchorId, snapshot) || !Eligible(player) || !player.IsAdmin)
+                        throw new InvalidDataException("The selection, save/world, foundation or administrator changed during part initialization.");
+                    parts[i].Id = ParkId(block);
+                    if (parts[i].Id == 0 || !ParkMatches(block, group, parts[i]) ||
+                        !ReferenceEquals(block.blockDefinition, definitions[i].Construction))
+                        throw new InvalidDataException("A new park part has an invalid native ID, prefab, owner or pose: " + definitions[i].Prefab + ".");
                     block.skinID = 0;
                     block.SetGrade(definitions[i].Grade);
                     block.SetHealthToMax();
                     block.AttachToBuilding(snapshot.Building);
                     block.StartBeingDemolishable();
-                    parts[i].Id = ParkId(block);
                     RefreshParkBlock(block, ParkWorldBounds(block));
                 }
-                Bounds oldBounds = ParkWorldBounds(anchor);
-                anchor.ServerWorldPosition = ParkPosition(parts[0]);
-                anchor.ServerRotation = ParkRotation(parts[0]);
-                anchor.grounded = true;
-                anchor.skinID = 0;
-                anchor.SetGrade(definitions[0].Grade);
-                anchor.SetHealthToMax();
-                anchor.AttachToBuilding(snapshot.Building);
-                parts[0].Id = anchorId;
-                RefreshParkBlock(anchor, oldBounds);
                 foreach (ParkMember part in parts)
                 {
                     Construction construction = definitions[part.Index].Construction;
@@ -1665,59 +2197,64 @@ namespace Oxide.Plugins
                 }
                 foreach (ParkMember part in parts)
                 {
-                    BuildingBlock block = part.Index == 0 ? anchor : created[part.Index - 1];
+                    BuildingBlock block = created[part.Index];
                     ParkNativePart definition = definitions[part.Index];
                     Construction construction = definition.Construction;
-                    if (parkClosing || !player.IsAdmin || !Eligible(player) || !ParkMatches(block, group, part) ||
+                    if (!CurrentParkSelection(player, selection) || parkClosing || !SameParkWorld(parkData) ||
+                        !ParkFoundationMatches(anchor, anchorId, snapshot) || !player.IsAdmin || !Eligible(player) || !ParkMatches(block, group, part) ||
                         block.grade != definition.Grade || block.skinID != 0 || !ReferenceEquals(block.blockDefinition, construction) ||
                         !block.grounded || block.enableSaving || block.buildingID != snapshot.Building ||
                         !player.CanBuild(ParkPosition(part), ParkRotation(part), construction.bounds, false) ||
                         !ParkProximity(player, construction, ParkPosition(part), ParkRotation(part), anchor, created) ||
                         !ParkFootprint(ParkPosition(part), ParkRotation(part), construction.bounds, anchor, created,
                             LayerMask.GetMask("World", "Construction", "Deployed", "Player (Server)"), out failure))
-                        throw new InvalidDataException("A park member changed during creation or final permission verification.");
+                        throw new InvalidDataException("A selection, save/world, foundation or park member changed during final permission verification.");
                 }
                 group.Members.AddRange(parts);
                 parkData.Groups.Add(group);
                 recorded = true;
-                // Durable manifest first; EnableSaving also inserts spawned extras into native saveList.
+                // Persist the manifest before registering spawned parts in the native save list.
                 SaveParkData();
                 foreach (ParkMember part in parts)
                 {
-                    BuildingBlock block = part.Index == 0 ? anchor : created[part.Index - 1];
+                    BuildingBlock block = created[part.Index];
                     block.EnableSaving(true);
-                    if (parkClosing || !Eligible(player) || !player.IsAdmin || !ParkMatches(block, group, part) ||
+                    if (!CurrentParkSelection(player, selection) || parkClosing || !SameParkWorld(parkData) ||
+                        !ParkFoundationMatches(anchor, anchorId, snapshot) || !Eligible(player) || !player.IsAdmin || !ParkMatches(block, group, part) ||
                         block.grade != definitions[part.Index].Grade || block.skinID != 0 ||
                         !ReferenceEquals(block.blockDefinition, definitions[part.Index].Construction) ||
                         !block.enableSaving || !block.grounded || block.buildingID != snapshot.Building)
-                        throw new InvalidDataException("A park member changed during save registration.");
+                        throw new InvalidDataException("A selection, save/world, foundation or park member changed during save registration.");
                 }
+                SkateParkSelectionState consumed;
+                if (!CurrentParkSelection(player, selection) || !SkateParkSelections.TryApply(selection.State,
+                    SkateParkSelectionAction.PlacementSucceeded, player.IsAdmin, parkReady, clock.Elapsed.TotalSeconds, null, out consumed))
+                    throw new InvalidDataException("The park selection expired or changed before completion.");
                 foreach (ParkMember part in parts) parkMembers.Add(part.Id, group);
                 foreach (BuildingBlock block in created) parkRollback.Remove(block);
+                selection.State = consumed;
+                parkSelectionEpoch = new object();
+                parkSelections.Remove(player.userID);
                 committed = true;
                 player.ConsoleMessage("Park " + group.Kind + " created as a saved native building assembly (" +
-                    parts.Length.ToString(CultureInfo.InvariantCulture) + " parts). Use a hammer to demolish the group.");
+                    parts.Length.ToString(CultureInfo.InvariantCulture) + " parts). The original foundation remains a separate normal building piece. Use a hammer to demolish the park group.");
             }
             catch (Exception error)
             {
+                SkateParkSelectionState retained;
+                if (SkateParkSelections.TryApply(selection.State, SkateParkSelectionAction.PlacementFailed,
+                    player != null && player.IsAdmin, parkReady, clock.Elapsed.TotalSeconds, null, out retained)) selection.State = retained;
                 if (recorded)
                 {
                     parkData.Groups.Remove(group);
                     foreach (ParkMember part in parts) parkMembers.Remove(part.Id);
                 }
-                bool restored = !mutated && anchor != null && !anchor.IsDestroyed && ParkId(anchor) == anchorId;
-                if (mutated)
-                {
-                    try { RestoreParkAnchor(anchor, snapshot, anchorId); restored = true; }
-                    catch (Exception rollbackError) { PrintError("Park anchor rollback failed. " + rollbackError.Message); }
-                }
                 CleanupParkRollback();
                 if (recorded) SaveParksSafely();
-                PrintWarning("Park creation rejected. " + error.Message);
+                ReportParkFailures(player, error.Message.Split('\n'));
                 if (player != null && player.IsConnected)
-                    player.ConsoleMessage("Park selection consumed. " + error.Message +
-                        (restored ? " The original floor is retained." : " Original-floor restoration is incomplete; check the server log.") +
-                        (parkRollback.Count == 0 ? "" : " Extra-part cleanup is incomplete; check the server log."));
+                    player.ConsoleMessage("Park creation was not completed. The selection remains until its original expiry unless cancelled or replaced." +
+                        (parkRollback.Count == 0 ? "" : " Part cleanup is incomplete; check the server log."));
             }
             finally
             {
@@ -1749,7 +2286,7 @@ namespace Oxide.Plugins
         private ParkGroup VerifiedParkGroup(BuildingBlock block)
         {
             ParkGroup group;
-            if (block == null || parkDataBroken || parkData == null || !SameParkWorld(parkData) ||
+            if (block == null || parkDataBroken || parkData == null || !SameParkGeneration(parkData) ||
                 !parkMembers.TryGetValue(ParkId(block), out group)) return null;
             ParkMember member = group.Members.FirstOrDefault(m => m.Id == ParkId(block));
             return member != null && ParkMatches(block, group, member) ? group : null;
@@ -1873,7 +2410,7 @@ namespace Oxide.Plugins
             // Kill hooks can cancel destruction. Never delete metadata or cascade while the origin is alive.
             NextTick(() =>
             {
-                if (!parkClosing && (entity == null || entity.IsDestroyed) && parkData != null && SameParkWorld(parkData))
+                if (!parkClosing && (entity == null || entity.IsDestroyed) && parkData != null && SameParkGeneration(parkData))
                     PruneDestroyedParkMembers(group);
             });
         }

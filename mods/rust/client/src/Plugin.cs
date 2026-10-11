@@ -10,13 +10,19 @@ public class SkatePlugin : BasePlugin
 {
     public const string Version = "0.15.0";
     internal static SkatePlugin Instance;
+    private SkateRig rig;
 
     public override void Load()
     {
         Instance = this;
         Out.Inner = Log;
-        var path = System.IO.Path.Combine(Paths.PluginPath, "steps.txt");
-        var steps = System.IO.File.Exists(path) ? System.IO.File.ReadAllText(path).Trim() : "skate";
+        var steps = "skate";
+        try
+        {
+            var path = System.IO.Path.Combine(Paths.PluginPath, "steps.txt");
+            if (System.IO.File.Exists(path)) steps = System.IO.File.ReadAllText(path).Trim();
+        }
+        catch (Exception e) { Out.Err("steps.txt could not be read; using skate: " + e.GetType().Name + ": " + e.Message); }
         Out.Say("PLUGIN " + Version + " steps=" + steps);
         foreach (var s in steps.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries))
         {
@@ -30,24 +36,50 @@ public class SkatePlugin : BasePlugin
     {
         switch (s)
         {
-            case "skate": return "added=" + (AddComponent<SkateRig>() != null);
-            case "ride": case "pose": case "trick": case "pad": case "piece": case "status": Scenarios.Name = s; return "added=" + (AddComponent<SkateRig>() != null);
+            case "skate": return AddRig();
+            case "ride": case "pose": case "trick": case "pad": case "piece": case "status": Scenarios.Name = s; return AddRig();
             case "nogrind": SkateGrind.Enabled = false; return "grinding off";
             case "yaw90": case "yaw180": case "yaw270": Scenarios.YawOffset = float.Parse(s.Substring(3)); return "scenario yaw offset " + Scenarios.YawOffset;
-            case "clips": SkateSfx.ListClips = true; return "the game's clips will be listed when the audio starts";
             case "mute": SkateRig.Mute = true; AudioListener.volume = SkateRig.MuteVolume; return "volume=" + AudioListener.volume;
             default: return "unknown step";
         }
+    }
+
+    private string AddRig()
+    {
+        if (rig != null) return "already added";
+        rig = AddComponent<SkateRig>();
+        return "added=" + (rig != null);
     }
 }
 
 public static class Out
 {
     public static ManualLogSource Inner;
-    private static readonly string file = System.IO.Path.Combine(Paths.PluginPath, "skate.log");
+    private static string fileFailure;
+    private static bool fileWarningSent;
 
-    public static void Say(string m) { System.IO.File.AppendAllText(file, m + "\r\n"); if (Inner != null) Inner.LogMessage(m); }
-    public static void Err(string m) { System.IO.File.AppendAllText(file, "ERROR " + m + "\r\n"); if (Inner != null) Inner.LogError(m); }
+    public static void Say(string m) { Write(m, false); }
+    public static void Err(string m) { Write(m, true); }
+
+    private static void Write(string m, bool error)
+    {
+        if (fileFailure == null)
+        {
+            try { System.IO.File.AppendAllText(System.IO.Path.Combine(Paths.PluginPath, "skate.log"), (error ? "ERROR " : "") + m + "\r\n"); }
+            catch (Exception e) { fileFailure = e.GetType().Name; }
+        }
+        var logger = Inner;
+        if (logger == null) return;
+        if (fileFailure != null && !fileWarningSent)
+        {
+            fileWarningSent = true;
+            try { logger.LogWarning("skate.log file output disabled: " + fileFailure); }
+            catch (Exception) { }
+        }
+        try { if (error) logger.LogError(m); else logger.LogMessage(m); }
+        catch (Exception) { }
+    }
     public static string V(Vector3 v) { return v.x.ToString("F2") + "," + v.y.ToString("F2") + "," + v.z.ToString("F2"); }
     public static string V1(Vector3 v) { return v.x.ToString("F1") + "," + v.y.ToString("F1") + "," + v.z.ToString("F1"); }
     public static string V3(Vector3 v) { return v.x.ToString("F3") + "," + v.y.ToString("F3") + "," + v.z.ToString("F3"); }

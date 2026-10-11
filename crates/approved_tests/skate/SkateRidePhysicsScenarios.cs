@@ -216,6 +216,30 @@ internal static class SkateRidePhysicsScenarios
     private static void SurfaceLanding()
     {
         int start = checks;
+        foreach (double angle in new[] { -60d, -35d, 0d, 35d, 60d })
+        foreach (double yaw in new[] { 0d, 30d, 90d, 187d })
+        foreach (double weight in new[] { 0d, 0.8d, 1d })
+        {
+            double radians = angle * Math.PI / 180;
+            var normal = Rotate(Normal(angle), yaw);
+            var nose = Rotate(Forward, yaw);
+            var tangentVelocity = Rotate(new SkateVector(0, 6 * Math.Sin(radians), 6 * Math.Cos(radians)), yaw);
+            var current = tangentVelocity;
+            for (int seam = 0; seam < 20; seam++)
+            {
+                var landing = Land(current, normal, nose, 12, weight);
+                Near(landing.NormalImpact, 0, "tangent recontact has no impact");
+                Near(landing.SignedTangentSpeed, 6, "seam recontact preserves tangent speed at every fall weight");
+                Vector(landing.RollVelocity, tangentVelocity, "seam recontact preserves tangent velocity");
+                current = landing.RollVelocity;
+            }
+            var reversed = Land(tangentVelocity, normal, nose * -1, 12, weight);
+            Near(reversed.SignedTangentSpeed, -6, "tangent nose reversal changes only signed speed");
+            Vector(reversed.RollVelocity, tangentVelocity, "reversed deck preserves tangent travel");
+            var normalOnly = Land(normal * -10, normal, nose, 12, weight);
+            Near(normalOnly.NormalImpact, 10, "pure normal impact stays independent of damping");
+            Vector(normalOnly.RollVelocity, new SkateVector(), "normal impact cannot invent surface roll");
+        }
         var velocity = new SkateVector(0, -8, 6);
         var straight = Land(velocity, Up, Forward);
         Near(straight.NormalImpact, 8, "flat impact"); Near(straight.SignedTangentSpeed, 6, "aligned speed retained");
@@ -232,18 +256,34 @@ internal static class SkateRidePhysicsScenarios
         Near(diagonal.LateralSlipSpeed, 4.242640687119286, "diagonal slip");
         var uphill = Land(velocity, Normal(35), Forward);
         Near(uphill.NormalImpact, 9.99467497241821, "uphill whole-vector impact");
-        Near(uphill.SignedTangentSpeed, 1.244023073087256, "uphill projected roll");
-        Vector(uphill.RollVelocity, new SkateVector(0, 0.713542320999865, 1.019044043462099), "uphill roll");
+        Near(uphill.SignedTangentSpeed, 0.3263007749255822, "opposing fall damping cannot boost uphill roll");
+        Vector(uphill.RollVelocity, new SkateVector(0, 0.1871584356604002, 0.2672899468333728), "uphill roll");
         var downhill = Land(velocity, Normal(-35), Forward);
         Near(downhill.NormalImpact, 3.111757736205658, "downhill whole-vector impact");
-        Near(downhill.SignedTangentSpeed, 8.585801458380645, "fall converts into downhill roll");
-        Vector(downhill.RollVelocity, new SkateVector(0, -4.924613403715584, 7.033076816491913), "downhill roll");
+        Near(downhill.SignedTangentSpeed, 9.067748511747602, "only additional fall is damped in downhill roll");
+        Vector(downhill.RollVelocity, new SkateVector(0, -5.201046877095691, 7.427864730496512), "downhill roll");
         Check(!uphill.Bailed && !downhill.Bailed, "ordinary slope landings below bail threshold");
         var slopeBackwards = Land(velocity, Normal(-35), new SkateVector(0, 0, -1));
         Vector(slopeBackwards.RollVelocity, downhill.RollVelocity, "slope tail-first keeps vector");
         Near(slopeBackwards.SignedTangentSpeed, -downhill.SignedTangentSpeed, "slope tail-first sign");
         Near(Land(velocity, Normal(35), Forward, 12, 1).SignedTangentSpeed, 0.3263007749255822, "undamped uphill vertical conversion");
         Near(Land(velocity, Normal(-35), Forward, 12, 1).SignedTangentSpeed, 9.503523756542318, "undamped downhill vertical conversion");
+        Near(Land(velocity, Normal(-35), Forward, 12, 0).SignedTangentSpeed, 7.324647532568738, "zero fall conversion retains surface-following speed");
+        foreach (double weight in new[] { 0d, 0.8d, 1d })
+        {
+            var fall = Land(new SkateVector(0, -8, 0), Normal(-35), Forward, 12, weight);
+            Near(fall.SignedTangentSpeed, 4.588611490808368 * weight, "pure vertical downfall conversion follows weight");
+            var separating = Land(Normal(-35) * 10 + new SkateVector(0, -3.441458618106276, 4.914912265733951),
+                                  Normal(-35), Forward, 12, weight);
+            Near(separating.NormalImpact, 0, "outward velocity is not a falling impact");
+            Near(separating.SignedTangentSpeed, 6, "separating contact does not damp its tangent");
+        }
+        Near(Land(new SkateVector(0, -9, 6), Normal(35), Forward).SignedTangentSpeed, 0, "damping cannot reverse projected travel");
+        var crossNormal = new SkateVector(0.4, 0.8, Math.Sqrt(0.2));
+        var lateralImpact = new SkateVector(1.499090833947008, -10.094891746265528, -5.643216042537819);
+        var crossLanding = Land(lateralImpact, crossNormal, Forward);
+        Near(crossLanding.SignedTangentSpeed, 0, "fall damping cannot turn lateral motion into board roll");
+        Near(crossLanding.LateralSlipSpeed, 5.127128439056031, "cross-slope keeps the retained lateral direction");
         Check(!Land(new SkateVector(0, -12, 0), Up, Forward).Bailed, "exact maximum impact accepted");
         Check(Land(new SkateVector(0, -12.00001, 0), Up, Forward).Bailed, "over maximum impact bails");
         Check(Land(velocity, Normal(35), Forward, 9).Bailed && !Land(velocity, Normal(-35), Forward, 9).Bailed,
