@@ -184,6 +184,25 @@ public class SkateRig : MonoBehaviour
         var t3 = SkateClock.Now(); SkateCamera.Apply(at - Vector3.up * SkateBoard.Pop); SkateClock.Add(SkateClock.Camera, t3);
     }
 
+    private void OnDestroy()
+    {
+        try { SkateRide.Dismount("the skate rig is gone"); }
+        catch (Exception e) { Out.Err("SKATE dismount threw " + e.GetType().Name + ": " + e.Message); }
+        try { if (late != null) late.enabled = false; }
+        catch (Exception e) { Out.Err("SKATE late driver disable threw " + e.GetType().Name + ": " + e.Message); }
+        try { if (late != null) UnityEngine.Object.Destroy(late); late = null; }
+        catch (Exception e) { Out.Err("SKATE late driver teardown threw " + e.GetType().Name + ": " + e.Message); }
+        try { RiderRig.Unbind(); }
+        catch (Exception e) { Out.Err("RIDER unbind threw " + e.GetType().Name + ": " + e.Message); }
+        try { if (board != null) board.SetActive(false); }
+        catch (Exception e) { Out.Err("SKATE board disable threw " + e.GetType().Name + ": " + e.Message); }
+        try { if (board != null) UnityEngine.Object.Destroy(board); board = null; }
+        catch (Exception e) { Out.Err("SKATE board teardown threw " + e.GetType().Name + ": " + e.Message); }
+        try { SkateSfx.Shutdown(); }
+        catch (Exception e) { Out.Err("AUDIO teardown threw " + e.GetType().Name + ": " + e.Message); }
+        Local = null; LocalT = null; Body = null; Walk = null; AwakeAt = -1f; wasOn = false;
+    }
+
     private void OnGUI()
     {
         if (hudFailed) return;

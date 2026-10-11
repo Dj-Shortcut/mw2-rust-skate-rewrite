@@ -2,9 +2,11 @@
 
 `SkateRidePhysics` supplies pure surface acceleration, bounded transition pumping,
 surface-velocity launch and landing roll. It uses double-precision `SkateVector`
-values and no Unity types, ground queries or transforms. The native client still
-needs an adapter to consume these results; this document does not establish
-native collision, controller feel or server acceptance.
+values and no Unity types, ground queries or transforms. The client adapter in
+[PR #357](https://github.com/Dj-Shortcut/mw2-rust-skate-rewrite/pull/357) consumes
+these results. Claude reported native flat-trick checks for its earlier client
+pin; the landing correction here has no native validation. This document does
+not establish ramp collision, controller feel or server acceptance.
 
 ## Units and contracts
 
@@ -55,9 +57,16 @@ vertical pop. Passive departure supplies zero pop. It applies no hidden gravity
 or timestep compensation. The adapter applies airborne gravity once.
 
 `TryLand` measures impact as the positive part of minus the dot product of the
-complete pre-contact velocity and the normalized contact normal. For roll it
-weights the vertical velocity by `FallToRoll`, projects onto the surface, then
-onto the board's rolling axis. These operations cannot increase kinetic energy.
+complete pre-contact velocity and the normalized contact normal. It first
+preserves the original surface projection `p`. The extra closing fall is the
+downward vertical residual relative to a surface-following vector with the same
+X/Z velocity: `min(0, dot(velocity, normal) / normal.Y)`. `FallToRoll` weights
+only that residual. The resulting candidate is retained on the velocity segment
+from zero to `p`, before projection onto the board's rolling axis. This prevents
+fall damping from boosting, reversing or rotating original plane travel, and
+cannot increase kinetic energy. Tangent motion is unchanged for every weight;
+pure vertical fall converts to weighted roll, while pure normal impact produces
+no roll. An opposing fall is not damped if doing so would boost plane speed.
 Zero and 180-degree alignment preserve the same travel with opposite signed
 speed; a sideways landing on flat scrubs all rolling speed. Lateral slip is
 reported separately. Impact strictly above the configured maximum sets `Bailed`;
@@ -82,7 +91,7 @@ supported roll. Calls allocate no objects after initialization.
 | Explicit gravity | Default 16 m/s²; retained design value, not a measurement of walking-player gravity. |
 | Vertical pop | Default 6 m/s; passive exit uses zero. A flat ideal apex is 1.125 m at gravity 16. |
 | Landing impact | Default 12 m/s, applied to full surface-normal impact; equality is accepted. |
-| Vertical-to-roll weighting | Default 0.8. |
+| Extra vertical-fall retention | Default 0.8; original tangent motion is preserved. |
 | Pump charge / start / release / full steepness | 0.4 s / 8° / 4° / 30°, relative to actual travel. |
 | Pump budget / bottom window | 12 J/kg per traversal / 1.5 s. |
 | Fall cap and other handling | Native adapter retains its 30 m/s fall cap, push/brake/roll/reverse/steering/revert choices. |
@@ -94,81 +103,58 @@ The integrated C# 7.3/net48 library compiled against both genuine cached 7815 an
 official 7820 composite reference sets with zero warnings and errors. The cached
 build's actual DLL was consumed on Mac with .NET 8, without native game execution.
 
-The approved scenarios passed 2,532 assertions: 2,308 for transition pumping,
-133 for drop-in and launch, and 91 for surface landing. Three existing recorded
-gesture scenarios also passed. An independent boundary and state probe passed
-10,573 assertions; each of eight success/refusal paths allocated zero bytes over
-200,000 warmed calls. These checks cover the pure arithmetic and managed-call
-contracts. Native adapter integration, contact timing, server acceptance and
-gameplay remain unverified.
+The approved scenarios passed 11,683 assertions: 2,308 for transition pumping,
+133 for drop-in and launch, and 9,242 for surface landing. Landing coverage
+includes repeated seam recontact at weights 0, 0.8 and 1, normal-only and separating
+motion, cross-slope lateral motion, and the unchanged full impact threshold.
+The new seam scenario fails against the previous DLL and passes against the
+corrected one. These checks cover pure arithmetic and managed-call contracts.
+The corrected landing policy, ramp contact/timing, server acceptance and ride
+feel remain unverified in the game.
 
-## Numbered client review
+## Numbered client integration review
 
-The following review is pinned to `SkateRide.cs` at
-[`338fb0eb90197e61d65a504ae9477c16dfdf864a`](https://github.com/Dj-Shortcut/mw2-rust-skate-rewrite/blob/338fb0eb90197e61d65a504ae9477c16dfdf864a/mods/rust/client/src/SkateRide.cs),
-merged through PR #352. Its SHA-256 is
-`c11f103b0b8df5c31bb7e065ae729f1cfda7ab3f026d4f6c724f7534c0da3e1c`.
-This is a read-only review; the helper does not modify those client steps.
+The handover review covers the four client files at
+[`d4ab18f`](https://github.com/Dj-Shortcut/mw2-rust-skate-rewrite/commit/d4ab18f8bf30d56e70feb89c40adf960de4e3ab6)
+and the corrections in the current source. These conclusions are source review, not native
+execution. The complete client requires generated IL2CPP references that are unavailable in
+this Mac checkout; it has not been compiled here.
 
-1. **Use one speed meaning and one tangent.** GroundStep computes a unit tangent
-   at lines 220–222 and gravity against it at 232, but writes horizontal
-   `dir * Speed` plus `tangent.y * Speed` at 254–255. That vector is not tangent
-   to a forward slope. Use tangent velocity throughout the new helper and
-   explicitly convert the client's horizontal speed/cap. If retaining horizontal
-   speed, vertical velocity requires the tangent Y divided by its horizontal
-   length, rather than tangent Y alone.
-2. **Retain the candidate landing normal.** Sense casts far enough for predicted
-   air contact at 201–208, but retains the normal only within FeetProbe 0.3 m.
-   AirStep at 343–346 can land at larger predicted clearance: downward 20 m/s
-   and dt 0.03125 give a 0.645 m threshold. Keep the validated hit normal
-   separately from immediate foot support so that such a contact is not treated
-   as flat. The adapter must select the actual contacting surface.
-3. **Use the pass budget for pumping.** Pump at 282–292 already charges and adds
-   speed on release. It uses total surface tilt rather than along-travel slope
-   and has no traversal limit. Replace that bonus with the pump state; do not
-   run both. Charge only during descent, release through the bottom, and use
-   actual travel for direction/reset decisions.
-4. **Give gravity one explicit owner.** AirStep uses 16 at 317; GroundStep uses
-   engine gravity times SlopeGain 1.6 at 232. At an assumed engine 9.81 that is
-   15.696, but the actual engine value was not measured. Use the chosen explicit
-   gravity for both surface and air motion. Preserve the late-driver ordering
-   and enabled walking component described by the client; do not change walking
-   gravity or replace the existing alternative SkateDrive controller.
-5. **Carry surface velocity into launch.** Passive support loss at 213 and pop
-   at 228 pass vertical fields, while air velocity at 355 is rebuilt from
-   horizontal heading/speed. Carry full outgoing tangent velocity into the air
-   and add an explicit vertical pop only when requested. Remove the current
-   `+ AirGravity * dt` compensation only when the immediate AirStep subtraction
-   is also accounted for; gravity must apply once. Retaining flat pop 6 does
-   not promise identical ramp arcs if the adapter previously scaled it by Normal.Y.
-6. **Measure complete normal impact.** Land at 418–421 projects vertical fall
-   alone. Horizontal approach contributes to an uphill impact and reduces a
-   downhill impact. Incoming horizontal 6/downward 8 at 35 degrees produces
-   normal impact about 9.995 uphill and 3.112 downhill, rather than vertical-only
-   6.553 in both cases. Capture velocity before support response and forward
-   NormalImpact unchanged to the existing maximum-impact SkateTricks overload,
-   explicitly passing the same MaximumImpact used by TryLand. The legacy
-   SkateTricks overload defaults to 8, while TryLand defaults to 12.
-7. **Use the accepted landing deck orientation once.** NoseYaw/DeckYaw at 78–81
-   already distinguish travel, rider spin, board shove and persistent reversal.
-   Landing roll at 413–422 uses physical Yaw and does not scrub lateral velocity.
-   Build the final rolling axis from the accepted snapped rider/shove result.
-   TrickTick clears visual angles at 445 before Take applies new Switch and
-   BoardShove parity at 451–454, so retain the pre-landing basis and apply each
-   rotation/parity once. Do not combine old accumulated angles with the new
-   stance/reversal again. Odd rider-spin switch parity stays in SkateTricks;
-   board-only shove does not invent rider switch parity.
-8. **Consume landing roll immediately.** After Land, AirStep at 349–350 writes
-   a horizontal velocity and clearance correction for the first supported
-   frame. Use the full returned surface roll there. Keep support-gap correction
-   separate from kinetic speed and impact. The stuck fallback at 342–346 forces
-   impact zero; classify that as adapter recovery rather than helper physics.
-9. **Separate time, contact and display smoothing.** Step at 129–130 substitutes
-   0.03125 for an out-of-range dt; ViewNormal at 153–154 smooths by a fixed 0.3
-   each step. Supply a valid fixed tick or bounded substeps to the helper, which
-   rejects invalid elapsed time. Use contact normals for physics and time-based
-   smoothing for display. Server pull-back/cap feedback at 160–190 is separate
-   from transition energy and should not be treated as a gravity clamp.
+1. **Keep tangent energy and horizontal feedback separate.** Ground `Speed` is signed tangent
+   speed. Ground gravity, pump gains and rolling resistance use it. `HorizontalSpeed`, HUD,
+   top speed, push/reverse caps and server limits use X/Z pace, converting through the current
+   tangent's horizontal length. A new slope changes the tangent without dividing the old pace
+   by that new slope's cosine. Measurement retains the previous emitted X/Z direction and
+   magnitude, including grind correction, rather than the board's visual yaw.
+2. **Keep physical and visual grind headings separate.** Travel follows the rail heading.
+   The captured deck and rider angles are retained separately, without adding Switch/shove
+   parity twice. A pop carries rail speed into the air and retains that visual pose; it does
+   not launch sideways along a boardslide's deck. Native deck alignment remains unseen.
+3. **Apply the cap to emitted velocity.** Landing roll is reconstructed from the capped
+   tangent speed. Grind continuation also limits its cached speed, and the final X/Z guard
+   includes the pull toward the rail. Airborne vertical fall and ground clearance correction
+   are independent of the horizontal cap.
+4. **Process every genuine landing contact.** Incoming full velocity determines normal impact,
+   including a horizontal approach at zero vertical speed. Impact and unfinished-trick bails
+   are resolved before applying roll. Accepted Switch/shove parity determines the rolling axis.
+   The stuck recovery path is explicit, discards inferred vertical fall and suppresses impact;
+   native contact timing and that recovery policy remain unverified.
+5. **Keep revert travel on the surface.** The board can turn while physical travel follows the
+   retained revert direction. Gravity, slope, launch and pump travel use that physical tangent.
+   Leaving Ground discards pump charge. The face-ray gate keeps a smooth ramp out of step-over
+   treatment. Native seams, transitions and revert feel remain unverified.
+6. **Own one runtime driver chain.** Comma-separated runtime steps reuse one rig. The last
+   scenario selection determines what it runs; it does not create a second Update/late driver.
+   Late-driver ordering and the enabled game walking component remain necessary native gates.
+7. **Contain logging failures.** A failed file append disables that output and attempts one
+   loader warning. Loader logging is best effort too; diagnostics cannot abort movement or cleanup.
+8. **Own authored audio resources.** Setup and playback failures and rig destruction dispose
+   only the audio object and clips created by the mod. A false sample upload refuses readiness.
+   Native creation, upload, playback and teardown still require validation. No game clip inventory
+   or game sound sourcing is part of the runtime.
+9. **Keep placement instructions consistent.** The client menu asks for a square foundation,
+   matching the current server trigger. The actual native piece, save identity, bounds/material
+   diagnostics, retry and persistence remain separate server validation.
 
 ## Integration order
 

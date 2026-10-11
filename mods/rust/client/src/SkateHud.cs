@@ -252,7 +252,7 @@ public static class SkateHud
         var t = SkateRide.Trick;
         var s = new Shown();
         s.Riding = SkateRide.On; s.Switch = t.Switch; s.Pad = SkateKeys.Pad; s.Hints = now - MountedAt < 9f && !Scenarios.Active;
-        s.Speed = Math.Abs(SkateRide.Speed); s.Cap = SkateRide.Cap;
+        s.Speed = Math.Abs(SkateRide.HorizontalSpeed); s.Cap = SkateRide.Cap;
         s.Score = t.TotalPoints; s.Base = t.ComboBasePoints; s.Count = t.ComboCount;
         s.Window = (float)(t.RollingSeconds / SkateTricks.ComboRollingTimeout);
         var grinding = SkateRide.Mode == RideMode.Grind;

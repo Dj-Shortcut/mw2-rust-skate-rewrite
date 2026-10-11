@@ -61,3 +61,21 @@ dotnet run --project crates/approved_tests/skate/SkateParkGestureScenarios.cspro
 ```
 
 Build that DLL using the genuine references as above. The runner prints its loaded DLL path and SHA-256; outputs stay in ignored `context/`. This scenario does not invoke a native gesture, install a Harmony patch, send chat or place a park. Those runtime behaviors remain owner validation.
+
+## Authored audio
+
+The owner approved `skate_audio_surfaces_and_events` by name on 11 October 2026. It covers the
+seven generated wheel/truck/deck and event profiles, preserving the original six enum values,
+both overloads and default durations. It checks quantized lengths, finite/nonzero unclipped
+samples, DC, exact seed reproduction, different seeds, periodic seam slopes, silent/decaying
+one-shots, contact-profile roughness and invalid requests. Rates include 8,000 and 192,000 Hz;
+odd/even counts and the ten-second maximum are covered. The shared DLL supplies every sample.
+
+```sh
+dotnet run --project crates/approved_tests/skate/SkateAudioScenarios.csproj -p:SkateLibraryPath=/absolute/path/to/SkateMotion.dll
+```
+
+An optional single runner argument names a local directory for seven original WAV previews.
+Keep exports in ignored `context/`. These are waveform/source checks; the runner uses no Rust
+client/server or Shadow PC, and does not test native sound mixing, audibility or listener preference.
+See the [audio contract](../../../docs/RUST-SKATE-AUDIO.md).

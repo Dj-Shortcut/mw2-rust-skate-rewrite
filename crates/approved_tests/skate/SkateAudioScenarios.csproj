@@ -1,0 +1,22 @@
+<Project>
+  <PropertyGroup>
+    <BaseIntermediateOutputPath>../../../context/skate-approved-audio/obj/</BaseIntermediateOutputPath>
+    <OutputPath>../../../context/skate-approved-audio/bin/</OutputPath>
+  </PropertyGroup>
+  <Import Project="Sdk.props" Sdk="Microsoft.NET.Sdk" />
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>7.3</LangVersion>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <SkateLibraryPath Condition="'$(SkateLibraryPath)' == ''">../../../context/rust-skate-build/bin/net48/SkateMotion.dll</SkateLibraryPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="SkateAudioScenarios.cs" />
+    <Reference Include="SkateMotion"><HintPath>$(SkateLibraryPath)</HintPath></Reference>
+  </ItemGroup>
+  <Target Name="RequireActualLibrary" BeforeTargets="PrepareForBuild">
+    <Error Condition="'$(SkateLibraryPath)' == '' Or !Exists('$(SkateLibraryPath)')" Text="Provide SkateLibraryPath pointing to the actual SkateMotion.dll built against genuine framework references." />
+  </Target>
+  <Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk" />
+</Project>
