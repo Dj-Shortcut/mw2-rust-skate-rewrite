@@ -1,48 +1,49 @@
 # Original skate park assets
 
 Eight editable Blender models and self-contained GLBs live in
-[`assets/authored/`](../assets/authored/README.md). They are original CC0-1.0
-geometry/materials; the generator is Apache-2.0. No game assets are inputs.
+[`assets/authored/`](../assets/authored/README.md): original CC0-1.0 geometry/materials,
+Apache-2.0 generator, no game assets as inputs. Anchor offsets below use (right,up,forward).
 
-| file stem / `SkateParkKind` value | authored riding dimensions, metres | origin |
+| file stem / `SkateParkKind` value | riding dimensions, metres | origin; offset from native first tile |
 | --- | --- | --- |
-| `skate_bank` / `Bank=0` | width 3; 12° slope, rise 0.624; top deck 0.75 | entry midpoint |
-| `skate_kicker` / `Kicker=1` | width 3; 25° slope, rise 1.268; top deck 0.75 | entry midpoint |
-| `skate_quarterpipe` / `QuarterPipe=2` | width 3; circular radius/rise 2.5; top deck 1.5; run 4 | entry midpoint |
-| `skate_ledge_low` / `LedgeLow=3` | 3 × 3; height 0.4 | base centre |
-| `skate_ledge_high` / `LedgeHigh=4` | 3 × 3; height 0.8 | base centre |
-| `skate_long_ledge` / `LongLedge=5` | 9 across × 3; height 0.4 | base centre |
-| `skate_funbox` / `Funbox=6` | width 3; flat deck 3; total run 8.796; height 0.776 | base below deck centre |
-| `skate_halfpipe` / `Halfpipe=7` | width 6; flat 6 × 6; radius/rise 2.5; decks 1.5; total run 14 | flat riding-plane centre |
+| `skate_bank` / `Bank=0` | width 3; 12°, rise 0.624, run 2.934; no platform | entry; (0,0,−1.467221401) |
+| `skate_kicker` / `Kicker=1` | width 3; 25°, rise 1.268, run 2.719; no platform | entry; (0,0,−1.359461681) |
+| `skate_quarterpipe` / `QuarterPipe=2` | width 3; smoothed 15°/35°, rise 2.497, run 5.355; no platform | entry; (0,0,−1.448888739) |
+| `skate_ledge_low` / `LedgeLow=3` | 3 × 3; height 0.4 | base centre; (0,0,0) |
+| `skate_ledge_high` / `LedgeHigh=4` | 3 × 3; height 0.8 | base centre; (0,0,0) |
+| `skate_long_ledge` / `LongLedge=5` | 9 across × 3; height 0.4 | base centre; (0,0,0) |
+| `skate_funbox` / `Funbox=6` | width 3; flat 3, run 8.796, height 0.776 | base below deck; (0,0,0) |
+| `skate_halfpipe` / `Halfpipe=7` | width 6; flat 6 × 6; rise 2.497, decks 3, run 22.710 | flat centre; (1.5,0,1.5) |
 
-Blender uses metres, +X right, +Z up, forward −Y. GLB uses +X right,
-+Y up, forward +Z. Manifest `bounds` are Blender-space visual bounds including
-cladding, coping and rails; `collision.bounds` describes proxies in the same
-basis. Origins are at height zero; skins can extend below that plane.
-The halfpipe flat spans X/forward [−3,3]; both transitions/platforms are outside.
-The circular surface has 64 segments; its normals are smooth but geometry is
-piecewise planar. Quarter/halfpipe wood backrails rise 0.86 above their decks.
+Metres: Blender +X right/+Z up/−Y forward; GLB +X right/+Y up/+Z forward.
+Manifest `bounds`/`collision.bounds` are Blender-space visual/proxy bounds including
+their separate features. Origins have height zero; skins can extend below it.
+Rotate the table's offsets only by placement yaw before adding them to the native anchor.
 
-The `.blend` has visible `Visual` and hidden `CollisionProxies` collections,
-a camera and lights. The GLB defaults to scene `Visual`; its separate
-`CollisionProxies` scene is opt-in. Nodes carry `role` extras and `VISUAL__` /
-`COLLISION__` names; visual ride parts also carry `ride_surface=true`.
-Load only Visual for display. Explicitly build static collision from the closed
-proxy meshes; their names do not create engine colliders. Do not make one convex
-hull of the halfpipe: it would fill the open riding area. Moving-body collision
-needs a separate convex decomposition. The export contains no transparent
-collision materials or external textures.
+Quarter reference (forward,height): (0,0), (2.897777479,0.776457135),
+(5.355233612,2.497186444), two 3 m sloped tiles. C1 joins soften entry/corner;
+the quarter ends at 35° without a deck/backrail. Half transitions flatten into
+3 m decks outside the unchanged X/forward [−3,3] flat. Each curved window has
+16 intervals: quarter35 knots, half51 per transition; analytic top normals, flat sides/caps.
+Heights stay monotone; nominal facet deviation bounds are 0.010807/0.020747 m.
+A separate 0.02 m lift keeps the riding profile within 0.05 m; it is not baked in.
+One-sided joins briefly exceed native slopes to preserve endpoint heights/flat extents.
+Coping/cladding/backrails are separate features; halfpipe backrails rise 0.86 m.
 
-Rust's existing build-plan route uses a pending park selection and a square
-foundation through `OnEntityBuilt`; the foundation remains ordinary support.
-It creates native floors/walls with 15°/35° facets, a 22.71 m halfpipe and
-first-tile anchor. An adapter must use this pack's pivots/profiles and place
-matching server collision and client rendering together. No plugin or client
-loads this pack; network placement, riding and Unity import are unverified.
+Saved sources have visible `Visual`, hidden `CollisionProxies`, preview camera/lights.
+GLB defaults to `Visual`, with opt-in `CollisionProxies`; `role` extras and
+`VISUAL__`/`COLLISION__` names identify nodes; visual ride parts have `ride_surface=true`.
+Build static colliders explicitly from closed proxies. One convex halfpipe hull fills
+its riding opening; moving-body use needs convex decomposition. No external textures
+or transparent collision materials; preview camera/lights are excluded from GLB.
 
-Generate with the [authored README commands](../assets/authored/README.md).
-The generator checks finite geometry, closed outward solids, triangle areas,
-positive transforms and per-model budgets, then records bounds/counts/hashes.
-Generation and render evidence uses actual Blender 5.2.0. Local ramp regeneration
-is checked separately. CI pins Blender 4.3.2 for the original four and 5.2.0 for
-the ramps; cross-version export equivalence and native performance are unproven.
+The native build-plan route retains its foundation; `GroundedBuilding` is separate opt-in.
+Reference heights are nominal floor centre planes, not measured prefab tops. Native
+thickness/support offsets prevent claiming exact top separation or full collider-volume
+identity. Authored backrails differ from native low walls/sixteen Metal side panels.
+Client GLB reader/finder/check-command source exists. Codex has not verified its execution,
+native overlay/contact, network placement, riding, Unity import or performance.
+
+Generate with [the authored commands](../assets/authored/README.md). The generator checks
+finite geometry, closed outward solids, triangle areas, transforms/budgets and records hashes.
+Original four: Blender4.3.2; ramps:5.2.0. Cross-version export equivalence is unproven.

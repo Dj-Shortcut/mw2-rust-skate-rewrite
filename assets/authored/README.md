@@ -47,4 +47,6 @@ authoring versions; another version can change export layout/triangulation.
 
 The native frontend loads operator, carbine and skateboard scenes; animation
 and full integration remain unfinished. The standalone rewrite is parked.
-The ramp pack is not wired into that frontend or the active Rust PC mod yet.
+Active Rust PC client adapter source includes GLB reading, park matching and
+checking commands. Codex has not verified its execution, native overlay/contact,
+network placement or riding; the pack's geometry checks do not establish those.
