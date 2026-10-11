@@ -70,6 +70,8 @@ jobs:
         run: |
           "$RUNNER_TEMP/$BLENDER/blender" -b --factory-startup \
             --python scripts/generate_authored_content.py -- --output "$RUNNER_TEMP/models"
+          "$RUNNER_TEMP/$BLENDER/blender" -b --factory-startup \
+            --python scripts/generate_skate_ramp_assets.py -- --output "$RUNNER_TEMP/models"
       - name: Compare with the committed files
         run: |
           set -o pipefail

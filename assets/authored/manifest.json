@@ -92,6 +92,418 @@
       "animations": [],
       "sha256": "b1b9a23da17026c2386c89ce4d4b6de5305e138238e8fe6601e470cd5d7e138b",
       "bytes": 282616
+    },
+    {
+      "name": "skate_bank",
+      "file": "skate_bank.glb",
+      "vertices": 344,
+      "triangles": 636,
+      "bounds": [
+        [
+          -1.6059999465942383,
+          -3.6844427585601807,
+          -0.14000000059604645
+        ],
+        [
+          1.6059999465942383,
+          0.0,
+          0.6537350416183472
+        ]
+      ],
+      "bounds_space": "Blender Z-up, forward -Y",
+      "animations": [],
+      "license": "CC0-1.0",
+      "source": "scripts/generate_skate_ramp_assets.py",
+      "generator_blender": "5.2.0 LTS",
+      "default_scene": "Visual",
+      "collision_scene": "CollisionProxies",
+      "collision": {
+        "vertices": 48,
+        "triangles": 84,
+        "bounds": [
+          [
+            -1.5,
+            -3.6844427585601807,
+            -0.14000000059604645
+          ],
+          [
+            1.5,
+            0.0,
+            0.6537350416183472
+          ]
+        ]
+      },
+      "dimensions": {
+        "kind": "bank",
+        "pivot": "low-entry midpoint on riding plane",
+        "ride_width": 3.0,
+        "slope_degrees": 12,
+        "rise": 0.623735072453278,
+        "slope_run": 2.934442802201417,
+        "platform_length": 0.75
+      },
+      "sha256": "b19eac5f411a26eaf250453a7d43018b12d1819e0518b8e8dd30108f3ca58f5c",
+      "bytes": 56040
+    },
+    {
+      "name": "skate_kicker",
+      "file": "skate_kicker.glb",
+      "vertices": 344,
+      "triangles": 636,
+      "bounds": [
+        [
+          -1.6059999465942383,
+          -3.468923330307007,
+          -0.14000000059604645
+        ],
+        [
+          1.6059999465942383,
+          0.0,
+          1.2978547811508179
+        ]
+      ],
+      "bounds_space": "Blender Z-up, forward -Y",
+      "animations": [],
+      "license": "CC0-1.0",
+      "source": "scripts/generate_skate_ramp_assets.py",
+      "generator_blender": "5.2.0 LTS",
+      "default_scene": "Visual",
+      "collision_scene": "CollisionProxies",
+      "collision": {
+        "vertices": 48,
+        "triangles": 84,
+        "bounds": [
+          [
+            -1.5,
+            -3.468923330307007,
+            -0.14000000059604645
+          ],
+          [
+            1.5,
+            0.0,
+            1.2978547811508179
+          ]
+        ]
+      },
+      "dimensions": {
+        "kind": "kicker",
+        "pivot": "low-entry midpoint on riding plane",
+        "ride_width": 3.0,
+        "slope_degrees": 25,
+        "rise": 1.2678547852220983,
+        "slope_run": 2.7189233611099497,
+        "platform_length": 0.75
+      },
+      "sha256": "473f563f232ac6881bd1587518c886e22a3405cbcf900f26c88c550d0a32b88a",
+      "bytes": 56060
+    },
+    {
+      "name": "skate_quarterpipe",
+      "file": "skate_quarterpipe.glb",
+      "vertices": 2538,
+      "triangles": 4936,
+      "bounds": [
+        [
+          -1.6059999465942383,
+          -4.0,
+          -0.14000000059604645
+        ],
+        [
+          1.6059999465942383,
+          0.0,
+          3.3600001335144043
+        ]
+      ],
+      "bounds_space": "Blender Z-up, forward -Y",
+      "animations": [],
+      "license": "CC0-1.0",
+      "source": "scripts/generate_skate_ramp_assets.py",
+      "generator_blender": "5.2.0 LTS",
+      "default_scene": "Visual",
+      "collision_scene": "CollisionProxies",
+      "collision": {
+        "vertices": 214,
+        "triangles": 396,
+        "bounds": [
+          [
+            -1.5,
+            -4.0,
+            -0.14000000059604645
+          ],
+          [
+            1.5,
+            0.0,
+            3.3600001335144043
+          ]
+        ]
+      },
+      "dimensions": {
+        "kind": "quarterpipe",
+        "pivot": "low-entry midpoint on riding plane",
+        "ride_width": 3.0,
+        "transition_radius": 2.5,
+        "rise": 2.5,
+        "transition_run": 2.5,
+        "platform_length": 1.5
+      },
+      "sha256": "758d83d077a2eb2c12aeaf18ce4b28dcb64449cb16cb626f5bce3d10176c9700",
+      "bytes": 268484
+    },
+    {
+      "name": "skate_ledge_low",
+      "file": "skate_ledge_low.glb",
+      "vertices": 496,
+      "triangles": 964,
+      "bounds": [
+        [
+          -1.527500033378601,
+          -1.527500033378601,
+          0.0
+        ],
+        [
+          1.527500033378601,
+          1.527500033378601,
+          0.4000000059604645
+        ]
+      ],
+      "bounds_space": "Blender Z-up, forward -Y",
+      "animations": [],
+      "license": "CC0-1.0",
+      "source": "scripts/generate_skate_ramp_assets.py",
+      "generator_blender": "5.2.0 LTS",
+      "default_scene": "Visual",
+      "collision_scene": "CollisionProxies",
+      "collision": {
+        "vertices": 8,
+        "triangles": 12,
+        "bounds": [
+          [
+            -1.5,
+            -1.5,
+            0.0
+          ],
+          [
+            1.5,
+            1.5,
+            0.4000000059604645
+          ]
+        ]
+      },
+      "dimensions": {
+        "kind": "ledge-low",
+        "pivot": "base centre",
+        "ride_width": 3.0,
+        "ride_length": 3.0,
+        "rise": 0.4
+      },
+      "sha256": "bb71eb0239844a513a0fdf37066db6784a99a6eafb061be54d280ed348963c5d",
+      "bytes": 74952
+    },
+    {
+      "name": "skate_ledge_high",
+      "file": "skate_ledge_high.glb",
+      "vertices": 496,
+      "triangles": 964,
+      "bounds": [
+        [
+          -1.527500033378601,
+          -1.527500033378601,
+          0.0
+        ],
+        [
+          1.527500033378601,
+          1.527500033378601,
+          0.800000011920929
+        ]
+      ],
+      "bounds_space": "Blender Z-up, forward -Y",
+      "animations": [],
+      "license": "CC0-1.0",
+      "source": "scripts/generate_skate_ramp_assets.py",
+      "generator_blender": "5.2.0 LTS",
+      "default_scene": "Visual",
+      "collision_scene": "CollisionProxies",
+      "collision": {
+        "vertices": 8,
+        "triangles": 12,
+        "bounds": [
+          [
+            -1.5,
+            -1.5,
+            0.0
+          ],
+          [
+            1.5,
+            1.5,
+            0.800000011920929
+          ]
+        ]
+      },
+      "dimensions": {
+        "kind": "ledge-high",
+        "pivot": "base centre",
+        "ride_width": 3.0,
+        "ride_length": 3.0,
+        "rise": 0.8
+      },
+      "sha256": "8a3bf3f0ccf7260280a28e15b4ed5749c66939cc4a87372a99da8cf3b4bfe03f",
+      "bytes": 73680
+    },
+    {
+      "name": "skate_long_ledge",
+      "file": "skate_long_ledge.glb",
+      "vertices": 496,
+      "triangles": 964,
+      "bounds": [
+        [
+          -4.527500152587891,
+          -1.527500033378601,
+          0.0
+        ],
+        [
+          4.527500152587891,
+          1.527500033378601,
+          0.4000000059604645
+        ]
+      ],
+      "bounds_space": "Blender Z-up, forward -Y",
+      "animations": [],
+      "license": "CC0-1.0",
+      "source": "scripts/generate_skate_ramp_assets.py",
+      "generator_blender": "5.2.0 LTS",
+      "default_scene": "Visual",
+      "collision_scene": "CollisionProxies",
+      "collision": {
+        "vertices": 8,
+        "triangles": 12,
+        "bounds": [
+          [
+            -4.5,
+            -1.5,
+            0.0
+          ],
+          [
+            4.5,
+            1.5,
+            0.4000000059604645
+          ]
+        ]
+      },
+      "dimensions": {
+        "kind": "long-ledge",
+        "pivot": "base centre",
+        "ride_width": 9.0,
+        "ride_length": 3.0,
+        "rise": 0.4
+      },
+      "sha256": "da1e282b2e29ba20e74e86ad32513fe4807a2e1290ae77d890dfb2c1a01c47dc",
+      "bytes": 73688
+    },
+    {
+      "name": "skate_funbox",
+      "file": "skate_funbox.glb",
+      "vertices": 288,
+      "triangles": 496,
+      "bounds": [
+        [
+          -1.6059999465942383,
+          -4.397777557373047,
+          -0.14000000059604645
+        ],
+        [
+          1.6059999465942383,
+          4.397777557373047,
+          0.8064571022987366
+        ]
+      ],
+      "bounds_space": "Blender Z-up, forward -Y",
+      "animations": [],
+      "license": "CC0-1.0",
+      "source": "scripts/generate_skate_ramp_assets.py",
+      "generator_blender": "5.2.0 LTS",
+      "default_scene": "Visual",
+      "collision_scene": "CollisionProxies",
+      "collision": {
+        "vertices": 88,
+        "triangles": 156,
+        "bounds": [
+          [
+            -1.5,
+            -4.397777557373047,
+            -0.14000000059604645
+          ],
+          [
+            1.5,
+            4.397777557373047,
+            0.8064571022987366
+          ]
+        ]
+      },
+      "dimensions": {
+        "kind": "funbox",
+        "pivot": "base centre below flat deck",
+        "ride_width": 3.0,
+        "rise": 0.7764571353075622,
+        "flat_length": 3.0,
+        "ride_length": 8.79555495773441,
+        "slope_degrees": 15
+      },
+      "sha256": "0bb1415ec1950f2056c7e481d5a0f1b1e6333613112fa18bff8c1fa34ab53733",
+      "bytes": 48580
+    },
+    {
+      "name": "skate_halfpipe",
+      "file": "skate_halfpipe.glb",
+      "vertices": 5108,
+      "triangles": 9920,
+      "bounds": [
+        [
+          -3.1059999465942383,
+          -7.0,
+          -0.14000000059604645
+        ],
+        [
+          3.1059999465942383,
+          7.0,
+          3.3600001335144043
+        ]
+      ],
+      "bounds_space": "Blender Z-up, forward -Y",
+      "animations": [],
+      "license": "CC0-1.0",
+      "source": "scripts/generate_skate_ramp_assets.py",
+      "generator_blender": "5.2.0 LTS",
+      "default_scene": "Visual",
+      "collision_scene": "CollisionProxies",
+      "collision": {
+        "vertices": 436,
+        "triangles": 804,
+        "bounds": [
+          [
+            -3.0,
+            -7.0,
+            -0.14000000059604645
+          ],
+          [
+            3.0,
+            7.0,
+            3.3600001335144043
+          ]
+        ]
+      },
+      "dimensions": {
+        "kind": "halfpipe",
+        "pivot": "centre of the 6 x 6 m flat riding plane",
+        "ride_width": 6.0,
+        "flat_width": 6.0,
+        "flat_length": 6.0,
+        "transition_radius": 2.5,
+        "rise": 2.5,
+        "platform_length": 1.5,
+        "ride_length": 14.0
+      },
+      "sha256": "e4028a0d1d237ceff4bf6b9beea5f9180bd519147e9b342e73c17420e1ff4798",
+      "bytes": 538152
     }
   ]
 }
