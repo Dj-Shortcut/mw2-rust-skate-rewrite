@@ -32,7 +32,7 @@ public static class Scenarios
         if (startAt < 0f)
         {
             if (now - SkateRig.AwakeAt < 4f) return;
-            startAt = now; startGame = Time.time; yaw0 = SkateCamera.LookYaw + YawOffset;
+            startAt = now; startGame = Time.time; yaw0 = YawOffset != 0f ? SkateCamera.LookYaw + YawOffset : Runway(SkateCamera.LookYaw);
             SkateKeys.Scripted = true; SkateKeys.Reset(); SkateKeys.LookYaw = yaw0;
             Say(Name + " begins, view yaw=" + yaw0.ToString("F0") + " at " + Out.V1(SkateRig.LocalT.position));
         }
@@ -46,6 +46,30 @@ public static class Scenarios
         else if (Name == "pose") Pose(s, now);
         else if (Name == "pad") Pad(game, now);
         else Trick(game);
+    }
+
+    // The way with the longest run of dry, even ground from where the rider stands, the view's own
+    // way first: a check that rides into the sea or a wall says nothing.
+    public const float RunwayStep = 2f, RunwayLength = 44f, RunwayBump = 0.6f;
+    public static float Runway(float lookYaw)
+    {
+        var from = SkateRig.LocalT.position; var best = lookYaw; var bestRun = -1f; var report = "";
+        for (var i = 0; i < 8; i++)
+        {
+            var yaw = lookYaw + i * 45f; var dir = SkateRide.Dir(yaw); var run = 0f; var lastY = from.y;
+            for (var d = RunwayStep; d <= RunwayLength; d += RunwayStep)
+            {
+                var at = from + dir * d; RaycastHit hit;
+                if (!Physics.Raycast(at + Vector3.up * 3f, Vector3.down, out hit, 8f, SkateRide.GroundMask, QueryTriggerInteraction.Ignore)) break;
+                var y = hit.m_Point.y;
+                if (y < SkateRide.SeaLevel + 0.4f || Math.Abs(y - lastY) > RunwayBump) break;
+                lastY = y; run = d;
+            }
+            report += (i == 0 ? "" : ", ") + yaw.ToString("F0") + ":" + run.ToString("F0");
+            if (run > bestRun + 0.5f) { bestRun = run; best = yaw; }
+        }
+        Say("runway " + bestRun.ToString("F0") + " m at yaw " + best.ToString("F0") + " (" + report + ")");
+        return best;
     }
 
     private static bool Enter(int to, string label)
