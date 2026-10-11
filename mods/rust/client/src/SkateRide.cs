@@ -13,7 +13,7 @@ public enum RideMode { Off, Ground, Air, Grind, Bail }
 public static class SkateRide
 {
     public const float PushAccel = 7f, MaxPush = 11f, BrakeDecel = 12f, RollDecel = 0.45f, MaxSpeed = 13f, MaxReverse = 6f, TurnRate = 150f, SlopeGain = 1.6f;
-    public const float AirGravity = 16f, OlliePop = 6f, MaxFall = 30f, BailImpact = 12f, BailSeconds = 1.3f, BailDecel = 10f, PushPeriod = 0.8f, SeaLevel = -1.1f, LowestCap = 1.5f, LagStep = 0.1f, RaiseWait = 3f, CapForget = 30f, ManualPace = 1f, ManualHold = 0.3f, HopGrace = 0.3f;
+    public const float AirGravity = 16f, OlliePop = 6f, MaxFall = 30f, BailImpact = 12f, BailSeconds = 1.3f, BailDecel = 10f, PushPeriod = 0.8f, SeaLevel = -1.1f, LowestCap = 3f, LagStep = 0.1f, RaiseWait = 3f, CapForget = 30f, ManualPace = 1f, ManualHold = 0.3f, HopGrace = 0.3f;
     // Pumping: a crouch held on a transition and let go gives speed, more the steeper and the longer
     // the crouch (up to PumpCharge seconds); nothing on the flat. Landing: the fall becomes roll on
     // a slope by LandRoll; a revert within RevertWindow of a landed trick turns the board round at
@@ -21,6 +21,11 @@ public static class SkateRide
     public const float PumpGain = 2.6f, PumpCharge = 0.4f, PumpFrom = 8f, PumpFull = 30f, LandRoll = 0.8f, RevertWindow = 0.35f, RevertRate = 600f;
     public const long RevertPoints = 50;
     private const float RayLift = 0.6f, FeetProbe = 0.3f, AirProbe = 3f;
+    // A lip ahead up to StepUp high (the seam between two foundations, a kerb) is stepped over:
+    // the board is lifted onto it and the loss of way it costs is not read as an obstacle.
+    public const float StepUp = 0.25f, StepLook = 0.35f, StepGrace = 0.25f;
+    public static int StepUps;
+    private static float steppedAt = -99f;
     public static readonly int GroundMask = ~((1 << 12) | (1 << 17) | (1 << 18) | (1 << 4) | (1 << 10) | (1 << 9) | (1 << 2));
 
     public static RideMode Mode = RideMode.Off;
@@ -29,7 +34,7 @@ public static class SkateRide
     public static SkateGrabKind Grab;
     public static bool Grabbing { get { return Grab != SkateGrabKind.None; } }
     public static bool Frozen;
-    public static float Speed, Yaw, Lean, VSpeed, AirTime, AirPeak, Clearance = 99f, Actual, ActualV, Top, Cap = MaxSpeed, ModeAt, LandAt = -99f, LandImpact, PushPhase;
+    public static float Speed, Yaw, Lean, VSpeed, AirTime, AirPeak, Clearance = 99f, Actual, ActualV, Top, Cap = MaxSpeed, ModeAt, LandAt = -99f, LandImpact, PushPhase, CapLoweredAt = -99f;
     public static Vector3 Normal = Vector3.up, Tangent = Vector3.forward, ViewNormal = Vector3.up, Position;
     // In the shared trick module's signs: positive spin and shove are frontside, positive flip is a
     // kickflip. Spin turns rider and board, shove the board alone under his feet.
@@ -94,7 +99,7 @@ public static class SkateRide
         if (mountAt - putBackAt > CapForget) ForgetServer();
         VSpeed = 0f; AirTime = 0f; flipLeft = shoveLeft = pendShove = 0f; pendFlip = 0; SpinDeg = FlipDeg = ShoveDeg = 0; Jumped = TrickAir = Braking = Manual = NoseManual = spinning = DeckReversed = false; PushPhase = 0f; stuck = 0;
         Grab = SkateGrabKind.None; spinSide = 1f; wantKind = SkatePopKind.Ollie; wantFlip = 0; wantShove = 0f; wantScale = 1f;
-        PumpHeld = RevertLeft = 0f; landedTrick = fastFakie = false; GrindKind = SkateGrindKind.None; GrindFrontside = GrindAlong = false;
+        PumpHeld = RevertLeft = 0f; landedTrick = fastFakie = false; steppedAt = -99f; StepUps = 0; GrindKind = SkateGrindKind.None; GrindFrontside = GrindAlong = false;
         Trick = new SkateTrickState(false); TrickName = ""; ComboPoints = 0; TrickAt = BankedAt = LandAt = jumpWanted = -99f; OffReason = "";
         SkateHud.Clear();
         Normal = ViewNormal = Vector3.up; Position = b.position;
@@ -180,12 +185,13 @@ public static class SkateRide
             {
                 if (!refusedSinceRaise && now - raisedAt < 45f) raiseWait = Math.Min(raiseWait * 2f, 480f);
                 refusedSinceRaise = true; lastPull = now;
-                Cap = Math.Max(LowestCap, Math.Min(Cap, Math.Abs(lastSpeed)) * 0.85f);
+                Cap = Math.Max(LowestCap, Math.Min(Cap, Math.Abs(lastSpeed)) * 0.85f); CapLoweredAt = now;
             }
             // Being put back is not an obstacle: the board keeps what speed the cap allows.
             Speed = Clamp(Speed, -Cap, Cap);
             return;
         }
+        if (now - steppedAt < StepGrace) return;
         if (Speed > 0f) { var limit = (Actual > 0f ? Actual : 0f) + 2f; if (Speed > limit) Speed = limit; }
         else if (Speed < 0f) { var limit = (Actual < 0f ? Actual : 0f) - 2f; if (Speed < limit) Speed = limit; }
     }
@@ -255,8 +261,25 @@ public static class SkateRide
         velocity.y = tangent.y * Speed - Clamp(Clearance * 8f, 0f, 3f);
         // Through a revert the rider keeps rolling the way he was; only the board turns under him.
         if (RevertLeft != 0f) { var keep = revertDir * Math.Abs(Speed); keep.y = velocity.y; velocity = keep; }
+        StepOver(dir, dt);
         Lean += (Clamp(Delta(before, Yaw) / dt * 0.12f, -25f, 25f) - Lean) * 0.2f;
         TrickTick(false, false, 0, 0, 0, 0, dt);
+    }
+
+    // The ground a little ahead, in the way of travel: higher by a lip's worth, the board is lifted
+    // over it within the step, which the game's own fixed step then carries.
+    private static void StepOver(Vector3 dir, float dt)
+    {
+        if (Math.Abs(Speed) < 0.5f) return;
+        var ahead = Position + dir * (Math.Sign(Speed) * StepLook);
+        RaycastHit hit;
+        if (!Physics.Raycast(ahead + Vector3.up * (StepUp + 0.3f), Vector3.down, out hit, StepUp + 0.3f + FeetProbe, GroundMask, QueryTriggerInteraction.Ignore)) return;
+        var rise = hit.m_Point.y - Position.y;
+        if (rise < 0.03f || rise > StepUp || hit.m_Normal.y < 0.7f) return;
+        var lift = rise / Math.Max(dt, 0.001f) * 0.6f;
+        if (velocity.y < lift) velocity.y = lift;
+        if (now - steppedAt > StepGrace) StepUps++;
+        steppedAt = now;
     }
 
     // Right after a landed trick a fresh turn of the stick turns the board round on the ground: the
@@ -353,7 +376,7 @@ public static class SkateRide
             return;
         }
         velocity = dir * Speed + Vector3.up * VSpeed;
-        if (VSpeed < 0f && !Rotating && SkateGrind.TryCapture(pos, velocity, NoseYaw, dt))
+        if (VSpeed < 0f && Jumped && !Rotating && SkateGrind.TryCapture(pos, velocity, NoseYaw, dt))
         {
             LastAir = AirLine("grind");
             var impact = -VSpeed;
