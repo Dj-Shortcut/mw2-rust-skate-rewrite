@@ -399,7 +399,10 @@ namespace Shortcut.RustMod
         private const double RidingPelvisYaw = 12, RidingChestYaw = 28, RidingLeadToe = 25, RidingBackToe = 5;
         private const double PushPelvisYaw = 55, PushChestYaw = 70, PushLeadToe = 60;
         private const double AirYaw = 0.35, PushWeight = 0.28, PushSide = 0.03, PushDip = 0.06, PushLean = 0.34, PushSwing = 0.28;
-        private const double PushPlant = 0.10, PushSweep = 0.36, PushHeel = 0.07;
+        // The pushing foot comes down PushPlant ahead of the board's middle and leaves it PushSweep
+        // behind: the stroke, over which the foot is on the ground (push phase PushDown..PushUp).
+        public const double PushPlant = 0.10, PushSweep = 0.36, PushDown = 0.25, PushUp = 0.6;
+        private const double PushHeel = 0.07;
         private const double GrabRoll = 0.4, GrabFoldLimit = 1.0, GrabTuckMargin = 0.05, PlantDrop = 0.3, GrabBackLimit = 0.55, HeelTurn = 1.2;
         private const double HeelTurnSign = 1;
         private const double FlipTuck = 0.14, FlipSpread = 0.05, PitchWeight = 0.18;
@@ -634,9 +637,9 @@ namespace Shortcut.RustMod
             var back = origin - travel * PushSweep + side * SkatePose.PushFootSide + up * (SkatePose.FootLift - groundDrop + PushHeel);
             var lifted = back + up * (0.1 + groundDrop * 0.5) + travel * 0.06;
             heel = 0;
-            if (phase <= 0.25) { grounded = Smooth(phase / 0.25); return Blend(deck, front, grounded); }
-            if (phase <= 0.6) { grounded = 1; heel = PushHeel * (phase - 0.25) / 0.35; return Blend(front, back, (phase - 0.25) / 0.35); }
-            if (phase <= 0.85) { grounded = 1 - Smooth((phase - 0.6) / 0.25); heel = PushHeel * grounded; return Blend(back, lifted, 1 - grounded); }
+            if (phase <= PushDown) { grounded = Smooth(phase / PushDown); return Blend(deck, front, grounded); }
+            if (phase <= PushUp) { grounded = 1; heel = PushHeel * (phase - PushDown) / (PushUp - PushDown); return Blend(front, back, (phase - PushDown) / (PushUp - PushDown)); }
+            if (phase <= 0.85) { grounded = 1 - Smooth((phase - PushUp) / 0.25); heel = PushHeel * grounded; return Blend(back, lifted, 1 - grounded); }
             grounded = 0; return Blend(lifted, deck, Smooth((phase - 0.85) / 0.15));
         }
 

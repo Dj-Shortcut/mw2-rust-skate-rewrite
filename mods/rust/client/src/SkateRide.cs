@@ -329,7 +329,13 @@ public static class SkateRide
         if (pushing || PushPhase > 0f)
         {
             if (PushPhase <= 0f) { Pushes++; PushMongo = SkateKeys.Mongo; }
-            PushPhase += dt / PushPeriod;
+            // While the foot is on the ground it stays where it came down and the board rolls on
+            // past it: the stroke runs by the distance the board moves, not by the clock (a board
+            // that cannot move gets the slow clock), so the foot never slides along the ground.
+            var stroke = (float)(SkateRider.PushPlant + SkateRider.PushSweep);
+            var span = (float)(SkateRider.PushUp - SkateRider.PushDown);
+            var down = PushPhase > (float)SkateRider.PushDown && PushPhase < (float)SkateRider.PushUp;
+            PushPhase += down ? Math.Max(dt / (PushPeriod * 2f), Math.Abs(Speed) * dt / stroke * span) : dt / PushPeriod;
             if (PushPhase >= 1f) PushPhase = 0f;
         }
         // The velocity runs along the ground's tangent; a gap under the wheels is closed on top of it.

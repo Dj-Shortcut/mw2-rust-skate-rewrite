@@ -41,6 +41,7 @@ public static class RiderRig
     // push, the air, a grab, a bail) the joints ease over, in the board's own frame so that a turning
     // or tipping board does not leave them behind.
     public const float EaseSeconds = 0.07f;
+    private static bool pinLeft, pinRight;
     private const float SideBendShare = 0.6f;
     private const int PelvisJ = 0, LHipJ = 1, RHipJ = 2, LKneeJ = 3, RKneeJ = 4, LAnkleJ = 5, RAnkleJ = 6, LToeJ = 7, RToeJ = 8, ChestJ = 9, NeckJ = 10, HeadJ = 11,
         LShoulderJ = 12, RShoulderJ = 13, LElbowJ = 14, RElbowJ = 15, LHandJ = 16, RHandJ = 17, Points = 18,
@@ -530,6 +531,10 @@ public static class RiderRig
                 SkateBoard.HeldUp = grip;
                 SkateBoard.HeldAt = mid - grip * (AnkleHeight + DeckTop);
             }
+            // The pushing foot, while it is down: the back foot, or the front one in a mongo push.
+            var footDown = mode == RideMode.Ground && SkateRide.PushPhase > (float)SkateRider.PushDown && SkateRide.PushPhase < (float)SkateRider.PushUp;
+            var pushLeft = SkateRide.PushMongo ? !SkateRide.TailFirst : SkateRide.TailFirst;
+            pinLeft = footDown && pushLeft; pinRight = footDown && !pushLeft;
             Ease(pose, plane, toToes, upV, new Vector3((float)fx, (float)fy, (float)fz), now, frameSeconds);
             Shape(upV);
             Apply(upV, legsOnly);
@@ -553,7 +558,10 @@ public static class RiderRig
             var fresh = joint[i];
             var w = i < Points ? fresh - origin : fresh;
             var local = new Vector3(Vector3.Dot(w, x), Vector3.Dot(w, y), Vector3.Dot(w, z));
-            eased[i] = eased[i] + (local - eased[i]) * share;
+            // A foot on the ground is where the module puts it, at once: eased in the board's frame
+            // it would trail the board and slide along the ground.
+            var pinned = (pinLeft && (i == LAnkleJ || i == LToeJ)) || (pinRight && (i == RAnkleJ || i == RToeJ));
+            eased[i] = pinned ? local : eased[i] + (local - eased[i]) * share;
             var back = x * eased[i].x + y * eased[i].y + z * eased[i].z;
             joint[i] = i < Points ? origin + back : back.sqrMagnitude > 0.0001f ? back.normalized : fresh;
         }
