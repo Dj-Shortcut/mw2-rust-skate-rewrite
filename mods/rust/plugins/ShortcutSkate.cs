@@ -5,6 +5,8 @@ using System.IO;
 using System.Globalization;
 using System.Text;
 using System.Linq;
+using System.Reflection;
+using System.Reflection.Emit;
 using HarmonyLib;
 using Newtonsoft.Json;
 using Oxide.Core;
@@ -349,6 +351,89 @@ namespace Shortcut.RustMod
     public enum SkateParkKind { Bank, Kicker, QuarterPipe, LedgeLow, LedgeHigh, LongLedge, Funbox, Halfpipe }
     public enum SkateParkMaterial { Stone, Metal, Wood }
 
+    public enum SkateParkSelectionAction { Next, Cancel, PlacementFailed, PlacementSucceeded }
+
+    public struct SkateParkSelectionState
+    {
+        public readonly bool Selected;
+        public readonly SkateParkKind Kind;
+        public readonly double Expires;
+        public SkateParkSelectionState(bool selected, SkateParkKind kind, double expires)
+        { Selected = selected; Kind = kind; Expires = expires; }
+    }
+
+    public static class SkateParkSelections
+    {
+        public const double LifetimeSeconds = 120;
+        public static bool ValidOrder(SkateParkKind[] order)
+        {
+            if (order == null || order.Length < 1 || order.Length > 8) return false;
+            for (int i = 0; i < order.Length; i++)
+            {
+                if (SkateParkLayout.Name(order[i]) == null) return false;
+                for (int j = 0; j < i; j++) if (order[i] == order[j]) return false;
+            }
+            return true;
+        }
+        private static bool Clock(double now) { return SkateSessionBounds.Finite(now) && now >= 0; }
+        private static bool Valid(SkateParkSelectionState state)
+        { return SkateParkLayout.Name(state.Kind) != null && SkateSessionBounds.Finite(state.Expires) &&
+            state.Expires >= 0 && (!state.Selected || state.Expires > 0); }
+        public static bool Active(SkateParkSelectionState state, double now)
+        { return Valid(state) && Clock(now) && state.Selected && now <= state.Expires; }
+        public static bool TrySelect(SkateParkKind kind, bool admin, bool ready, double now, out SkateParkSelectionState state)
+        {
+            state = new SkateParkSelectionState();
+            double deadline = now + LifetimeSeconds;
+            if (!admin || !ready || !Clock(now) || !SkateSessionBounds.Finite(deadline) || deadline <= now ||
+                SkateParkLayout.Name(kind) == null) return false;
+            state = new SkateParkSelectionState(true, kind, deadline);
+            return true;
+        }
+        public static bool TryApply(SkateParkSelectionState state, SkateParkSelectionAction action, bool admin,
+            bool ready, double now, SkateParkKind[] order, out SkateParkSelectionState result)
+        {
+            result = state;
+            if (!admin || !Clock(now) || !Valid(state)) return false;
+            switch (action)
+            {
+                case SkateParkSelectionAction.Next:
+                    if (!ready || !ValidOrder(order)) return false;
+                    int next = 0;
+                    if (Active(state, now))
+                        for (int i = 0; i < order.Length; i++)
+                            if (order[i] == state.Kind) { next = (i + 1) % order.Length; break; }
+                    SkateParkSelectionState selected;
+                    if (!TrySelect(order[next], admin, ready, now, out selected)) return false;
+                    result = selected; return true;
+                case SkateParkSelectionAction.Cancel:
+                    result = new SkateParkSelectionState(false, state.Kind, 0); return true;
+                case SkateParkSelectionAction.PlacementFailed: return true;
+                case SkateParkSelectionAction.PlacementSucceeded:
+                    if (!ready || !Active(state, now)) return false;
+                    result = new SkateParkSelectionState(false, state.Kind, 0); return true;
+                default: return false;
+            }
+        }
+        public static bool ValidGestureName(string name)
+        { return !string.IsNullOrWhiteSpace(name) && name.Length <= 128 && name == name.Trim() && !name.Any(char.IsControl); }
+        public static bool TryGesture(string name, string[][] aliases, out int index, out string error)
+        {
+            index = -1; error = null;
+            if (!ValidGestureName(name)) { error = "Configured gesture name is invalid."; return false; }
+            if (aliases == null) { error = "Gesture catalog is unavailable."; return false; }
+            for (int i = 0; i < aliases.Length; i++)
+            {
+                if (aliases[i] == null || !aliases[i].Any(alias => string.Equals(alias, name, StringComparison.OrdinalIgnoreCase))) continue;
+                if (index >= 0) { index = -1; error = "Gesture '" + name + "' is ambiguous."; return false; }
+                index = i;
+            }
+            if (index >= 0) return true;
+            error = "Gesture '" + name + "' was not found in the native catalog.";
+            return false;
+        }
+    }
+
     public struct SkateParkPart
     {
         public double Right, Forward, Height, Pitch, Yaw;
@@ -560,7 +645,7 @@ namespace Shortcut.RustMod
 
 namespace Oxide.Plugins
 {
-    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.2")]
+    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.3")]
     [Description("Player-scoped skateboard movement bounds and saved building-plan park assemblies.")]
     public sealed class ShortcutSkate : RustPlugin
     {
@@ -588,6 +673,7 @@ namespace Oxide.Plugins
         private const int MaximumParkDataLength = 1048576;
         private const string ParkFoundationPrefab = "assets/prefabs/building core/foundation/foundation.prefab";
         private readonly Dictionary<ulong, ParkSelection> parkSelections = new Dictionary<ulong, ParkSelection>();
+        private object parkSelectionEpoch = new object();
         private readonly Dictionary<ulong, ParkGroup> parkMembers = new Dictionary<ulong, ParkGroup>();
         private readonly List<BaseEntity> parkRollback = new List<BaseEntity>();
         private ParkData parkData;
@@ -598,6 +684,14 @@ namespace Oxide.Plugins
         private bool parkBusy;
         private bool parkRefreshing;
         private bool parkClosing;
+        private const string GesturePatchId = "ShortcutSkate.ParkGestures";
+        private Harmony gestureHarmony;
+        private bool gestureAvailable;
+        private bool gestureShape;
+        private bool gestureNativeHook;
+        private string gestureFailure = "Gesture selection has not initialized.";
+        private GestureConfig parkNextGesture, parkCancelGesture;
+        private SkateParkKind[] parkGestureOrder;
         private readonly HashSet<string> parkDemolitionPending = new HashSet<string>(StringComparer.Ordinal);
         private BuildingBlock parkDemolitionHookBlock;
         private BasePlayer parkDemolitionHookPlayer;
@@ -651,8 +745,9 @@ namespace Oxide.Plugins
         private sealed class ParkSelection
         {
             public BasePlayer Player;
-            public SkateParkKind Kind;
-            public double Expires;
+            public SkateParkSelectionState State;
+            public SkateParkKind Kind { get { return State.Kind; } }
+            public double Expires { get { return State.Expires; } }
             public bool Pending;
         }
 
@@ -734,6 +829,10 @@ namespace Oxide.Plugins
             [JsonProperty(Required = Required.Always)] public double MaximumAirtime;
             [JsonProperty(Required = Required.DisallowNull)] public bool AutomaticEligiblePlayers = true;
             [JsonProperty(Required = Required.DisallowNull)] public double AutomaticRearmSeconds = 1.5;
+            [JsonProperty(Required = Required.DisallowNull)] public string ParkNextGesture = "I need wood";
+            [JsonProperty(Required = Required.DisallowNull)] public string ParkCancelGesture = "Thumbs up";
+            [JsonProperty(Required = Required.DisallowNull)] public string[] ParkPieceOrder =
+                { "halfpipe", "bank", "kicker", "quarterpipe", "ledge-low", "ledge-high", "long-ledge", "funbox" };
         }
 
         private sealed class Session
@@ -762,6 +861,8 @@ namespace Oxide.Plugins
             ready = false;
             unavailableReason = SkateSessionReason.Unavailable;
             settings = null;
+            gestureAvailable = false;
+            gestureFailure = "Valid gesture configuration is required.";
             try
             {
                 base.LoadConfig();
@@ -787,6 +888,15 @@ namespace Oxide.Plugins
                 !SkateSessionBounds.Finite(value.AutomaticRearmSeconds) ||
                 value.AutomaticRearmSeconds < 0.5 || value.AutomaticRearmSeconds > 10)
                 throw new InvalidDataException("Use Version 1, speed 1-50 m/s, airtime 0.1-2 seconds and rearm 0.5-10 seconds.");
+            if (!SkateParkSelections.ValidGestureName(value.ParkNextGesture) || !SkateParkSelections.ValidGestureName(value.ParkCancelGesture) ||
+                string.Equals(value.ParkNextGesture, value.ParkCancelGesture, StringComparison.OrdinalIgnoreCase) ||
+                value.ParkPieceOrder == null || value.ParkPieceOrder.Length < 1 || value.ParkPieceOrder.Length > 8)
+                throw new InvalidDataException("Use distinct valid gesture names and a unique park-piece order containing 1-8 pieces.");
+            var order = new SkateParkKind[value.ParkPieceOrder.Length];
+            for (int i = 0; i < order.Length; i++)
+                if (!SkateParkLayout.TryKind(value.ParkPieceOrder[i], out order[i]))
+                    throw new InvalidDataException("ParkPieceOrder contains an unknown park piece.");
+            if (!SkateParkSelections.ValidOrder(order)) throw new InvalidDataException("ParkPieceOrder contains duplicate park pieces.");
             return value;
         }
 
@@ -801,6 +911,7 @@ namespace Oxide.Plugins
         private void OnServerInitialized()
         {
             InitializeParks();
+            InitializeParkGestures();
             ready = settings != null && groundMask != 0 && Patched("ValidateMoves", typeof(MovePatch), false) &&
                 Patched("AreSpeeding", typeof(SpeedPatch), true) && Patched("AreFlying", typeof(FlyPatch), true);
             if (!ready) PrintError("Skating is disabled: matching movement patches and valid config are required.");
@@ -814,6 +925,187 @@ namespace Oxide.Plugins
             if (info == null) return false;
             return (postfix ? info.Postfixes : info.Prefixes).Any(p => p.PatchMethod.DeclaringType == patch) &&
                 (postfix || info.Finalizers.Any(p => p.PatchMethod.DeclaringType == patch));
+        }
+
+        private void InitializeParkGestures()
+        {
+            gestureAvailable = false; gestureShape = false; gestureNativeHook = false;
+            parkNextGesture = parkCancelGesture = null; parkGestureOrder = null;
+            try
+            {
+                if (settings == null) throw new InvalidDataException("Valid gesture configuration is required.");
+                var collection = GestureCollection.Instance;
+                if (collection == null || collection.AllGestures == null)
+                    throw new InvalidDataException("GestureCollection.Instance.AllGestures is unavailable.");
+                var configs = new List<GestureConfig>();
+                foreach (GestureConfig gesture in collection.AllGestures)
+                    if (gesture != null && !configs.Any(item => ReferenceEquals(item, gesture))) configs.Add(gesture);
+                var aliases = new string[configs.Count][];
+                for (int i = 0; i < configs.Count; i++)
+                {
+                    var gesture = configs[i];
+                    aliases[i] = new[] { gesture.gestureName == null ? null : gesture.gestureName.english,
+                        gesture.gestureName == null ? null : gesture.gestureName.token, gesture.convarName, gesture.gestureCommand };
+                }
+                int next, cancel;
+                string error;
+                if (!SkateParkSelections.TryGesture(settings.ParkNextGesture, aliases, out next, out error))
+                    throw new InvalidDataException("Next: " + error);
+                if (!SkateParkSelections.TryGesture(settings.ParkCancelGesture, aliases, out cancel, out error))
+                    throw new InvalidDataException("Cancel: " + error);
+                if (next == cancel) throw new InvalidDataException("Next and cancel resolve to the same native gesture.");
+                parkNextGesture = configs[next]; parkCancelGesture = configs[cancel];
+                parkGestureOrder = new SkateParkKind[settings.ParkPieceOrder.Length];
+                for (int i = 0; i < parkGestureOrder.Length; i++)
+                    if (!SkateParkLayout.TryKind(settings.ParkPieceOrder[i], out parkGestureOrder[i]))
+                        throw new InvalidDataException("ParkPieceOrder contains an unknown park piece.");
+                if (!SkateParkSelections.ValidOrder(parkGestureOrder)) throw new InvalidDataException("ParkPieceOrder is invalid.");
+                MethodInfo method = typeof(BasePlayer).GetMethod("Server_StartGesture", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+                    null, new[] { typeof(GestureConfig), typeof(BasePlayer.GestureStartSource), typeof(bool) }, null);
+                if (method == null || method.ReturnType != typeof(void))
+                    throw new InvalidDataException("The native accepted-start method is unavailable.");
+                gestureHarmony = new Harmony(GesturePatchId);
+                gestureHarmony.UnpatchAll(GesturePatchId);
+                gestureHarmony.Patch(method, transpiler: new HarmonyMethod(typeof(ShortcutSkate).GetMethod(
+                    "GestureTranspiler", BindingFlags.Static | BindingFlags.NonPublic)));
+                var patches = Harmony.GetPatchInfo(method);
+                if (!gestureShape || patches == null || !patches.Transpilers.Any(p => p.owner == GesturePatchId))
+                    throw new InvalidDataException(gestureFailure ?? "The accepted-start bridge was not registered.");
+                gestureAvailable = true; gestureFailure = null;
+            }
+            catch (Exception error)
+            { gestureFailure = error.Message; PrintWarning("Park gesture selection is unavailable: " + gestureFailure); }
+        }
+
+        internal static IList<CodeInstruction> BridgeInstructions(IList<CodeInstruction> instructions, FieldInfo field,
+            MethodInfo dispatcher, out bool nativeHook, out string reason)
+        {
+            nativeHook = false; reason = null;
+            if (instructions == null || instructions.Any(i => i == null || i.labels == null || i.blocks == null) || field == null || field.IsStatic ||
+                dispatcher == null || !dispatcher.IsStatic || dispatcher.ReturnType != typeof(void))
+            { reason = "Accepted-start bridge inputs are unavailable."; return instructions; }
+            var parameters = dispatcher.GetParameters();
+            if (parameters.Length != 2 || parameters[0].ParameterType != field.DeclaringType || parameters[1].ParameterType != field.FieldType)
+            { reason = "Accepted-start dispatcher signature is incompatible."; return instructions; }
+            int store = -1, stores = 0;
+            for (int i = 0; i < instructions.Count; i++)
+                if (instructions[i].opcode == OpCodes.Stfld && Equals(instructions[i].operand, field)) { store = i; stores++; }
+            if (stores != 1 || store < 2 || store + 1 >= instructions.Count ||
+                instructions[store - 2].opcode != OpCodes.Ldarg_0 || instructions[store - 1].opcode != OpCodes.Ldarg_1)
+            { reason = "The accepted currentGesture assignment is unavailable or ambiguous."; return instructions; }
+            foreach (CodeInstruction instruction in instructions)
+            {
+                if (instruction.operand is Label && instructions[store + 1].labels.Contains((Label)instruction.operand))
+                { reason = "A branch can bypass the accepted-start dispatch point."; return instructions; }
+                var labels = instruction.operand as Label[];
+                if (labels != null && labels.Any(label => instructions[store + 1].labels.Contains(label)))
+                { reason = "A switch can bypass the accepted-start dispatch point."; return instructions; }
+            }
+            int hook = -1, hooks = 0;
+            for (int i = 0; i < instructions.Count; i++)
+                if (instructions[i].opcode == OpCodes.Ldstr && Equals(instructions[i].operand, "OnPlayerGestureStarted")) { hook = i; hooks++; }
+            if (hooks != 0)
+            {
+                MethodInfo call = hook >= 0 && hook + 4 < instructions.Count ? instructions[hook + 3].operand as MethodInfo : null;
+                var args = call == null ? null : call.GetParameters();
+                if (hooks != 1 || hook != store + 1 || hook + 4 >= instructions.Count ||
+                    instructions[hook + 1].opcode != OpCodes.Ldarg_0 || instructions[hook + 2].opcode != OpCodes.Ldarg_1 ||
+                    instructions[hook + 3].opcode != OpCodes.Call || instructions[hook + 4].opcode != OpCodes.Pop ||
+                    call == null || !call.IsStatic || call.DeclaringType != typeof(Interface) || call.Name != "CallHook" || call.ReturnType != typeof(object) ||
+                    args.Length != 3 || args[0].ParameterType != typeof(string) || args[1].ParameterType != typeof(object) || args[2].ParameterType != typeof(object))
+                { reason = "An unrecognized native started-hook dispatcher prevents safe bridging."; return instructions; }
+                for (int i = hook + 1; i <= hook + 4; i++)
+                    foreach (CodeInstruction instruction in instructions)
+                    {
+                        if (instruction.operand is Label && instructions[i].labels.Contains((Label)instruction.operand))
+                        { reason = "A branch enters the native started-hook dispatcher."; return instructions; }
+                        var labels = instruction.operand as Label[];
+                        if (labels != null && labels.Any(label => instructions[i].labels.Contains(label)))
+                        { reason = "A switch enters the native started-hook dispatcher."; return instructions; }
+                    }
+                nativeHook = true; return instructions;
+            }
+            var result = new List<CodeInstruction>(instructions.Count + 3);
+            for (int i = 0; i < instructions.Count; i++)
+            {
+                result.Add(instructions[i]);
+                if (i == store)
+                {
+                    result.Add(new CodeInstruction(OpCodes.Ldarg_0));
+                    result.Add(new CodeInstruction(OpCodes.Ldarg_1));
+                    result.Add(new CodeInstruction(OpCodes.Call, dispatcher));
+                }
+            }
+            return result;
+        }
+
+        private static IEnumerable<CodeInstruction> GestureTranspiler(IEnumerable<CodeInstruction> instructions)
+        {
+            var original = instructions.ToList();
+            bool nativeHook;
+            string reason;
+            var result = BridgeInstructions(original, typeof(BasePlayer).GetField("currentGesture", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic),
+                typeof(ShortcutSkate).GetMethod("GestureDispatch", BindingFlags.Static | BindingFlags.NonPublic), out nativeHook, out reason);
+            if (instance != null)
+            { instance.gestureShape = reason == null; instance.gestureNativeHook = nativeHook; instance.gestureFailure = reason; }
+            return result;
+        }
+
+        private static void GestureDispatch(BasePlayer player, GestureConfig gesture)
+        {
+            try
+            {
+                if (instance != null && instance.gestureAvailable && !instance.parkClosing)
+                    instance.OnPlayerGestureStarted(player, gesture);
+            }
+            catch
+            {
+                try { if (instance != null) { instance.gestureAvailable = false; instance.gestureFailure = "The gesture handler failed; reload the plugin."; } }
+                catch { }
+            }
+        }
+
+        private void OnPlayerGestureStarted(BasePlayer player, GestureConfig gesture)
+        {
+            if (player == null || !player.IsAdmin || player.IsNpc || !player.IsConnected || !gestureAvailable || parkClosing) return;
+            try { HandleParkGesture(player, gesture); }
+            catch { gestureAvailable = false; gestureFailure = "The gesture handler failed; reload the plugin."; }
+        }
+
+        private void HandleParkGesture(BasePlayer player, GestureConfig gesture)
+        {
+            bool cancel = ReferenceEquals(gesture, parkCancelGesture);
+            if (!cancel && !ReferenceEquals(gesture, parkNextGesture)) return;
+            ParkSelection previous;
+            bool existing = parkSelections.TryGetValue(player.userID, out previous) && ReferenceEquals(previous.Player, player);
+            SkateParkSelectionState state = existing ? previous.State : new SkateParkSelectionState();
+            SkateParkSelectionState selected;
+            if (cancel)
+            {
+                if (SkateParkSelections.TryApply(state, SkateParkSelectionAction.Cancel, true, false,
+                    clock.Elapsed.TotalSeconds, null, out selected))
+                { parkSelectionEpoch = new object(); parkSelections.Remove(player.userID); player.ChatMessage("Park selection cancelled."); }
+                return;
+            }
+            string failure;
+            if (!Eligible(player)) { player.ChatMessage("Park placement is unavailable; be alive, awake, unmounted and on dry land."); return; }
+            object epoch = parkSelectionEpoch = new object();
+            if (!RefreshParkWorld(out failure)) { if (player.IsAdmin) player.ChatMessage(failure); return; }
+            if (!player.IsAdmin) return;
+            if (!ReferenceEquals(epoch, parkSelectionEpoch) || !ReferenceEquals(instance, this) || parkClosing ||
+                !gestureAvailable || !Eligible(player))
+            { player.ChatMessage("The selection request was superseded or the administrator became unavailable."); return; }
+            PruneParkSelections();
+            state = parkSelections.TryGetValue(player.userID, out previous) && ReferenceEquals(previous.Player, player) ?
+                previous.State : new SkateParkSelectionState();
+            if (parkData.Groups.Count >= MaximumParkGroups ||
+                (!parkSelections.ContainsKey(player.userID) && parkSelections.Count >= MaximumParkSelections))
+            { player.ChatMessage("The park group or pending-selection limit has been reached."); return; }
+            if (!SkateParkSelections.TryApply(state, SkateParkSelectionAction.Next, true, true,
+                clock.Elapsed.TotalSeconds, parkGestureOrder, out selected)) return;
+            parkSelections[player.userID] = new ParkSelection { Player = player, State = selected };
+            player.ChatMessage("Selected park " + SkateParkLayout.Name(selected.Kind) + ". Place a normal square foundation within 120 seconds. Use " +
+                settings.ParkNextGesture + " for next or " + settings.ParkCancelGesture + " to cancel.");
         }
 
         private bool Permitted(BasePlayer player)
@@ -872,9 +1164,17 @@ namespace Oxide.Plugins
             if (!diagnostics.TryGet(player.userID, player, out history))
                 history = diagnostics.GetOrCreate(player.userID, player);
             if (candidate) session.History = history;
+            ParkSelection selection;
+            double now = clock.Elapsed.TotalSeconds;
+            bool pending = parkSelections.TryGetValue(player.userID, out selection) && ReferenceEquals(selection.Player, player) &&
+                SkateParkSelections.Active(selection.State, now);
             arg.ReplyWith(state + "\nSteam ID " + target.ToString(CultureInfo.InvariantCulture) +
                 "; ready=" + ready + "; unavailable-reason=" + (ready ? SkateSessionReason.None : unavailableReason) + "; mode=" + (candidate ? (session.Manual ? "manual" : "automatic") : "inactive") +
                 "; last-batch-allowed=" + (candidate && session.Allowed) +
+                "; park-selection=" + (pending ? SkateParkLayout.Name(selection.Kind) : "none") +
+                "; park-selection-remaining=" + (pending ? SkateStatusReport.Number(selection.Expires - now) : "0") + "s" +
+                "; park-gestures=" + gestureAvailable + "; gesture-source=" + (gestureAvailable ? (gestureNativeHook ? "native" : "bridge") : "unavailable") +
+                "; gesture-diagnostic=" + (gestureAvailable ? "none" : gestureFailure) +
                 "; speed-limit=" + SkateStatusReport.Number(settings == null ? double.NaN : settings.MaximumHorizontalSpeed) +
                 "m/s; air-limit=" + SkateStatusReport.Number(settings == null ? double.NaN : settings.MaximumAirtime) +
                 "s; automatic=" + (settings != null && settings.AutomaticEligiblePlayers) +
@@ -1019,6 +1319,9 @@ namespace Oxide.Plugins
         private void Unload()
         {
             parkClosing = true;
+            gestureAvailable = false;
+            try { if (gestureHarmony != null) gestureHarmony.UnpatchAll(GesturePatchId); }
+            catch (Exception error) { PrintError("The park gesture patch could not be removed: " + error.Message); }
             parkReady = false;
             parkSelections.Clear();
             parkDemolitionPending.Clear();
@@ -1410,20 +1713,35 @@ namespace Oxide.Plugins
             if (arg.Args == null || arg.Args.Length != 1)
             { arg.ReplyWith("Usage: skate.piece <bank|kicker|quarterpipe|ledge-low|ledge-high|long-ledge|funbox|halfpipe|cancel>."); return; }
             if (string.Equals(arg.GetString(0), "cancel", StringComparison.OrdinalIgnoreCase))
-            { parkSelections.Remove(player.userID); arg.ReplyWith("Park selection cancelled."); return; }
+            {
+                ParkSelection previous;
+                SkateParkSelectionState state = parkSelections.TryGetValue(player.userID, out previous) && ReferenceEquals(previous.Player, player) ?
+                    previous.State : new SkateParkSelectionState();
+                SkateParkSelectionState cancelled;
+                if (SkateParkSelections.TryApply(state, SkateParkSelectionAction.Cancel, true, false,
+                    clock.Elapsed.TotalSeconds, null, out cancelled))
+                { parkSelectionEpoch = new object(); parkSelections.Remove(player.userID); arg.ReplyWith("Park selection cancelled."); }
+                return;
+            }
             SkateParkKind kind;
             if (!SkateParkLayout.TryKind(arg.GetString(0), out kind))
             { arg.ReplyWith("Unknown park piece. Use bank, kicker, quarterpipe, ledge-low, ledge-high, long-ledge, funbox or halfpipe."); return; }
             string failure;
             if (!Eligible(player))
             { arg.ReplyWith("Park placement is unavailable; be alive, awake, unmounted and on dry land."); return; }
+            object epoch = parkSelectionEpoch = new object();
             if (!RefreshParkWorld(out failure)) { arg.ReplyWith(failure); return; }
+            if (!ReferenceEquals(epoch, parkSelectionEpoch) || !ReferenceEquals(instance, this) || parkClosing ||
+                !player.IsAdmin || !Eligible(player))
+            { arg.ReplyWith("The selection request was superseded or the administrator became unavailable."); return; }
             PruneParkSelections();
             if (parkData.Groups.Count >= MaximumParkGroups ||
                 (!parkSelections.ContainsKey(player.userID) && parkSelections.Count >= MaximumParkSelections))
             { arg.ReplyWith("The park group or pending-selection limit has been reached."); return; }
-            parkSelections[player.userID] = new ParkSelection { Player = player, Kind = kind,
-                Expires = clock.Elapsed.TotalSeconds + 120 };
+            SkateParkSelectionState selected;
+            if (!SkateParkSelections.TrySelect(kind, true, true, clock.Elapsed.TotalSeconds, out selected))
+            { arg.ReplyWith("Park selection time is unavailable."); return; }
+            parkSelections[player.userID] = new ParkSelection { Player = player, State = selected };
             arg.ReplyWith("Selected " + SkateParkLayout.Name(kind) + ". Place one normal horizontal square foundation with a building plan within 120 seconds. Failed attempts retain this selection until its original expiry; " +
                 (kind == SkateParkKind.Halfpipe ? "the halfpipe uses a Stone flat, Metal transitions/decks/sides and Wood back rails." : "the assembly will be Stone."));
         }
@@ -1469,7 +1787,7 @@ namespace Oxide.Plugins
             ParkSelection current;
             return player != null && ReferenceEquals(selection.Player, player) &&
                 parkSelections.TryGetValue(player.userID, out current) && ReferenceEquals(current, selection) &&
-                clock.Elapsed.TotalSeconds <= selection.Expires;
+                SkateParkSelections.Active(selection.State, clock.Elapsed.TotalSeconds);
         }
 
         private void OnEntityBuilt(Planner planner, GameObject gameObject)
@@ -1908,9 +2226,14 @@ namespace Oxide.Plugins
                         !block.enableSaving || !block.grounded || block.buildingID != snapshot.Building)
                         throw new InvalidDataException("A selection, save/world, foundation or park member changed during save registration.");
                 }
-                if (!CurrentParkSelection(player, selection)) throw new InvalidDataException("The park selection expired or changed before completion.");
+                SkateParkSelectionState consumed;
+                if (!CurrentParkSelection(player, selection) || !SkateParkSelections.TryApply(selection.State,
+                    SkateParkSelectionAction.PlacementSucceeded, player.IsAdmin, parkReady, clock.Elapsed.TotalSeconds, null, out consumed))
+                    throw new InvalidDataException("The park selection expired or changed before completion.");
                 foreach (ParkMember part in parts) parkMembers.Add(part.Id, group);
                 foreach (BuildingBlock block in created) parkRollback.Remove(block);
+                selection.State = consumed;
+                parkSelectionEpoch = new object();
                 parkSelections.Remove(player.userID);
                 committed = true;
                 player.ConsoleMessage("Park " + group.Kind + " created as a saved native building assembly (" +
@@ -1918,6 +2241,9 @@ namespace Oxide.Plugins
             }
             catch (Exception error)
             {
+                SkateParkSelectionState retained;
+                if (SkateParkSelections.TryApply(selection.State, SkateParkSelectionAction.PlacementFailed,
+                    player != null && player.IsAdmin, parkReady, clock.Elapsed.TotalSeconds, null, out retained)) selection.State = retained;
                 if (recorded)
                 {
                     parkData.Groups.Remove(group);
