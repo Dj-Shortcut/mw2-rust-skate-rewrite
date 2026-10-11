@@ -49,7 +49,7 @@ PC reliably from a distance.
 | `interop` | Generates the interop set for the installed Rust build in the background. Needed once after every Rust update. |
 | `progress` | Progress of that generation; done when the log ends with `GEN DONE`. |
 | `runtime` | Builds the changed `Il2CppInterop.Runtime.dll` from the pinned upstream source and [`rt/`](rt/README.md). Needed once. |
-| `build` | Compiles the plugin from [`../sources.txt`](../sources.txt) at the head of the branch, or at `$pcommit`. |
+| `build` | Compiles the plugin from [`../sources.txt`](../sources.txt) at the head of the branch, or at `$pcommit`, and copies the park models of [`../models.txt`](../models.txt) next to it. |
 | `session` | One bounded run of the client with the loader; see below. Normally started by one of the next five. |
 | `play` | Build, then a session to play in, started directly, sound on. |
 | `pad` | The same through the owner's Steam shortcut, so that the controller layout applies off the board; the owner joins his server from the menu. |
