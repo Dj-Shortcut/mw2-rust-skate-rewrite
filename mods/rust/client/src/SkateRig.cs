@@ -37,7 +37,7 @@ public class SkateRig : MonoBehaviour
     {
         var now = Time.realtimeSinceStartup;
         SkateClock.Frame();
-        var t0 = SkateClock.Now(); SkateKeys.Poll(); SkateClock.Add(SkateClock.Keys, t0);
+        var t0 = SkateClock.Now(); SkateKeys.Poll(); SkateConsole.Update(Time.realtimeSinceStartup); SkateClock.Add(SkateClock.Keys, t0);
         if (SkateRide.On)
         {
             // The game switches its walk component off when something else moves the player (a seat, a vehicle).

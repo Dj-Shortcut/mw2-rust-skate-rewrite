@@ -52,9 +52,11 @@ public static class RiderRig
     // screen. So the set is also made too small to see. The game may set the size again at any
     // time, so it is made small again every frame, and the size the game last gave is put back.
     // A look through the whole scene for held items costs the game a fifth of a second, so it is
-    // done at most every HeldWhole seconds; in between the object that held the last item found
-    // (their parent) is looked through, which is cheap, every HeldEvery seconds.
-    public const float HeldEvery = 0.25f, HeldWhole = 2f, HeldSmall = 0.0001f;
+    // done at most every HeldWhole seconds, and each time it finds nothing the next one waits twice
+    // as long, up to HeldWholeMost (empty hands would otherwise cost a frame every two seconds);
+    // in between the object that held the last item found (their parent) is looked through, which
+    // is cheap, every HeldEvery seconds.
+    public const float HeldEvery = 0.25f, HeldWhole = 2f, HeldWholeMost = 32f, HeldSmall = 0.0001f;
     private const int HeldTries = 5, HeldScans = 3;
 
     // One thing of the set: the object that carries it (Root) or one drawn part of it (Part). What
@@ -75,7 +77,7 @@ public static class RiderRig
     // A frame's worth of this is a frame lost: past this the handling is switched off for the session.
     private const double HeldBudgetMs = 8.0; private const int HeldSlowFrames = 30;
     private static Transform heldHolder;
-    private static float nextWhole;
+    private static float nextWhole, wholeWait = HeldWhole;
     private static int heldScanFailures;
 
     private static void Held(bool wantThird, float now)
@@ -83,11 +85,11 @@ public static class RiderRig
         if (heldOff) return;
         var began = SkateClock.Now();
         // The view going behind the rider is worth one look through the whole scene.
-        if (wantThird && !heldThird) nextHeld = nextWhole = 0f;
+        if (wantThird && !heldThird) { nextHeld = nextWhole = 0f; wholeWait = HeldWhole; }
         heldThird = wantThird;
         // A set that lost a thing is looked for again at once, but once: the lost thing is dropped
         // so that it cannot ask for a look every frame, which cost the owner his frame rate.
-        if (wantThird && HeldGone()) nextHeld = 0f;
+        if (wantThird && HeldGone()) { nextHeld = nextWhole = 0f; wholeWait = HeldWhole; }
         if (wantThird && now >= nextHeld && heldScanFailures < HeldScans)
         {
             nextHeld = now + HeldEvery;
@@ -97,9 +99,10 @@ public static class RiderRig
                 if (!ReferenceEquals(heldHolder, null) && heldHolder != null) models = heldHolder.GetComponentsInChildren<BaseViewModel>(true);
                 if ((models == null || models.Length == 0) && now >= nextWhole)
                 {
-                    nextWhole = now + HeldWhole;
+                    nextWhole = now + wholeWait;
                     models = UnityEngine.Object.FindObjectsOfType<BaseViewModel>();
                     heldHolder = models.Length > 0 && models[0] != null ? models[0].transform.parent : null;
+                    wholeWait = models.Length > 0 ? HeldWhole : Math.Min(wholeWait * 2f, HeldWholeMost);
                 }
                 if (models == null) return;
                 var found = new System.Collections.Generic.List<HeldThing>(); long set = models.Length; var names = ""; var parts = 0;
@@ -303,7 +306,7 @@ public static class RiderRig
         // What cannot be put back now is kept, and tried again from the next frame on.
         HeldRestore(false);
         var left = new System.Collections.Generic.List<HeldThing>(); HeldKeep(left);
-        held = left.ToArray(); heldSet = 0; heldScanFailures = 0; nextHeld = nextWhole = 0f; heldHolder = null; heldOff = false; heldSlow = 0;
+        held = left.ToArray(); heldSet = 0; heldScanFailures = 0; nextHeld = nextWhole = 0f; wholeWait = HeldWhole; heldHolder = null; heldOff = false; heldSlow = 0;
         Bound = false; body = new SkinnedMeshRenderer[0]; legSet = new SkinnedMeshRenderer[0]; skinSet = 0;
     }
 
@@ -437,8 +440,9 @@ public static class RiderRig
             // In a jump the legs fold by as much as the board has come up, so the body keeps its line.
             var inAir = SkateRide.Grabbing ? 0.95f : SkateRide.Jumped ? 0.2f + SkateBoard.Pop / (float)SkatePose.CrouchDrop : 0.45f;
             var want = mode == RideMode.Air ? inAir : mode == RideMode.Grind ? 0.38f : SkateRide.Braking ? 0.4f : 0.18f;
-            // A right stick held back is the rider gathering for the pop.
+            // A right stick held back is the rider gathering for the pop; a trigger held is the crouch of a pump.
             if (SkateKeys.Charging && mode == RideMode.Ground) want = Math.Max(want, 0.3f + 0.3f * SkateKeys.Charge);
+            if (mode == RideMode.Ground && SkateRide.PumpHeld > 0f) want = Math.Max(want, 0.25f + 0.45f * SkateRide.PumpHeld / SkateRide.PumpCharge);
             var since = now - SkateRide.LandAt;
             if (mode == RideMode.Ground && since < 0.35f) want += (1f - since / 0.35f) * SkateRide.Clamp(SkateRide.LandImpact / 8f, 0.2f, 1f) * 0.45f;
             Crouch += (SkateRide.Clamp(want, 0f, 1f) - Crouch) * SkateRide.Clamp(frameSeconds * 14f, 0f, 1f);
@@ -458,6 +462,7 @@ public static class RiderRig
                 Error = error; return;
             }
             Ease(pose, plane, toToes, upV, new Vector3((float)fx, (float)fy, (float)fz), now, frameSeconds);
+            Shape(upV);
             Apply(upV, legsOnly);
             Applied++;
         }
@@ -489,6 +494,24 @@ public static class RiderRig
         joint[ChestJ] = hips + line * (float)Rig.SpineLength;
         joint[NeckJ] = hips + line * (float)(Rig.SpineLength * 1.12);
         joint[HeadJ] = joint[NeckJ] + line * (float)Rig.NeckToHeadLength;
+    }
+
+    // What the module does not know: in a manual the weight goes over the axle that carries it, the
+    // body back toward the tail (or forward over the nose), and the arms come out for balance.
+    public const float ManualShift = 0.12f, ManualArms = 0.14f;
+    private static void Shape(Vector3 up)
+    {
+        var tip = SkateBoard.Tip;
+        if (Math.Abs(tip) < 0.01f) return;
+        var lead = SkateRide.Dir(SkateRide.Yaw); lead = lead - up * Vector3.Dot(lead, up);
+        if (lead.sqrMagnitude < 0.0001f) return;
+        lead = SkateRide.Speed >= 0f ? lead.normalized : -lead.normalized;
+        var shift = -lead * (ManualShift * tip);
+        int[] body = { PelvisJ, LHipJ, RHipJ, ChestJ, NeckJ, HeadJ, LShoulderJ, RShoulderJ, LElbowJ, RElbowJ, LHandJ, RHandJ };
+        for (var i = 0; i < body.Length; i++) joint[body[i]] += shift;
+        var side = Vector3.Cross(up, lead); var amount = Math.Abs(tip);
+        joint[LHandJ] += (-side * ManualArms + up * ManualArms * 0.8f) * amount; joint[LElbowJ] += (-side * ManualArms * 0.5f + up * ManualArms * 0.3f) * amount;
+        joint[RHandJ] += (side * ManualArms + up * ManualArms * 0.8f) * amount; joint[RElbowJ] += (side * ManualArms * 0.5f + up * ManualArms * 0.3f) * amount;
     }
 
     private static void Apply(Vector3 up, bool legsOnly)

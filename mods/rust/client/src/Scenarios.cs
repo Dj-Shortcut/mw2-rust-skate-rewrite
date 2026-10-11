@@ -6,6 +6,8 @@ using UnityEngine.InputSystem;
 public static class Scenarios
 {
     public static string Name = "", Phase = "";
+    // A check rides from where the view points at its start, turned by this much: a way round an obstacle at the spawn.
+    public static float YawOffset;
     public static bool Active { get { return Name != ""; } }
     // A check that plays a controller rides through the plugin's own input, getting on and off included.
     public static bool Plays { get { return Name == "pad"; } }
@@ -30,7 +32,7 @@ public static class Scenarios
         if (startAt < 0f)
         {
             if (now - SkateRig.AwakeAt < 4f) return;
-            startAt = now; startGame = Time.time; yaw0 = SkateCamera.LookYaw;
+            startAt = now; startGame = Time.time; yaw0 = YawOffset != 0f ? SkateCamera.LookYaw + YawOffset : Runway(SkateCamera.LookYaw);
             SkateKeys.Scripted = true; SkateKeys.Reset(); SkateKeys.LookYaw = yaw0;
             Say(Name + " begins, view yaw=" + yaw0.ToString("F0") + " at " + Out.V1(SkateRig.LocalT.position));
         }
@@ -40,9 +42,34 @@ public static class Scenarios
         SkateSfx.Listen();
         if (SkateRide.Lands != lands) { lands = SkateRide.Lands; Say("landed: " + SkateRide.LastAir + " | mode=" + SkateRide.Mode + " switch=" + SkateRide.Trick.Switch + " pos=" + Out.V1(SkateRide.Position)); }
         if (Name == "ride") Ride(game);
+        else if (Name == "piece") Piece(s);
         else if (Name == "pose") Pose(s, now);
         else if (Name == "pad") Pad(game, now);
         else Trick(game);
+    }
+
+    // The way with the longest run of dry, even ground from where the rider stands, the view's own
+    // way first: a check that rides into the sea or a wall says nothing.
+    public const float RunwayStep = 2f, RunwayLength = 44f, RunwayBump = 0.6f;
+    public static float Runway(float lookYaw)
+    {
+        var from = SkateRig.LocalT.position; var best = lookYaw; var bestRun = -1f; var report = "";
+        for (var i = 0; i < 8; i++)
+        {
+            var yaw = lookYaw + i * 45f; var dir = SkateRide.Dir(yaw); var run = 0f; var lastY = from.y;
+            for (var d = RunwayStep; d <= RunwayLength; d += RunwayStep)
+            {
+                var at = from + dir * d; RaycastHit hit;
+                if (!Physics.Raycast(at + Vector3.up * 3f, Vector3.down, out hit, 8f, SkateRide.GroundMask, QueryTriggerInteraction.Ignore)) break;
+                var y = hit.m_Point.y;
+                if (y < SkateRide.SeaLevel + 0.3f || Math.Abs(y - lastY) > RunwayBump) break;
+                lastY = y; run = d;
+            }
+            report += (i == 0 ? "" : ", ") + yaw.ToString("F0") + ":" + run.ToString("F0");
+            if (run > bestRun + 0.5f) { bestRun = run; best = yaw; }
+        }
+        Say("runway " + bestRun.ToString("F0") + " m at yaw " + best.ToString("F0") + " (" + report + ")");
+        return best;
     }
 
     private static bool Enter(int to, string label)
@@ -76,6 +103,17 @@ public static class Scenarios
         SkateKeys.LookYaw = phase <= 3 ? yaw0 + 180f : yaw0;
         if (phase == 8) SkateRide.Dismount("the scenario stepped off");
         if (phase == 9) Finish();
+    }
+
+    // The console typist, seen: one piece asked for, the console left open so the server's answer
+    // is on the screen for the screenshot; then on foot for a while, then done.
+    private static void Piece(float s)
+    {
+        var to = s < 1f ? 1 : s < 12f ? 2 : 3;
+        if (!Enter(to, to == 1 ? "ask for a bank" : to == 2 ? "wait for the answer" : "finish")) return;
+        if (phase == 1) { SkateConsole.KeepOpen = true; SkatePieces.Ask("bank", Time.realtimeSinceStartup); }
+        if (phase == 2) Say("console: typed=" + SkateConsole.Typed + " failed=" + SkateConsole.Failed + " last=" + SkateConsole.Last + " | " + SkatePieces.Line(Time.realtimeSinceStartup));
+        if (phase == 3) Finish();
     }
 
     private struct View
@@ -244,9 +282,10 @@ public static class Scenarios
         }
     }
 
-    private static readonly float[] trickAt = { 3f, 6f, 8.9f, 9f, 9.4f, 11f, 14f, 16.9f, 17f, 17.5f, 20f, 20.12f, 23f, 23.45f, 25f, 27f, 29f, 30.6f, 32.2f, 34f, 36.5f };
+    private static readonly float[] trickAt = { 3f, 6f, 8.9f, 9f, 9.4f, 11f, 14f, 16.9f, 17f, 17.5f, 20f, 20.12f, 23f, 23.45f, 25f, 27f, 29f, 30.6f, 32.2f, 33.5f, 35.5f, 35.5f, 37.5f, 39f, 41.5f };
     private static readonly string[] trickDo = { "ollie", "ollie+kick", "left", "ollie", "release", "turn", "ollie+heel", "right+grab", "ollie", "release", "ollie+kick", "kick", "ollie", "kick",
-        "ollie+shove", "ollie+kick+shove", "ollie+kick+shove+shove", "manual", "release", "brake", "finish" };
+        "ollie+shove", "ollie+kick+shove", "ollie+kick+shove+shove", "manual", "release", "ollie+shove+shove", "ollie", "revert", "nollie", "brake", "finish" };
+    private static bool wantRevert; private static int landsAtRevert; private static float revertRelease = -1f;
 
     private static void Trick(float s)
     {
@@ -257,6 +296,10 @@ public static class Scenarios
             SkateCamera.Fixed = true; SkateCamera.Bearing = 100f; SkateCamera.FixedDistance = 4.4f; SkateCamera.FixedHeight = 1.4f;
         }
         SkateKeys.Push = !SkateKeys.Brake && SkateRide.Mode == RideMode.Ground && SkateRide.Speed < 2.4f;
+        // The revert is a turn pressed the moment the board is down again: timed by the landing, not the clock.
+        if (wantRevert && SkateRide.Mode == RideMode.Ground && SkateRide.Lands > landsAtRevert)
+        { wantRevert = false; SkateKeys.Spin = 1f; SkateKeys.SpinPressed = true; revertRelease = s + 0.15f; Say("press revert | " + SkateRide.Status()); }
+        if (revertRelease > 0f && s >= revertRelease) { revertRelease = -1f; SkateKeys.Spin = 0f; }
         while (next < trickAt.Length && s >= trickAt[next])
         {
             var what = trickDo[next++];
@@ -266,9 +309,10 @@ public static class Scenarios
             // With the pop: the flip and the board's turn under the feet, a backside half turn for each "shove".
             if (what.Contains("ollie"))
             {
-                SkateKeys.JumpPressed = true; SkateKeys.PopKind = SkatePopKind.Ollie; SkateKeys.PopScale = 1f; SkateKeys.PopFlip = flip;
+                SkateKeys.JumpPressed = true; SkateKeys.PopKind = what.StartsWith("nollie") ? SkatePopKind.Nollie : SkatePopKind.Ollie; SkateKeys.PopScale = 1f; SkateKeys.PopFlip = flip;
                 SkateKeys.PopShove = what.EndsWith("shove+shove") ? -360f : what.Contains("shove") ? -180f : 0f;
             }
+            else if (what == "revert") { wantRevert = true; landsAtRevert = SkateRide.Lands; }
             else SkateKeys.LateFlip += flip;
             if (what.Contains("left")) { SkateKeys.Spin = -1f; SkateKeys.SpinPressed = true; }
             if (what.Contains("right")) { SkateKeys.Spin = 1f; SkateKeys.SpinPressed = true; }
