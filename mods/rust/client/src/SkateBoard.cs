@@ -41,6 +41,26 @@ public static class SkateBoard
     // A manual lifts the end that leads: the board, and the rider's footing with it, pitches about
     // the ground under the trailing axle. A nose manual (Tip below zero) lifts the end that trails,
     // about the leading axle.
+    // A grab brings the board up to the rider and tweaks it: each grab tilts it its own way, the
+    // edge or end in the hand coming up (toe edge up for an indy, heel edge for a melon, the nose for
+    // a nose grab), more as the grab is held. Degrees: toe edge up, nose up.
+    public const float GrabRise = 0.3f;
+    private static readonly float[] grabRoll = { 0f, -15f, -20f, 25f, 0f, 0f, 0f, -20f, 15f, -15f, -30f, -40f, 0f, 0f };
+    private static readonly float[] grabPitch = { 0f, 0f, 0f, 0f, 0f, -15f, 15f, -8f, -12f, 12f, -6f, 8f, 18f, -18f };
+    public static float GrabFold;
+    // The board's own tweak in a grab, about the middle of the deck; the rider's frame stays upright
+    // (the feet are near the middle, where the tweak moves the deck least).
+    public static Quaternion GrabTweak(Vector3 up)
+    {
+        var g = (int)SkateRide.Grab;
+        if (SkateRide.Mode != RideMode.Air || g <= 0 || g >= grabRoll.Length || GrabFold <= 0.001f) return Quaternion.identity;
+        var nose = SkateRide.Dir(SkateRide.NoseYaw); nose = nose - up * Vector3.Dot(nose, up);
+        if (nose.sqrMagnitude < 0.0001f) return Quaternion.identity;
+        nose = nose.normalized;
+        var toe = Vector3.Cross(up, nose);
+        return SkateRide.Turn(-grabRoll[g] * GrabFold, nose) * SkateRide.Turn(-grabPitch[g] * GrabFold, toe);
+    }
+
     public static void Tilt(ref Vector3 at, ref Vector3 up)
     {
         if (Math.Abs(Tip) < 0.001f) return;
@@ -106,6 +126,7 @@ public static class SkateBoard
             return;
         }
         var rot = SkateRide.Turn(askew, up) * Quaternion.LookRotation(nose, up) * SkateRide.Turn(flip, Vector3.forward);
+        rot = GrabTweak(up) * rot;
         // A flip turns the board about the middle of the deck, not about the wheels.
         board.transform.rotation = rot;
         board.transform.position = at + up * RiderRig.DeckTop - (rot * Vector3.up) * RiderRig.DeckTop;

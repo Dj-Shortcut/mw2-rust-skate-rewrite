@@ -457,6 +457,11 @@ public static class RiderRig
             var speed = Math.Min((float)SkateMotion.MaximumGroundSpeed, Math.Abs(SkateRide.Speed));
             var grab = mode == RideMode.Air ? SkateRide.Grab : SkateGrabKind.None;
             if (grab == SkateGrabKind.None) { grabSince = -1f; grabHold = -1f; } else if (grabSince < 0f) grabSince = now;
+            // How far the grab has folded in, eased as the pose eases it; the board's rise and tweak follow it.
+            var held = grab == SkateGrabKind.None ? 0f : grabHold >= 0f ? grabHold : now - grabSince;
+            var fold = grab == SkateGrabKind.None ? 0f : SkateRide.Clamp(held / (float)SkateRider.GrabIn, 0f, 1f);
+            fold = fold * fold * (3f - 2f * fold);
+            SkateBoard.GrabFold += (fold * (0.8f + 0.2f * SkateRide.Clamp(held / 0.6f, 0f, 1f)) - SkateBoard.GrabFold) * SkateRide.Clamp(frameSeconds * 20f, 0f, 1f);
             var plant = SkateRide.FootPlanted ? SkateRide.Clamp((SkateRide.PlantedUntil - now) / SkateRide.PlantSeconds * 1.5f, 0f, 1f) : 0f;
             var input = new SkateRiderInput(new SkateVector(plane.x, plane.y, plane.z), new SkateVector(fx, fy, fz), new SkateVector(ux, uy, uz), SkateStance.Regular, SkateRide.TailFirst,
                 speed, lean, Crouch, mode == RideMode.Air, mode == RideMode.Ground && SkateRide.PushPhase > 0f, SkateRide.Clamp(SkateRide.PushPhase, 0f, 1f),
