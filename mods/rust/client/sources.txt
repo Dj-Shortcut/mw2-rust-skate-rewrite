@@ -16,11 +16,12 @@ mods/rust/client/src/Scenarios.cs
 mods/rust/client/src/SkatePad.cs
 mods/rust/client/src/SkatePadLog.cs
 mods/rust/client/src/SkatePieces.cs
+mods/rust/client/src/SkateConsole.cs
 mods/rust/shared/SkateBoardMesh.cs
 mods/rust/shared/SkateMotion.cs 297b71f08df94036db572dd5355f4a6afa671eff 4ad4153f639bfb8e6388bcd3b67dbaffc19584aeec6714a533d0f4bb4479e611
 mods/rust/shared/SkateRails.cs
 mods/rust/shared/SkatePose.cs
-mods/rust/shared/SkateTricks.cs 297b71f08df94036db572dd5355f4a6afa671eff c66aedec2acefb76e5c0929a43af6c810df0c81344092038bc409a1701dfcd95
+mods/rust/shared/SkateTricks.cs
 mods/rust/shared/SkateRider.cs 297b71f08df94036db572dd5355f4a6afa671eff af84c14c80d39b097bf064da0add3caec6bc8fbe5ebaf4061da166d29ef30397
 mods/rust/shared/SkateEdges.cs
 mods/rust/shared/SkateAudio.cs

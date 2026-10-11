@@ -40,6 +40,7 @@ public static class Scenarios
         SkateSfx.Listen();
         if (SkateRide.Lands != lands) { lands = SkateRide.Lands; Say("landed: " + SkateRide.LastAir + " | mode=" + SkateRide.Mode + " switch=" + SkateRide.Trick.Switch + " pos=" + Out.V1(SkateRide.Position)); }
         if (Name == "ride") Ride(game);
+        else if (Name == "piece") Piece(s);
         else if (Name == "pose") Pose(s, now);
         else if (Name == "pad") Pad(game, now);
         else Trick(game);
@@ -76,6 +77,17 @@ public static class Scenarios
         SkateKeys.LookYaw = phase <= 3 ? yaw0 + 180f : yaw0;
         if (phase == 8) SkateRide.Dismount("the scenario stepped off");
         if (phase == 9) Finish();
+    }
+
+    // The console typist, seen: one piece asked for, the console left open so the server's answer
+    // is on the screen for the screenshot; then on foot for a while, then done.
+    private static void Piece(float s)
+    {
+        var to = s < 1f ? 1 : s < 12f ? 2 : 3;
+        if (!Enter(to, to == 1 ? "ask for a bank" : to == 2 ? "wait for the answer" : "finish")) return;
+        if (phase == 1) { SkateConsole.KeepOpen = true; SkatePieces.Ask("bank", Time.realtimeSinceStartup); }
+        if (phase == 2) Say("console: typed=" + SkateConsole.Typed + " failed=" + SkateConsole.Failed + " last=" + SkateConsole.Last + " | " + SkatePieces.Line(Time.realtimeSinceStartup));
+        if (phase == 3) Finish();
     }
 
     private struct View
