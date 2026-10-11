@@ -298,14 +298,59 @@ public static class SkateParks
         }
         origin += Vector3.up * Lift;
         p.Origin = origin; p.Yaw = anchorYaw;
+        int colliders;
+        var root = Build(kind, origin, yawRot, out colliders);
+        if (root == null) return;
+        Colliders += colliders;
+        p.Root = root;
+        // The native tiles and walls under the model are not drawn; the foundation stays.
+        foreach (var m in matched)
+        {
+            var entity = blocks[m].Entity;
+            try
+            {
+                var renderers = entity.GetComponentsInChildren<Renderer>(true);
+                for (var r = 0; r < renderers.Length; r++)
+                {
+                    var rend = renderers[r];
+                    if (rend == null || !rend.enabled) continue;
+                    rend.enabled = false; p.Hidden.Add(rend); HiddenRenderers++;
+                }
+            }
+            catch (Exception e) { Status = "native renderers not hidden: " + e.Message; }
+        }
+    }
+
+    // A preview without any server piece: the model of a kind at a place, for a look and a ride.
+    private static GameObject preview;
+    public static string PreviewAt(Kind kind, Vector3 origin, float yaw)
+    {
+        PreviewClear();
+        int colliders;
+        preview = Build(kind, origin + Vector3.up * Lift, Quaternion.Euler(0f, yaw, 0f), out colliders);
+        if (preview == null) return "not drawn: " + Status;
+        Colliders += colliders;
+        return "drawn at " + Out.V1(origin) + " yaw " + yaw.ToString("F0") + " with " + colliders + " colliders";
+    }
+    public static void PreviewClear()
+    {
+        if (preview == null) return;
+        try { UnityEngine.Object.Destroy(preview); } catch (Exception) { }
+        preview = null;
+    }
+
+    // The model's objects under a root at a place: the Visual scene drawn, the CollisionProxies
+    // scene as static colliders on the default layer, which the ride's ground mask includes.
+    private static GameObject Build(Kind kind, Vector3 origin, Quaternion yawRot, out int colliders)
+    {
+        colliders = 0;
         var loaded = Model(kind);
-        if (loaded == null || loaded.Model == null) return;
+        if (loaded == null || loaded.Model == null) return null;
         var root = new GameObject("skate_park_" + fileStems[(int)kind]);
         root.transform.position = origin; root.transform.rotation = yawRot;
         var model = loaded.Model;
         var visual = model.SceneIndex("Visual"); if (visual < 0) visual = model.DefaultScene;
         var collision = model.SceneIndex("CollisionProxies");
-        var colliders = 0;
         var objects = new GameObject[model.Nodes.Length];
         for (var n = 0; n < model.Nodes.Length; n++)
         {
@@ -333,24 +378,7 @@ public static class SkateParks
                 go.AddComponent<MeshRenderer>().sharedMaterial = mesh.Material >= 0 && mesh.Material < loaded.Materials.Length ? loaded.Materials[mesh.Material] : plain;
             }
         }
-        Colliders += colliders;
-        p.Root = root;
-        // The native tiles and walls under the model are not drawn; the foundation stays.
-        foreach (var m in matched)
-        {
-            var entity = blocks[m].Entity;
-            try
-            {
-                var renderers = entity.GetComponentsInChildren<Renderer>(true);
-                for (var r = 0; r < renderers.Length; r++)
-                {
-                    var rend = renderers[r];
-                    if (rend == null || !rend.enabled) continue;
-                    rend.enabled = false; p.Hidden.Add(rend); HiddenRenderers++;
-                }
-            }
-            catch (Exception e) { Status = "native renderers not hidden: " + e.Message; }
-        }
+        return root;
     }
 
     private static void Remove(Placed p)
@@ -364,7 +392,9 @@ public static class SkateParks
     {
         foreach (var p in placed) Remove(p);
         placed.Clear(); Assemblies = Drawn = 0;
+        PreviewClear();
     }
+    public static string KindName(Kind kind) { return fileStems[(int)kind].Substring(6); }
 
     // The model of a kind, read once from the plugin's folder (skate_<kind>.glb next to the plugin).
     private static Loaded Model(Kind kind)

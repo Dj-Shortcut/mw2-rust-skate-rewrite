@@ -53,7 +53,7 @@ PC reliably from a distance.
 | `session` | One bounded run of the client with the loader; see below. Normally started by one of the next five. |
 | `play` | Build, then a session to play in, started directly, sound on. |
 | `pad` | The same through the owner's Steam shortcut, so that the controller layout applies off the board; the owner joins his server from the menu. |
-| `ride`, `pose`, `tricks`, `flick` | Build, then a muted session that runs one scripted check in the world and ends by itself. `flick` plays a controller into the plugin without one. |
+| `ride`, `pose`, `park`, `tricks`, `flick` | Build, then a muted session that runs one scripted check in the world and ends by itself. `flick` plays a controller into the plugin without one; `park` draws the authored park models for a look and a ride, on this client only. |
 | `status` | Build, then a session on the owner's server that rides until the server puts the rider back, steps off and types `skate.status`, the server's speed and fly checks and `oxide.plugins` into the F1 console, one every eight seconds; the console stays open so each answer can be read from the screen. |
 | `sticks` | Watches the controller from outside the game for `$pwatch` seconds and says what it saw in each slot. The same script is the reader that a session starts beside the client. |
 | `flicks` | The last session's right-stick movements, one row each: where the rider was, what came of it, and the shape of the movement. `$pshow` prints one of them point by point. |

@@ -238,6 +238,7 @@ file it runs `skate`. Runtime steps share one rig; the last scenario step select
 | `trick` | Scripted: ollie, kickflip, heelflip, both spins, a grab, two presses that come too late and a manual. |
 | `pad` | Scripted: the ride with a controller, played into the plugin without one. |
 | `status` | Scripted: a short ride, then the server's own view of the rider typed into the F1 console (`skate.status`, its speed and fly checks, its plugins), the console left open. |
+| `park` | Scripted: the authored park models one at a time 6 m ahead of the rider, seen from a fixed camera (`K` steps on), then a ride up the bank; nothing is placed on the server. |
 | `mute` | Turns the whole client down until nothing can be heard. |
 | `nogrind` | No grinding. |
 
