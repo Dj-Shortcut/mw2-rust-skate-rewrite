@@ -499,6 +499,7 @@ class Scenario:
         self.check(not any(self.user_identity[0] in record["uids"] and record["state"] not in ("Z", "X") for record in initial_inventory.values()), "owned rust identity already has live processes")
         holder = None
         caller = None
+        holder_release_started = False
         owned = set()
         pending = bytearray()
         try:
@@ -534,6 +535,7 @@ class Scenario:
             alive_at_return = self.live_owned_processes(inventory, owned, (holder.pid,))
             held_at_return = holder.poll() is None
             # Opening ACTIVE here would itself break the lease and invalidate the milestone.
+            holder_release_started = True
             released_stdout, released_stderr = holder.communicate(b"release\n", timeout=5)
             self.check(status == expected_status, "cancelled installer returned " + str(status) + " instead of " + str(expected_status))
             self.check(held_at_return, "installer did not return while the lease remained held")
@@ -554,7 +556,11 @@ class Scenario:
                 caller.send_signal(signal.SIGTERM)
             if holder is not None and holder.poll() is None:
                 try:
-                    holder.communicate(b"release\n", timeout=3)
+                    if holder_release_started:
+                        holder.communicate(timeout=3)
+                    else:
+                        holder_release_started = True
+                        holder.communicate(b"release\n", timeout=3)
                 except (BrokenPipeError, subprocess.TimeoutExpired):
                     pass
             self.collect_owned_processes(caller, holder, owned)
