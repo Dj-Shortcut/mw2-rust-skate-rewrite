@@ -38,8 +38,10 @@ game; see [The controller](#the-controller).
 | `A` or `X` | Push | |
 | `B` | Brake | |
 | Right stick | The board: see below. Kept part of the way back or forward for 0.2 s: manual or nose manual. | Flicked to a side or a forward diagonal: a flip. Pulled back: set for the pop after the landing. |
-| `LT`, `RT` | | Held: grab; with the right stick held, another grab. |
+| `LT`, `RT` | Held and let go on a transition: a pump (speed, by how long it was held and how steep the bank; nothing on the flat). | Held: grab; with the right stick held, another grab. |
 | Right stick click | View from behind or the game's first person | |
+| Left stick, right after landing a trick | Revert: the board turns round under the rider, who rolls on switch; it joins the combo. | |
+| Right stick back or forward, on an edge | 5-0 or nosegrind instead of the 50-50. | |
 
 The right stick pops the board, and how it moves says what the board does in the jump. The sides
 are those of a regular rider going nose first, whose heels are on the stick's left; riding tail
@@ -55,6 +57,13 @@ first they are the other way round.
 | Held at the back right or back left, flicked straight across to the opposite front | Varial kickflip, varial heelflip |
 | From the right or left rolled round to the back, then flicked to the opposite front | 360 flip, laser flip |
 | Held back, rolled a little to the left or right, flicked straight forward | Hardflip, inward heelflip |
+| Held back, rolled half way round backside | Impossible |
+
+A trick popped riding switch is named Switch (a nollie then is a fakie ollie). A grind is named by
+how the board meets the edge: along it a 50-50 (or a 5-0 / nosegrind with the stick), across it a
+boardslide, lipslide, noseslide or tailslide by which part of the board is on the edge, at an angle
+a crooked, smith or feeble grind; frontside when the edge is on the side the rider's chest faces.
+Landing on a slope, the part of the fall that runs along the slope becomes roll.
 
 A turn of the rider goes on for as long as the left stick is held and the next half turn can
 still be reached before the ground; let go, the rider is brought round to the nearest half turn.
@@ -128,8 +137,11 @@ lost. The plugin feeds the right stick to the shared flick module change by chan
 Drawn with the engine's immediate GUI: the session's score at the top right, counting up when a
 combo is banked; the open combo at the bottom centre, with its tricks in a row, their points, the
 multiplier and a bar that runs out while the board rolls without a trick; the trick that just
-landed, a running manual or grind, or a bail in the upper middle; the speed at the bottom left, and
-the controls for the first seconds on the board. A client build keeps only the engine methods the
+landed (coloured by its kind: grinds cool, manuals and reverts warm, grabs green), a running manual
+or grind by its name, or a bail in the upper middle; under the score the session's best combo, top
+speed, longest grind and manual; at the bottom left the speed, above it the last five tricks landed
+with their points (newest largest, gone five seconds after the last), and the controls for the first
+seconds on the board. A client build keeps only the engine methods the
 game itself calls, so the condensed system font, the flat panels and the bars are each tried once
 and done without when they are missing; the plugin's log says which (`HUD ...`).
 
