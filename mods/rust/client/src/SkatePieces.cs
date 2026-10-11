@@ -1,9 +1,9 @@
 // Park pieces from the controller. The server plugin places a piece where the next square floor
 // goes, after `skate.piece <name>` in the console. Typing that in the console with a controller in
 // the hands is a chore, so the client offers a small menu on foot: hold the menu button (Back/View
-// by default), step through the pieces with the D-pad, A asks the server for the one shown, B
-// cancels a pending choice. The server answers in the console; the client shows what it asked for.
-// Whoever rides from the keyboard binds a key in the console instead (bind f7 "skate.piece bank").
+// by default), step through the pieces with the D-pad, A types `skate.piece <name>` into the F1
+// console for the player (SkateConsole), B types the cancel. Whoever rides from the keyboard can
+// bind a key instead (bind f7 "skate.piece bank").
 using System;
 using Shortcut.RustMod;
 using UnityEngine;
@@ -19,7 +19,6 @@ public static class SkatePieces
     public static string Asked = "", Said = "";
     public static float SaidAt = -99f, AskedAt = -99f;
     public static int Sent;
-    public static Func<string, bool> Run;
 
     // Takes the controller's presses while the menu is open; returns the ones the ride may use.
     public static int Step(int padDown, float now)
@@ -36,25 +35,14 @@ public static class SkatePieces
 
     public static void Ask(string name, float now)
     {
-        var ok = Send("skate.piece " + name);
+        var line = "skate.piece " + name;
+        var ok = SkateConsole.Queue(line, now);
         SaidAt = now;
-        if (!ok) { Said = "The console command could not be sent; type skate.piece " + name + " in the F1 console"; return; }
-        if (name == "cancel") { Asked = ""; Said = "Park piece cancelled"; return; }
+        if (!ok) { Said = "The console is still busy; press again in a moment"; return; }
+        Sent++;
+        if (name == "cancel") { Asked = ""; Said = "Typed in the console: " + line; return; }
         Asked = name; AskedAt = now;
-        Said = "Asked the server for a " + name + ": place one square floor with the building plan within " + (int)PlaceSeconds + " s (you must be an admin)";
-    }
-
-    // The game's console, as a bound key would reach it; the server runs skate.piece.
-    private static bool Send(string line)
-    {
-        try
-        {
-            if (Run != null) { Sent++; return Run(line); }
-            ConsoleSystem.Run(ConsoleSystem.Option.Server, line);
-            Sent++; Out.Say("PIECES sent: " + line);
-            return true;
-        }
-        catch (Exception e) { Out.Say("PIECES could not send '" + line + "': " + e.GetType().Name + ": " + e.Message); return false; }
+        Said = "Typed in the console: " + line + "  -  now place one square floor with the building plan within " + (int)PlaceSeconds + " s (admin only; the server answers in F1)";
     }
 
     // What the screen shows: the menu while open, the last answer for a few seconds, the pending piece.
@@ -64,7 +52,7 @@ public static class SkatePieces
         {
             var s = "PARK PIECE   ";
             for (var i = 0; i < Names.Length; i++) s += (i == Chosen ? "[" + Names[i].ToUpper() + "]" : Names[i]) + (i + 1 < Names.Length ? "   " : "");
-            return s + "      D-pad: choose   A: ask   B: cancel";
+            return s + "      D-pad: choose   A: ask the server   B: cancel";
         }
         if (now - SaidAt < ShownSeconds) return Said;
         if (Asked != "" && now - AskedAt < PlaceSeconds) return "Park piece " + Asked + ": place a square floor (" + (int)(PlaceSeconds - (now - AskedAt)) + " s left)";
