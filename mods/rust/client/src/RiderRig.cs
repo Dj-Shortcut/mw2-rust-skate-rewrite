@@ -52,9 +52,11 @@ public static class RiderRig
     // screen. So the set is also made too small to see. The game may set the size again at any
     // time, so it is made small again every frame, and the size the game last gave is put back.
     // A look through the whole scene for held items costs the game a fifth of a second, so it is
-    // done at most every HeldWhole seconds; in between the object that held the last item found
-    // (their parent) is looked through, which is cheap, every HeldEvery seconds.
-    public const float HeldEvery = 0.25f, HeldWhole = 2f, HeldSmall = 0.0001f;
+    // done at most every HeldWhole seconds, and each time it finds nothing the next one waits twice
+    // as long, up to HeldWholeMost (empty hands would otherwise cost a frame every two seconds);
+    // in between the object that held the last item found (their parent) is looked through, which
+    // is cheap, every HeldEvery seconds.
+    public const float HeldEvery = 0.25f, HeldWhole = 2f, HeldWholeMost = 32f, HeldSmall = 0.0001f;
     private const int HeldTries = 5, HeldScans = 3;
 
     // One thing of the set: the object that carries it (Root) or one drawn part of it (Part). What
@@ -75,7 +77,7 @@ public static class RiderRig
     // A frame's worth of this is a frame lost: past this the handling is switched off for the session.
     private const double HeldBudgetMs = 8.0; private const int HeldSlowFrames = 30;
     private static Transform heldHolder;
-    private static float nextWhole;
+    private static float nextWhole, wholeWait = HeldWhole;
     private static int heldScanFailures;
 
     private static void Held(bool wantThird, float now)
@@ -83,11 +85,11 @@ public static class RiderRig
         if (heldOff) return;
         var began = SkateClock.Now();
         // The view going behind the rider is worth one look through the whole scene.
-        if (wantThird && !heldThird) nextHeld = nextWhole = 0f;
+        if (wantThird && !heldThird) { nextHeld = nextWhole = 0f; wholeWait = HeldWhole; }
         heldThird = wantThird;
         // A set that lost a thing is looked for again at once, but once: the lost thing is dropped
         // so that it cannot ask for a look every frame, which cost the owner his frame rate.
-        if (wantThird && HeldGone()) nextHeld = 0f;
+        if (wantThird && HeldGone()) { nextHeld = nextWhole = 0f; wholeWait = HeldWhole; }
         if (wantThird && now >= nextHeld && heldScanFailures < HeldScans)
         {
             nextHeld = now + HeldEvery;
@@ -97,9 +99,10 @@ public static class RiderRig
                 if (!ReferenceEquals(heldHolder, null) && heldHolder != null) models = heldHolder.GetComponentsInChildren<BaseViewModel>(true);
                 if ((models == null || models.Length == 0) && now >= nextWhole)
                 {
-                    nextWhole = now + HeldWhole;
+                    nextWhole = now + wholeWait;
                     models = UnityEngine.Object.FindObjectsOfType<BaseViewModel>();
                     heldHolder = models.Length > 0 && models[0] != null ? models[0].transform.parent : null;
+                    wholeWait = models.Length > 0 ? HeldWhole : Math.Min(wholeWait * 2f, HeldWholeMost);
                 }
                 if (models == null) return;
                 var found = new System.Collections.Generic.List<HeldThing>(); long set = models.Length; var names = ""; var parts = 0;
@@ -303,7 +306,7 @@ public static class RiderRig
         // What cannot be put back now is kept, and tried again from the next frame on.
         HeldRestore(false);
         var left = new System.Collections.Generic.List<HeldThing>(); HeldKeep(left);
-        held = left.ToArray(); heldSet = 0; heldScanFailures = 0; nextHeld = nextWhole = 0f; heldHolder = null; heldOff = false; heldSlow = 0;
+        held = left.ToArray(); heldSet = 0; heldScanFailures = 0; nextHeld = nextWhole = 0f; wholeWait = HeldWhole; heldHolder = null; heldOff = false; heldSlow = 0;
         Bound = false; body = new SkinnedMeshRenderer[0]; legSet = new SkinnedMeshRenderer[0]; skinSet = 0;
     }
 
