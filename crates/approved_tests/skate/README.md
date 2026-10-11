@@ -20,7 +20,10 @@ python3 crates/approved_tests/skate/SkateServerPluginInstallScenario.py
 
 This scenario never starts Rust/Oxide, the Rust client or Shadow, opens game ports
 or accesses the owner's server. Native plugin compile/load, patches, placement
-and riding remain separate acceptance. Power loss/SIGKILL are not tested.
+and riding remain separate acceptance. INT/TERM cancellation is checked during
+a real kernel-lease-blocked backup,
+including caller status, worker exit before lease release and unchanged source
+afterward. Power loss/SIGKILL are not tested.
 
 ## Recorded gestures
 

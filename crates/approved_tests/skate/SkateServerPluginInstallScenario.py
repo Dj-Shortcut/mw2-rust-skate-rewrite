@@ -5,15 +5,17 @@ import os
 from pathlib import Path
 import pwd
 import re
+import select
 import shutil
 import signal
 import stat
 import subprocess
 import sys
+import time
 
 
-INSTALLER_COMMIT = "44c5c1fcdd73928d285fd5c7f7ca859709a78c3c"
-INSTALLER_SHA256 = "68e2e5220354e0df4fa282a32faedfc2d42b4df1c223d92c686b197b14501e5b"
+INSTALLER_COMMIT = "a03ce59122e11fa21e6e239d60afd021f8f5fce2"
+INSTALLER_SHA256 = "dfb96374b3cba3f3aab2aa88d0ae46491030372c33cca4d366314543ca390621"
 SOURCE_COMMIT = "54a54a3b199fbe5d7d337b40a739b6546195c631"
 SOURCE_SHA256 = "de2e6976f6fc9ab2e3099dfe3cf8c076f2a82ff6c026f75bae0c8eda67c2f8ff"
 PRIOR_COMMIT = "5a9ed6e550a405365c8a18746dfd276a310b6848"
@@ -25,6 +27,56 @@ ACTIVE = PLUGINS / "ShortcutSkate.cs"
 BACKUP = PLUGINS / "ShortcutSkate.cs.bak"
 MAX_DOWNLOAD_BYTES = 1024 * 1024
 COMMAND_PATH = "/usr/sbin:/usr/bin:/sbin:/bin"
+LEASE_HOLDER = r"""
+import fcntl
+import os
+import select
+import signal
+import stat
+import sys
+import time
+
+descriptor = None
+notified = False
+
+def notify(signum, frame):
+    global notified
+    if not notified:
+        notified = True
+        os.write(1, ("lease-break " + str(time.monotonic()) + "\n").encode("ascii"))
+
+try:
+    signal.signal(signal.SIGIO, notify)
+    descriptor = os.open(sys.argv[1], os.O_RDWR | os.O_NOFOLLOW | os.O_CLOEXEC)
+    metadata = os.fstat(descriptor)
+    if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.geteuid():
+        raise RuntimeError("lease target is not an owned regular file")
+    fcntl.fcntl(descriptor, fcntl.F_SETOWN, os.getpid())
+    fcntl.fcntl(descriptor, fcntl.F_SETLEASE, fcntl.F_WRLCK)
+    os.write(1, b"lease-ready\n")
+    deadline = time.monotonic() + 150
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise RuntimeError("lease holder handshake timed out")
+        readable, _, _ = select.select([0], [], [], remaining)
+        if not readable:
+            raise RuntimeError("lease holder handshake timed out")
+        message = os.read(0, 128)
+        if message != b"release\n":
+            raise RuntimeError("lease holder received no release handshake")
+        fcntl.fcntl(descriptor, fcntl.F_SETLEASE, fcntl.F_UNLCK)
+        os.close(descriptor)
+        descriptor = None
+        os.write(1, b"lease-released\n")
+        break
+except Exception as error:
+    os.write(1, ("lease-error: " + str(error) + "\n").encode("utf-8", "replace"))
+    sys.exit(1)
+finally:
+    if descriptor is not None:
+        os.close(descriptor)
+"""
 
 
 class ScenarioFailure(Exception):
@@ -75,6 +127,7 @@ def require_environment():
     require(lookup_group("rust") is None, "refusing an existing rust group")
     require(Path("/srv").is_dir() and not Path("/srv").is_symlink(), "requires a regular /srv directory")
     require_private_target()
+    require(hasattr(os, "pidfd_open") and hasattr(signal, "pidfd_send_signal"), "requires Linux pidfd process cleanup")
     for name in ("sh", "bash", "curl", "sha256sum", "mktemp", "cat", "chmod", "cp", "mv", "rm", "runuser", "setsid", "useradd", "userdel", "groupdel"):
         require(shutil.which(name, path=COMMAND_PATH) is not None, "missing prerequisite: " + name)
     nobody = lookup_user("nobody")
@@ -101,6 +154,60 @@ def root_download_snapshot():
             str(path.readlink()) if path.is_symlink() else None,
         )
     return entries
+
+
+def process_inventory():
+    records = {}
+    directories = [path for path in Path("/proc").iterdir() if path.name.isdecimal()]
+    require(len(directories) <= 8192, "process inventory exceeds the scenario limit")
+    for path in directories:
+        try:
+            raw = (path / "stat").read_text()
+            head, tail = raw.rsplit(")", 1)
+            fields = tail.split()
+            uid_lines = [line for line in (path / "status").read_text().splitlines() if line.startswith("Uid:")]
+            if not uid_lines:
+                continue
+            records[int(path.name)] = {
+                "start": int(fields[19]), "parent": int(fields[1]),
+                "group": int(fields[2]), "session": int(fields[3]),
+                "state": fields[0], "name": head.split("(", 1)[1],
+                "uids": tuple(int(value) for value in uid_lines[0].split()[1:]),
+            }
+        except (FileNotFoundError, ProcessLookupError):
+            continue
+    return records
+
+
+def lease_event(holder, pending, timeout):
+    deadline = time.monotonic() + timeout
+    while b"\n" not in pending:
+        remaining = deadline - time.monotonic()
+        require(remaining > 0, "kernel lease milestone timed out")
+        readable, _, _ = select.select([holder.stdout], [], [], remaining)
+        require(readable, "kernel lease milestone timed out")
+        chunk = os.read(holder.stdout.fileno(), 512)
+        require(chunk, "lease holder exited before its milestone")
+        pending.extend(chunk)
+        require(len(pending) <= 4096, "lease holder output exceeds the scenario limit")
+    line, _, rest = pending.partition(b"\n")
+    pending[:] = rest
+    return line.decode("utf-8", "replace")
+
+
+def signal_owned_process(pid, start, signum):
+    try:
+        descriptor = os.pidfd_open(pid, 0)
+    except ProcessLookupError:
+        return
+    try:
+        fields = Path("/proc", str(pid), "stat").read_text().rsplit(")", 1)[1].split()
+        if int(fields[19]) == start:
+            signal.pidfd_send_signal(descriptor, signum, None, 0)
+    except (FileNotFoundError, ProcessLookupError):
+        pass
+    finally:
+        os.close(descriptor)
 
 
 class Scenario:
@@ -347,6 +454,121 @@ class Scenario:
         self.check(BACKUP.is_dir() and sentinel.read_bytes() == b"backup directory remains\n", "backup failure changed existing backup directory")
         self.no_staging()
 
+    def collect_owned_processes(self, caller, holder, owned):
+        inventory = process_inventory()
+        descendants = {pid for pid, start in owned if pid in inventory and inventory[pid]["start"] == start}
+        for process in (caller, holder):
+            if process is not None and process.returncode is None and process.pid in inventory:
+                descendants.add(process.pid)
+        while True:
+            additional = {pid for pid, record in inventory.items() if record["parent"] in descendants}
+            if additional <= descendants:
+                break
+            descendants.update(additional)
+        for pid, record in inventory.items():
+            if pid in descendants or self.user_identity[0] in record["uids"]:
+                owned.add((pid, record["start"]))
+        return inventory
+
+    def live_owned_processes(self, inventory, owned, excluded=()):
+        return [
+            pid for pid, start in owned
+            if pid not in excluded and pid in inventory and inventory[pid]["start"] == start
+            and inventory[pid]["state"] not in ("Z", "X")
+        ]
+
+    def stop_owned_processes(self, owned):
+        for signum, timeout in ((signal.SIGTERM, 3), (signal.SIGKILL, 3)):
+            inventory = process_inventory()
+            live = self.live_owned_processes(inventory, owned)
+            for pid in live:
+                signal_owned_process(pid, inventory[pid]["start"], signum)
+            deadline = time.monotonic() + timeout
+            while live and time.monotonic() < deadline:
+                time.sleep(0.05)
+                live = self.live_owned_processes(process_inventory(), owned)
+            if not live:
+                return
+        require(not live, "owned interruption processes survived cleanup")
+
+    def interrupted_replacement(self, signum, expected_status):
+        before = self.seed_prior()
+        lease_break_time = int(Path("/proc/sys/fs/lease-break-time").read_text().strip())
+        require(lease_break_time >= 20, "kernel lease break interval is too short for the interruption scenario")
+        initial_inventory = process_inventory()
+        self.check(not any(self.user_identity[0] in record["uids"] and record["state"] not in ("Z", "X") for record in initial_inventory.values()), "owned rust identity already has live processes")
+        holder = None
+        caller = None
+        holder_release_started = False
+        owned = set()
+        pending = bytearray()
+        try:
+            holder = subprocess.Popen(
+                [sys.executable, "-u", "-c", LEASE_HOLDER, str(ACTIVE)],
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                cwd="/", env=self.environment, start_new_session=True, bufsize=0,
+                user=self.user_identity[0], group=self.user_identity[1], extra_groups=[],
+            )
+            self.collect_owned_processes(caller, holder, owned)
+            milestone = lease_event(holder, pending, 10)
+            self.check(milestone == "lease-ready", "required real write lease could not be acquired: " + milestone)
+            caller = subprocess.Popen(
+                ["bash", str(self.installer)], stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd="/", env=self.environment,
+                start_new_session=True,
+            )
+            self.collect_owned_processes(caller, holder, owned)
+            milestone = lease_event(holder, pending, 75)
+            self.check(milestone.startswith("lease-break "), "installer did not reach the real lease-blocked backup: " + milestone)
+            break_started = float(milestone.split(" ", 1)[1])
+            inventory = self.collect_owned_processes(caller, holder, owned)
+            blocked_copies = [
+                pid for pid in self.live_owned_processes(inventory, owned, (holder.pid, caller.pid))
+                if inventory[pid]["name"] == "cp" and self.user_identity[0] in inventory[pid]["uids"]
+            ]
+            self.check(len(blocked_copies) == 1, "kernel notification did not identify one real rust backup copy")
+            self.check(caller.poll() is None and holder.poll() is None, "installer or lease holder exited before cancellation")
+            self.check(0 <= time.monotonic() - break_started < lease_break_time - 13, "lease notification left too little time for a valid interruption check")
+            caller.send_signal(signum)
+            status = caller.wait(timeout=8)
+            inventory = self.collect_owned_processes(caller, holder, owned)
+            alive_at_return = self.live_owned_processes(inventory, owned, (holder.pid,))
+            held_at_return = holder.poll() is None
+            # Opening ACTIVE here would itself break the lease and invalidate the milestone.
+            holder_release_started = True
+            released_stdout, released_stderr = holder.communicate(b"release\n", timeout=5)
+            self.check(status == expected_status, "cancelled installer returned " + str(status) + " instead of " + str(expected_status))
+            self.check(held_at_return, "installer did not return while the lease remained held")
+            self.check(time.monotonic() - break_started < lease_break_time, "kernel lease break timeout invalidated the cancellation check")
+            self.check(holder.returncode == 0 and b"lease-released\n" in released_stdout and not released_stderr, "lease holder did not release cleanly")
+            self.check(not alive_at_return, "installer returned while owned worker processes were still alive")
+            stdout, stderr = caller.communicate(timeout=5)
+            self.check(b"source installed" not in stdout, "cancelled installer reported a successful source install")
+            inventory = self.collect_owned_processes(caller, holder, owned)
+            self.check(not self.live_owned_processes(inventory, owned), "owned worker survived lease release")
+            self.check(not any(self.user_identity[0] in record["uids"] and record["state"] not in ("Z", "X") for record in inventory.values()), "a rust process survived the interrupted operation")
+            self.check(snapshot(ACTIVE) == before, "interruption or lease release changed active source bytes or metadata")
+            self.check(not os.path.lexists(BACKUP), "interrupted backup was published")
+            self.no_staging()
+        finally:
+            self.collect_owned_processes(caller, holder, owned)
+            if caller is not None and caller.poll() is None:
+                caller.send_signal(signal.SIGTERM)
+            if holder is not None and holder.poll() is None:
+                try:
+                    if holder_release_started:
+                        holder.communicate(timeout=3)
+                    else:
+                        holder_release_started = True
+                        holder.communicate(b"release\n", timeout=3)
+                except (BrokenPipeError, subprocess.TimeoutExpired):
+                    pass
+            self.collect_owned_processes(caller, holder, owned)
+            self.stop_owned_processes(owned)
+            for process in (caller, holder):
+                if process is not None:
+                    process.communicate(timeout=3)
+
     def unchanged_inputs(self):
         self.check(self.installer.read_bytes() == self.installer_bytes, "checkout installer changed")
         self.check(self.delivered.read_bytes() == self.installer_bytes, "delivered installer changed")
@@ -400,6 +622,8 @@ class Scenario:
             self.group("fresh_install", self.fresh)
             self.group("prior_source_replacement", self.replacement)
             self.group("backup_rename_failure", self.backup_failure)
+            self.group("sigterm_during_backup", lambda: self.interrupted_replacement(signal.SIGTERM, 143))
+            self.group("sigint_during_backup", lambda: self.interrupted_replacement(signal.SIGINT, 130))
             self.group("documented_delivery_and_failure", self.documented_entrypoint)
             self.group("unchanged_inputs", self.unchanged_inputs)
         finally:

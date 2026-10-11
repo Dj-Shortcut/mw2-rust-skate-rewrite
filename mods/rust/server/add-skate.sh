@@ -24,7 +24,20 @@ if ! $CHECK_ONLY; then
 fi
 
 skate_download_dir=''
+skate_worker_pid=''
+stop_worker() {
+    if [[ -n $skate_worker_pid ]]; then
+        trap '' INT TERM
+        # Cover a cancellation before the child's new process group exists.
+        kill -TERM -- "-$skate_worker_pid" 2>/dev/null || true
+        kill -TERM "$skate_worker_pid" 2>/dev/null || true
+        kill -TERM -- "-$skate_worker_pid" 2>/dev/null || true
+        wait "$skate_worker_pid" 2>/dev/null || true
+        skate_worker_pid=''
+    fi
+}
 cleanup() {
+    stop_worker
     if [[ -n $skate_download_dir ]]; then rm -rf -- "$skate_download_dir"; fi
 }
 trap cleanup EXIT
@@ -46,9 +59,13 @@ if $CHECK_ONLY; then
     exit 0
 fi
 
-# Root only reads verified bytes; the service-owned tree is mutated as rust.
+# A non-job-control child becomes the tracked session leader without forking.
+set +m
+skate_cancel_status=0
+trap 'skate_cancel_status=130' INT
+trap 'skate_cancel_status=143' TERM
 # shellcheck disable=SC2016
-runuser -u rust -g rust -- setsid --wait /bin/bash -c '
+setsid --wait runuser -u rust -g rust -- /bin/bash -c '
     set -Eeuo pipefail
     DIR=$1
     [[ $EUID -ne 0 ]] || { echo "rust must be a nonroot account" >&2; exit 1; }
@@ -63,6 +80,7 @@ runuser -u rust -g rust -- setsid --wait /bin/bash -c '
     skate_tmp=""
     skate_backup_tmp=""
     cleanup() {
+        trap "" INT TERM
         if [[ -n $skate_tmp ]]; then rm -f -- "$skate_tmp"; fi
         if [[ -n $skate_backup_tmp ]]; then rm -f -- "$skate_backup_tmp"; fi
     }
@@ -78,7 +96,18 @@ runuser -u rust -g rust -- setsid --wait /bin/bash -c '
         mv -fT -- "$skate_backup_tmp" "$DIR/ShortcutSkate.cs.bak"
     fi
     mv -fT -- "$skate_tmp" "$DIR/ShortcutSkate.cs"
-' skate-install "$DIR" < "$skate_tmp"
+' skate-install "$DIR" < "$skate_tmp" &
+skate_worker_pid=$!
+trap 'exit 130' INT
+trap 'exit 143' TERM
+if [[ $skate_cancel_status -ne 0 ]]; then exit "$skate_cancel_status"; fi
+skate_worker_status=0
+if wait "$skate_worker_pid"; then
+    skate_worker_pid=''
+else
+    skate_worker_status=$? skate_worker_pid=''
+fi
+if [[ $skate_worker_status -ne 0 ]]; then exit "$skate_worker_status"; fi
 echo "ShortcutSkate v$VERSION source installed in $DIR."
 echo "Confirm compilation and loading in the server console with: oxide.plugins"
 echo "A source install does not confirm in-game behavior."
