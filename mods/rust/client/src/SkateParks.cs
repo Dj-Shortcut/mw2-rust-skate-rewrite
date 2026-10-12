@@ -303,7 +303,7 @@ public static class SkateParks
         origin += Vector3.up * Lift;
         p.Origin = origin; p.Yaw = anchorYaw;
         int colliders;
-        var root = Build(kind, origin, yawRot, out colliders);
+        var root = Build(kind, origin, yawRot, true, out colliders);
         if (root == null) return;
         Colliders += colliders;
         p.Root = root;
@@ -325,13 +325,15 @@ public static class SkateParks
         }
     }
 
-    // A preview without any server piece: the model of a kind at a place, for a look and a ride.
+    // A preview without any server piece: the model of a kind at a place, for a look and a ride
+    // (solid), or as a ghost without colliders for the picker, whose preview follows the aim and
+    // must never stand in the player's way.
     private static GameObject preview;
-    public static string PreviewAt(Kind kind, Vector3 origin, float yaw)
+    public static string PreviewAt(Kind kind, Vector3 origin, float yaw, bool solid = true)
     {
         PreviewClear();
         int colliders;
-        preview = Build(kind, origin + Vector3.up * Lift, Quaternion.Euler(0f, yaw, 0f), out colliders);
+        preview = Build(kind, origin + Vector3.up * Lift, Quaternion.Euler(0f, yaw, 0f), solid, out colliders);
         if (preview == null) return "not drawn: " + Status;
         Colliders += colliders;
         return "drawn at " + Out.V1(origin) + " yaw " + yaw.ToString("F0") + " with " + colliders + " colliders";
@@ -350,8 +352,9 @@ public static class SkateParks
     }
 
     // The model's objects under a root at a place: the Visual scene drawn, the CollisionProxies
-    // scene as static colliders on the default layer, which the ride's ground mask includes.
-    private static GameObject Build(Kind kind, Vector3 origin, Quaternion yawRot, out int colliders)
+    // scene as static colliders on the default layer, which the ride's ground mask includes; not
+    // solid, the colliders are left out.
+    private static GameObject Build(Kind kind, Vector3 origin, Quaternion yawRot, bool solid, out int colliders)
     {
         colliders = 0;
         var loaded = Model(kind);
@@ -360,7 +363,8 @@ public static class SkateParks
         root.transform.position = origin; root.transform.rotation = yawRot;
         var model = loaded.Model;
         var visual = model.SceneIndex("Visual"); if (visual < 0) visual = model.DefaultScene;
-        var collision = model.SceneIndex("CollisionProxies");
+        // -2: no node is in it (a node in no scene has -1, which a missing scene would match).
+        var collision = solid ? model.SceneIndex("CollisionProxies") : -2; if (collision < 0) collision = -2;
         var objects = new GameObject[model.Nodes.Length];
         for (var n = 0; n < model.Nodes.Length; n++)
         {

@@ -114,7 +114,7 @@ public static class Scenarios
     {
         var to = s < 1f ? 1 : s < 12f ? 2 : 3;
         if (!Enter(to, to == 1 ? "ask for a bank" : to == 2 ? "wait for the answer" : "finish")) return;
-        if (phase == 1) { SkateConsole.KeepOpen = true; SkatePieces.Ask("bank", Time.realtimeSinceStartup); }
+        if (phase == 1) { SkateConsole.KeepOpen = true; Say("console: queued=" + SkateConsole.Queue("skate.piece bank", Time.realtimeSinceStartup)); }
         if (phase == 2) Say("console: typed=" + SkateConsole.Typed + " failed=" + SkateConsole.Failed + " last=" + SkateConsole.Last + " | " + SkatePieces.Line(Time.realtimeSinceStartup));
         if (phase == 3) Finish();
     }
