@@ -10,7 +10,10 @@ public static class SkateCamera
     public static bool Chase = true, Fixed;
     public const float FollowPitch = 14f, FollowRate = 3.5f;
     public static float LookYaw, LookPitch, SampledAt = -99f, Distance = 3.4f, Bearing = 180f, FixedDistance = 2.7f, FixedHeight = 1.15f, FollowYaw;
-    private static float followAt = -99f;
+    // The chase camera falls back a little as the board goes faster, for the sense of speed, and
+    // comes in again as it slows: up to SpeedPull further at top speed, eased at PullRate per second.
+    public const float SpeedPull = 1.2f, PullRate = 2.5f;
+    private static float followAt = -99f, pullNow, pullAt = -99f;
     private static bool failed, ahead = true;
 
     public static void Sample()
@@ -54,7 +57,10 @@ public static class SkateCamera
                 else { FollowYaw = LookYaw; ahead = true; }
                 followAt = now;
                 var back = Quaternion.Euler(pitch, yaw, 0f) * Vector3.forward;
-                want = focus - back * Distance + Vector3.up * 0.3f;
+                var pullWant = SpeedPull * SkateRide.Clamp(Math.Abs(SkateRide.HorizontalSpeed) / SkateRide.MaxSpeed, 0f, 1f);
+                var pullSeconds = SkateRide.Clamp(now - pullAt, 0f, 0.1f); pullAt = now;
+                pullNow += (pullWant - pullNow) * (1f - (float)Math.Exp(-pullSeconds * PullRate));
+                want = focus - back * (Distance + pullNow) + Vector3.up * (0.3f + pullNow * 0.15f);
             }
             // Nothing between the rider and the camera: it comes in to this side of a wall or a fence.
             var dir = want - focus; var len = dir.magnitude;
