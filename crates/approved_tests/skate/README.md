@@ -79,6 +79,12 @@ interrupted, reversed, stale or discontinuous paths. It covers mirrored input, o
 event per flight, support rearming, body/deck angle independence, catching/stance/score,
 cached names, bail/reset and atomic invalid input/state refusals.
 
+The same approved scenario checks explicit takeoff `tailLeads` naming across Ollie/Nollie,
+regular/Fakie/Switch, signed snapped rotations, late/body/grab modifiers and plants.
+It verifies takeoff latching, later flag changes, old constructor behavior, resets,
+atomic invalid-state refusals and cached-name allocation. Input directions are normalized;
+this is not a native regular/goofy controller or physical-pop/flip presentation test.
+
 ```sh
 dotnet run --project crates/approved_tests/skate/SkateLateFlipsBodyVarialsScenarios.csproj -p:SkateLibraryPath=/absolute/path/to/SkateMotion.dll -- EXPECTED_SHA256
 ```
