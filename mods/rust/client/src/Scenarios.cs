@@ -111,6 +111,28 @@ public static class Scenarios
         switch (k) { case SkateParks.Kind.QuarterPipe: case SkateParks.Kind.Halfpipe: return 8f; case SkateParks.Kind.LedgeLow: case SkateParks.Kind.LedgeHigh: case SkateParks.Kind.LongLedge: return 5f; default: return 6.5f; }
     }
     private static bool IsLedge(SkateParks.Kind k) { return k == SkateParks.Kind.LedgeLow || k == SkateParks.Kind.LedgeHigh || k == SkateParks.Kind.LongLedge; }
+    // Toward the target, bent away from the pieces on the way (all of them, or all but the one being
+    // come in to): seen live, the way to a start ran into the end of a long ledge and stayed there.
+    public const float TourClear = 6.5f;
+    // A ledge's grind edges are 1.5 m either side of its middle (the tiles are 3 m deep): the run goes
+    // a little outside one and drifts onto it after the ollie.
+    public const float TourBeside = 1.8f;
+    private static float Steer(Vector3 toTarget, Vector3 pos, int except)
+    {
+        var want = toTarget.normalized;
+        for (var i = 0; i < SkateParks.PieceCount; i++)
+        {
+            if (i == except) continue;
+            SkateParks.Kind k; Vector3 o; float y;
+            if (!SkateParks.Piece(i, out k, out o, out y)) continue;
+            var away = pos - o; away.y = 0f;
+            var d = away.magnitude;
+            if (d < 0.01f || d > TourClear) continue;
+            want += away / d * ((TourClear - d) / TourClear) * 2f;
+        }
+        return (float)(Math.Atan2(want.x, want.z) * 180.0 / Math.PI);
+    }
+
     private static void Tour(float game)
     {
         if (tourIndex < 0)
@@ -130,7 +152,7 @@ public static class Scenarios
         var along = SkateRide.Dir(heading);
         var start = (IsLedge(kind) ? origin - along * (kind == SkateParks.Kind.LongLedge ? 4.5f : 1.5f) : origin) - along * TourRun;
         // Beside a ledge, not on it: the board comes down on its edge from the side a little.
-        if (IsLedge(kind)) start += SkateRide.Dir(heading - 90f) * 0.6f;
+        if (IsLedge(kind)) start += SkateRide.Dir(heading - 90f) * TourBeside;
         var pos = SkateRide.On ? SkateRide.Position : SkateRig.LocalT.position;
         // First to a point further out on the piece's own line, then in along that line to the start:
         // seen live, a straight way to the start went through the pieces and stuck under one.
@@ -140,7 +162,7 @@ public static class Scenarios
         if (tourStage == 0)
         {
             SkateKeys.Brake = false; SkateKeys.Jump = false;
-            SkateKeys.LookYaw = (float)(Math.Atan2(flat.x, flat.z) * 180.0 / Math.PI);
+            SkateKeys.LookYaw = Steer(flat, pos, -1);
             SkateKeys.Push = SkateRide.Speed < (flat.magnitude > 4f ? 5f : 2f);
             if (flat.magnitude < TourReach * 2f || stage > TourApproach)
             {
@@ -152,7 +174,7 @@ public static class Scenarios
         if (tourStage == 3)
         {
             SkateKeys.Brake = false; SkateKeys.Jump = false;
-            SkateKeys.LookYaw = (float)(Math.Atan2(flat.x, flat.z) * 180.0 / Math.PI);
+            SkateKeys.LookYaw = Steer(flat, pos, tourIndex);
             SkateKeys.Push = flat.magnitude > 4f ? SkateRide.Speed < 5f : SkateRide.Speed < 2f;
             if (flat.magnitude < TourReach || stage > TourApproach)
             {
@@ -165,7 +187,7 @@ public static class Scenarios
         {
             // Back onto the piece's centre line when off it, a few degrees per 10 cm.
             var side = SkateRide.Dir(heading + 90f);
-            var centre = IsLedge(kind) ? origin + SkateRide.Dir(heading - 90f) * 0.6f : origin;
+            var centre = IsLedge(kind) ? origin + SkateRide.Dir(heading - 90f) * TourBeside : origin;
             var off = Vector3.Dot(pos - centre, side);
             SkateKeys.LookYaw = heading - Math.Max(-20f, Math.Min(20f, off * 30f));
             SkateKeys.Push = SkateRide.Speed < TourSpeed(kind);
