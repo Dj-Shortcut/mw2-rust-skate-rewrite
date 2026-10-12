@@ -125,12 +125,32 @@ public static class Scenarios
             if (i == except) continue;
             SkateParks.Kind k; Vector3 o; float y;
             if (!SkateParks.Piece(i, out k, out o, out y)) continue;
+            // The nearest point of a long piece's footprint, not its middle: a long ledge runs 4.5 m
+            // either way along its line, a halfpipe 8 m along its yaw.
+            var reach = k == SkateParks.Kind.LongLedge ? 4.5f : k == SkateParks.Kind.Halfpipe ? 8f : 0f;
+            if (reach > 0f)
+            {
+                var line = SkateRide.Dir(k == SkateParks.Kind.LongLedge ? y + 90f : y);
+                var t = Math.Max(-reach, Math.Min(reach, Vector3.Dot(pos - o, line)));
+                o += line * t;
+            }
             var away = pos - o; away.y = 0f;
             var d = away.magnitude;
             if (d < 0.01f || d > TourClear) continue;
             want += away / d * ((TourClear - d) / TourClear) * 2f;
         }
         return (float)(Math.Atan2(want.x, want.z) * 180.0 / Math.PI);
+    }
+
+    // Held against something on the way for a second: turn well off for a moment and push on.
+    private static float heldSince = -1f, turnOffUntil = -1f;
+    private static float Unstick(float yaw, float game)
+    {
+        if (game < turnOffUntil) { SkateKeys.Push = SkateRide.Speed < 3f; return yaw + 110f; }
+        if (!SkateRide.Held) { heldSince = -1f; return yaw; }
+        if (heldSince < 0f) heldSince = game;
+        if (game - heldSince > 1f) { turnOffUntil = game + 1.5f; heldSince = -1f; Say("tour: held on the way at " + Out.V1(SkateRide.Position) + ", turning off"); }
+        return yaw;
     }
 
     private static void Tour(float game)
@@ -162,7 +182,7 @@ public static class Scenarios
         if (tourStage == 0)
         {
             SkateKeys.Brake = false; SkateKeys.Jump = false;
-            SkateKeys.LookYaw = Steer(flat, pos, -1);
+            SkateKeys.LookYaw = Unstick(Steer(flat, pos, -1), game);
             SkateKeys.Push = SkateRide.Speed < (flat.magnitude > 4f ? 5f : 2f);
             if (flat.magnitude < TourReach * 2f || stage > TourApproach)
             {
@@ -174,7 +194,7 @@ public static class Scenarios
         if (tourStage == 3)
         {
             SkateKeys.Brake = false; SkateKeys.Jump = false;
-            SkateKeys.LookYaw = Steer(flat, pos, tourIndex);
+            SkateKeys.LookYaw = Unstick(Steer(flat, pos, tourIndex), game);
             SkateKeys.Push = flat.magnitude > 4f ? SkateRide.Speed < 5f : SkateRide.Speed < 2f;
             if (flat.magnitude < TourReach || stage > TourApproach)
             {

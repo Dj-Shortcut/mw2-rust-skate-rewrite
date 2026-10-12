@@ -443,7 +443,7 @@ public static class SkateParks
     // deck on top). The authored models are circular and shorter, so they would leave the tiles
     // standing out of them; these are made here instead, on the tiles' tops, with the bends
     // rounded (radius Bend) so the board rolls through them, and the coping edge left sharp.
-    public const double Bend = 3.0;
+    public const double Bend = 3.0, VertBend = 1.6, VertAngle = 82, VertLength = 0.9;
     private const int BendSteps = 8;
 
     // The riding profile, (forward, height) points in the piece's frame. The quarterpipe starts at
@@ -458,7 +458,11 @@ public static class SkateParks
             corners.Add(new Vector2(0f, -1.2f)); radii.Add(0);
             corners.Add(new Vector2(0f, 0f)); radii.Add(Bend);
             corners.Add(new Vector2((float)run1, (float)rise1)); radii.Add(Bend);
-            corners.Add(new Vector2((float)(run1 + run2), (float)(rise1 + rise2))); radii.Add(0);
+            // Past the top tile the wall goes on up to near vertical, so the board leaves it upward
+            // and comes back down into it, as from a real quarterpipe: seen live, a run up the
+            // 35 degree top tile launched the board 12 m on over the deck.
+            corners.Add(new Vector2((float)(run1 + run2), (float)(rise1 + rise2))); radii.Add(VertBend);
+            corners.Add(new Vector2((float)(run1 + run2 + VertLength * Math.Cos(VertAngle * Degrees)), (float)(rise1 + rise2 + VertLength * Math.Sin(VertAngle * Degrees)))); radii.Add(0);
             // Points are (forward, height); the first is a run-in on the ground.
             corners[0] = new Vector2(-1.2f, 0f);
         }
@@ -494,9 +498,11 @@ public static class SkateParks
             var cross = d1x * d2y - d1y * d2x; var sign = cross > 0 ? 1.0 : -1.0;
             double ox = sx - d1y * r * sign, oy = sy + d1x * r * sign;
             double fx = sx - ox, fy = sy - oy;
-            for (var k = 0; k <= BendSteps; k++)
+            // A step at most every 4 degrees, so the board meets no kink in a sharp bend either.
+            var steps = Math.Max(BendSteps, (int)Math.Ceiling(turn * 180.0 / Math.PI / 4.0));
+            for (var k = 0; k <= steps; k++)
             {
-                var ang = turn * k / BendSteps * sign;
+                var ang = turn * k / steps * sign;
                 double cs = Math.Cos(ang), sn = Math.Sin(ang);
                 outPts.Add(new Vector2((float)(ox + fx * cs - fy * sn), (float)(oy + fx * sn + fy * cs)));
             }
