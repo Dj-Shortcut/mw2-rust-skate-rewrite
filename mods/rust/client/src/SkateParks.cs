@@ -149,6 +149,16 @@ public static class SkateParks
         catch (Exception e) { Error = e.GetType().Name + ": " + e.Message; Say("scan threw " + Error); nextScan = now + 15f; }
     }
 
+    // The pieces found, for the tour check: kind, model origin and yaw.
+    public static int PieceCount { get { return placed.Count; } }
+    public static bool Piece(int i, out Kind kind, out Vector3 origin, out float yaw)
+    {
+        kind = Kind.Bank; origin = Vector3.zero; yaw = 0f;
+        if (i < 0 || i >= placed.Count) return false;
+        kind = placed[i].Kind; origin = placed[i].Origin; yaw = placed[i].Yaw;
+        return true;
+    }
+
     public static string Line()
     {
         return "blocks=" + Blocks + " assemblies=" + Assemblies + " drawn=" + Drawn + " colliders=" + Colliders + " hidden=" + HiddenRenderers +
