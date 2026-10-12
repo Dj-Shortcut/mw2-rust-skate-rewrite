@@ -208,7 +208,10 @@ public static class SkateConsole
         {
             // The game's own assemblies only: the engine, the runtime and the loader are skipped.
             string name; try { name = assembly.GetName().Name; } catch (Exception) { continue; }
-            if (name.StartsWith("System") || name.StartsWith("mscorlib") || name.StartsWith("netstandard") || name.StartsWith("Microsoft") || name.StartsWith("Il2Cpp") || name.StartsWith("BepInEx") || name.StartsWith("Unity") || name.StartsWith("Mono") || name.StartsWith("0Harmony") || name.StartsWith("ShortcutSkate")) continue;
+            if (name.StartsWith("System") || name.StartsWith("mscorlib") || name.StartsWith("netstandard") || name.StartsWith("Microsoft") || name.StartsWith("Il2Cpp") || name.StartsWith("BepInEx") || name.StartsWith("Unity") || name.StartsWith("Mono") || name.StartsWith("0Harmony") || name.StartsWith("ShortcutSkate") || name.StartsWith("AsmResolver") || name.StartsWith("Cpp2IL") || name.StartsWith("LibCpp2IL") || name.StartsWith("Iced")) continue;
+            // The loader's own libraries (BepInEx\core) are not the game's.
+            string loc = ""; try { loc = (assembly.Location ?? "").Replace('\\', '/'); } catch (Exception) { }
+            if (loc.Contains("/BepInEx/core/")) continue;
             Type[] types; try { types = assembly.GetTypes(); } catch (System.Reflection.ReflectionTypeLoadException e) { types = e.Types; } catch (Exception) { continue; }
             foreach (var t in types) if (t != null) all.Add(t);
         }
