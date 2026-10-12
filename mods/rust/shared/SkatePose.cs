@@ -18,7 +18,11 @@ namespace Shortcut.RustMod
         public const double FootOffset = 0.21;
         public const double FootLift = 0.01;
         public const double FlipFootLift = 0.12;
-        public const double PushFootSide = 0.18;
+        // How far beside the board's centre line the pushing foot comes down, measured from the
+        // ankle plane's origin. A client that sets that origin toward the heels (the feet on the
+        // deck have their toes over the toe side) must count that in here: 0.24 is 0.185 beside the
+        // line with the Rust client's heel shift of 0.055.
+        public const double PushFootSide = 0.24;
         public const double PushFootBack = 0.25;
         public const double StandingHipHeight = 0.95;
         public const double CrouchDrop = 0.4;

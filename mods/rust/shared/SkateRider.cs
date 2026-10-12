@@ -155,6 +155,9 @@ namespace Shortcut.RustMod
         public const double MinimumMeasurement = 0.01;
         public const double MaximumMeasurement = 5;
         private const double ReachMargin = 0.000001;
+        // A leg is never asked to be quite straight: a skeleton whose hips sit a little off the
+        // module's would then fall short of the ankle, and a foot on the ground would drag.
+        private const double LegReachMargin = 0.015;
 
         public static bool TryCreate(SkateRiderRig rig, SkateRiderInput input,
                                      out SkateRiderPose pose, out string error)
@@ -304,6 +307,9 @@ namespace Shortcut.RustMod
             if (!HeightRange(leftHipBase, leftAnkle, up, rig.ThighLength, rig.ShinLength, ref minimum, ref maximum) ||
                 !HeightRange(rightHipBase, rightAnkle, up, rig.ThighLength, rig.ShinLength, ref minimum, ref maximum))
             { error = "Skate rider legs cannot reach the foot positions."; return false; }
+            // The body dips a little for the push, settled before the foot is down: a pelvis that
+            // moved while the foot stands on the ground would drag it, since the secondary motion's
+            // pelvis lags the pose and the leg then falls short.
             double requested = rig.PelvisHeight - Math.Min(SkatePose.CrouchDrop, rig.PelvisHeight * 0.65) * crouch - PushDip * turn;
             double folded = grabbing ? Math.Min(1, input.GrabSeconds / GrabIn) : 0;
             folded = folded * folded * (3 - 2 * folded);
@@ -431,7 +437,7 @@ namespace Shortcut.RustMod
 
         private const double RidingPelvisYaw = 12, RidingChestYaw = 28, RidingLeadToe = 25, RidingBackToe = 5;
         private const double PushPelvisYaw = 55, PushChestYaw = 70, PushLeadToe = 60;
-        private const double AirYaw = 0.35, PushWeight = 0.28, PushSide = 0.03, PushDip = 0.12, PushLean = 0.24, PushSwing = 0.28;
+        private const double AirYaw = 0.35, PushWeight = 0.28, PushSide = 0.03, PushDip = 0.06, PushLean = 0.24, PushSwing = 0.28;
         // The pushing foot comes down PushPlant ahead of the board's middle and leaves it PushSweep
         // behind: the stroke, over which the foot is on the ground (push phase PushDown..PushUp).
         public const double PushPlant = 0.18, PushSweep = 0.44, PushDown = 0.25, PushUp = 0.6;
@@ -745,7 +751,7 @@ namespace Shortcut.RustMod
             var offset = ankle - hip;
             double vertical = SkateVector.Dot(offset, up);
             double horizontal = Math.Max(0, offset.LengthSquared - vertical * vertical);
-            double far = first + second - ReachMargin;
+            double far = first + second - LegReachMargin;
             double near = Math.Sqrt(Math.Abs(first * first - second * second)) + ReachMargin;
             if (horizontal > far * far) return false;
             minimum = Math.Max(minimum, vertical + Math.Sqrt(Math.Max(0, near * near - horizontal)));

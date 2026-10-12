@@ -452,7 +452,9 @@ public static class RiderRig
             if (fl < 0.2) return;
             fx /= fl; fy /= fl; fz /= fl;
             var upV = new Vector3((float)ux, (float)uy, (float)uz);
-            // The module's ankles are on the board's centre line; a foot is longer than the deck is wide.
+            // The module's ankles are on the board's centre line; a foot is longer than the deck is
+            // wide, so the plane goes toward the heels. The pushing foot's place beside the board
+            // (SkatePose.PushFootSide) counts that shift in.
             var toToes = new Vector3((float)(uy * fz - uz * fy), (float)(uz * fx - ux * fz), (float)(ux * fy - uy * fx));
             toToes = toToes * SkateRide.StanceSign;
             var plane = feet + upV * (DeckTop + AnkleHeight - (float)SkatePose.FootLift) - toToes * HeelShift;
@@ -463,7 +465,7 @@ public static class RiderRig
             // The ollie's pitch about the tail lifts the deck's middle too; the legs fold by that as well.
             var pitchRise = SkateBoard.Axle * (float)Math.Abs(Math.Sin(SkateBoard.AirPitch * Math.PI / 180.0));
             var inAir = SkateRide.Grabbing ? 0.95f : SkateRide.Jumped ? 0.2f + (SkateBoard.Pop + pitchRise) / (float)SkatePose.CrouchDrop : 0.45f;
-            var want = mode == RideMode.Air ? inAir : mode == RideMode.Grind ? GrindCrouch(SkateRide.GrindKind) : SkateRide.Braking ? 0.4f : 0.18f;
+            var want = mode == RideMode.Air ? inAir : mode == RideMode.Grind ? GrindCrouch(SkateRide.GrindKind) : SkateRide.Braking ? 0.4f : 0.12f;
             // A right stick held back is the rider gathering for the pop; a trigger held is the crouch of a pump.
             if (SkateKeys.Charging && mode == RideMode.Ground) want = Math.Max(want, 0.3f + 0.3f * SkateKeys.Charge);
             if (mode == RideMode.Ground && SkateRide.PumpHeld > 0f) want = Math.Max(want, 0.25f + 0.45f * SkateRide.PumpHeld / SkateRide.PumpCharge);
