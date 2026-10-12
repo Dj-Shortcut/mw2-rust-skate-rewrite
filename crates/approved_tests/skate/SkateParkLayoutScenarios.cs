@@ -106,10 +106,10 @@ internal static class SkateParkLayoutScenarios
             using (FileStream stream = File.OpenRead(path))
             using (SHA256 sha = SHA256.Create())
                 hash = BitConverter.ToString(sha.ComputeHash(stream)).Replace("-", "").ToLowerInvariant();
-            Console.WriteLine("Plugin: " + path);
+            Console.WriteLine("Park library: " + path);
             Console.WriteLine("SHA-256: " + hash);
             if (args.Length > 1 || (args.Length == 1 && !string.Equals(args[0], hash, StringComparison.OrdinalIgnoreCase)))
-                throw new InvalidOperationException("Expected one optional SHA-256 matching the loaded plugin DLL.");
+                throw new InvalidOperationException("Expected one optional SHA-256 matching the loaded park library DLL.");
             PieceLayouts();
             AnchorYawAndSnap();
             FoundationSupport();
@@ -121,6 +121,253 @@ internal static class SkateParkLayoutScenarios
             Console.Error.WriteLine(error.Message);
             return 1;
         }
+    }
+
+    private static SkateParkBlock[] Observations(Piece piece, Point anchor, Angle angle)
+    {
+        var blocks = new SkateParkBlock[piece.Parts.Length];
+        for (int i = 0; i < blocks.Length; i++)
+        {
+            ExpectedPart part = piece.Parts[i];
+            double yaw = angle.Normalized + part.Yaw;
+            if (yaw >= 360) yaw -= 360;
+            blocks[i] = new SkateParkBlock(part.Prefab,
+                anchor.X + part.Right * angle.Cos + part.Forward * angle.Sin,
+                anchor.Y + part.Height,
+                anchor.Z - part.Right * angle.Sin + part.Forward * angle.Cos,
+                yaw, part.Pitch);
+        }
+        return blocks;
+    }
+
+    private static void AnchorAndMatch()
+    {
+        Angle[] angles =
+        {
+            new Angle(0, 0, 1, 0), new Angle(90, 90, 0, 1), new Angle(180, 180, -1, 0),
+            new Angle(270, 270, 0, -1), new Angle(-90, 270, 0, -1), new Angle(450, 90, 0, 1),
+            new Angle(720, 0, 1, 0), new Angle(-720, 0, 1, 0),
+            new Angle(37.25, 37.25, 0.796002002534622, 0.6052939880428944),
+            new Angle(123.75, 123.75, -0.5555702330196023, 0.8314696123025451)
+        };
+        Point[] anchors = { new Point(17.375, 2.625, -8.0625), new Point(-23.8125, -4.375, 31.1875) };
+        foreach (Piece piece in Pieces)
+        foreach (Point anchor in anchors)
+        foreach (Angle angle in angles)
+        {
+            SkateParkBlock[] blocks = Observations(piece, anchor, angle);
+            double x, y, z, yaw;
+            for (int i = 0; i < blocks.Length; i++)
+            {
+                SkateParkBlock block = blocks[i];
+                Require(SkateParkLayout.TryAnchor(piece.Kind, i, block.X, block.Y, block.Z,
+                    block.Yaw + 360, out x, out y, out z, out yaw), piece.Name + ": inverse refused.");
+                Near(x, anchor.X, piece.Name + ": inverse X.");
+                Near(y, anchor.Y, piece.Name + ": inverse Y.");
+                Near(z, anchor.Z, piece.Name + ": inverse Z.");
+                Near(yaw, angle.Normalized, piece.Name + ": inverse yaw.");
+            }
+            Require(SkateParkLayout.TryMatch(piece.Kind, blocks, 0.01, out x, out y, out z, out yaw),
+                piece.Name + ": independently authored pose set refused.");
+            Near(x, anchor.X, piece.Name + ": matched X."); Near(y, anchor.Y, piece.Name + ": matched Y.");
+            Near(z, anchor.Z, piece.Name + ": matched Z."); Near(yaw, angle.Normalized, piece.Name + ": matched yaw.");
+            double originalX = x, originalY = y, originalZ = z, originalYaw = yaw;
+            for (int i = 0; i < blocks.Length; i++)
+            {
+                SkateParkBlock b = blocks[i];
+                blocks[i] = new SkateParkBlock(b.Prefab, b.X, b.Y, b.Z, b.Yaw - 720, b.Pitch + 360);
+            }
+            Array.Reverse(blocks);
+            Require(SkateParkLayout.TryMatch(piece.Kind, blocks, 0.01, out x, out y, out z, out yaw),
+                piece.Name + ": reversed/wrapped set refused.");
+            Require(x == originalX && y == originalY && z == originalZ && yaw == originalYaw,
+                piece.Name + ": ordering or equivalent angle wraps changed deterministic anchor.");
+            for (int rotation = 1; rotation < blocks.Length; rotation++)
+            {
+                SkateParkBlock first = blocks[0];
+                Array.Copy(blocks, 1, blocks, 0, blocks.Length - 1);
+                blocks[blocks.Length - 1] = first;
+                Require(SkateParkLayout.TryMatch(piece.Kind, blocks, 0.01, out x, out y, out z, out yaw) &&
+                    x == originalX && y == originalY && z == originalZ && yaw == originalYaw,
+                    piece.Name + ": cyclic reorder changed deterministic anchor.");
+            }
+        }
+
+        Point zero = new Point(0, 0, 0);
+        Angle flat = new Angle(0, 0, 1, 0);
+        foreach (Piece piece in Pieces)
+        {
+            SkateParkBlock[] blocks = Observations(piece, zero, flat);
+            double x, y, z, yaw;
+            Require(SkateParkLayout.TryMatch(piece.Kind, blocks, 0.1, out x, out y, out z, out yaw),
+                piece.Name + ": maximum allowed tolerance refused.");
+            SkateParkBlock old = blocks[0];
+            blocks[0] = new SkateParkBlock("wrong.prefab", old.X, old.Y, old.Z, old.Yaw, old.Pitch);
+            Refused(piece.Kind, blocks, 0.01, piece.Name + ": wrong prefab accepted.");
+            blocks[0] = new SkateParkBlock(old.Prefab, old.X, old.Y, old.Z, old.Yaw, old.Pitch + 0.02);
+            Refused(piece.Kind, blocks, 0.01, piece.Name + ": wrong pitch accepted.");
+            blocks[0] = new SkateParkBlock(old.Prefab, double.NaN, old.Y, old.Z, old.Yaw, old.Pitch);
+            Refused(piece.Kind, blocks, 0.01, piece.Name + ": NaN position accepted.");
+            blocks[0] = new SkateParkBlock(old.Prefab, old.X, old.Y, old.Z, double.PositiveInfinity, old.Pitch);
+            Refused(piece.Kind, blocks, 0.01, piece.Name + ": infinite yaw accepted.");
+            blocks[0] = old;
+            var extra = new SkateParkBlock[blocks.Length + 1];
+            Array.Copy(blocks, extra, blocks.Length);
+            extra[extra.Length - 1] = old;
+            Refused(piece.Kind, extra, 0.01, piece.Name + ": extra part accepted.");
+            var missing = new SkateParkBlock[blocks.Length - 1];
+            Array.Copy(blocks, missing, missing.Length);
+            Refused(piece.Kind, missing, 0.01, piece.Name + ": missing part accepted.");
+            if (blocks.Length > 1)
+            {
+                SkateParkBlock last = blocks[blocks.Length - 1];
+                blocks[blocks.Length - 1] = old;
+                Refused(piece.Kind, blocks, 0.01, piece.Name + ": duplicate replacing missing part accepted.");
+                blocks[blocks.Length - 1] = new SkateParkBlock(last.Prefab, last.X + 0.03, last.Y,
+                    last.Z, last.Yaw, last.Pitch);
+                Refused(piece.Kind, blocks, 0.01, piece.Name + ": position outside tolerance accepted.");
+                blocks[blocks.Length - 1] = new SkateParkBlock(last.Prefab, last.X, last.Y,
+                    last.Z, last.Yaw + 0.03, last.Pitch);
+                Refused(piece.Kind, blocks, 0.01, piece.Name + ": yaw outside tolerance accepted.");
+                blocks[blocks.Length - 1] = last;
+            }
+            Refused(piece.Kind, blocks, -0.001, piece.Name + ": negative tolerance accepted.");
+            Refused(piece.Kind, blocks, 0.100001, piece.Name + ": broad tolerance accepted.");
+            Refused(piece.Kind, blocks, double.NaN, piece.Name + ": NaN tolerance accepted.");
+            Refused(piece.Kind, blocks, double.PositiveInfinity, piece.Name + ": infinite tolerance accepted.");
+        }
+
+        SkateParkBlock[] quarter = Observations(Pieces[2], zero, flat);
+        for (int i = 0; i < quarter.Length; i++)
+        {
+            SkateParkBlock b = quarter[i];
+            quarter[i] = new SkateParkBlock(b.Prefab, b.X, b.Y, -b.Z, b.Yaw, b.Pitch);
+        }
+        Refused(SkateParkKind.QuarterPipe, quarter, 0.01, "quarterpipe: reflected assembly accepted.");
+        double ax, ay, az, aw;
+        SkateParkBlock[] low = Observations(Pieces[3], zero, flat);
+        Require(SkateParkLayout.TryMatch(SkateParkKind.LedgeLow, low, 0, out ax, out ay, out az, out aw),
+            "ledge-low: exact zero-tolerance pose refused.");
+        Require(SkateParkLayout.TryMatch(SkateParkKind.LedgeHigh, low, 0, out ax, out ay, out az, out aw),
+            "single-floor geometric consistency incorrectly inferred registration/kind.");
+        Near(ay, -0.4, "single floor: high-ledge candidate requires a different anchor.");
+        Refused((SkateParkKind)999, low, 0.01, "unknown kind accepted.");
+        Refused(SkateParkKind.Bank, null, 0.01, "null input accepted.");
+        ObservedAnchorTolerance();
+        InverseBounds();
+        Require(!SkateParkLayout.TryAnchor(SkateParkKind.Bank, -1, 0, 0, 0, 0, out ax, out ay, out az, out aw) &&
+            ax == 0 && ay == 0 && az == 0 && aw == 0, "invalid inverse index mutated outputs.");
+        Require(!SkateParkLayout.TryAnchor(SkateParkKind.Bank, 0, double.NaN, 0, 0, 0, out ax, out ay, out az, out aw) &&
+            ax == 0 && ay == 0 && az == 0 && aw == 0, "invalid inverse position mutated outputs.");
+        Require(!SkateParkLayout.TryAnchor(SkateParkKind.Bank, 0, 0, 0, 0, double.PositiveInfinity, out ax, out ay, out az, out aw) &&
+            ax == 0 && ay == 0 && az == 0 && aw == 0, "invalid inverse yaw mutated outputs.");
+    }
+
+    private static void ObservedAnchorTolerance()
+    {
+        Point zero = new Point(0, 0, 0);
+        Angle flat = new Angle(0, 0, 1, 0);
+        foreach (double noise in new[] { 0.004, 0.009 })
+        {
+            SkateParkBlock[] blocks = Observations(Pieces[2], zero, flat);
+            SkateParkBlock lower = blocks[0], upper = blocks[1];
+            blocks[0] = new SkateParkBlock(lower.Prefab, lower.X, lower.Y + noise,
+                lower.Z, lower.Yaw, lower.Pitch);
+            blocks[1] = new SkateParkBlock(upper.Prefab, upper.X, upper.Y - noise,
+                upper.Z, upper.Yaw, upper.Pitch);
+            for (int order = 0; order < 2; order++)
+            {
+                double x, y, z, yaw;
+                if (noise == 0.004)
+                {
+                    Require(SkateParkLayout.TryMatch(SkateParkKind.QuarterPipe, blocks, 0.01,
+                        out x, out y, out z, out yaw), "quarter: relative noise inside tolerance refused.");
+                    Near(x, 0, "quarter: noisy anchor X.");
+                    Near(y, noise, "quarter: anchor follows the deterministic lower observation.");
+                    Near(z, 0, "quarter: noisy anchor Z.");
+                    Near(yaw, 0, "quarter: noisy anchor yaw.");
+                }
+                else Refused(SkateParkKind.QuarterPipe, blocks, 0.01,
+                    "quarter: common ideal anchor was incorrectly fitted instead of using the observed anchor.");
+                Array.Reverse(blocks);
+            }
+        }
+    }
+
+    private static void InverseBounds()
+    {
+        double x, y, z, yaw;
+        foreach (double bound in new[] { -100000.0, 100000.0 })
+        {
+            Require(SkateParkLayout.TryAnchor(SkateParkKind.Halfpipe, 0, bound, 0, 0, 0,
+                out x, out y, out z, out yaw) && x == bound && y == 0 && z == 0 && yaw == 0,
+                "inverse: exact X bound refused.");
+            Require(SkateParkLayout.TryAnchor(SkateParkKind.Halfpipe, 0, 0, bound, 0, 0,
+                out x, out y, out z, out yaw) && x == 0 && y == bound && z == 0 && yaw == 0,
+                "inverse: exact Y bound refused.");
+            Require(SkateParkLayout.TryAnchor(SkateParkKind.Halfpipe, 0, 0, 0, bound, 0,
+                out x, out y, out z, out yaw) && x == 0 && y == 0 && z == bound && yaw == 0,
+                "inverse: exact Z bound refused.");
+        }
+        foreach (double bound in new[] { -1000000.0, 1000000.0 })
+            Require(SkateParkLayout.TryAnchor(SkateParkKind.Halfpipe, 0, 0, 0, 0, bound,
+                out x, out y, out z, out yaw) && x == 0 && y == 0 && z == 0 && yaw == (bound < 0 ? 80 : 280),
+                "inverse: exact yaw bound refused or incorrectly normalized.");
+        foreach (double angle in new[] { -double.Epsilon, -1e-15, -0.0 })
+            Require(SkateParkLayout.TryAnchor(SkateParkKind.Halfpipe, 0, 0, 0, 0, angle,
+                out x, out y, out z, out yaw) && yaw == 0 &&
+                BitConverter.DoubleToInt64Bits(yaw) == 0, "inverse: tiny negative yaw was not canonical positive zero.");
+        foreach (double bad in new[] { -100000.000001, 100000.000001 })
+        {
+            Require(!SkateParkLayout.TryAnchor(SkateParkKind.Halfpipe, 0, bad, 0, 0, 0,
+                out x, out y, out z, out yaw) && x == 0 && y == 0 && z == 0 && yaw == 0,
+                "inverse: finite out-of-range X mutated outputs.");
+            Require(!SkateParkLayout.TryAnchor(SkateParkKind.Halfpipe, 0, 0, bad, 0, 0,
+                out x, out y, out z, out yaw) && x == 0 && y == 0 && z == 0 && yaw == 0,
+                "inverse: finite out-of-range Y mutated outputs.");
+            Require(!SkateParkLayout.TryAnchor(SkateParkKind.Halfpipe, 0, 0, 0, bad, 0,
+                out x, out y, out z, out yaw) && x == 0 && y == 0 && z == 0 && yaw == 0,
+                "inverse: finite out-of-range Z mutated outputs.");
+        }
+        foreach (double bad in new[] { -1000000.000001, 1000000.000001 })
+            Require(!SkateParkLayout.TryAnchor(SkateParkKind.Halfpipe, 0, 0, 0, 0, bad,
+                out x, out y, out z, out yaw) && x == 0 && y == 0 && z == 0 && yaw == 0,
+                "inverse: finite out-of-range yaw mutated outputs.");
+        Require(!SkateParkLayout.TryAnchor(SkateParkKind.QuarterPipe, 0, 0, -100000, 0, 0,
+            out x, out y, out z, out yaw) && x == 0 && y == 0 && z == 0 && yaw == 0,
+            "inverse: derived Y outside bounds mutated outputs.");
+        Require(!SkateParkLayout.TryAnchor(SkateParkKind.Halfpipe, 1, -100000, 0, 0, 0,
+            out x, out y, out z, out yaw) && x == 0 && y == 0 && z == 0 && yaw == 0,
+            "inverse: derived X outside bounds mutated outputs.");
+        Require(!SkateParkLayout.TryAnchor(SkateParkKind.Halfpipe, 1, 0, 0, 100000, 90,
+            out x, out y, out z, out yaw) && x == 0 && y == 0 && z == 0 && yaw == 0,
+            "inverse: derived Z outside bounds mutated outputs.");
+    }
+
+    private static void Refused(SkateParkKind kind, SkateParkBlock[] blocks, double tolerance, string message)
+    {
+        double x, y, z, yaw;
+        Require(!SkateParkLayout.TryMatch(kind, blocks, tolerance, out x, out y, out z, out yaw), message);
+        Require(x == 0 && y == 0 && z == 0 && yaw == 0, "rejected match mutated outputs.");
+    }
+
+    private static void VisualOrigins()
+    {
+        double[] expectedForward = { -1.4672214011007085, -1.3594616805549748,
+            -1.4488887394336025, 0, 0, 0, 0, 1.5 };
+        foreach (Piece piece in Pieces)
+        {
+            double right, forward, height, yaw;
+            Require(SkateParkLayout.VisualOrigin(piece.Kind, out right, out forward, out height, out yaw),
+                piece.Name + ": visual origin refused.");
+            Near(right, piece.Kind == SkateParkKind.Halfpipe ? 1.5 : 0, piece.Name + ": visual right.");
+            Near(forward, expectedForward[(int)piece.Kind], piece.Name + ": visual forward.");
+            Near(height, 0, piece.Name + ": nominal visual origin height.");
+            Near(yaw, 0, piece.Name + ": local visual yaw.");
+        }
+        double r, f, h, a;
+        Require(!SkateParkLayout.VisualOrigin((SkateParkKind)999, out r, out f, out h, out a) &&
+            r == 0 && f == 0 && h == 0 && a == 0, "unknown visual kind changed outputs.");
     }
 
     private static void PieceLayouts()
@@ -170,6 +417,7 @@ internal static class SkateParkLayoutScenarios
              LocalEdge(SkateParkKind.LongLedge, 1, -1.5, 0).X, 9, "long-ledge: total width.");
         CheckSeams(0, 0, 0, 0);
         HalfpipeBounds();
+        VisualOrigins();
         Console.WriteLine("PASS: skate_park_piece_layouts (8 pieces, 48 parts, " +
                           (checks - start).ToString(CultureInfo.InvariantCulture) + " checks).");
     }
@@ -177,6 +425,7 @@ internal static class SkateParkLayoutScenarios
     private static void AnchorYawAndSnap()
     {
         int start = checks;
+        AnchorAndMatch();
         Angle[] angles =
         {
             new Angle(0, 0, 1, 0), new Angle(90, 90, 0, 1), new Angle(180, 180, -1, 0),

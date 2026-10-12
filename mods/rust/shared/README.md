@@ -33,6 +33,20 @@ Ground motion projects the achieved horizontal velocity along the heading, appli
 LookYaw follows the shortest angular path; look and steer each contribute at most `90 * min(1, observed horizontal speed / 4)` degrees/s, including in air. Both turn rates are zero at rest. Air horizontal velocity remains the actual observed velocity, capped to maxSpeed; vertical velocity receives gravity with a downward fall cap. Air board pitch/roll are zero.
 Jump starts only on a fresh grounded press. `TakeoffPending` preserves rising velocity when the support sensor remains true briefly after jumping. `Grounded` records the supplied support observation; `Landed` requires its false-to-true edge after a successful step. Held Jump cannot retrigger on landing.
 
+## Park layout API
+
+`SkateParkLayout` defines the eight native park assemblies in metres, +X right, +Y up and +Z forward. The existing part counts, materials, prefab paths and `TryPart`, `TryTransform`, `TrySupportedAnchor`, `Name` and `TryKind` contracts are preserved. `SkatePark.cs` is canonical; the self-contained server plugin embeds its identical marked block, checked by `publish-check`.
+
+`TryAnchor(kind, index, partX, partY, partZ, partYaw, out anchorX, out anchorY, out anchorZ, out anchorYaw)` reverses a known part's translation and yaw. It does not validate an observed prefab or pitch. Coordinates must be finite within ±100,000 m; yaw must be finite within ±1,000,000 degrees and is returned normalized to [0,360).
+
+`SkateParkBlock` holds readonly Prefab, X/Y/Z, Yaw and Pitch fields. `TryMatch(kind, blocks, tolerance, out anchorX, out anchorY, out anchorZ, out anchorYaw)` checks a known candidate kind against exactly its complete part count, up to 36. The caller retains its stable `IReadOnlyList`; the helper allocates no collections. Observed coordinates have the same bounds, and yaw/pitch must be finite within ±1,000,000 degrees. Prefab paths match exactly, position uses Euclidean distance, and yaw/pitch use shortest wrapped differences. One finite tolerance in [0,0.1] applies in metres and degrees; zero means exact floating-point comparison.
+
+The anchor follows a deterministically selected observation, ordered by prefab, X/Y/Z and normalized yaw/pitch, paired with the known layout's parts. Tolerance is measured from that observed-part-derived anchor; this does not search for any possible best-fit anchor. Opposing ±0.009 m errors can therefore fail at tolerance 0.01 even when an ideal common anchor exists. Choose the allowance for relative native rounding. Missing, extra, reused or ambiguously matching observations fail, as do valid anchors separated by more than that tolerance. Reordering a fixed input set does not change the selected anchor. All failed calls leave four zero outputs.
+
+This verifies geometric consistency, not park registration, ownership, grade or build permission. A single floor can fit both ledge heights with different anchor heights; a symmetric reflected pose set identical to the original cannot be distinguished. The adapter must validate zero roll, positive unit scale and any native parent constraints before creating this yaw/pitch-only observation tuple.
+
+`VisualOrigin(kind, out right, out forward, out height, out yaw)` returns the nominal local authored-asset pivot offset: bank/kicker/quarter use the first floor's low edge, halfpipe uses the flat centre (1.5,1.5), and ledges/funbox use the layout baseline. Rotate right/forward by the anchor yaw before translating the visual node. All returned heights and local yaws are zero. This relation does not determine native floor-top thickness: the adapter adds the measured surface offset in the correctly rotated local normal. An origin mapping does not make different asset and native collider profiles coincide.
+
 ## Board mesh API
 
 `SkateBoardMesh.Create()` returns fresh arrays: `Positions` and `Normals` are xyz floats, `Triangles` are zero-based indices, `Colours` are rgba floats per vertex. Readonly fields protect references; each caller can edit its own array elements. Create once and cache the mesh; generation allocates.

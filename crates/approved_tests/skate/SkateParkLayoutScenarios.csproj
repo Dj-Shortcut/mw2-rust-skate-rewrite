@@ -1,7 +1,10 @@
 <Project>
   <PropertyGroup>
-    <BaseIntermediateOutputPath>../../../context/skate-approved-park/obj/</BaseIntermediateOutputPath>
-    <OutputPath>../../../context/skate-approved-park/bin/</OutputPath>
+    <ActualPluginPath Condition="'$(ActualPluginPath)' == ''">../../../context/rust-skate-plugin-build/bin/net48/ShortcutSkate.dll</ActualPluginPath>
+    <SkateParkLibraryPath Condition="'$(SkateParkLibraryPath)' == ''">$(ActualPluginPath)</SkateParkLibraryPath>
+    <ParkLibraryName>$([System.IO.Path]::GetFileNameWithoutExtension('$(SkateParkLibraryPath)'))</ParkLibraryName>
+    <BaseIntermediateOutputPath>../../../context/skate-approved-park/obj/$(ParkLibraryName)/</BaseIntermediateOutputPath>
+    <OutputPath>../../../context/skate-approved-park/bin/$(ParkLibraryName)/</OutputPath>
   </PropertyGroup>
   <Import Project="Sdk.props" Sdk="Microsoft.NET.Sdk" />
   <PropertyGroup>
@@ -9,14 +12,13 @@
     <TargetFramework>net8.0</TargetFramework>
     <LangVersion>7.3</LangVersion>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
-    <ActualPluginPath Condition="'$(ActualPluginPath)' == ''">../../../context/rust-skate-plugin-build/bin/net48/ShortcutSkate.dll</ActualPluginPath>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="SkateParkLayoutScenarios.cs" />
-    <Reference Include="ShortcutSkate"><HintPath>$(ActualPluginPath)</HintPath></Reference>
+    <Reference Include="SkateParkLibrary"><HintPath>$(SkateParkLibraryPath)</HintPath></Reference>
   </ItemGroup>
-  <Target Name="RequireActualPlugin" BeforeTargets="PrepareForBuild">
-    <Error Condition="'$(ActualPluginPath)' == '' Or !Exists('$(ActualPluginPath)')" Text="Provide ActualPluginPath pointing to ShortcutSkate.dll built against genuine Rust references." />
+  <Target Name="RequireActualParkLibrary" BeforeTargets="PrepareForBuild">
+    <Error Condition="'$(SkateParkLibraryPath)' == '' Or !Exists('$(SkateParkLibraryPath)')" Text="Provide SkateParkLibraryPath pointing to SkateMotion.dll or ShortcutSkate.dll built against genuine Rust references." />
   </Target>
   <Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk" />
 </Project>
