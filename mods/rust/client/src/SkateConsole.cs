@@ -243,7 +243,7 @@ public static class SkateConsole
             }
             if (pid != null && str != null && snd != null) { writeType = w; foundPacketId = pid; foundString = str; foundSend = snd; foundSendInfo = info; writeStringExtra = extra; break; }
         }
-        if (writeType == null) return "no write type with a method taking " + messageType.FullName + ", one taking a string and one taking a connection-built struct";
+        if (writeType == null) return "no write type with a method taking " + messageType.FullName + ", one taking a string and one taking a connection-built struct; " + Taking(all, messageType);
         Type clientType = null; System.Reflection.MethodInfo foundStart = null; System.Reflection.MemberInfo connectionMember = null;
         foreach (var k in all)
         {
@@ -372,6 +372,30 @@ public static class SkateConsole
             return "listing in " + path + ", " + sb.Length + " chars";
         }
         catch (Exception e) { return "no listing: " + e.GetType().Name + ": " + e.Message; }
+    }
+
+    // Where the packet enum is used at all: every method, in any game assembly, with a parameter or a
+    // return of that type (at most a dozen), for the log when the write type is not found.
+    private static string Taking(System.Collections.Generic.List<Type> all, Type messageType)
+    {
+        var sb = new System.Text.StringBuilder("methods using " + messageType.Name + ":"); var n = 0;
+        var flags = System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.DeclaredOnly;
+        foreach (var t in all)
+        {
+            System.Reflection.MethodInfo[] ms; try { ms = t.GetMethods(flags); } catch (Exception) { continue; }
+            foreach (var m in ms)
+            {
+                System.Reflection.ParameterInfo[] ps; try { ps = m.GetParameters(); } catch (Exception) { continue; }
+                var uses = m.ReturnType == messageType;
+                foreach (var pi in ps) if (pi.ParameterType == messageType) uses = true;
+                if (!uses) continue;
+                sb.Append(n == 0 ? " " : "; ").Append(t.FullName).Append('.').Append(m.Name).Append('(');
+                for (var i = 0; i < ps.Length; i++) sb.Append(i > 0 ? "," : "").Append(ps[i].ParameterType.Name);
+                sb.Append(")->").Append(m.ReturnType.Name);
+                if (++n >= 12) return sb.ToString();
+            }
+        }
+        return n == 0 ? sb.Append(" none").ToString() : sb.ToString();
     }
 
     // The loaded assemblies whose names mention the network, for the log when a type is missing.
