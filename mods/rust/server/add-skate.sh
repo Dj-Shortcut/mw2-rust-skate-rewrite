@@ -1,14 +1,17 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
-COMMIT=6a17ac3d2c9a721464304f8455c457449bb2c19a
-SHA256=54268cb81a504c45209c48afbf4d8545de51a412598258a5826b46066dfae15d
-VERSION=0.3.7
+COMMIT=9eeddc7814a28c10cd8dfe1be8c3763144e5afdf
+SHA256=bb72d7e4ccbbead77341101196dad4c996d9fb9ebd097f9fc0edd177d242784f
+VERSION=0.3.8
 DIR=/srv/rust/server/oxide/plugins
 CHECK_ONLY=false
+DEFER_RELOAD=false
 if [[ $# -eq 1 && $1 == --check ]]; then
     CHECK_ONLY=true
+elif [[ $# -eq 1 && $1 == --defer-reload ]]; then
+    DEFER_RELOAD=true
 elif [[ $# -ne 0 ]]; then
-    echo "usage: add-skate.sh [--check]" >&2
+    echo "usage: add-skate.sh [--check | --defer-reload]" >&2
     exit 2
 fi
 
@@ -70,6 +73,7 @@ skate_worker_code=$(cat <<'BASH'
     DIR=$1
     VERSION=$2
     SHA256=$3
+    DEFER_RELOAD=$4
     [[ $EUID -ne 0 ]] || { echo "rust must be a nonroot account" >&2; exit 1; }
     [[ -d $DIR ]] || { echo "no Oxide plugins folder at $DIR" >&2; exit 1; }
     if [[ -e $DIR/ShortcutSkate.cs || -L $DIR/ShortcutSkate.cs ]]; then
@@ -179,8 +183,9 @@ def rollback(state):
     save(state)
 
 try:
-    if action == "capture":
-        log_snapshot()
+    if action in ("capture", "capture-deferred"):
+        if action == "capture":
+            log_snapshot()
         installed = source(staged_path)[0]
         if installed["sha256"] != source_hash:
             raise OSError("Staged source checksum changed")
@@ -195,6 +200,17 @@ try:
             state = json.load(stream)
         if action == "rollback":
             rollback(state)
+        elif action == "commit":
+            if source(active)[0] != state["installed"]:
+                raise OSError("Installed source changed before deferring reload")
+            state["settled"] = True
+            save(state)
+            print("ShortcutSkate v" + version + " source installed in " + str(directory) + ".", flush=True)
+            print("Reload deferred; source-only/native-unverified. No compile or load verdict was observed.", flush=True)
+            if state["prior"] is None:
+                print("No prior source existed; no rollback backup was created.", flush=True)
+            else:
+                print("Previous source backup retained at " + str(backup) + ".", flush=True)
         elif action == "arm":
             if source(active)[0] != state["installed"]:
                 raise OSError("Installed source changed before monitoring Oxide")
@@ -304,13 +320,19 @@ PY
         mv -fT -- "$skate_backup_tmp" "$DIR/ShortcutSkate.cs.bak"
     fi
     skate_state=$(mktemp "$DIR/.ShortcutSkate-verdict.XXXXXX")
-    python3 -c "$skate_verdict" capture "$skate_state" "$DIR" "$VERSION" "$SHA256" "$skate_tmp"
+    skate_capture_action=capture
+    if $DEFER_RELOAD; then skate_capture_action=capture-deferred; fi
+    python3 -c "$skate_verdict" "$skate_capture_action" "$skate_state" "$DIR" "$VERSION" "$SHA256" "$skate_tmp"
     mv -fT -- "$skate_tmp" "$DIR/ShortcutSkate.cs"
-    python3 -c "$skate_verdict" arm "$skate_state" "$DIR" "$VERSION" "$SHA256" ""
-    python3 -c "$skate_verdict" wait "$skate_state" "$DIR" "$VERSION" "$SHA256" ""
+    if $DEFER_RELOAD; then
+        python3 -c "$skate_verdict" commit "$skate_state" "$DIR" "$VERSION" "$SHA256" ""
+    else
+        python3 -c "$skate_verdict" arm "$skate_state" "$DIR" "$VERSION" "$SHA256" ""
+        python3 -c "$skate_verdict" wait "$skate_state" "$DIR" "$VERSION" "$SHA256" ""
+    fi
 BASH
 )
-setsid --wait runuser -u rust -g rust -- /bin/bash -c "$skate_worker_code" skate-install "$DIR" "$VERSION" "$SHA256" < "$skate_tmp" &
+setsid --wait runuser -u rust -g rust -- /bin/bash -c "$skate_worker_code" skate-install "$DIR" "$VERSION" "$SHA256" "$DEFER_RELOAD" < "$skate_tmp" &
 skate_worker_pid=$!
 trap 'exit 130' INT
 trap 'exit 143' TERM
@@ -322,5 +344,9 @@ else
     skate_worker_status=$? skate_worker_pid=''
 fi
 if [[ $skate_worker_status -ne 0 ]]; then exit "$skate_worker_status"; fi
+if $DEFER_RELOAD; then
+    echo "Restart or reload the server explicitly, then verify Oxide loading, patch readiness and in-game behavior."
+    exit 0
+fi
 echo "Oxide reported loading ShortcutSkate v$VERSION; check oxide.plugins in the server console."
 echo "A source install does not confirm in-game behavior."
