@@ -119,6 +119,12 @@ world translation/rotation, isolated reset boundaries, variable dt, inverted han
 all 14 grab targets across regular/goofy and switch. Malformed rig/pose/state/history and dt
 refusals are atomic; warmed success/refusal loops check allocation on the executing runtime.
 
+The same scenario covers all eight `SkateRiderMotionOptions` combinations: suppressed
+pelvis spring, exact left/right/both hand targets before IK, retained free-hand/shoulder
+lag, warmed control toggles/history reset, near-reach fallback, transformed/reset poses
+and every grab/stance/switch/inverted plant. The original/default overloads must give
+identical pose/history bits. Each option has warmed success/refusal allocation checks.
+
 Build the genuine-reference shared DLL first, then run the approved scenario:
 
 ```sh
@@ -127,7 +133,7 @@ dotnet run --project crates/approved_tests/skate/SkateRiderMotionScenarios.cspro
 ```
 
 The optional single argument verifies the loaded DLL's SHA-256; its path/hash are always printed.
-Outputs stay in ignored `context/`. The integrated genuine net48 DLL passes 180,614 checks on
+Outputs stay in ignored `context/`. The integrated genuine net48 DLL passes 492,774 checks on
 Mac net8, with zero measured bytes in 20,000-call warmed success/refusal loops. These are
 secondary-motion geometry checks. The runner starts no Rust client/server or Shadow PC and
 does not establish hand/surface contact, native rendering, adapter integration or IL2CPP cost.
