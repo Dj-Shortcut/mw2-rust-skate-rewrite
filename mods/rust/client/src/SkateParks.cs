@@ -164,6 +164,7 @@ public static class SkateParks
         var local = SkateRig.LocalT;
         if (local == null) return;
         Scans++;
+        if (!SkateGestures.Done) SkateGestures.Report();
         if (constructionLayer == -2) { try { constructionLayer = LayerMask.NameToLayer("Construction"); } catch (Exception) { constructionLayer = -1; } }
         var mask = constructionLayer >= 0 ? 1 << constructionLayer : ~0;
         var colliders = Physics.OverlapSphere(local.position, Reach, mask, QueryTriggerInteraction.Ignore);
