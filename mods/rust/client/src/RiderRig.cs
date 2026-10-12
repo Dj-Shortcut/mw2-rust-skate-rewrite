@@ -513,17 +513,20 @@ public static class RiderRig
                 Error = error; return;
             }
             // Secondary motion: the pelvis springs and the shoulders and hands lag a little behind
-            // the pose, so the body is not rigid. Not while a hand is on the board or the ground (a
-            // grab, a handplant), when it must stay there, nor in the air, where the legs' own spring
-            // carries the pop and the module's pelvis spring would bob on top of it: the motion is
-            // reset and the pose shown as is.
-            var contact = grab != SkateGrabKind.None || handplant > 0.001f || mode == RideMode.Bail || mode == RideMode.Air;
+            // the pose, so the body is not rigid. In the air the legs' own spring carries the pop, so
+            // the module's pelvis spring is off there, and a grabbing hand is pinned to its target so
+            // it stays on the board while the rest lags. Not in a handplant or a bail, where the
+            // module's contact must stand as it is: the motion is reset and the pose shown as is.
+            var contact = handplant > 0.001f || mode == RideMode.Bail;
             if (contact || mode != motionMode) motion = default(SkateRiderMotionState);
             motionMode = mode;
             if (!contact)
             {
+                var airborne = mode == RideMode.Air;
+                var pinned = airborne && grab != SkateGrabKind.None;
+                var options = new SkateRiderMotionOptions(airborne, pinned, pinned);
                 SkateRiderPose shown; SkateRiderMotionState next; string motionError;
-                if (SkateRiderMotion.TryStep(motion, Rig, pose, SkateRide.Clamp(frameSeconds, (float)SkateRiderMotion.MinimumDelta, (float)SkateRiderMotion.MaximumDelta), out shown, out next, out motionError))
+                if (SkateRiderMotion.TryStep(motion, Rig, pose, SkateRide.Clamp(frameSeconds, (float)SkateRiderMotion.MinimumDelta, (float)SkateRiderMotion.MaximumDelta), options, out shown, out next, out motionError))
                 { pose = shown; motion = next; }
                 else { motion = default(SkateRiderMotionState); if (motionError != MotionError) { MotionError = motionError; Say("secondary motion refused: " + motionError); } }
             }

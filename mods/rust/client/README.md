@@ -57,13 +57,13 @@ game; see [The controller](#the-controller).
 | Control | On the ground | In the air |
 | --- | --- | --- |
 | `Y` | Get on; again gets off. | |
-| Left stick | Steer, by how far it is pushed. Far and straight forward or back: push or brake. | Held more than half way to a side: the rider turns that way for as long as it is held. |
+| Left stick | Steer, by how far it is pushed. Far and straight forward or back: push or brake. | Held more than half way to a side (for at least 0.06 s): the rider turns that way for as long as it is held. One quick full circle at full reach, after a pop: a body varial, the rider turns a half round and the board does not; the landing is switch. |
 | `A` | Push with the back foot. Rolling tail first, the push drives on backward (a fakie push). | |
 | `X` | Push with the front foot (mongo). | |
 | `A` tapped while the right stick is held back, then the flick | No comply: the front foot steps down and the board pops off the back foot, a little lower than an ollie ("No Comply 180" with the left stick). | |
 | `LT` + `A`, `LT` + `X` or `RT` + `X`, `RT` + `A` | Foot plants: boneless, fastplant, beanplant (the front foot planted for a moment, a little higher than an ollie). | |
 | `B` | Brake | |
-| Right stick | The board: see below. Kept part of the way back or forward for 0.2 s: manual or nose manual. | Flicked to a side or a forward diagonal: a flip. Pulled back: set for the pop after the landing. |
+| Right stick | The board: see below. Kept part of the way back or forward for 0.2 s: manual or nose manual. | Flicked to a side or a forward diagonal: a flip; after a pop, a whole composition (held back then flicked, or rolled) is a late flip or late shove on top of what is under way, when the jump still lasts long enough. Pulled back: set for the pop after the landing. |
 | `LT`, `RT` | Held going down a transition and let go through its bottom: a pump (speed, by how long it was held and how steep the descent, once a pass; nothing on the flat or let go on the slope itself). | Held: grab; with the right stick held, another grab. |
 | Right stick click | View from behind or the game's first person | |
 | Left stick, right after landing a trick | Revert: the board turns round under the rider, who rolls on switch; it joins the combo. | |
@@ -99,7 +99,9 @@ Landing on a slope, the part of the fall that runs along the slope becomes roll.
 A turn of the rider goes on for as long as the left stick is held and the next half turn can
 still be reached before the ground; let go, the rider is brought round to the nearest half turn.
 A turn with a shove the same way is a bigspin. Each rotation is only started when the jump lasts
-long enough to finish it.
+long enough to finish it. Late flips and shoves and body varials are named by the shared scorer
+("Late Kickflip", "Late Pop Shove-it", "Body Varial"); a body varial of a half round leaves the
+deck the other way round under the feet, as a shove does. Unverified in game.
 
 | Trigger | Right stick | Grab |
 | --- | --- | --- |

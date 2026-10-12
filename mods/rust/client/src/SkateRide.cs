@@ -106,6 +106,13 @@ public static class SkateRide
     // of it is still to be started in the air; and which way a frontside turn goes in this jump.
     private static SkatePopKind wantKind = SkatePopKind.Ollie, popKind;
     private static int wantFlip, pendFlip;
+    // In the air: degrees of body varial still to turn (the rider only; the board keeps its yaw),
+    // the rider's turn so far, and whether the flip or shove under way was asked for in the air.
+    private static float bodyLeft;
+    public static double BodyDeg;
+    public static bool LateTrick;
+    // A flip or shove asked for this long after take-off or later is late: part of the pop before that.
+    public const float LateAfter = 0.25f;
     private static float wantShove, wantScale = 1f, pendShove, spinSide = 1f;
     private const float SpinSlack = 15f;
     // The chest ahead of a spin (degrees, positive frontside): turned into it while it goes on and
@@ -129,8 +136,10 @@ public static class SkateRide
     // round for a goofy rider. NoseYaw is where the
     // rider's stance points (spin included), DeckYaw where the board's own nose points.
     public static float SpinYaw { get { return -(float)SpinDeg * spinSide; } }
-    public static float NoseYaw { get { return Mode == RideMode.Grind ? SkateGrind.Heading + grindNose : Yaw + (Trick.Switch ? 180f : 0f) + SpinYaw + airNoseOffset; } }
-    public static float DeckYaw { get { return Mode == RideMode.Grind ? SkateGrind.Heading + GrindDeck : NoseYaw - (float)ShoveDeg * spinSide + (DeckReversed ? 180f : 0f) + airDeckOffset; } }
+    // A body varial turns the rider's stance and nothing else: the deck keeps its own yaw.
+    public static float BodyYaw { get { return -(float)BodyDeg * spinSide; } }
+    public static float NoseYaw { get { return Mode == RideMode.Grind ? SkateGrind.Heading + grindNose : Yaw + (Trick.Switch ? 180f : 0f) + SpinYaw + BodyYaw + airNoseOffset; } }
+    public static float DeckYaw { get { return Mode == RideMode.Grind ? SkateGrind.Heading + GrindDeck : NoseYaw - BodyYaw - (float)ShoveDeg * spinSide + (DeckReversed ? 180f : 0f) + airDeckOffset; } }
     private static float HorizontalFactor { get { return Mode == RideMode.Ground ? Flat(Tangent).magnitude : 1f; } }
     public static float HorizontalSpeed { get { return Speed * HorizontalFactor; } }
     private static Vector3 Flat(Vector3 v) { return new Vector3(v.x, 0f, v.z); }
@@ -176,7 +185,7 @@ public static class SkateRide
     }
     // Which way round a frontside turn goes from here: the sign a left-stick turn gets in the trick module.
     public static float SpinSide { get { return (TailFirst ? -1f : 1f) * StanceSign; } }
-    public static bool Rotating { get { return spinning || Math.Abs(flipLeft) > 0.001f || Math.Abs(shoveLeft) > 0.001f; } }
+    public static bool Rotating { get { return spinning || Math.Abs(flipLeft) > 0.001f || Math.Abs(shoveLeft) > 0.001f || Math.Abs(bodyLeft) > 0.001f; } }
 
     public static void ForgetServer() { Cap = MaxSpeed; raiseWait = RaiseWait; refusedSinceRaise = false; raisedAt = putBackAt = -999f; }
 
@@ -189,7 +198,7 @@ public static class SkateRide
         hasLast = false; Steps = 0; Resets = 0; Top = 0f; Lean = 0f; lastPull = mountAt = Time.realtimeSinceStartup;
         // A cap from a ride a while ago says nothing about this one.
         if (mountAt - putBackAt > CapForget) ForgetServer();
-        VSpeed = 0f; AirTime = 0f; flipLeft = shoveLeft = pendShove = 0f; pendFlip = 0; SpinDeg = FlipDeg = ShoveDeg = 0; Jumped = TrickAir = Braking = Manual = NoseManual = spinning = DeckReversed = false; PushPhase = 0f; stuck = 0; heldSteps = 0; Held = false;
+        VSpeed = 0f; AirTime = 0f; flipLeft = shoveLeft = pendShove = bodyLeft = 0f; pendFlip = 0; SpinDeg = FlipDeg = ShoveDeg = BodyDeg = 0; LateTrick = false; Jumped = TrickAir = Braking = Manual = NoseManual = spinning = DeckReversed = false; PushPhase = 0f; stuck = 0; heldSteps = 0; Held = false;
         Grab = SkateGrabKind.None; spinSide = 1f; wantKind = SkatePopKind.Ollie; wantFlip = 0; wantShove = 0f; wantScale = 1f;
         PumpHeld = RevertLeft = 0f; landedTrick = fastFakie = false; steppedAt = -99f; StepUps = 0; Pump = default(SkatePumpState); SlopeDegrees = 0f; ContactNormal = Vector3.up; GrindKind = SkateGrindKind.None; GrindFrontside = GrindAlong = false; GrindDeck = 0f; Stalling = false; Stalls = 0; PlantedUntil = -99f; PushMongo = PushLead = false; handDownAt = -99f;
         Trick = new SkateTrickState(false); TrickName = ""; ComboPoints = 0; TrickAt = BankedAt = LandAt = jumpWanted = -99f; OffReason = "";
@@ -506,7 +515,7 @@ public static class SkateRide
         Enter(RideMode.Air);
         // A manual survives a hop over a bump; a jump ends it, and so does a longer fall below.
         Jumped = jumped; TrickAir = jumped; if (jumped) Manual = NoseManual = false; VSpeed = vertical; AirTime = 0f; AirPeak = 0f; takeOffY = Position.y;
-        flipLeft = shoveLeft = 0f; spinning = false; PushPhase = 0f; Braking = false; stuck = 0; heldSteps = 0; Held = false;
+        flipLeft = shoveLeft = bodyLeft = 0f; spinning = false; PushPhase = 0f; Braking = false; stuck = 0; heldSteps = 0; Held = false; LateTrick = false;
         popKind = jumped ? wantKind : SkatePopKind.Ollie; pendFlip = jumped ? wantFlip : 0; pendShove = jumped ? wantShove : 0f;
         wantFlip = 0; wantShove = 0f; wantKind = SkatePopKind.Ollie;
     }
@@ -528,23 +537,34 @@ public static class SkateRide
 
         // A rotation is only started when the arc lasts long enough to finish it: an unfinished one is a bail.
         var left = (float)(TimeToGround() - 0.03);
-        var flips = pendFlip + SkateKeys.LateFlip; pendFlip = 0;
+        var flips = pendFlip + SkateKeys.LateFlip; var lateFlips = SkateKeys.LateFlip != 0 && Jumped && AirTime > LateAfter; pendFlip = 0;
         if (flips != 0 && (Math.Abs(flipLeft) < 0.001f || Math.Sign(flipLeft) == Math.Sign(flips)))
         {
-            if (left >= (Math.Abs(flipLeft) + 360f * Math.Abs(flips)) / (float)SkateMotion.FlipRate) { flipLeft += 360f * flips; TrickAir = true; }
+            if (left >= (Math.Abs(flipLeft) + 360f * Math.Abs(flips)) / (float)SkateMotion.FlipRate) { flipLeft += 360f * flips; TrickAir = true; if (lateFlips) LateTrick = true; }
             else Refused++;
         }
+        // A shove asked for in the air goes on top of what is under way, the same way round.
+        var lateShove = Jumped ? SkateKeys.LateShove : 0f;
+        if (lateShove != 0f && (Math.Abs(shoveLeft) < 0.001f || Math.Sign(shoveLeft) == Math.Sign(lateShove))) pendShove += lateShove;
         if (pendShove != 0f)
         {
-            if (left >= Math.Abs(pendShove) / (float)SkateMotion.ShoveRate) { shoveLeft = pendShove; TrickAir = true; }
+            if (left >= (Math.Abs(shoveLeft) + Math.Abs(pendShove)) / (float)SkateMotion.ShoveRate) { shoveLeft += pendShove; TrickAir = true; if (lateShove != 0f && AirTime > LateAfter) LateTrick = true; }
             else Refused++;
             pendShove = 0f;
+        }
+        // A body varial: the rider turns a half round, the board keeps its yaw. Only when the arc
+        // lasts long enough for it; one per flight.
+        var body = Jumped ? SkateKeys.BodyVarial : 0f;
+        if (body != 0f && Math.Abs(bodyLeft) < 0.001f && Math.Abs(BodyDeg) < 0.001)
+        {
+            if (left >= Math.Abs(body) / (float)SkateMotion.RotationRate) { bodyLeft = body; TrickAir = true; }
+            else Refused++;
         }
         var spinAxis = SpinAxis(left, dt);
         Grab = TrickAir ? SkateKeys.Grab : SkateGrabKind.None;
 
-        var flipStep = (float)SkateMotion.FlipRate * dt; var shoveStep = (float)SkateMotion.ShoveRate * dt;
-        var flipAxis = Clamp(flipLeft / flipStep, -1f, 1f); var shoveAxis = Clamp(shoveLeft / shoveStep, -1f, 1f);
+        var flipStep = (float)SkateMotion.FlipRate * dt; var shoveStep = (float)SkateMotion.ShoveRate * dt; var bodyStep = (float)SkateMotion.RotationRate * dt;
+        var flipAxis = Clamp(flipLeft / flipStep, -1f, 1f); var shoveAxis = Clamp(shoveLeft / shoveStep, -1f, 1f); var bodyAxis = Clamp(bodyLeft / bodyStep, -1f, 1f);
 
         stuck = VSpeed < -2f && Math.Abs(ActualV) < 0.3f && AirTime > 0.2f ? stuck + 1 : 0;
         if ((VSpeed <= 0f && Clearance <= Math.Max(0.04f, -VSpeed * dt + 0.02f)) || stuck >= 3)
@@ -584,8 +604,8 @@ public static class SkateRide
         // stepped, so an open combo neither banks nor is lost until the rider is down.
         if (TrickAir)
         {
-            TrickTick(true, false, spinAxis, flipAxis, shoveAxis, 0, dt);
-            flipLeft -= flipAxis * flipStep; shoveLeft -= shoveAxis * shoveStep;
+            TrickTick(true, false, spinAxis, flipAxis, shoveAxis, 0, dt, bodyAxis);
+            flipLeft -= flipAxis * flipStep; shoveLeft -= shoveAxis * shoveStep; bodyLeft -= bodyAxis * bodyStep;
         }
     }
 
@@ -652,18 +672,19 @@ public static class SkateRide
         flipLeft = shoveLeft = 0f; spinning = false; TrickAir = Jumped = false; Grab = SkateGrabKind.None; AirTime = 0f;
     }
 
-    private static void TrickTick(bool airborne, bool grinding, float spinAxis, float flipAxis, float shoveAxis, float impact, float dt)
+    private static void TrickTick(bool airborne, bool grinding, float spinAxis, float flipAxis, float shoveAxis, float impact, float dt, float bodyAxis = 0f)
     {
         SkateTrickResult r; string error;
         var rolling = !airborne && !grinding;
         var input = new SkateTrickInput(spinAxis, flipAxis, shoveAxis, airborne ? Grab : SkateGrabKind.None, airborne, grinding, impact, Manual && rolling, NoseManual && !Manual && rolling,
-            Math.Abs(Speed), airborne ? popKind : SkatePopKind.None, grinding ? GrindKind : SkateGrindKind.None, grinding && GrindFrontside);
+            Math.Abs(Speed), airborne ? popKind : SkatePopKind.None, grinding ? GrindKind : SkateGrindKind.None, grinding && GrindFrontside,
+            airborne && LateTrick && (flipAxis != 0f || shoveAxis != 0f), airborne ? bodyAxis : 0f);
         if (!SkateTricks.TryStep(Trick, input, dt, BailImpact, out r, out error))
         {
             Out.Say("SKATE trick step refused: " + error);
             return;
         }
-        SpinDeg = airborne ? r.BoardSpin : 0; FlipDeg = airborne ? r.BoardFlip : 0; ShoveDeg = airborne ? r.BoardShove : 0;
+        SpinDeg = airborne ? r.BoardSpin : 0; FlipDeg = airborne ? r.BoardFlip : 0; ShoveDeg = airborne ? r.BoardShove : 0; BodyDeg = airborne ? r.BodySpin : 0;
         Take(r);
     }
 
@@ -673,6 +694,8 @@ public static class SkateRide
         if ((r.Events & SkateTrickEvents.Bailed) != 0) { Bail(); return; }
         // The landing hands the turns back rounded: an odd number of half shoves turned the board round.
         if ((r.Events & SkateTrickEvents.Landed) != 0 && ((long)Math.Round(r.BoardShove / 180.0) & 1) != 0) DeckReversed = !DeckReversed;
+        // A body varial of an odd half round leaves the deck the other way round under the feet as well.
+        if ((r.Events & SkateTrickEvents.Landed) != 0 && ((long)Math.Round(r.BodySpin / 180.0) & 1) != 0) DeckReversed = !DeckReversed;
         if ((r.Events & (SkateTrickEvents.Landed | SkateTrickEvents.GrindEnded | SkateTrickEvents.ManualEnded)) != 0)
         {
             TrickName = r.TrickName;
