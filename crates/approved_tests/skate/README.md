@@ -30,7 +30,28 @@ a real kernel-lease-blocked backup,
 including caller status, worker exit before lease release and unchanged source
 afterward. Power loss/SIGKILL are not tested.
 
+## Server movement policy
+
+The owner approved `skate_server_movement_policy` by name on 12 October 2026. It executes
+the actual plugin's pure helpers: every segment's coordinate/path validation, total XZ
+distance, cap/tick bounds, deterministic accumulation, atomic refusals, all fresh filter
+guards and player eligibility. Existing compiled Bounds/Rearm helpers reproduce the
+two-second airtime refusal and unsupported/repeated-reset starvation; the fresh policy
+accepts the same in-cap paths independently of that diagnostic history.
+
+```sh
+dotnet build mods/rust/plugins/ShortcutSkate.csproj -p:RustManagedPath=/absolute/path/to/managed
+dotnet run --project crates/approved_tests/skate/SkateServerMovementPolicyScenarios.csproj -p:ActualPluginPath=/absolute/path/to/ShortcutSkate.dll -- EXPECTED_SHA256
+```
+
+The optional argument pins the actual DLL hash; its path/hash are always printed.
+Warmed helper loops measure allocation on the executing .NET runtime. Guard fixtures
+exercise production boolean policy, rather than constructing fake native players.
+No Rust/Oxide process, client, Shadow or live server starts. Real cache data, authority
+flags, Harmony invocation, native noclip and correction-free gameplay remain unverified.
+
 ## Recorded gestures
+
 
 The three scenarios requested by the owner through [issue #337](https://github.com/Dj-Shortcut/mw2-rust-rust-rewrite/issues/337#issuecomment-6098063930) replay the exact recorded stick positions and timestamps. Each position is held until the next timestamp; long holds are subdivided at the module's maximum step without interpolating new positions.
 

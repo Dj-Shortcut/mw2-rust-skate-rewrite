@@ -38,10 +38,52 @@ After a real install, record actual server startup, matching framework, listener
 
 ## Update the skate plugin
 
-**Installation hold:** the owner reports that 0.3.6 did not load after source
-replacement; the actual compiler/load diagnostic is still unavailable.
-Keep the owner-advised 0.3.5 live baseline until that failure is understood.
-This updater's source and fixture checks do not establish native acceptance.
+The [12 October owner report](https://github.com/Dj-Shortcut/mw2-rust-skate-rewrite/issues/337#issuecomment-6117276716)
+describes corrections on loaded 0.3.5 and an unresolved 0.3.6 loading failure. Keep the
+owner-advised 0.3.5 baseline until its actual compiler/load verdict is available. The
+0.3.7 movement-policy source is offline development, with no native acceptance. The
+installer procedure below follows its separate reviewed delivery pin; it does not select
+this new development source. No live configuration is changed by Codex.
+
+### Private-server alternative
+
+For the owner's isolated private server, a separate owner-applied alternative is to
+disable these native server checks in the active identity's `cfg/server.cfg` (read at
+startup, as described in [Facepunch's server.cfg documentation](https://wiki.facepunch.com/rust/creating-a-server#server.cfg)):
+
+```text
+antihack.speedhack_protection 0
+antihack.flyhack_protection 0
+antihack.noclip_protection 0
+server.stability false
+```
+
+Back up that configuration first and retain its prior values for restoration. These
+settings apply server-wide, including other players; they are not the plugin's scoped
+movement policy. Noclip is included because client park colliders can differ from native
+server blocks. `server.stability false` disables collapse for all buildings; the plugin's
+`GroundedBuilding` option only manages its verified registered members. Choose this
+alternative deliberately; the installer never writes these settings or executes them.
+The owner applies/reloads or restarts the server as appropriate, then checks current
+convar values in the authenticated server console and tests movement/building. No such
+application, restart, native physics or gameplay check was performed by Codex.
+
+### Plugin load diagnostic
+
+After the owner runs `oxide.reload ShortcutSkate` in the authenticated server/admin game
+console, run this read-only line in the Linux shell to collect plugin-related compiler/load
+lines from the current Oxide logs:
+
+```sh
+sudo -u rust grep -h -Ei 'ShortcutSkate|Skating ready:|Skating is disabled:' /srv/rust/server/oxide/logs/oxide_*.txt | tail -n 40
+```
+
+Keep the output private and share the relevant compiler error in the owner's private
+chat after removing identifiers, addresses or unrelated operational details. No matches
+does not prove successful loading; preserve the actual console verdict and check
+`oxide.plugins`/`skate.status`. This command does not reload, install or change configuration.
+
+### Existing pinned installer
 
 `add-skate.sh` installs reviewed ShortcutSkate **0.3.6** from the owner-merged
 [PR #375](https://github.com/Dj-Shortcut/mw2-rust-skate-rewrite/pull/375), commit
