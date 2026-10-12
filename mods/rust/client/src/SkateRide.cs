@@ -96,6 +96,12 @@ public static class SkateRide
     private static float lastSpeed, lastPull = -999f, raisedAt = -999f, putBackAt = -999f, raiseWait = RaiseWait, now, mountAt, takeOffY, flipLeft, shoveLeft, jumpWanted = -99f;
     private static bool hasLast, refusedSinceRaise, spinning;
     private static int stuck;
+    // Held back: for HeldSteps physics steps in a row the board got less than HeldShare of what it
+    // rode. The speed follows what it got, plus HeldLeft.
+    public static bool Held;
+    public const int HeldSteps = 3;
+    public const float HeldShare = 0.35f, HeldLeft = 0.3f;
+    private static int heldSteps;
     // The pop that was asked for, kept with the press for the moment the press itself is kept; what
     // of it is still to be started in the air; and which way a frontside turn goes in this jump.
     private static SkatePopKind wantKind = SkatePopKind.Ollie, popKind;
@@ -183,7 +189,7 @@ public static class SkateRide
         hasLast = false; Steps = 0; Resets = 0; Top = 0f; Lean = 0f; lastPull = mountAt = Time.realtimeSinceStartup;
         // A cap from a ride a while ago says nothing about this one.
         if (mountAt - putBackAt > CapForget) ForgetServer();
-        VSpeed = 0f; AirTime = 0f; flipLeft = shoveLeft = pendShove = 0f; pendFlip = 0; SpinDeg = FlipDeg = ShoveDeg = 0; Jumped = TrickAir = Braking = Manual = NoseManual = spinning = DeckReversed = false; PushPhase = 0f; stuck = 0;
+        VSpeed = 0f; AirTime = 0f; flipLeft = shoveLeft = pendShove = 0f; pendFlip = 0; SpinDeg = FlipDeg = ShoveDeg = 0; Jumped = TrickAir = Braking = Manual = NoseManual = spinning = DeckReversed = false; PushPhase = 0f; stuck = 0; heldSteps = 0; Held = false;
         Grab = SkateGrabKind.None; spinSide = 1f; wantKind = SkatePopKind.Ollie; wantFlip = 0; wantShove = 0f; wantScale = 1f;
         PumpHeld = RevertLeft = 0f; landedTrick = fastFakie = false; steppedAt = -99f; StepUps = 0; Pump = default(SkatePumpState); SlopeDegrees = 0f; ContactNormal = Vector3.up; GrindKind = SkateGrindKind.None; GrindFrontside = GrindAlong = false; GrindDeck = 0f; Stalling = false; Stalls = 0; PlantedUntil = -99f; PushMongo = PushLead = false; handDownAt = -99f;
         Trick = new SkateTrickState(false); TrickName = ""; ComboPoints = 0; TrickAt = BankedAt = LandAt = jumpWanted = -99f; OffReason = "";
@@ -287,10 +293,24 @@ public static class SkateRide
             Out.Say("SKATE put back #" + Resets + ", " + (now - mountAt).ToString("F2") + " s after getting on: moved " + Out.V3(pos - lastPos) + " in a step at speed " + lastSpeed.ToString("F1"));
             return;
         }
-        if (now - steppedAt < StepGrace) return;
-        // Only a wall stops the board: when it did not get as far as it rode and something steep
-        // stands right in front of it. Anything else that held it back is not taken off its speed.
-        if (Math.Abs(Speed) < 0.5f || Math.Abs(Actual) > Math.Abs(Speed) * 0.5f) return;
+        if (now - steppedAt < StepGrace) { heldSteps = 0; return; }
+        // Held back by anything on the ground or along an edge, a wall, a post, a fence: the board
+        // did not get as far as it rode for a few steps in a row. Its speed then comes down to what
+        // it actually does, so the meter and the tricks do not run on against the wall; a little is
+        // left so that a push away from it starts again. A single short step is not that: a lip
+        // stepped over, a slope, a frame of the server's.
+        var rode = Math.Abs(Speed); var got = Math.Abs(Actual);
+        if ((Mode == RideMode.Ground || Mode == RideMode.Grind) && rode > 1f && got < rode * HeldShare) heldSteps++; else heldSteps = 0;
+        Held = heldSteps >= HeldSteps;
+        if (Held)
+        {
+            if (heldSteps == HeldSteps) Out.Say("SKATE held back: rode " + rode.ToString("F1") + " m/s, got " + got.ToString("F1") + (Mode == RideMode.Grind ? " on the grind" : ""));
+            if (Mode != RideMode.Grind) { var sign = Speed < 0f ? -1f : 1f; Speed = sign * Math.Min(rode, got + HeldLeft); }
+            return;
+        }
+        // A wall right in front stops the board at once: it did not get as far as it rode and
+        // something steep stands right in front of it.
+        if (rode < 0.5f || got > rode * 0.5f) return;
         RaycastHit wall;
         var ahead = new Vector3(lastDir.x, 0f, lastDir.z) * Math.Sign(Speed);
         if (ahead.sqrMagnitude < 0.0001f || !Physics.Raycast(pos + Vector3.up * 0.3f, ahead.normalized, out wall, 0.6f, GroundMask, QueryTriggerInteraction.Ignore) || wall.m_Normal.y > 0.5f) return;
@@ -486,7 +506,7 @@ public static class SkateRide
         Enter(RideMode.Air);
         // A manual survives a hop over a bump; a jump ends it, and so does a longer fall below.
         Jumped = jumped; TrickAir = jumped; if (jumped) Manual = NoseManual = false; VSpeed = vertical; AirTime = 0f; AirPeak = 0f; takeOffY = Position.y;
-        flipLeft = shoveLeft = 0f; spinning = false; PushPhase = 0f; Braking = false; stuck = 0;
+        flipLeft = shoveLeft = 0f; spinning = false; PushPhase = 0f; Braking = false; stuck = 0; heldSteps = 0; Held = false;
         popKind = jumped ? wantKind : SkatePopKind.Ollie; pendFlip = jumped ? wantFlip : 0; pendShove = jumped ? wantShove : 0f;
         wantFlip = 0; wantShove = 0f; wantKind = SkatePopKind.Ollie;
     }
@@ -775,6 +795,18 @@ public static class SkateRide
             TakeOff(true, OlliePop * wantScale * PopHeight(wantKind) + AirGravity * dt);
             KeepAirPose(nose, deck);
             AirStep(pos, dt);
+            return;
+        }
+        if (Held)
+        {
+            // Held back on the edge (a post, a wall at its end): the grind is over, and the board
+            // comes down with the pace it actually had.
+            GrindEnds++; SkateGrind.Release(dt);
+            SkateGrind.Speed = Speed = (Speed < 0f ? -1f : 1f) * Math.Min(Math.Abs(Speed), Math.Abs(Actual) + HeldLeft);
+            Yaw = SkateGrind.Heading; airNoseOffset = airDeckOffset = 0f;
+            TakeOff(false, 0f);
+            velocity = Dir(Yaw) * Speed;
+            TrickTick(false, false, 0, 0, 0, 0, dt);
             return;
         }
         if (!SkateGrind.TryContinue(pos, dt, out ended) || ended)

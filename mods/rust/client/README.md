@@ -324,7 +324,12 @@ On the server, [`ShortcutSkate`](../plugins/SKATE.md) accepts the rider's speed 
 practice area. The client asks it for nothing: the plugin accepts a rider by itself after a moment
 of ordinary movement. Without it the server allows a rider the pace of a player who walks, about
 10 km/h and a little more downhill, and puts a faster one back. The client never slows the board
-for that: a put-back is only counted and logged. Only a wall right in front takes speed off. So on
+for that: a put-back is only counted and logged. What does take speed off is being held back: when
+for three physics steps in a row the board got less than a third of what it rode (a wall, a post, a
+fence the rays miss), on the ground or along an edge, its speed comes down to what it actually did
+plus a little, the meter with it, and a grind held back that way ends with the board coming down
+at that pace; a wall seen right in front stops it at once. The owner saw the meter run on against a
+wall and on a blocked grind before this (12 Oct); unverified in game since. So on
 a server that refuses skate speed the rider is pulled back instead of braked; the server has to
 allow it (the plugin, or its own speed checks turned off by the admin).
 
