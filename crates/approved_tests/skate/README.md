@@ -10,10 +10,14 @@ temporary cleanup after real file-operation failures, including refusal to
 read a root-only prior source through the unprivileged worker. It requires container
 root and refuses an existing Rust installation or `rust` identity.
 
-The reviewed delivery pins ShortcutSkate **0.3.7**; the fixture supplies matching new
-load records and ignores an older 0.3.6 record. Its prior-source fixture and exact
-backup/rollback checks remain unchanged. It executes the same checksum-verified
-one-liner documented in [LINUX.md](../../../mods/rust/server/LINUX.md).
+The reviewed delivery pins ShortcutSkate **0.3.8**; the fixture supplies matching
+new monitored load records and ignores an older 0.3.7 record. Its prior-source
+fixture and exact backup/rollback checks remain unchanged. Deferred mode checks
+backup/source/cleanup without logs. The exact checksum-verified one-liner in
+[LINUX.md](../../../mods/rust/server/LINUX.md) installs deferred source then invokes
+a private service-command stand-in; this verifies command ordering/failure, not
+systemd or native startup. Native load verification and restoration after deferred
+installation remain owner steps.
 
 The CI job **Skate plugin source installation** supplies Ubuntu 24.04 and GNU
 tools. Inside an equivalent disposable container with Bash, curl/CA certificates,
