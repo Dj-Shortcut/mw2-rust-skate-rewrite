@@ -257,7 +257,7 @@ file it runs `skate`. Runtime steps share one rig; the last scenario step select
 | `skate` | The mod as the owner plays it. |
 | `ride` | Scripted: ride out, brake, turn round, ride back, get off. |
 | `pose` | Scripted: rider and board in each state, standing still, from fixed cameras, then the score display in nine made-up states; `K` steps on. |
-| `trick` | Scripted: ollie, kickflip, heelflip, both spins, a grab, two presses that come too late and a manual. |
+| `trick` | Scripted: ollie, kickflip, heelflip, both spins, a grab, two presses that come too late, a manual, shove-its, varial and 360 flips, an impossible, a revert, a fakie ollie, a no comply, a boneless and a body varial; every name is logged as the scorer gives it, for the screen check of the names. |
 | `pad` | Scripted: the ride with a controller, played into the plugin without one. |
 | `status` | Scripted: a short ride, then the server's own view of the rider typed into the F1 console (`skate.status`, its speed and fly checks, its plugins), the console left open. |
 | `park` | Scripted: the authored park models one at a time 6 m ahead of the rider, 20 s each, seen from behind the rider, then a ride up the bank; nothing is placed on the server. |

@@ -428,9 +428,9 @@ public static class Scenarios
         }
     }
 
-    private static readonly float[] trickAt = { 3f, 6f, 8.9f, 9f, 9.4f, 11f, 14f, 16.9f, 17f, 17.5f, 20f, 20.12f, 23f, 23.45f, 25f, 27f, 29f, 30.6f, 32.2f, 33.5f, 35.5f, 35.5f, 37.5f, 39.5f, 41.5f, 43.5f, 46f };
+    private static readonly float[] trickAt = { 3f, 6f, 8.9f, 9f, 9.4f, 11f, 14f, 16.9f, 17f, 17.5f, 20f, 20.12f, 23f, 23.45f, 25f, 27f, 29f, 30.6f, 32.2f, 33.5f, 35.5f, 35.5f, 37.5f, 39.5f, 41.5f, 43.5f, 43.6f, 46f, 48.5f };
     private static readonly string[] trickDo = { "ollie", "ollie+kick", "left", "ollie", "release", "turn", "ollie+heel", "right+grab", "ollie", "release", "ollie+kick", "kick", "ollie", "kick",
-        "ollie+shove", "ollie+kick+shove", "ollie+kick+shove+shove", "manual", "release", "ollie+shove+shove", "ollie", "revert", "nollie", "nocomply ollie", "boneless ollie", "brake", "finish" };
+        "ollie+shove", "ollie+kick+shove", "ollie+kick+shove+shove", "manual", "release", "ollie+shove+shove", "ollie", "revert", "nollie", "nocomply ollie", "boneless ollie", "ollie", "body", "brake", "finish" };
     private static bool wantRevert; private static int landsAtRevert; private static float revertRelease = -1f;
 
     private static void Trick(float s)
@@ -459,6 +459,7 @@ public static class Scenarios
                 SkateKeys.PopShove = what.EndsWith("shove+shove") ? -360f : what.Contains("shove") ? -180f : 0f;
             }
             else if (what == "revert") { wantRevert = true; landsAtRevert = SkateRide.Lands; }
+            else if (what == "body") SkateKeys.BodyVarial = 180f;
             else SkateKeys.LateFlip += flip;
             if (what.Contains("left")) { SkateKeys.Spin = -1f; SkateKeys.SpinPressed = true; }
             if (what.Contains("right")) { SkateKeys.Spin = 1f; SkateKeys.SpinPressed = true; }
