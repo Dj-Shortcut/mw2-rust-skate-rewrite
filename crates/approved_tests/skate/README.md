@@ -192,6 +192,13 @@ cached references, entry/update/exit scoring, switch/fakie context, bail and ban
 duration/rounding limits and atomic invalid-state refusal. Unknown input kinds retain
 their existing sanitization behavior. Warmed calls measure allocation on the executing runtime.
 
+The same approved scenario covers Darkslide catches within 25 degrees of +/-180, retained
+inversion, first-frame pop-out integration and actual completion/unwind of the other half.
+It checks zero air-award at catch, ordinary duration/landing/banking, ground-drop/kind-change
+bail without a restored combo, all existing orientation/impact guards, legacy zero-flip
+Darkslides, explicit Fakie/Switch/Ollie/Nollie feeds, atomic malformed histories and warmed
+catch/exit/landing allocations.
+
 ```sh
 dotnet run --project crates/approved_tests/skate/SkateTrickGrindNamesScenarios.csproj -p:SkateLibraryPath=/absolute/path/to/SkateMotion.dll -- EXPECTED_SHA256
 ```
