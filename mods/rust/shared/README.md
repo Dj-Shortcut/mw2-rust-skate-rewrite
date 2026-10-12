@@ -75,6 +75,35 @@ Root's actual net48 DLL passes 509 focused manual transition/score/timeout/eligi
 
 Private execution of the actual compiled net48 DLL passes 2,439 assertions for all named spin/flip/grab variants, tolerance and impact boundaries, switch reversal, chaining/timeout, grind duration/capture, explicit and touchdown bails, atomic rejection, plus zero measured bytes across 100,000 valid steps on Mac net8. This does not establish Unity/IL2CPP behavior, controller feel or actual impact sensing.
 
+### Grind vocabulary
+
+The kind-aware `SkateTrickInput` constructor adds trailing `grindKind,grindFrontside`.
+Supply the contact classification while grinding; the final supported frame's kind and side
+name the completed grind. `GrindName(kind,frontside)` returns a cached English name;
+`GrindRate(kind)` returns points per second, rounded to nearest integer/ties to even on exit.
+`IsStall` identifies only values 11–15, which have a 100-point exit minimum. Other kinds
+have a one-point minimum. Existing enum numbers and mappings remain unchanged.
+
+| Appended kind | Value | Points/second | Entry for the client adapter |
+| --- | --- | --- | --- |
+| `Bluntslide` | 16 | 170 | Tail contact from a tail stall, with the deck pitched past vertical over the edge |
+| `Nosebluntslide` | 17 | 170 | The corresponding nose contact and pitch |
+| `Darkslide` | 18 | 190 | Flip onto the edge with griptape against it and wheels upward |
+
+These values produce `Frontside`/`Backside` names without Switch/Fakie prefixes. Airborne
+pop stance is tracked separately. An unknown input grind kind sanitizes to `None`/`Grind`
+at 100 points/second; an unknown kind retained in state rejects the next state operation
+atomically. This library scores an observed contact; it does not detect entries, rotate
+the deck or enforce those contact shapes. Client detection, `GrindDeck` poses, native
+contact and owner play acceptance remain separate work.
+
+The owner-approved `skate_trick_grind_names` scenario passes 20,850 checks on the actual
+genuine-reference net48 DLL, including transitions, round-to-even boundaries, cached-name
+identity, combo/bail/stance, duration saturation and atomic invalid state/request refusal.
+Warmed completion/lookup loops allocate zero measured bytes on Mac net8. The three
+owner-recorded flick scenarios also pass. These results do not verify native capture,
+deck poses, IL2CPP costs or gameplay.
+
 ## Stick composition API
 
 Keep successful `SkateFlickResult.State` and call `SkateFlick.TryStep(state,new SkateFlickInput(x,y,airborne,mirrored),dt,out result,out error)`. Stick axes are [-1,1], +Y forward; dt is seconds in (0,0.1]. Each step describes the position held during that interval. For timestamped changes, replay the position that just ended, subdividing a long hold with the **same** position before advancing to the new one. This preserves flicks between render frames.

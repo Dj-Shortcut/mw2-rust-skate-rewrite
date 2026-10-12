@@ -178,6 +178,22 @@ secondary-motion geometry checks. The runner starts no Rust client/server or Sha
 does not establish hand/surface contact, native rendering, adapter integration or IL2CPP cost.
 See the [API and integration limits](../../../mods/rust/shared/README.md#rider-secondary-motion-api).
 
+## Grind vocabulary and scoring
+
+The owner approved `skate_trick_grind_names` by name on 12 October 2026. It exercises
+the actual shared DLL's append-only grind values, rates, Frontside/Backside names,
+cached references, entry/update/exit scoring, switch/fakie context, bail and banking,
+duration/rounding limits and atomic invalid-state refusal. Unknown input kinds retain
+their existing sanitization behavior. Warmed calls measure allocation on the executing runtime.
+
+```sh
+dotnet run --project crates/approved_tests/skate/SkateTrickGrindNamesScenarios.csproj -p:SkateLibraryPath=/absolute/path/to/SkateMotion.dll -- EXPECTED_SHA256
+```
+
+The optional argument verifies the loaded DLL hash; its path/hash are always printed.
+No client/server or Shadow PC starts. Native contact, entry recognition, poses and IL2CPP
+cost remain unverified. See the [grind contract](../../../mods/rust/shared/README.md#grind-vocabulary).
+
 ## Direct park placement requests
 
 
