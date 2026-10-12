@@ -212,15 +212,21 @@ public static class SkateConsole
             Type[] types; try { types = assembly.GetTypes(); } catch (System.Reflection.ReflectionTypeLoadException e) { types = e.Types; } catch (Exception) { continue; }
             foreach (var t in types) if (t != null) all.Add(t);
         }
+        // An obfuscated build can carry more than one enum with that member: each is tried.
+        var candidates = new System.Collections.Generic.List<Type>();
         foreach (var t in all)
         {
             if (!t.IsEnum) continue;
             enums++;
-            try { if (Enum.IsDefined(t, "ConsoleCommand")) { messageType = t; break; } } catch (Exception) { }
+            try { if (Enum.IsDefined(t, "ConsoleCommand")) candidates.Add(t); } catch (Exception) { }
         }
-        if (messageType == null) return "no enum with a ConsoleCommand member among " + enums + " enums";
+        if (candidates.Count == 0) return "no enum with a ConsoleCommand member among " + enums + " enums";
         var flags = System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance;
         Type writeType = null; System.Reflection.MethodInfo foundPacketId = null, foundString = null, foundSend = null; Type foundSendInfo = null;
+        var tried = new System.Text.StringBuilder();
+        foreach (var cand in candidates)
+        {
+        messageType = cand;
         foreach (var w in all)
         {
             if (!w.IsClass || w.IsAbstract) continue;
@@ -243,7 +249,10 @@ public static class SkateConsole
             }
             if (pid != null && str != null && snd != null) { writeType = w; foundPacketId = pid; foundString = str; foundSend = snd; foundSendInfo = info; writeStringExtra = extra; break; }
         }
-        if (writeType == null) return "no write type with a method taking " + messageType.FullName + ", one taking a string and one taking a connection-built struct; " + Taking(all, messageType);
+        if (writeType != null) break;
+        tried.Append(tried.Length > 0 ? " | " : "").Append(messageType.Assembly.GetName().Name).Append(':').Append(messageType.FullName).Append(' ').Append(Taking(all, messageType));
+        }
+        if (writeType == null) return "no write type with a method taking the packet enum, one taking a string and one taking a connection-built struct; " + candidates.Count + " enums with ConsoleCommand: " + tried;
         Type clientType = null; System.Reflection.MethodInfo foundStart = null; System.Reflection.MemberInfo connectionMember = null;
         foreach (var k in all)
         {
