@@ -283,18 +283,22 @@ public static class SkateParks
     // (`skate.place`, 0.3.8) leaves a ledge: its anchor rests on the ground and the tile is 0.4 or
     // 0.8 above that, with nothing under it. A building's floor stands on walls, a storey up.
     public static float LedgeGroundGap = -1f;
+    // Measured from the tile's pivot, which is its top in the game (the tile's own bounds are not
+    // always readable on the client): 0.4 plus the tile's thickness for a low ledge, 0.8 plus it for
+    // a high one. Seen live: a long ledge's tiles 0.6 up were taken for high ledges when measured from
+    // a bottom the client could not read.
+    public const float LedgeSplit = 0.8f;
     private static bool OverGround(Block floor, bool high)
     {
         if (Math.Abs(floor.Pitch) > AngleTolerance) return false;
         var mask = SkateRide.GroundMask;
         if (constructionLayer >= 0) mask &= ~(1 << constructionLayer);
         RaycastHit hit;
-        var from = floor.Position + Vector3.up * (floor.Bottom - 0.02f);
-        if (!Physics.Raycast(from, Vector3.down, out hit, 1.2f, mask, QueryTriggerInteraction.Ignore)) return false;
-        var gap = hit.distance + 0.02f;
-        if (gap < 0.25f || gap > 1.0f) return false;
+        if (!Physics.Raycast(floor.Position, Vector3.down, out hit, 1.5f, mask, QueryTriggerInteraction.Ignore)) return false;
+        var gap = hit.distance;
+        if (gap < 0.3f || gap > 1.3f) return false;
         LedgeGroundGap = gap;
-        return high ? gap >= 0.62f : gap < 0.62f;
+        return high ? gap >= LedgeSplit : gap < LedgeSplit;
     }
 
     private static void Place(Placed p, Kind kind, List<Block> blocks, List<int> matched, float anchorYaw)
