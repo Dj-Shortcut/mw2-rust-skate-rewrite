@@ -240,21 +240,22 @@ public static class SkateConsole
                 var ps = m.GetParameters();
                 // The packet id is written as the enum, or (a build that took the enum out of the
                 // signature) as its underlying integer.
-                if (ps.Length == 1 && (ps[0].ParameterType == messageType || ps[0].ParameterType == Enum.GetUnderlyingType(messageType)) && m.ReturnType == typeof(void) && pid == null) pid = m;
+                if (ps.Length == 1 && (Bare(ps[0].ParameterType) == messageType || Bare(ps[0].ParameterType) == Enum.GetUnderlyingType(messageType)) && m.ReturnType == typeof(void) && pid == null) pid = m;
                 if (ps.Length >= 1 && ps.Length <= 2 && ps[0].ParameterType == typeof(string) && (ps.Length == 1 || ps[1].ParameterType == typeof(bool)) && m.ReturnType == typeof(void) && (str == null || ps.Length < extra + 1)) { str = m; extra = ps.Length - 1; }
-                if (ps.Length == 1 && ps[0].ParameterType.IsValueType && !ps[0].ParameterType.IsPrimitive && !ps[0].ParameterType.IsEnum && snd == null)
+                var st = ps.Length == 1 ? Bare(ps[0].ParameterType) : null;
+                if (st != null && st.IsValueType && !st.IsPrimitive && !st.IsEnum && snd == null)
                 {
                     // The struct is built from a single reference: the connection.
-                    foreach (var c in ps[0].ParameterType.GetConstructors())
+                    foreach (var c in st.GetConstructors())
                     {
                         var cps = c.GetParameters();
-                        if (cps.Length == 1 && cps[0].ParameterType.IsClass && !cps[0].ParameterType.IsGenericType && cps[0].ParameterType != typeof(string)) { snd = m; info = ps[0].ParameterType; break; }
+                        if (cps.Length == 1 && cps[0].ParameterType.IsClass && !cps[0].ParameterType.IsGenericType && cps[0].ParameterType != typeof(string)) { snd = m; info = st; break; }
                     }
                 }
             }
             if (pid != null && str != null && snd != null) { writeType = w; foundPacketId = pid; foundString = str; foundSend = snd; foundSendInfo = info; writeStringExtra = extra; break; }
         }
-        if (writeType != null && foundPacketId.GetParameters()[0].ParameterType != messageType)
+        if (writeType != null && Bare(foundPacketId.GetParameters()[0].ParameterType) != messageType)
         {
             // Written as a plain integer: which of the write's integer methods writes the packet
             // id cannot be told from its signature, and the wrong one would send a broken packet.
@@ -302,7 +303,7 @@ public static class SkateConsole
         if (conn == null) { sendPrepared = false; return "the client at " + where + " has no connection yet"; }
         netClient = clientValue; connection = conn; startWrite = foundStart; packetId = foundPacketId; writeString = foundString; sendWrite = foundSend; sendInfoType = foundSendInfo;
         consoleCommandId = Enum.Parse(messageType, "ConsoleCommand");
-        if (packetId.GetParameters()[0].ParameterType != messageType) consoleCommandId = Convert.ChangeType(consoleCommandId, packetId.GetParameters()[0].ParameterType);
+        if (Bare(packetId.GetParameters()[0].ParameterType) != messageType) consoleCommandId = Convert.ChangeType(consoleCommandId, Bare(packetId.GetParameters()[0].ParameterType));
         sendFailed = false; SendState = "ready";
         Out.Say("CONSOLE the console path by shape: client " + where + " (" + clientType.FullName + "), write " + writeType.FullName + "." + foundStart.Name + "(), packet " + foundPacketId.Name + "(" + messageType.FullName + "), string " + foundString.Name + ", send " + foundSend.Name + "(" + foundSendInfo.FullName + "), connection " + connectionMember.Name);
         return "";
@@ -398,6 +399,9 @@ public static class SkateConsole
         catch (Exception e) { return "no listing: " + e.GetType().Name + ": " + e.Message; }
     }
 
+    // A parameter passed by reference (`in`, `ref`) is matched by the type it refers to.
+    private static Type Bare(Type t) { return t != null && t.IsByRef ? t.GetElementType() : t; }
+
     // Where the packet enum is used at all: every method, in any game assembly, with a parameter or a
     // return of that type (at most a dozen), for the log when the write type is not found.
     private static string Taking(System.Collections.Generic.List<Type> all, Type messageType)
@@ -411,7 +415,7 @@ public static class SkateConsole
             {
                 System.Reflection.ParameterInfo[] ps; try { ps = m.GetParameters(); } catch (Exception) { continue; }
                 var uses = m.ReturnType == messageType;
-                foreach (var pi in ps) if (pi.ParameterType == messageType) uses = true;
+                foreach (var pi in ps) if (Bare(pi.ParameterType) == messageType) uses = true;
                 if (!uses) continue;
                 sb.Append(n == 0 ? " " : "; ").Append(t.FullName).Append('.').Append(m.Name).Append('(');
                 for (var i = 0; i < ps.Length; i++) sb.Append(i > 0 ? "," : "").Append(ps[i].ParameterType.Name);
