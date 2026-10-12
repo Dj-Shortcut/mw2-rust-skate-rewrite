@@ -128,6 +128,22 @@ secondary-motion geometry checks. The runner starts no Rust client/server or Sha
 does not establish hand/surface contact, native rendering, adapter integration or IL2CPP cost.
 See the [API and integration limits](../../../mods/rust/shared/README.md#rider-secondary-motion-api).
 
+## Grind vocabulary and scoring
+
+The owner approved `skate_trick_grind_names` by name on 12 October 2026. It exercises
+the actual shared DLL's append-only grind values, rates, Frontside/Backside names,
+cached references, entry/update/exit scoring, switch/fakie context, bail and banking,
+duration/rounding limits and atomic invalid-state refusal. Unknown input kinds retain
+their existing sanitization behavior. Warmed calls measure allocation on the executing runtime.
+
+```sh
+dotnet run --project crates/approved_tests/skate/SkateTrickGrindNamesScenarios.csproj -p:SkateLibraryPath=/absolute/path/to/SkateMotion.dll -- EXPECTED_SHA256
+```
+
+The optional argument verifies the loaded DLL hash; its path/hash are always printed.
+No client/server or Shadow PC starts. Native contact, entry recognition, poses and IL2CPP
+cost remain unverified. See the [grind contract](../../../mods/rust/shared/README.md#grind-vocabulary).
+
 ## Direct park placement requests
 
 The existing `skate_park_anchor_yaw_and_snap` also exercises the server's direct-placement request helper: aim versus explicit anchors, invariant numeric parsing, finite coordinate/yaw bounds, yaw normalization and atomic refusal outputs across cultures. It invokes the actual public helper by its exact reflected signature and requires that helper in `ShortcutSkate.dll`. The shared `SkateMotion.dll` contains geometry helpers only, so its layout run omits the server-request extension. These scalar checks do not execute native aim rays, building hooks, placement or gameplay.
