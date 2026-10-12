@@ -377,6 +377,237 @@ internal static class SkateLateFlipsBodyVarialsScenarios
         Check(readSuccess && GC.GetAllocatedBytesForCurrentThread() - start == 0, "warmed left-stick reader allocates zero bytes");
     }
 
+    private readonly struct StanceCase
+    {
+        public readonly bool Switch, TailLeads, Late;
+        public readonly SkatePopKind Pop;
+        public readonly SkateGrabKind Grab;
+        public readonly double Spin, Flip, Shove, Body;
+        public readonly string Name;
+        public readonly long Points;
+        public readonly int Steps;
+        public StanceCase(bool ridingSwitch, bool tailLeads, SkatePopKind pop, string name, long points,
+                          double spin = 0, double flip = 0, double shove = 0, double body = 0,
+                          bool late = false, SkateGrabKind grab = SkateGrabKind.None, int steps = 20)
+        { Switch = ridingSwitch; TailLeads = tailLeads; Pop = pop; Name = name; Points = points;
+          Spin = spin; Flip = flip; Shove = shove; Body = body; Late = late; Grab = grab; Steps = steps; }
+    }
+
+    private static SkateTrickInput StanceInput(StanceCase fixture, bool air = true, bool opposite = false,
+                                              double impact = 0)
+    {
+        double seconds = fixture.Steps * 0.05;
+        return new SkateTrickInput(fixture.Spin / (360 * seconds), fixture.Flip / (2 * seconds),
+            fixture.Shove / (720 * seconds), fixture.Grab, air, false, impact, false, false, 6,
+            fixture.Pop, SkateGrindKind.None, false, fixture.Late, fixture.Body / (360 * seconds),
+            opposite ? !fixture.TailLeads : fixture.TailLeads);
+    }
+
+    private static bool StanceNaming(SkateTrickState state)
+    {
+        var field = typeof(SkateTrickState).GetField("StanceNaming", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        Check(field != null, "captured stance-name mode is present");
+        return (bool)field.GetValue(state);
+    }
+
+    private static SkateTrickState StanceAir(StanceCase fixture, SkateTrickState start, bool oldAfterTakeoff = false)
+    {
+        var state = start;
+        for (int i = 0; i < fixture.Steps; i++)
+        {
+            var input = StanceInput(fixture, opposite: i > 0);
+            if (i > 0 && oldAfterTakeoff)
+            {
+                double seconds = fixture.Steps * 0.05;
+                input = AirInput(fixture.Flip / (2 * seconds), fixture.Shove / (720 * seconds),
+                    fixture.Body / (360 * seconds), fixture.Late, fixture.Spin / (360 * seconds),
+                    pop: fixture.Pop == SkatePopKind.Ollie ? SkatePopKind.Nollie : SkatePopKind.Ollie);
+            }
+            var result = Trick(state, input);
+            Check(result.State.PopTailLeads == fixture.TailLeads && result.State.PopSwitch == start.Switch &&
+                result.State.PopKind == fixture.Pop && StanceNaming(result.State), "takeoff mode, stance, direction and pop stay latched");
+            Near(result.BoardSpin, fixture.Spin * (i + 1) / fixture.Steps, "explicit naming preserves board yaw");
+            Near(result.BoardFlip, fixture.Flip * 360 * (i + 1) / fixture.Steps, "explicit naming preserves flip angle");
+            Near(result.BoardShove, fixture.Shove * (i + 1) / fixture.Steps, "explicit naming preserves shove angle");
+            Near(result.BodySpin, fixture.Body * (i + 1) / fixture.Steps, "explicit naming preserves body angle");
+            state = result.State;
+        }
+        return state;
+    }
+
+    private static SkateTrickResult StanceLand(StanceCase fixture, SkateTrickState airborne)
+    {
+        var result = Trick(airborne, StanceInput(fixture, air: false, opposite: true));
+        Check(result.Events == SkateTrickEvents.Landed && result.TrickName == fixture.Name && result.Points == fixture.Points,
+            "literal explicit stance/pop/modifier name and score: " + fixture.Name);
+        Check(!result.State.PopTailLeads && !result.State.PopSwitch && !StanceNaming(result.State), "accepted landing clears captured naming metadata");
+        return result;
+    }
+
+    private static void ExplicitStanceVocabulary()
+    {
+        var cases = new[] {
+            new StanceCase(false, false, SkatePopKind.Ollie, "Ollie", 50),
+            new StanceCase(false, true, SkatePopKind.Ollie, "Ollie", 50),
+            new StanceCase(false, true, SkatePopKind.Nollie, "Nollie", 50),
+            new StanceCase(false, false, SkatePopKind.Ollie, "Kickflip", 150, flip: 1),
+            new StanceCase(false, true, SkatePopKind.Nollie, "Nollie Kickflip", 150, flip: 1),
+            new StanceCase(false, true, SkatePopKind.NoComply, "No Comply", 100),
+            new StanceCase(false, true, SkatePopKind.Boneless, "Boneless", 100),
+            new StanceCase(false, true, SkatePopKind.Fastplant, "Fastplant", 100),
+            new StanceCase(false, true, SkatePopKind.Beanplant, "Beanplant", 100),
+            new StanceCase(true, false, SkatePopKind.Ollie, "Switch Ollie", 75),
+            new StanceCase(true, false, SkatePopKind.Nollie, "Switch Nollie", 75),
+            new StanceCase(true, true, SkatePopKind.Ollie, "Fakie Ollie", 75),
+            new StanceCase(true, true, SkatePopKind.Nollie, "Fakie Nollie", 75),
+            new StanceCase(true, false, SkatePopKind.Ollie, "Switch Kickflip", 175, flip: 1),
+            new StanceCase(true, false, SkatePopKind.Nollie, "Switch Nollie Kickflip", 175, flip: 1),
+            new StanceCase(true, true, SkatePopKind.Ollie, "Fakie Kickflip", 175, flip: 1),
+            new StanceCase(true, true, SkatePopKind.Nollie, "Fakie Nollie Kickflip", 175, flip: 1),
+            new StanceCase(true, false, SkatePopKind.Ollie, "Switch Heelflip", 175, flip: -1),
+            new StanceCase(true, true, SkatePopKind.Nollie, "Fakie Nollie Heelflip", 175, flip: -1),
+            new StanceCase(true, false, SkatePopKind.Ollie, "Switch Frontside 180", 175, spin: 180),
+            new StanceCase(true, true, SkatePopKind.Ollie, "Fakie Frontside 180", 175, spin: 180),
+            new StanceCase(true, false, SkatePopKind.Ollie, "Switch Backside 180", 175, spin: -180),
+            new StanceCase(true, true, SkatePopKind.Ollie, "Fakie Backside 180", 175, spin: -180),
+            new StanceCase(true, false, SkatePopKind.Ollie, "Switch Frontside Pop Shove-it", 175, shove: 180),
+            new StanceCase(true, true, SkatePopKind.Ollie, "Fakie Frontside Pop Shove-it", 175, shove: 180),
+            new StanceCase(true, false, SkatePopKind.Ollie, "Switch Pop Shove-it", 175, shove: -180),
+            new StanceCase(true, true, SkatePopKind.Ollie, "Fakie Pop Shove-it", 175, shove: -180),
+            new StanceCase(true, false, SkatePopKind.NoComply, "Switch No Comply", 125),
+            new StanceCase(true, true, SkatePopKind.NoComply, "Fakie No Comply", 125),
+            new StanceCase(true, false, SkatePopKind.Boneless, "Switch Boneless", 125),
+            new StanceCase(true, true, SkatePopKind.Boneless, "Fakie Boneless", 125),
+            new StanceCase(true, false, SkatePopKind.Fastplant, "Switch Fastplant", 125),
+            new StanceCase(true, true, SkatePopKind.Fastplant, "Fakie Fastplant", 125),
+            new StanceCase(true, false, SkatePopKind.Beanplant, "Switch Beanplant", 125),
+            new StanceCase(true, true, SkatePopKind.Beanplant, "Fakie Beanplant", 125),
+            new StanceCase(true, false, SkatePopKind.Ollie, "Switch Ollie Melon", 125, grab: SkateGrabKind.Melon),
+            new StanceCase(true, true, SkatePopKind.Nollie, "Fakie Nollie Melon", 125, grab: SkateGrabKind.Melon),
+            new StanceCase(true, true, SkatePopKind.Ollie, "Fakie Late Kickflip", 175, flip: 1, late: true),
+            new StanceCase(true, true, SkatePopKind.Nollie, "Fakie Nollie Late Kickflip", 175, flip: 1, late: true),
+            new StanceCase(true, false, SkatePopKind.Ollie, "Switch Body Varial", 175, body: 180),
+            new StanceCase(true, true, SkatePopKind.Nollie, "Fakie Nollie Body Varial Kickflip", 275, flip: 1, body: 180),
+            new StanceCase(true, true, SkatePopKind.Ollie, "Fakie Body Varial Late Kickflip Melon", 325,
+                flip: 1, body: 180, late: true, grab: SkateGrabKind.Melon)
+        };
+        foreach (var fixture in cases)
+        {
+            var airborne = StanceAir(fixture, new SkateTrickState(fixture.Switch));
+            var landed = StanceLand(fixture, airborne);
+            var oldInputFlight = StanceAir(fixture, new SkateTrickState(fixture.Switch), oldAfterTakeoff: true);
+            var second = StanceLand(fixture, oldInputFlight);
+            Check(object.ReferenceEquals(landed.TrickName, second.TrickName), "captured explicit names reuse the same cache across caller modes");
+            SkateTrickResult bailed; string error;
+            Check(SkateTricks.TryBail(airborne, out bailed, out error) && error == null && !bailed.State.PopTailLeads &&
+                !bailed.State.PopSwitch && !StanceNaming(bailed.State), "explicit bail clears captured stance metadata");
+            RejectTrick(airborne, new SkateTrickInput(0, 0, 0, SkateGrabKind.None, true, false, 0, false, false, 6,
+                SkatePopKind.Ollie, SkateGrindKind.None, false, false, double.NaN, !fixture.TailLeads));
+        }
+    }
+
+    private static void SequentialStanceSignals()
+    {
+        var turn = new StanceCase(false, false, SkatePopKind.Ollie, "Frontside 180", 150, spin: 180);
+        var turned = StanceLand(turn, StanceAir(turn, new SkateTrickState(false)));
+        Check(turned.Switch && turned.BoardSpin == 180 && turned.BoardShove == 0, "board/rider180 exposes a tail-leading next-pop signal");
+        var fakie = new StanceCase(true, true, SkatePopKind.Ollie, "Fakie Kickflip", 175, flip: 1);
+        Check(StanceLand(fakie, StanceAir(fakie, turned.State)).Switch, "next tail-leading switch pop is Fakie");
+        var bigspin = new StanceCase(false, false, SkatePopKind.Ollie, "Frontside Bigspin", 250, spin: 180, shove: 180);
+        var spun = StanceLand(bigspin, StanceAir(bigspin, new SkateTrickState(false)));
+        Check(spun.Switch && spun.BoardSpin + spun.BoardShove == 360, "180+shove restores deck nose while rider remains switch");
+        var opposite = new StanceCase(true, false, SkatePopKind.Ollie, "Switch Kickflip", 175, flip: 1);
+        Check(StanceLand(opposite, StanceAir(opposite, spun.State)).Switch, "next nose-leading switch pop remains Switch");
+        var varial = new StanceCase(false, false, SkatePopKind.Ollie, "Body Varial", 150, body: 180);
+        var body = StanceLand(varial, StanceAir(varial, new SkateTrickState(false)));
+        Check(body.Switch && body.BoardSpin == 0 && body.BoardShove == 0 && body.BodySpin == 180,
+            "body-only varial changes stance without a physical deck reversal");
+        StanceLand(opposite, StanceAir(opposite, body.State));
+        var bodyShove = new StanceCase(false, false, SkatePopKind.Ollie, "Body Varial Frontside Pop Shove-it", 250,
+            shove: 180, body: 180);
+        var reversed = StanceLand(bodyShove, StanceAir(bodyShove, new SkateTrickState(false)));
+        Check(reversed.Switch && reversed.BoardShove == 180 && reversed.BoardSpin == 0, "body+shove exposes reversed-deck tail signal");
+        StanceLand(fakie, StanceAir(fakie, reversed.State));
+    }
+
+    private static void ExplicitSnapAndFallbackCaches()
+    {
+        foreach (var fixture in new[] {
+            new StanceCase(true, true, SkatePopKind.Ollie, "Fakie Frontside 180", 175, spin: 155, steps: 40),
+            new StanceCase(true, false, SkatePopKind.Ollie, "Switch Frontside 180", 175, spin: 205, steps: 40),
+            new StanceCase(true, true, SkatePopKind.Ollie, "Fakie Frontside 360", 275, spin: 335, steps: 40),
+            new StanceCase(true, false, SkatePopKind.Ollie, "Switch Frontside 360", 275, spin: 385, steps: 40),
+            new StanceCase(true, true, SkatePopKind.Nollie, "Fakie Nollie Kickflip", 175, flip: 335.0 / 360, steps: 40),
+            new StanceCase(true, false, SkatePopKind.Nollie, "Switch Nollie Kickflip", 175, flip: 385.0 / 360, steps: 40),
+            new StanceCase(true, true, SkatePopKind.Ollie, "Fakie Frontside Pop Shove-it", 175, shove: 155, steps: 40),
+            new StanceCase(true, false, SkatePopKind.Ollie, "Switch Frontside Pop Shove-it", 175, shove: 205, steps: 40) })
+            StanceLand(fixture, StanceAir(fixture, new SkateTrickState(fixture.Switch)));
+        foreach (var fixture in new[] {
+            new StanceCase(true, true, SkatePopKind.Ollie, "", 0, spin: 154.9999, steps: 40),
+            new StanceCase(true, false, SkatePopKind.Ollie, "", 0, spin: 205.0001, steps: 40),
+            new StanceCase(true, true, SkatePopKind.Nollie, "", 0, flip: 334.9999 / 360, steps: 40),
+            new StanceCase(true, false, SkatePopKind.Nollie, "", 0, shove: 205.0001, steps: 40) })
+        {
+            var result = Trick(StanceAir(fixture, new SkateTrickState(fixture.Switch)), StanceInput(fixture, air: false));
+            Check(result.Events == SkateTrickEvents.Bailed && result.Points == 0 && !result.State.PopTailLeads &&
+                !StanceNaming(result.State), "outside snap tolerance bails and clears naming metadata");
+        }
+        foreach (var fixture in new[] {
+            new StanceCase(true, true, SkatePopKind.Nollie, "Fakie Nollie Multiple Rotation Trick", 475, spin: 900, steps: 60),
+            new StanceCase(true, false, SkatePopKind.Nollie, "Switch Nollie Multiple Rotation Trick", 275, flip: 3, steps: 60),
+            new StanceCase(true, true, SkatePopKind.Nollie, "Fakie Nollie Body Varial Late Multiple Rotation Trick", 375,
+                flip: 3, body: 180, late: true, steps: 60),
+            new StanceCase(true, false, SkatePopKind.Ollie, "Switch Late Kickflip", 175, flip: 1, late: true),
+            new StanceCase(true, true, SkatePopKind.Ollie, "Fakie Body Varial", 175, body: 180) })
+        {
+            var airborne = StanceAir(fixture, new SkateTrickState(fixture.Switch));
+            var expected = StanceLand(fixture, airborne).TrickName; var input = StanceInput(fixture, air: false);
+            SkateTrickResult result; string error;
+            for (int i = 0; i < 200; i++) Check(SkateTricks.TryStep(airborne, input, 0.05, out result, out error), "warm explicit cached landing");
+            long before = GC.GetAllocatedBytesForCurrentThread(); bool success = true;
+            for (int i = 0; i < 20000; i++)
+                success &= SkateTricks.TryStep(airborne, input, 0.05, out result, out error) && object.ReferenceEquals(expected, result.TrickName);
+            Check(success && GC.GetAllocatedBytesForCurrentThread() - before == 0, "explicit normal/fallback cached names allocate zero bytes");
+        }
+    }
+
+    private static void StanceRotationTableAndInvalidHistory()
+    {
+        var rotations = new[] { -360.0, -180, 0, 180, 360 };
+        var names = new[,] {
+            { "Backside 360", "Backside 180", "Ollie", "Frontside 180", "Frontside 360" },
+            { "Nollie Backside 360", "Nollie Backside 180", "Nollie", "Nollie Frontside 180", "Nollie Frontside 360" },
+            { "Switch Backside 360", "Switch Backside 180", "Switch Ollie", "Switch Frontside 180", "Switch Frontside 360" },
+            { "Switch Nollie Backside 360", "Switch Nollie Backside 180", "Switch Nollie", "Switch Nollie Frontside 180", "Switch Nollie Frontside 360" },
+            { "Fakie Backside 360", "Fakie Backside 180", "Fakie Ollie", "Fakie Frontside 180", "Fakie Frontside 360" },
+            { "Fakie Nollie Backside 360", "Fakie Nollie Backside 180", "Fakie Nollie", "Fakie Nollie Frontside 180", "Fakie Nollie Frontside 360" }
+        };
+        for (int row = 0; row < 6; row++)
+            for (int column = 0; column < rotations.Length; column++)
+            {
+                bool ridingSwitch = row >= 2, tailLeads = row >= 4;
+                var fixture = new StanceCase(ridingSwitch, tailLeads,
+                    row % 2 == 0 ? SkatePopKind.Ollie : SkatePopKind.Nollie, names[row, column],
+                    50 + (long)(Math.Abs(rotations[column]) / 180) * 100 + (ridingSwitch ? 25 : 0),
+                    spin: rotations[column], steps: 40);
+                StanceLand(fixture, StanceAir(fixture, new SkateTrickState(ridingSwitch)));
+            }
+        var captured = new StanceCase(true, true, SkatePopKind.Ollie, "Fakie Ollie", 75);
+        var airborne = StanceAir(captured, new SkateTrickState(true));
+        var ground = StanceLand(captured, airborne).State;
+        foreach (var fieldName in new[] { "PopTailLeads", "StanceNaming" })
+        {
+            object malformed = ground;
+            typeof(SkateTrickState).GetField(fieldName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                .SetValue(malformed, true);
+            RejectTrick((SkateTrickState)malformed, AirInput());
+        }
+        object inconsistent = airborne;
+        typeof(SkateTrickState).GetField("StanceNaming", BindingFlags.Instance | BindingFlags.NonPublic)
+            .SetValue(inconsistent, false);
+        RejectTrick((SkateTrickState)inconsistent, AirInput());
+    }
+
     public static int Main(string[] args)
     {
         try
@@ -389,6 +620,8 @@ internal static class SkateLateFlipsBodyVarialsScenarios
             if (args.Length == 1) Check(string.Equals(args[0], digest, StringComparison.OrdinalIgnoreCase), "actual DLL hash pinned");
             LateRecognitionAndCompatibility(); BodyCircleRecognitionAndResets(); ExistingConstructors(); ReaderToScoringAndStance();
             CatchBailAndClamp(); InvalidAndCachedAllocation();
+            ExplicitStanceVocabulary(); SequentialStanceSignals(); ExplicitSnapAndFallbackCaches();
+            StanceRotationTableAndInvalidHistory();
             Console.WriteLine("skate_late_flips_and_body_varials: " + checks + " checks passed");
             return 0;
         }

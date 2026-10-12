@@ -21,7 +21,7 @@ workspace.
 | `skate_air_pullback_ollie` | owner-recorded airborne pull-back and forward flick produce one Ollie |
 | `skate_ground_diagonal_kickflip` | owner-recorded grounded diagonal flick produces one Ollie with Kickflip |
 | `skate_ground_roll_ollie_no_manual` | owner-recorded grounded rim roll and recoil produce one Ollie and no manual |
-| `skate_late_flips_and_body_varials` | airborne late composition without a second pop, left-stick full-circle recognition and separate rider rotation/cached landing names |
+| `skate_late_flips_and_body_varials` | airborne late composition without a second pop, left-stick full-circle recognition, separate rider rotation and takeoff-end-aware cached landing names |
 | `skate_transition_pumping` | travel-relative descent/bottom timing, bounded pump energy per traversal, reset and spam refusal |
 | `skate_drop_in_and_launch` | slope gravity, reversal, full tangent drop-in/launch velocity and explicit vertical pop |
 | `skate_surface_landing` | board-yaw roll retention, full surface-normal impact bail and downhill fall-to-roll conversion |
