@@ -12,6 +12,8 @@ public static class SkateGestures
     public static bool Done;
     public static int Count = -1;
     public static string Names = "";
+    public const int MostTries = 20;
+    private static int tries;
 
     public static void Report()
     {
@@ -29,7 +31,17 @@ public static class SkateGestures
             }
             if (type == null) { Out.Say("GESTURES no GestureCollection type in the loaded assemblies"); return; }
             var instance = Get(null, type, "Instance") ?? Get(null, type, "instance");
-            if (instance == null) { Out.Say("GESTURES GestureCollection.Instance is not there yet"); Done = false; return; }
+            // Seen live: the type is there and Instance stays null in a world. The loaded objects
+            // of the type are the next place; failing that, the type's static members are named
+            // once, for the next attempt.
+            if (instance == null) instance = Loaded(type);
+            if (instance == null)
+            {
+                tries++;
+                if (tries < MostTries) { Done = false; return; }
+                Out.Say("GESTURES no GestureCollection instance after " + tries + " tries; its static members: " + Statics(type));
+                return;
+            }
             var all = Get(instance, type, "AllGestures") as IEnumerable;
             if (all == null) { Out.Say("GESTURES AllGestures is not readable"); return; }
             var line = ""; Count = 0;
@@ -49,6 +61,33 @@ public static class SkateGestures
             Out.Say("GESTURES " + Count + ": " + line);
         }
         catch (Exception e) { Out.Say("GESTURES threw: " + e.GetType().Name + ": " + e.Message); }
+    }
+
+    // An object of the type among those Unity has loaded (a ScriptableObject asset).
+    private static object Loaded(Type type)
+    {
+        try
+        {
+            foreach (var m in typeof(UnityEngine.Resources).GetMethods(BindingFlags.Public | BindingFlags.Static))
+            {
+                if (m.Name != "FindObjectsOfTypeAll" || !m.IsGenericMethodDefinition) continue;
+                // An interop array is not a System.Array but can be walked.
+                var found = m.MakeGenericMethod(type).Invoke(null, null) as IEnumerable;
+                if (found != null) foreach (var o in found) if (o != null) return o;
+            }
+        }
+        catch (Exception e) { Out.Say("GESTURES FindObjectsOfTypeAll threw: " + e.GetType().Name + ": " + e.Message); }
+        return null;
+    }
+
+    private static string Statics(Type type)
+    {
+        var line = "";
+        const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.DeclaredOnly;
+        foreach (var p in type.GetProperties(flags)) line += " P:" + p.Name + ":" + p.PropertyType.Name;
+        foreach (var f in type.GetFields(flags)) line += " F:" + f.Name + ":" + f.FieldType.Name;
+        foreach (var m in type.GetMethods(flags)) if (!m.IsSpecialName) line += " M:" + m.Name;
+        return line == "" ? "(none)" : line;
     }
 
     // A field or a property of that name, public or not, static when the object is null.

@@ -261,7 +261,9 @@ public static class SkateParks
         return true;
     }
 
-    // A ledge is a floor tile 0.4 or 0.8 above a foundation and nothing else: an ordinary floor never
+    // A ledge is a floor tile 0.4 or 0.8 above a foundation and nothing else (pivot to pivot that is
+    // 0.4 or 0.8 plus the tile's thickness, about 0.6 or 1.0 in the game: seen live, a long ledge on
+    // the owner's platform was taken for a high ledge at 0.62): an ordinary floor never
     // sits that close above a foundation (half walls put one 1.5 above). The gap is pivot to pivot.
     public static float LedgeGap = -1f;
     private static bool OverFoundation(Block floor, List<Block> blocks, Dictionary<long, List<int>> cells, bool high)
@@ -275,7 +277,7 @@ public static class SkateParks
             var gap = floor.Position.y - b.Position.y;
             if (gap < 0.15f || gap > 1.3f) continue;
             LedgeGap = gap;
-            return high ? gap >= 0.62f : gap < 0.62f;
+            return high ? gap >= LedgeSplit : gap < LedgeSplit;
         }
         return false;
     }
