@@ -564,7 +564,7 @@ public static class SkateRide
         if (flips != 0 && (Math.Abs(flipLeft) < 0.001f || Math.Sign(flipLeft) == Math.Sign(flips)))
         {
             if (left >= (Math.Abs(flipLeft) + 360f * Math.Abs(flips)) / (float)SkateMotion.FlipRate) { flipLeft += 360f * flips; TrickAir = true; if (lateFlips) LateTrick = true; }
-            else Refused++;
+            else Refuse(Math.Abs(flips) > 1 ? "a double flip" : "a flip", left);
         }
         // A shove asked for in the air goes on top of what is under way, the same way round.
         var lateShove = Jumped ? SkateKeys.LateShove : 0f;
@@ -572,7 +572,7 @@ public static class SkateRide
         if (pendShove != 0f)
         {
             if (left >= (Math.Abs(shoveLeft) + Math.Abs(pendShove)) / (float)SkateMotion.ShoveRate) { shoveLeft += pendShove; TrickAir = true; if (lateShove != 0f && AirTime > LateAfter) LateTrick = true; }
-            else Refused++;
+            else Refuse(Math.Abs(shoveLeft) + Math.Abs(pendShove) > 200f ? "a 360 shove-it" : "a shove-it", left);
             pendShove = 0f;
         }
         // A body varial: the rider turns a half round, the board keeps its yaw. Only when the arc
@@ -581,7 +581,7 @@ public static class SkateRide
         if (body != 0f && Math.Abs(bodyLeft) < 0.001f && Math.Abs(BodyDeg) < 0.001)
         {
             if (left >= Math.Abs(body) / (float)SkateMotion.RotationRate) { bodyLeft = body; TrickAir = true; }
-            else Refused++;
+            else Refuse("a body varial", left);
         }
         var spinAxis = SpinAxis(left, dt);
         Grab = TrickAir ? SkateKeys.Grab : SkateGrabKind.None;
@@ -649,13 +649,22 @@ public static class SkateRide
             var next = at + want * step;
             var ahead = want > 0f ? (float)Math.Ceiling(next / 180.0 - 0.0001) * 180f - next : next - (float)Math.Floor(next / 180.0 + 0.0001) * 180f;
             if (ahead <= (left - dt) * rate + SpinSlack) { TrickAir = spinning = true; SpinLead = want * SpinLeadMost; return want; }
-            if (SkateKeys.SpinPressed) Refused++;
+            if (SkateKeys.SpinPressed) Refuse(Math.Abs(at) > 45f ? "the next half spin" : "a spin", left);
         }
         if (!TrickAir) { SpinLead = 0f; return 0f; }
         var rest = (float)Math.Round(at / 180.0, MidpointRounding.AwayFromZero) * 180f - at;
         spinning = Math.Abs(rest) > 1f;
         SpinLead = Clamp(rest / 90f, -1f, 1f) * SpinLeadMost;
         return Clamp(rest / step, -1f, 1f);
+    }
+
+    // A press in the air that the arc cannot hold is refused rather than started and bailed: the
+    // player sees why nothing happened, and the log keeps it for the ride summary.
+    private static void Refuse(string what, float left)
+    {
+        Refused++;
+        SkateHud.Refused(what);
+        Out.Say("SKATE refused " + what + ": " + (left < 0f ? 0f : left).ToString("F2") + " s of air left, " + AirTime.ToString("F2") + " s in");
     }
 
     private static string AirLine(string end)
