@@ -93,7 +93,7 @@ within 0.45 m to the side and 0.3 m ahead; the board's own angle is free. When a
 not taken, the log says why (`GRIND edge near, not taken (...)`). A trick popped after a half turn is named by which end of the deck leads: Fakie when the tail does (after a plain 180, or a revert), Switch when the nose does (a 180 and a half shove, which turns the deck round under the feet; a body varial too); a nollie keeps its name (Fakie Nollie, Switch Nollie). The speed meter says FAKIE or SWITCH to match. A grind is named by
 how the board meets the edge: along it a 50-50 (or a 5-0 / nosegrind with the stick), across it a
 boardslide, lipslide, noseslide or tailslide by which part of the board is on the edge (a bluntslide
-or nosebluntslide with the stick held back or forward), at an angle a crooked, smith or feeble grind; frontside when the edge is on the side the rider's chest faces.
+or nosebluntslide with the stick held back or forward), at an angle a crooked, smith or feeble grind; frontside when the edge is on the side the rider's chest faces. On the edge the board keeps the angle it came down with (squared to the edge for a 50-50), and off the end it comes round to the way of travel over a moment (540° a second), not in a jump; a stall stops the board on the edge as it came, square across it.
 Landing on a slope, the part of the fall that runs along the slope becomes roll.
 
 A turn of the rider goes on for as long as the left stick is held and the next half turn can

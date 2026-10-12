@@ -92,6 +92,10 @@ public static class SkateRide
     // The deck's angle to the edge, taken when the grind begins and kept through it.
     public static float GrindDeck;
     private static float grindCross, grindNoseFar, grindNose, airNoseOffset, airDeckOffset;
+    // Off an edge the board comes round to the way of travel over a moment, not in a jump: the pose
+    // it had on the edge is kept as an air offset that runs out at ComeRoundRate.
+    private const float ComeRoundRate = 540f;
+    private static bool comingRound;
     private static Vector3 revertDir;
     private static float revertSign = 1f;
     private static float revertEndAt = -99f;
@@ -214,7 +218,7 @@ public static class SkateRide
         Trick = new SkateTrickState(false); TrickName = ""; ComboPoints = 0; TrickAt = BankedAt = LandAt = jumpWanted = -99f; OffReason = "";
         SkateHud.Clear();
         Normal = ViewNormal = Vector3.up; Position = b.position; Tangent = Dir(yaw);
-        airNoseOffset = airDeckOffset = 0f;
+        airNoseOffset = airDeckOffset = 0f; comingRound = false;
         SkateGrind.Reset();
         // Getting on while going up (the second press of a double jump) finishes that jump on the
         // board; the ground is still within reach of the feet then, and ground movement would cut it.
@@ -530,6 +534,15 @@ public static class SkateRide
         airDeckOffset = Delta(nose + (DeckReversed ? 180f : 0f), deck);
     }
 
+    // Off an edge (or out of a handplant, turned round): the pose is kept, and the air step
+    // brings the board round to the heading at ComeRoundRate.
+    private static void ComeRound(float nose, float deck)
+    {
+        KeepAirPose(nose, deck);
+        comingRound = Math.Abs(airNoseOffset) > 0.5f || Math.Abs(airDeckOffset) > 0.5f;
+        if (!comingRound) airNoseOffset = airDeckOffset = 0f;
+    }
+
     private static int physicsSaid;
     private static void Physics_(string error) { PhysicsError = error; if (physicsSaid++ < 3) Out.Say("SKATE physics refused: " + error); }
     private static SkateVector V(Vector3 v) { return new SkateVector(v.x, v.y, v.z); }
@@ -563,6 +576,11 @@ public static class SkateRide
     private static void AirStep(Vector3 pos, float dt)
     {
         AirTime += dt;
+        if (comingRound)
+        {
+            airNoseOffset = Toward(airNoseOffset, 0f, ComeRoundRate * dt); airDeckOffset = Toward(airDeckOffset, 0f, ComeRoundRate * dt);
+            comingRound = airNoseOffset != 0f || airDeckOffset != 0f;
+        }
         if (AirTime > HopGrace) Manual = NoseManual = false;
         VSpeed -= AirGravity * dt; if (VSpeed < -MaxFall) VSpeed = -MaxFall;
         if (pos.y - takeOffY > AirPeak) AirPeak = pos.y - takeOffY;
@@ -702,7 +720,7 @@ public static class SkateRide
         else TrickTick(false, false, 0, 0, 0, 0, dt);
         if (Mode == RideMode.Ground)
         {
-            Yaw += airNoseOffset + airDeckOffset; airNoseOffset = airDeckOffset = 0f;
+            Yaw += airNoseOffset + airDeckOffset; airNoseOffset = airDeckOffset = 0f; comingRound = false;
             SpinDeg = FlipDeg = ShoveDeg = 0;
             var axis = Dir(Yaw + (Trick.Switch ? 180f : 0f) + (DeckReversed ? 180f : 0f));
             if (!SkateRidePhysics.TryLand(new SkateLandingInput(V(incoming), V(normal), V(axis), BailImpact, recovery ? 0f : LandRoll), out r, out error))
@@ -795,6 +813,10 @@ public static class SkateRide
         SkateGrind.BeginStall(pos);
         var to = SkateGrind.Target - pos; to.y = 0f;
         GrindFrontside = Vector3.Dot(to, Dir(NoseYaw + 90f * StanceSign)) > 0f; GrindAlong = false;
+        // The board stops on the edge as it came: square to it, or along it for a 50-50 stall.
+        var stallRel = Delta(SkateGrind.Heading, DeckYaw);
+        grindNose = Delta(SkateGrind.Heading, NoseYaw);
+        GrindDeck = SkateGrind.StallSquare ? stallRel : Math.Abs(stallRel) > 90f ? 180f : 0f;
         if (GrindKind == SkateGrindKind.Handplant && (SkateKeys.HandplantFront || SkateKeys.HandplantBack)) GrindFrontside = SkateKeys.HandplantFront;
         Enter(RideMode.Grind); GrindStarts++; Stalls++; Stalling = true; stallAt = now; handDownAt = -99f;
         Speed = 0f; VSpeed = 0f;
@@ -821,17 +843,21 @@ public static class SkateRide
         if (leaving)
         {
             Stalling = false; Manual = NoseManual = false; GrindEnds++; SkateGrind.Release(dt);
-            if (GrindKind == SkateGrindKind.Handplant) { Yaw += 180f; Speed = stallSign * StallOut; }
+            var planted = GrindKind == SkateGrindKind.Handplant;
+            var noseStall = NoseYaw; var deckStall = DeckYaw;
+            if (planted) { Yaw += 180f; Speed = stallSign * StallOut; }
             else Speed = -stallSign * StallOut;
             if (popped)
             {
                 Pops++; jumpWanted = -99f;
                 TakeOff(true, OlliePop * wantScale * PopHeight(wantKind) + AirGravity * dt);
+                if (planted) ComeRound(noseStall, deckStall);
                 AirStep(pos, dt);
             }
             else
             {
                 TakeOff(false, 0f);
+                if (planted) ComeRound(noseStall, deckStall);
                 velocity = Dir(Yaw) * Speed;
                 TrickTick(false, false, 0, 0, 0, 0, dt);
             }
@@ -873,8 +899,10 @@ public static class SkateRide
             // comes down with the pace it actually had.
             GrindEnds++; SkateGrind.Release(dt);
             SkateGrind.Speed = Speed = (Speed < 0f ? -1f : 1f) * Math.Min(Math.Abs(Speed), Math.Abs(Actual) + HeldLeft);
-            Yaw = SkateGrind.Heading; airNoseOffset = airDeckOffset = 0f;
+            var noseHeld = NoseYaw; var deckHeld = DeckYaw;
+            Yaw = SkateGrind.Heading;
             TakeOff(false, 0f);
+            ComeRound(noseHeld, deckHeld);
             velocity = Dir(Yaw) * Speed;
             TrickTick(false, false, 0, 0, 0, 0, dt);
             return;
@@ -882,10 +910,13 @@ public static class SkateRide
         if (!SkateGrind.TryContinue(pos, dt, out ended) || ended)
         {
             GrindEnds++; SkateGrind.Release(dt);
-            // Off the edge the board comes round to the way of travel, as it does in Skate.
+            // Off the edge the board comes round to the way of travel, as it does in Skate: from the
+            // angle it had on the edge, over a moment.
+            var noseOff = NoseYaw; var deckOff = DeckYaw;
             Speed = SkateGrind.Speed; Yaw = SkateGrind.Heading;
-            LimitSpeed(Cap, Cap); airNoseOffset = airDeckOffset = 0f;
+            LimitSpeed(Cap, Cap);
             TakeOff(false, 0f);
+            ComeRound(noseOff, deckOff);
             velocity = Dir(Yaw) * Speed;
             TrickTick(false, false, 0, 0, 0, 0, dt);
             return;
