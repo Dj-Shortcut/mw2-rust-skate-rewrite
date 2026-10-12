@@ -32,7 +32,7 @@ workspace.
 | `skate_audio_surfaces_and_events` | authored wheel, truck/deck contact and event PCM: duration, peak/DC, determinism, loop seams and invalid requests |
 | `skate_rider_secondary_motion` | planted ankles and toes, exact limb lengths, bounded secondary pose motion, deterministic steps and atomic invalid-input rejection |
 | `skate_server_plugin_install` | actual source installation, replacement/backup, guarded refusal and cleanup after real Linux file-operation failures |
-| `skate_trick_grind_names` | appended grind vocabulary, cached directional names, scoring transitions, retained stance and atomic invalid-state refusal |
+| `skate_trick_grind_names` | appended grind vocabulary, cached directional names, scoring transitions, retained stance, Darkslide half-flip catch/carry and atomic invalid-state refusal |
 
 The owner approved `skate_transition_pumping`, `skate_drop_in_and_launch` and `skate_surface_landing` by name on 11 October 2026 for [Task 5](https://github.com/Dj-Shortcut/mw2-rust-skate-rewrite/issues/337#issuecomment-6106747983). They execute the actual shared C# library. Native adapter integration, contact sensing and ride feel remain separate validation.
 
