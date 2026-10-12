@@ -57,7 +57,7 @@ game; see [The controller](#the-controller).
 | Control | On the ground | In the air |
 | --- | --- | --- |
 | `Y` | Get on; again gets off. | |
-| Left stick | Steer, by how far it is pushed. Far and straight forward or back: push or brake. | Held more than half way to a side (for at least 0.06 s): the rider turns that way for as long as it is held. One quick full circle at full reach, after a pop: a body varial, the rider turns a half round and the board does not; the landing is switch. |
+| Left stick | Steer, by how far it is pushed. Far and straight forward or back: push or brake. | Held still more than half way to a side (for at least 0.06 s): the rider turns that way for as long as it is held. One full circle round the rim, after a pop, within a second: a body varial, the rider turns a half round and the board does not; the landing is switch. A stick travelling round the rim (faster than 180° a second) is never read as a held side, so the circle asks for no turn however easy its pace. |
 | `A` | Push with the back foot. Rolling tail first, the push drives on backward (a fakie push). | |
 | `X` | Push with the front foot (mongo). | |
 | `A` tapped while the right stick is held back, then the flick | No comply: the front foot steps down and the board pops off the back foot, a little lower than an ollie ("No Comply 180" with the left stick). | |

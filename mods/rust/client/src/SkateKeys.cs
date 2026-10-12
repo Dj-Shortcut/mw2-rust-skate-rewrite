@@ -24,9 +24,11 @@ public static class SkateKeys
     // edge is a handplant: LB frontside, RB backside. On the keyboard Q (no comply) or Z (boneless)
     // held with Space.
     public const float NoComplyTap = 0.35f;
-    // How long the left stick must stay on a side before it is a turn.
-    public const float SpinHold = 0.06f;
-    private static int rawSide; private static float sideSince = -99f;
+    // How long the left stick must stay on a side, and still, before it is a turn: a stick that
+    // travels round the rim faster than RimMoving (degrees a second) is circling for a body varial,
+    // not held to a side, however slowly it goes round.
+    public const float SpinHold = 0.06f, RimMoving = 180f;
+    private static int rawSide; private static float sideSince = -99f, rimAngle, rimAt = -99f, movedAt = -99f; private static bool onRim;
     public static bool Mongo, HandplantFront, HandplantBack;
     private static float aTappedAt = -99f;
     // What a physics step has not seen yet. A pop comes with what the board does in it: whole flips
@@ -137,11 +139,18 @@ public static class SkateKeys
                     aTappedAt = -99f;
                 }
                 Brake = (SkatePad.Buttons & SkatePad.B) != 0 || (straight && y < -StickPush);
-                // A side counts as held after a moment: a quick circle of the stick (a body varial)
-                // passes both sides without asking for a turn.
+                // A side counts as held after a moment of standing still there: a circle of the
+                // stick (a body varial) passes both sides without asking for a turn.
                 var side = x < -SpinFrom ? -1 : x > SpinFrom ? 1 : 0;
                 if (side != rawSide) { rawSide = side; sideSince = now; }
-                var held = side != 0 && now - sideSince >= SpinHold;
+                if (x * x + y * y > SpinFrom * SpinFrom)
+                {
+                    var angle = (float)(Math.Atan2(x, y) * 180.0 / Math.PI);
+                    if (onRim && now - rimAt > 0.0005f && Math.Abs(SkateRide.Delta(rimAngle, angle)) / (now - rimAt) > RimMoving) movedAt = now;
+                    rimAngle = angle; rimAt = now; onRim = true;
+                }
+                else onRim = false;
+                var held = side != 0 && now - sideSince >= SpinHold && now - movedAt >= SpinHold;
                 Left = held && side < 0; Right = held && side > 0;
                 Spin = Left ? -1f : Right ? 1f : 0f;
                 bool lt = SkatePad.LeftTrigger > SkatePad.Pulled, rt = SkatePad.RightTrigger > SkatePad.Pulled;
