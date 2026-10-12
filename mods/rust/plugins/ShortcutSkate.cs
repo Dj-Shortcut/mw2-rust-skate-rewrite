@@ -639,12 +639,12 @@ namespace Shortcut.RustMod
                 part.Prefab = LowWallPrefab; part.Material = SkateParkMaterial.Wood;
                 part.Right = (index % 2) * 3; part.Height = rise;
                 part.Forward = index < 18 ? backDeck - HalfLength : frontDeck + HalfLength;
-                part.Yaw = index < 18 ? 180 : 0;
+                part.Yaw = index < 18 ? 270 : 90;
                 return;
             }
             part.Prefab = HalfWallPrefab;
             part.Right = index % 2 == 0 ? -1.85 : 4.85;
-            part.Yaw = index % 2 == 0 ? 90 : 270;
+            part.Yaw = index % 2 == 0 ? 180 : 0;
             switch ((index - 20) / 2)
             {
                 case 0: part.Forward = 0; break;
@@ -903,7 +903,7 @@ namespace Shortcut.RustMod
 
 namespace Oxide.Plugins
 {
-    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.8")]
+    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.9")]
     [Description("Player-scoped skateboard movement bounds and saved park assemblies.")]
     public sealed class ShortcutSkate : RustPlugin
     {
@@ -1184,7 +1184,9 @@ namespace Oxide.Plugins
                     if (member == null || member.Id == 0 || member.Prefab == 0 || !members.Add(member.Id) || !indices.Add(member.Index) ||
                         !SkateParkLayout.TryTransform(kind, member.Index, group.AnchorX, group.AnchorY, group.AnchorZ,
                             group.AnchorYaw, out expected) || !Near(member.X, expected.X) || !Near(member.Y, expected.Y) ||
-                        !Near(member.Z, expected.Z) || !Near(member.Yaw, expected.Yaw) || !Near(member.Pitch, expected.Pitch))
+                        !Near(member.Z, expected.Z) ||
+                        (!Near(member.Yaw, expected.Yaw) && !(kind == SkateParkKind.Halfpipe && member.Index >= 16 &&
+                            Near(member.Yaw, (expected.Yaw + 270) % 360))) || !Near(member.Pitch, expected.Pitch))
                         throw new InvalidDataException("Invalid or duplicate park member identity or layout.");
                 }
             }
@@ -1763,13 +1765,10 @@ namespace Oxide.Plugins
             try
             {
                 string path = SkatePracticeLayout.FloorPrefab;
-                var manifest = GameManifest.Current;
                 var prefab = GameManager.server.FindPrefab(path);
                 var construction = PrefabAttribute.server.Find<Construction>(StringPool.Get(path));
                 var stone = construction == null ? null : construction.GetGrade(BuildingGrade.Enum.Stone, 0);
-                if (manifest == null || manifest.entities == null ||
-                    !manifest.entities.Any(p => string.Equals(p, path, StringComparison.OrdinalIgnoreCase)) ||
-                    prefab == null || prefab.GetComponent<BuildingBlock>() == null || construction == null ||
+                if (prefab == null || prefab.GetComponent<BuildingBlock>() == null || construction == null ||
                     stone == null || stone.gradeBase == null || stone.gradeBase.type != BuildingGrade.Enum.Stone)
                 { arg.ReplyWith("Practice floor prefab or stone construction data is unavailable in this server build."); return; }
                 Vector3 forward = player.eyes.BodyForward();
@@ -2751,10 +2750,10 @@ namespace Oxide.Plugins
                     if (selected.gradeBase.skin != 0) failures.Add(role + ": gradeBase.skin=" + selected.gradeBase.skin.ToString(CultureInfo.InvariantCulture) + "; required=0.");
                 }
                 Bounds bounds = construction.bounds;
-                CheckParkBound(failures, role, "bounds.size.x", bounds.size.x, 2.9, 3.1);
                 CheckParkBound(failures, role, "bounds.center.x", bounds.center.x, -0.05, 0.05);
                 if (path == SkateParkLayout.FloorPrefab)
                 {
+                    CheckParkBound(failures, role, "bounds.size.x", bounds.size.x, 2.9, 3.1);
                     CheckParkBound(failures, role, "bounds.size.z", bounds.size.z, 2.9, 3.1);
                     CheckParkBound(failures, role, "bounds.size.y", bounds.size.y, 0, 1, true);
                     CheckParkBound(failures, role, "bounds.center.z", bounds.center.z, -0.05, 0.05);
@@ -2764,7 +2763,8 @@ namespace Oxide.Plugins
                 {
                     double height = path == SkateParkLayout.LowWallPrefab ? 1 : 1.5;
                     CheckParkBound(failures, role, "bounds.size.y", bounds.size.y, height - 0.1, height + 0.1);
-                    CheckParkBound(failures, role, "bounds.size.z", bounds.size.z, 0, 0.6, true);
+                    CheckParkBound(failures, role, "bounds.size.x", bounds.size.x, 0, 0.6, true);
+                    CheckParkBound(failures, role, "bounds.size.z", bounds.size.z, 2.9, 3.1);
                     CheckParkBound(failures, role, "bounds.center.z", bounds.center.z, -0.05, 0.05);
                     CheckParkBound(failures, role, "bounds.min.y", bounds.min.y, -0.05, 0.05);
                 }
@@ -2786,11 +2786,6 @@ namespace Oxide.Plugins
             out Construction construction, out DeployVolume[] volumes)
         {
             construction = null; volumes = null;
-            var manifest = GameManifest.Current;
-            if (manifest == null) failures.Add(role + ": GameManifest.Current is unavailable.");
-            else if (manifest.entities == null) failures.Add(role + ": GameManifest.Current.entities is unavailable.");
-            else if (!manifest.entities.Any(p => string.Equals(p, path, StringComparison.Ordinal)))
-                failures.Add(role + ": GameManifest.Current.entities does not contain the prefab.");
             if (GameManager.server == null) failures.Add(role + ": GameManager.server is unavailable.");
             else
             {
