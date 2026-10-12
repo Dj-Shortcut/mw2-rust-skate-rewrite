@@ -258,6 +258,7 @@ file it runs `skate`. Runtime steps share one rig; the last scenario step select
 | `status` | Scripted: a short ride, then the server's own view of the rider typed into the F1 console (`skate.status`, its speed and fly checks, its plugins), the console left open. |
 | `park` | Scripted: the authored park models one at a time 6 m ahead of the rider, 20 s each, seen from behind the rider, then a ride up the bank; nothing is placed on the server. |
 | `send` | Scripted: a chat line and `skate.status` sent to the server as console packets on the client's own connection (the way the game's console sends them), not typed; the chat line shows on the screen when it arrives. |
+| `place` | Scripted: `skate.place bank` sent to the server the same way, where the player looks; then the server's blocks and the model drawn over them are waited for (20 s) and reported. Needs ShortcutSkate 0.3.6 or later and open ground in view; says so when nothing came. |
 | `mute` | Turns the whole client down until nothing can be heard. |
 | `nogrind` | No grinding. |
 

@@ -47,6 +47,7 @@ public static class Scenarios
         else if (Name == "pose") Pose(s, now);
         else if (Name == "park") Park(s, now);
         else if (Name == "send") SendCheck(s);
+        else if (Name == "place") Place(s, now);
         else if (Name == "pad") Pad(game, now);
         else Trick(game);
     }
@@ -327,6 +328,37 @@ public static class Scenarios
             return;
         }
         if (phase == 2 && s > 12f) Finish();
+    }
+
+    // The end-to-end placement: `skate.place bank` sent to the server where the player looks, then
+    // the server's native blocks are waited for and the model drawn over them is reported. Needs
+    // ShortcutSkate 0.3.6 or later on the server and open ground in view; says so when nothing came.
+    public const float PlaceWait = 20f;
+    private static int placeAssemblies, placeDrawn;
+    private static void Place(float s, float now)
+    {
+        if (phase == 0)
+        {
+            Enter(1, "send skate.place bank");
+            placeAssemblies = SkateParks.Assemblies; placeDrawn = SkateParks.Drawn;
+            var ok = SkateConsole.Send("skate.place bank");
+            Say("place: " + (ok ? "sent skate.place bank" : "not sent") + " | " + SkateConsole.SendState);
+            if (!ok) { Enter(3, "nothing sent"); return; }
+            return;
+        }
+        if (phase == 1)
+        {
+            if (SkateParks.Assemblies > placeAssemblies)
+            {
+                Enter(2, "a piece appeared");
+                Say("place: a piece appeared " + (s).ToString("F1") + " s after the send: " + SkateParks.Line() + (SkateParks.Drawn > placeDrawn ? " (drawn)" : " (not drawn: " + SkateParks.Status + ")"));
+                return;
+            }
+            if (s > PlaceWait) { Enter(3, "no piece appeared"); Say("place: no piece appeared within " + (int)PlaceWait + " s (ShortcutSkate 0.3.6 or later needed on the server, open ground in view; the server's answer is in F1) | " + SkateParks.Line()); }
+            return;
+        }
+        if (phase == 2 && s > PlaceWait + 8f) Finish();
+        if (phase == 3 && s > PlaceWait + 4f) Finish();
     }
 
     // The ride with a controller, without one: its states are played into the plugin as the reader
