@@ -155,10 +155,12 @@ past two decoys; in game it has not run yet. Unverified in game as of this commi
 | `Shift` | Held while rolling: manual | |
 | `Ctrl` or `C` | Held for a moment: get off | Held: grab |
 | `L` | View from behind or the game's first person | |
+| `J` (on foot; `Back`+`Y` on the controller) | Stance: regular (left foot forward, the right foot pushes) or goofy, the mirror image. Kept in `skate-stance.txt` in the game's own data folder (`AppData\LocalLow\Facepunch Studios LTD\Rust`) for the next start; the hint on foot names the current one. | |
 
 Coming down over an edge while moving along it starts a grind. A turn is called frontside when it
 brings the rider's chest round to the way he travels: to the left going nose first, to the right
-going tail first. Tricks score when landed, grinds and manuals by the second; tricks
+going tail first, and the other way round for a goofy rider; the controller's flick and grab
+directions mirror with the stance as they do when the tail leads. Tricks score when landed, grinds and manuals by the second; tricks
 in a row multiply, and the combo is banked after a moment of plain rolling. Coming down faster than 12 m/s, or with a
 rotation unfinished, is a bail: the combo is lost and the rider steps off. Water, death, a seat or
 a vehicle also end the ride. Nothing is read from keyboard or controller while the cursor is free

@@ -454,6 +454,7 @@ public static class RiderRig
             var upV = new Vector3((float)ux, (float)uy, (float)uz);
             // The module's ankles are on the board's centre line; a foot is longer than the deck is wide.
             var toToes = new Vector3((float)(uy * fz - uz * fy), (float)(uz * fx - ux * fz), (float)(ux * fy - uy * fx));
+            toToes = toToes * SkateRide.StanceSign;
             var plane = feet + upV * (DeckTop + AnkleHeight - (float)SkatePose.FootLift) - toToes * HeelShift;
 
             var now = Time.realtimeSinceStartup;
@@ -497,7 +498,7 @@ public static class RiderRig
             if (mode == RideMode.Bail || !SkateRide.On) plantBlend = 0f;
             var handplant = PlantBlend;
             SkateBoard.Plant = plant;
-            var input = new SkateRiderInput(new SkateVector(plane.x, plane.y, plane.z), new SkateVector(fx, fy, fz), new SkateVector(ux, uy, uz), SkateStance.Regular, SkateRide.TailFirst,
+            var input = new SkateRiderInput(new SkateVector(plane.x, plane.y, plane.z), new SkateVector(fx, fy, fz), new SkateVector(ux, uy, uz), SkateRide.Goofy ? SkateStance.Goofy : SkateStance.Regular, SkateRide.TailFirst,
                 speed, lean, Crouch, mode == RideMode.Air, mode == RideMode.Ground && SkateRide.PushPhase > 0f, SkateRide.Clamp(SkateRide.PushPhase, 0f, 1f),
                 SkateRide.FlipDeg, grab, mode == RideMode.Bail, SkateKeys.LookYaw % 360f, SkatePose.FootLift - AnkleHeight,
                 DeckTop, mode == RideMode.Bail ? SkateRide.Clamp((now - SkateRide.ModeAt) / SkateRide.BailSeconds, 0f, 1f) : 0f,

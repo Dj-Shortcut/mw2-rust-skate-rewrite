@@ -41,7 +41,7 @@ public static class SkateKeys
     // Held in the air: the rider's turn, +1 to his right as the stick or the keys say, and the grab.
     public static float Spin;
     public static SkateGrabKind Grab;
-    private static bool wasPush, wasBrake, wasLeft, wasRight, wasJump, wasCrouch, wasToggle, wasCamera;
+    private static bool wasPush, wasBrake, wasLeft, wasRight, wasJump, wasCrouch, wasToggle, wasCamera, wasStance;
     private static float wasSpin;
     private static bool popKeys = true, crouchKeys = true, cameraKey = true, manualKey = true, taps = true, cursorKnown = true, failed;
 
@@ -70,6 +70,9 @@ public static class SkateKeys
                 return;
             }
             SkatePieces.Keys(Down(kb.pKey), Down(kb.qKey), Down(kb.eKey), Down(kb.oKey), Down(kb.backspaceKey));
+            var stanceKey = Down(kb.jKey);
+            if (stanceKey && !wasStance) SkateRide.ToggleStance();
+            wasStance = stanceKey;
             bool push = Down(kb.wKey), brake = Down(kb.sKey), left = Down(kb.aKey), right = Down(kb.dKey);
             bool jump = Down(kb.spaceKey), toggle = Down(kb.kKey), crouch = false, camera = false, manual = false, noComply = false, boneless = false;
             if (popKeys)
@@ -132,7 +135,7 @@ public static class SkateKeys
                 Spin = Left ? -1f : Right ? 1f : 0f;
                 bool lt = SkatePad.LeftTrigger > SkatePad.Pulled, rt = SkatePad.RightTrigger > SkatePad.Pulled;
                 Crouch = lt || rt;
-                Grab = GrabOf(lt, rt, SkatePad.RightX, SkatePad.RightY, SkateRide.On && SkateRide.TailFirst);
+                Grab = GrabOf(lt, rt, SkatePad.RightX, SkatePad.RightY, SkateRide.Goofy != (SkateRide.On && SkateRide.TailFirst));
                 Manual = SkatePad.Manual; NoseManual = SkatePad.NoseManual; Jump = false;
                 Charging = SkatePad.Charging; Charge = SkatePad.Charge;
                 SkatePop pop;
