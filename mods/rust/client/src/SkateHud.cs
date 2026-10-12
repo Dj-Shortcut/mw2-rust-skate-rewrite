@@ -73,18 +73,9 @@ public static class SkateHud
 
     public static void Bailed(long lost) { line.Clear(); lostPoints = lost; bailAt = Time.realtimeSinceStartup; popAt = -99f; }
 
-    // A press in the air that there was no room for: said under the trick names for a moment, so
-    // that a press that did nothing is not taken for a press that was missed.
-    private const float RefusedSeconds = 1.6f;
-    private static string refusedWhat = "";
-    private static float refusedAt = -99f;
-    public static string RefusedLine { get { return refusedWhat == "" ? "" : "Not enough air for " + refusedWhat; } }
-    public static bool RefusedShown { get { return Time.realtimeSinceStartup - refusedAt < RefusedSeconds; } }
-    public static void Refused(string what) { if (string.IsNullOrEmpty(what)) return; refusedWhat = what; refusedAt = Time.realtimeSinceStartup; }
-
     public static void Clear()
     {
-        line.Clear(); popAt = bankAt = bailAt = countAt = refusedAt = -99f;
+        line.Clear(); popAt = bankAt = bailAt = countAt = -99f;
         // Getting on is a moment to look for the game's font again: at the first look, while the
         // game was still loading, it may not have been there, and one that was can be gone.
         if (!ReferenceEquals(font, null) && font == null) { font = null; styles.Clear(); }
@@ -312,9 +303,6 @@ public static class SkateHud
                 Text(40f * k, h - 336f * k, w - 80f * k, "The server put the board back; held to " + (v.Cap * 3.6f).ToString("F0") + " km/h for now", (int)(18 * k), Amber, 0, capSince > 2.5f ? (3f - capSince) / 0.5f : 1f);
             Combo(v, now, w, h, k);
             if (v.Hints) Hints(v, w, h, k);
-            var refused = now - refusedAt;
-            if (refused < RefusedSeconds && refusedWhat != "")
-                Text(0f, h * 0.24f + 110f * k, w, RefusedLine, (int)(22 * k), Amber, 1, refused > RefusedSeconds - 0.4f ? (RefusedSeconds - refused) / 0.4f : 1f);
         }
         Middle(v, now, w, h, k);
     }

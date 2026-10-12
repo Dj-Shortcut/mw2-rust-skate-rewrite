@@ -200,9 +200,8 @@ or grind by its name, or a bail in the upper middle; under the score the session
 speed, longest grind and manual; at the bottom left the speed, above it the last five tricks landed
 with their points (newest largest, gone five seconds after the last), and the controls for the first
 seconds on the board. A press in the air that the arc has no room for (a flip, shove-it, body
-varial or spin that could not finish before the ground) is not started, and the display says so for
-a moment under the trick names ("Not enough air for a flip"); the log keeps each one as `SKATE
-refused ...`, which `zz last` sums up by kind. A client build keeps only the engine methods the
+varial or spin that could not finish before the ground) is not started; nothing is shown for it on
+screen, the log keeps each one as `SKATE refused ...`, which `zz last` sums up by kind. A client build keeps only the engine methods the
 game itself calls, so the condensed system font, the flat panels and the bars are each tried once
 and done without when they are missing; the plugin's log says which (`HUD ...`).
 

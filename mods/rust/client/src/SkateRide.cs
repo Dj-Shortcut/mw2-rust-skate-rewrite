@@ -713,12 +713,11 @@ public static class SkateRide
         return Clamp(rest / step, -1f, 1f);
     }
 
-    // A press in the air that the arc cannot hold is refused rather than started and bailed: the
-    // player sees why nothing happened, and the log keeps it for the ride summary.
+    // A press in the air that the arc cannot hold is refused rather than started and bailed; the
+    // log keeps it for the ride summary. Nothing is shown on screen.
     private static void Refuse(string what, float left)
     {
         Refused++;
-        SkateHud.Refused(what);
         Out.Say("SKATE refused " + what + ": " + (left < 0f ? 0f : left).ToString("F2") + " s of air left, " + AirTime.ToString("F2") + " s in");
     }
 
