@@ -507,7 +507,7 @@ namespace Shortcut.RustMod
             return string.Join(", ", names);
         }
         private static bool DisplayGestureName(string name)
-        { return ValidGestureName(name) && name.IndexOf(',') < 0 && name.IndexOf('\u2028') < 0 && name.IndexOf('\u2029') < 0; }
+        { return ValidGestureName(name) && name.IndexOf(',') < 0 && name.IndexOf((char)0x2028) < 0 && name.IndexOf((char)0x2029) < 0; }
     }
 
     // BEGIN SHARED SKATE PARK
