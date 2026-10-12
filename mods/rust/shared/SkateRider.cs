@@ -505,10 +505,12 @@ namespace Shortcut.RustMod
                 case SkateGrabKind.Method: return new GrabGrip(!backIsLeft, -0.1, 0.04, 0.45, tuck: 0.015, bodyShift: -0.18);
                 // A nosebone: the back hand on the tail, the front leg pushed out straight toward the
                 // nose (the hips go back over the tail); a tailbone the other way round.
+                // The hips sit high and well back from the boned foot, so that leg straightens out
+                // along the board while the other knee stays bent.
                 case SkateGrabKind.Nosebone: return new GrabGrip(!noseIsLeft, 0, -0.36, 0.3, end: true,
-                    extension: 0.12, legShift: -0.15, chestTurn: -0.35);
+                    extension: 0.9, legShift: -0.2, chestTurn: -0.35);
                 case SkateGrabKind.Tailbone: return new GrabGrip(noseIsLeft, 0, 0.36, 0.3, end: true,
-                    extension: 0.12, legShift: 0.15, chestTurn: 0.35);
+                    extension: 0.9, legShift: 0.2, chestTurn: 0.35);
                 default: return default(GrabGrip);
             }
         }
