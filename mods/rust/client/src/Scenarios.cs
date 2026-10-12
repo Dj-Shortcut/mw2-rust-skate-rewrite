@@ -247,6 +247,8 @@ public static class Scenarios
         var pushes = v.State == "push" || v.State == "mongo" || v.State == "fakie";
         SkateRide.PushPhase = pushes ? v.Value : 0f;
         SkateRide.PushMongo = v.State == "mongo";
+        // The leading foot pushes in a mongo push and in a push rolling tail first.
+        SkateRide.PushLead = v.State == "mongo" || v.State == "fakie";
         SkateRide.Speed = v.State == "fakie" ? -2f : 0f;
         SkateRide.PlantedUntil = v.State == "plant" ? now + 999f : -99f;
         SkateRide.Stalling = v.State == "stall";

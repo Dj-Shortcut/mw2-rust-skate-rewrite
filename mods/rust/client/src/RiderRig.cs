@@ -502,7 +502,7 @@ public static class RiderRig
                 speed, lean, Crouch, mode == RideMode.Air, mode == RideMode.Ground && SkateRide.PushPhase > 0f, SkateRide.Clamp(SkateRide.PushPhase, 0f, 1f),
                 SkateRide.FlipDeg, grab, mode == RideMode.Bail, SkateKeys.LookYaw % 360f, SkatePose.FootLift - AnkleHeight,
                 DeckTop, mode == RideMode.Bail ? SkateRide.Clamp((now - SkateRide.ModeAt) / SkateRide.BailSeconds, 0f, 1f) : 0f,
-                SkateRide.PushMongo, plant, grabHold >= 0f ? grabHold : grabSince < 0f ? 0f : now - grabSince, handplant,
+                SkateRide.PushLead, plant, grabHold >= 0f ? grabHold : grabSince < 0f ? 0f : now - grabSince, handplant,
                 SkateRide.Clamp(SkateBoard.PitchDegrees, -40f, 40f) * Math.PI / 180.0,
                 mode == RideMode.Air && SkateRide.Jumped && !SkateRide.Grabbing ? SkateRide.Clamp(1f - SkateRide.VSpeed / SkateRide.OlliePop, 0f, 1f) : 0f,
                 chestLead);
@@ -542,9 +542,12 @@ public static class RiderRig
                 SkateBoard.HeldUp = grip;
                 SkateBoard.HeldAt = mid - grip * (AnkleHeight + DeckTop);
             }
-            // The pushing foot, while it is down: the back foot, or the front one in a mongo push.
+            // The pushing foot, while it is down: the trailing foot, or the leading one (a mongo
+            // push, or any push rolling tail first in the same stance). Which foot trails follows
+            // the stance and which end leads, as the module has it.
             var footDown = mode == RideMode.Ground && SkateRide.PushPhase > (float)SkateRider.PushDown && SkateRide.PushPhase < (float)SkateRider.PushUp;
-            var pushLeft = SkateRide.PushMongo ? !SkateRide.TailFirst : SkateRide.TailFirst;
+            var trailingIsLeft = SkateRide.Goofy != SkateRide.TailFirst;
+            var pushLeft = SkateRide.PushLead ? !trailingIsLeft : trailingIsLeft;
             pinLeft = footDown && pushLeft; pinRight = footDown && !pushLeft;
             Ease(pose, plane, toToes, upV, new Vector3((float)fx, (float)fy, (float)fz), now, frameSeconds);
             Shape(upV);
