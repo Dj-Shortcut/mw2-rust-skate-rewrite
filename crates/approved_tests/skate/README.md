@@ -43,6 +43,10 @@ distance, cap/tick bounds, deterministic accumulation, atomic refusals, all fres
 guards and player eligibility. Existing compiled Bounds/Rearm helpers reproduce the
 two-second airtime refusal and unsupported/repeated-reset starvation; the fresh policy
 accepts the same in-cap paths independently of that diagnostic history.
+The same approved scenario separately checks trusted fly authorization, full absolute Y
+budget/delta boundaries, world-spanning and out-and-back refusals, grant/revocation inputs,
+steep tangent pop, short-step lip lift and long capped falls. Untrusted movement never
+gets the fly exception. These helpers do not attest a board or run native permission changes.
 
 ```sh
 dotnet build mods/rust/plugins/ShortcutSkate.csproj -p:RustManagedPath=/absolute/path/to/managed

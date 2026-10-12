@@ -356,6 +356,8 @@ namespace Shortcut.RustMod
 
     public static class SkateMovementPolicy
     {
+        public const double MaximumFlyVerticalSpeed = 200;
+
         public static bool ValidTickCount(int count, int bufferSize) { return count >= 1 && count < bufferSize; }
 
         private static bool Coordinate(SkateMovementPoint point)
@@ -395,6 +397,12 @@ namespace Shortcut.RustMod
         public static bool CanFilter(bool ready, bool validating, bool matchingBatch, bool matchingIdentity,
                                       bool movementAllowed, bool eligible, bool permitted, bool optedOut)
         { return ready && validating && matchingBatch && matchingIdentity && movementAllowed && eligible && permitted && !optedOut; }
+
+        public static bool CanExemptFly(bool trusted, double dt, double vertical)
+        {
+            return trusted && SkateSessionBounds.Finite(dt) && dt > 0 && dt <= SkateSessionBounds.MaximumBatchSeconds &&
+                SkateSessionBounds.Finite(vertical) && vertical >= 0 && vertical <= MaximumFlyVerticalSpeed * dt;
+        }
     }
 
     public enum SkateParkSelectionAction { Next, Cancel, PlacementFailed, PlacementSucceeded }
@@ -499,7 +507,7 @@ namespace Shortcut.RustMod
             return string.Join(", ", names);
         }
         private static bool DisplayGestureName(string name)
-        { return ValidGestureName(name) && name.IndexOf(',') < 0 && name.IndexOf('\u2028') < 0 && name.IndexOf('\u2029') < 0; }
+        { return ValidGestureName(name) && name.IndexOf(',') < 0 && name.IndexOf((char)0x2028) < 0 && name.IndexOf((char)0x2029) < 0; }
     }
 
     // BEGIN SHARED SKATE PARK
@@ -895,11 +903,12 @@ namespace Shortcut.RustMod
 
 namespace Oxide.Plugins
 {
-    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.7")]
+    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.8")]
     [Description("Player-scoped skateboard movement bounds and saved park assemblies.")]
     public sealed class ShortcutSkate : RustPlugin
     {
         private const string UsePermission = "shortcutskate.use";
+        private const string FlyPermission = "shortcutskate.fly";
         private static ShortcutSkate instance;
         private readonly Stopwatch clock = Stopwatch.StartNew();
         private readonly Dictionary<ulong, Session> sessions = new Dictionary<ulong, Session>();
@@ -1210,6 +1219,7 @@ namespace Oxide.Plugins
             public long Batch;
             public bool Allowed;
             public bool MovementAllowed;
+            public double MovementSeconds = double.NaN, MovementVerticalPath = double.NaN;
             public SkateSessionReason MovementReason = SkateSessionReason.Inactive;
             public Vector3 LastEnd;
             public double LastObserved;
@@ -1272,6 +1282,7 @@ namespace Oxide.Plugins
         private void Init()
         {
             permission.RegisterPermission(UsePermission, this);
+            permission.RegisterPermission(FlyPermission, this);
             instance = this;
             groundMask = LayerMask.GetMask("Terrain", "World", "Construction", "Deployed");
             ReadParkData();
@@ -1287,7 +1298,7 @@ namespace Oxide.Plugins
                 Patched("AreSpeeding", typeof(SpeedPatch), true) && Patched("AreFlying", typeof(FlyPatch), true);
             if (!ready) PrintError("Skating is disabled: matching movement patches and valid config are required.");
             else Puts("Skating ready: movement patches installed; permitted eligible players up to " + settings.MaximumHorizontalSpeed +
-                " m/s; support, airtime and rearm are diagnostic only.");
+                " m/s; fly exemption requires a server admin or shortcutskate.fly and vertical travel up to 200 m/s; support, airtime and rearm are diagnostic only.");
             timer.Every(0.1f, Sweep);
         }
 
@@ -1488,6 +1499,9 @@ namespace Oxide.Plugins
         private bool Permitted(BasePlayer player)
         { return settings != null && (settings.AllowEveryone || permission.UserHasPermission(player.UserIDString, UsePermission)); }
 
+        private bool FlyPermitted(BasePlayer player)
+        { return player.IsAdmin || permission.UserHasPermission(player.UserIDString, FlyPermission); }
+
         private static bool Eligible(BasePlayer player)
         {
             return player != null && SkateSessionBounds.Eligible(player.IsConnected, player.IsNpc,
@@ -1550,6 +1564,9 @@ namespace Oxide.Plugins
                 "; ready=" + ready + "; unavailable-reason=" + (ready ? SkateSessionReason.None : unavailableReason) +
                 "; diagnostic-mode=" + (candidate ? (session.Manual ? "manual" : settings.AutomaticEligiblePlayers ? "automatic" : "disabled") : "inactive") +
                 "; movement-policy=permitted-horizontal-cap; last-batch-allowed=" + (candidate && session.MovementAllowed) +
+                "; fly-policy=trusted-vertical-cap; fly-authorized=" + (authorized && FlyPermitted(player)) +
+                "; fly-vertical-limit=" + SkateStatusReport.Number(SkateMovementPolicy.MaximumFlyVerticalSpeed) + "m/s" +
+                "; last-batch-vertical-path=" + SkateStatusReport.Number(candidate ? session.MovementVerticalPath : double.NaN) + "m" +
                 "; movement-reason=" + (candidate ? session.MovementReason : SkateSessionReason.Inactive) +
                 "; diagnostics-active=" + (candidate && session.Bounds.Active) +
                 "; diagnostics-batch-allowed=" + (candidate && session.Allowed) +
@@ -3375,6 +3392,7 @@ namespace Oxide.Plugins
                 if (session.History == null) session.History = diagnostics.GetOrCreate(player.userID, player);
                 session.Allowed = false;
                 session.MovementAllowed = false;
+                session.MovementSeconds = session.MovementVerticalPath = double.NaN;
                 session.MovementReason = SkateSessionReason.Inactive;
                 session.Batch = batch;
                 SkateSessionObservation value = Snapshot(session, SkateSessionReason.None, now);
@@ -3417,6 +3435,8 @@ namespace Oxide.Plugins
                     if (!SkateMovementPolicy.TryAllow(dt, horizontal, settings.MaximumHorizontalSpeed, out allowed, out movementReason))
                     { session.MovementReason = value.Reason = movementReason; Disarm(session, value); continue; }
                     session.MovementAllowed = allowed;
+                    session.MovementSeconds = dt;
+                    session.MovementVerticalPath = vertical;
                     session.MovementReason = movementReason;
                     if (!allowed) { value.Reason = movementReason; Disarm(session, value); continue; }
                     if (!session.Manual && !settings.AutomaticEligiblePlayers)
@@ -3495,7 +3515,7 @@ namespace Oxide.Plugins
         }
 
         private void Filter(ref BasePlayer.PlayerServerStates.ReadOnly states,
-                            NativeArray<int>.ReadOnly indices, NativeArray<bool> results)
+                            NativeArray<int>.ReadOnly indices, NativeArray<bool> results, bool flying)
         {
             if (!ready || !validating) return;
             for (int n = 0; n < indices.Length; n++)
@@ -3504,9 +3524,12 @@ namespace Oxide.Plugins
                 BasePlayer player = states.PlayerCache.Objects[index];
                 Session session;
                 if (player == null || !sessions.TryGetValue(player.userID, out session)) continue;
-                if (SkateMovementPolicy.CanFilter(ready, validating, session.Batch == batch,
+                if (!SkateMovementPolicy.CanFilter(ready, validating, session.Batch == batch,
                     player.ActivePlayerInd == index && ReferenceEquals(player, session.Player), session.MovementAllowed,
-                    Eligible(player), Permitted(player), OptedOut(player))) results[n] = false;
+                    Eligible(player), Permitted(player), OptedOut(player))) continue;
+                if (flying && !SkateMovementPolicy.CanExemptFly(FlyPermitted(player),
+                    session.MovementSeconds, session.MovementVerticalPath)) continue;
+                results[n] = false;
             }
         }
 
@@ -3534,7 +3557,7 @@ namespace Oxide.Plugins
                                         NativeArray<int>.ReadOnly __2, NativeArray<bool> __3)
             {
                 if (instance == null) return;
-                try { instance.Filter(ref __0, __2, __3); }
+                try { instance.Filter(ref __0, __2, __3, false); }
                 catch (Exception) { instance.validating = false; instance.ready = false; instance.unavailableReason = SkateSessionReason.SpeedPatchException; }
             }
         }
@@ -3547,7 +3570,7 @@ namespace Oxide.Plugins
                                         NativeArray<int>.ReadOnly __3, NativeArray<bool> __4)
             {
                 if (instance == null) return;
-                try { instance.Filter(ref __0, __3, __4); }
+                try { instance.Filter(ref __0, __3, __4, true); }
                 catch (Exception) { instance.validating = false; instance.ready = false; instance.unavailableReason = SkateSessionReason.FlyPatchException; }
             }
         }
