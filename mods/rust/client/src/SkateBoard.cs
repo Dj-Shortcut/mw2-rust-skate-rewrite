@@ -168,20 +168,24 @@ public static class SkateBoard
             travel = bailTravel; nose = bailNose; up = bailUp;
             at = bailFrom + travel * (bailRoll * over) + Vector3.up * (0.22f * (float)Math.Sin(over * Math.PI)) - up * ((RiderRig.DeckTop - BailRest) * over);
         }
-        if (Held && SkateRide.Handplant)
-        {
-            var heldUp = HeldUp.sqrMagnitude > 0.5f ? HeldUp : Vector3.up;
-            var heldNose = HeldNose - heldUp * Vector3.Dot(HeldNose, heldUp);
-            if (heldNose.sqrMagnitude < 0.0001f) heldNose = Vector3.Cross(heldUp, Vector3.right);
-            board.transform.rotation = Quaternion.LookRotation(heldNose.normalized, heldUp);
-            board.transform.position = HeldAt;
-            Parts(now, travel, heldNose.normalized);
-            return;
-        }
         var rot = SkateRide.Turn(askew, up) * Quaternion.LookRotation(nose, up) * SkateRide.Turn(flip, Vector3.forward);
         rot = GrabTweak(up) * rot;
         // A flip turns the board about the middle of the deck, not about the wheels.
         var centre = at + up * RiderRig.DeckTop - (rot * Vector3.up) * RiderRig.DeckTop;
+        if (Held && SkateRide.Handplant)
+        {
+            // Against the feet through the handplant: from where it rode as the body goes up, and
+            // back to that as the body comes down, by how far the pose has gone over (the rig's blend).
+            var heldUp = HeldUp.sqrMagnitude > 0.5f ? HeldUp : Vector3.up;
+            var heldNose = HeldNose - heldUp * Vector3.Dot(HeldNose, heldUp);
+            if (heldNose.sqrMagnitude < 0.0001f) heldNose = Vector3.Cross(heldUp, Vector3.right);
+            var over = SkateRide.Clamp(RiderRig.PlantBlend, 0f, 1f);
+            var heldRot = Quaternion.LookRotation(heldNose.normalized, heldUp);
+            board.transform.rotation = Quaternion.Slerp(rot, heldRot, over);
+            board.transform.position = Vector3.Lerp(centre, HeldAt, over);
+            Parts(now, travel, heldNose.normalized);
+            return;
+        }
         if (Plant > 0.001f && SkateRide.Mode != RideMode.Bail)
         {
             var lead = Vector3.Dot(travel, nose) >= 0f ? nose : -nose;

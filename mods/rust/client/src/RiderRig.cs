@@ -17,7 +17,7 @@ public static class RiderRig
     public static void GrabFor(float seconds) { grabHold = seconds; }
     // How far into the handplant the pose is (0..1): up over PlantSeconds when the edge is taken
     // with a hand, down again when the ride says the body is coming down; a scripted check can hold it.
-    public const float PlantSeconds = 0.4f;
+    public const float PlantSeconds = 0.4f, PlantIn = 0.07f;
     private static float plantBlend, plantHold = -1f;
     public static float PlantBlend { get { return plantHold >= 0f ? plantHold : plantBlend; } }
     public static void PlantFor(float blend) { plantHold = blend; }
@@ -488,7 +488,9 @@ public static class RiderRig
             var fold = grab == SkateGrabKind.None ? 0f : SkateRide.Clamp(held / (float)SkateRider.GrabIn, 0f, 1f);
             fold = fold * fold * (3f - 2f * fold);
             SkateBoard.GrabFold += (fold * (0.8f + 0.2f * SkateRide.Clamp(held / 0.6f, 0f, 1f)) - SkateBoard.GrabFold) * SkateRide.Clamp(frameSeconds * 20f, 0f, 1f);
-            var plant = SkateRide.FootPlanted ? SkateRide.Clamp((SkateRide.PlantedUntil - now) / SkateRide.PlantSeconds * 1.5f, 0f, 1f) : 0f;
+            // The foot plant comes on over a few frames, not in one: the board kicks up and the foot
+            // goes down as fast as a kick, not at once.
+            var plant = SkateRide.FootPlanted ? SkateRide.Clamp((SkateRide.PlantedUntil - now) / SkateRide.PlantSeconds * 1.5f, 0f, 1f) * SkateRide.Clamp((now - (SkateRide.PlantedUntil - SkateRide.PlantSeconds)) / PlantIn, 0f, 1f) : 0f;
             // The chest ahead of a spin in the air; on the ground, wound up against the spin the
             // left stick asks for while the right stick is held back for the pop.
             var leadWant = mode == RideMode.Air ? SkateRide.SpinLead

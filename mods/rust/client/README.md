@@ -68,7 +68,7 @@ game; see [The controller](#the-controller).
 | Right stick click | View from behind or the game's first person | |
 | Left stick, right after landing a trick | Revert: the rider and the board pivot a half turn together on the ground and roll on the same way, the other end of the deck leading (fakie after a regular landing, regular again after a fakie one); it joins the combo. | |
 | Right stick back or forward, on an edge | Along the edge: 5-0 or nosegrind instead of the 50-50. Across it on the tail, held back: bluntslide instead of the tailslide; on the nose, held forward: nosebluntslide. Let go, the slide goes back to the plain one. | |
-| Coming down on an edge square to it, or slowly along it | A stall: the board stops on the edge. Square: a board stall, with the right stick back a tail stall, forward a nose stall, with `LB` or `RB` held a frontside or backside handplant; slowly along it a 50-50 stall. A pop leaves it; after 2.5 s the board rolls off. Out of a stall the rider goes back the way he came, tail first; out of a handplant he comes round and rolls back nose first. | |
+| Coming down on an edge square to it, or slowly along it | A stall: the board stops on the edge. Square: a board stall, with the right stick back a tail stall, forward a nose stall, with `LB` or `RB` held a frontside or backside handplant (the board goes from where it rode to the feet as the body goes up, and back as it comes down); slowly along it a 50-50 stall. A pop leaves it; after 2.5 s the board rolls off. Out of a stall the rider goes back the way he came, tail first; out of a handplant he comes round and rolls back nose first. | |
 | In a grind or a stall | The deck sits on the edge the way that grind does: a 5-0 on the back truck with the nose up, a nosegrind the other way round, a smith with the nose dipped past the edge, a feeble over it, a crooked on its edge, a bluntslide stands the deck up steeply on the tail (a nosebluntslide on the nose); a tail stall hangs the tail over the coping. The rider stands over the low end with the arms out. | |
 
 The right stick pops the board, and how it moves says what the board does in the jump. The sides
@@ -222,7 +222,7 @@ that commit and must match the hash; that is for shared code that is ahead on an
 | `SkateGrind.cs` | Samples the ground around the rider and asks the shared edge module for an edge. |
 | `SkateBoard.cs` | The board, what it is drawn with and where it sits. |
 | `RiderRig.cs` | Writes the shared rider pose onto the player model's skeleton; what is drawn in which view, the held item included. |
-| `SkateCamera.cs` | View from behind: 3.4 m back, up to 1.2 m further at top speed and in again as the board slows; with a controller it swings in behind the way the board goes. |
+| `SkateCamera.cs` | View from behind: 3.4 m back, up to 1.2 m further at top speed and in again as the board slows; with a controller it swings in behind the way the board goes. It comes in at once to this side of anything between it and the rider, and goes back out gradually once the way is clear. |
 | `SkateHud.cs`, `SkateSfx.cs` | The score display and the sounds. |
 | `SkatePieces.cs`, `SkateConsole.cs` | The park-piece menu on the controller and the keyboard, its ghost preview, and the console line it sends to the server (`SkateConsole.Send`, a console packet on the client's connection found by name in the network library); without that, the screen shows the line to type. `SkateConsole` also keeps the console typist for the scripted checks. |
 | `Scenarios.cs` | Scripted checks in a world. |

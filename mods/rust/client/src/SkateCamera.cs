@@ -14,6 +14,10 @@ public static class SkateCamera
     // comes in again as it slows: up to SpeedPull further at top speed, eased at PullRate per second.
     public const float SpeedPull = 1.2f, PullRate = 2.5f;
     private static float followAt = -99f, pullNow, pullAt = -99f;
+    // How far out the camera stands along its line: in at once when something is in the way, out
+    // again at OutRate (a share a second) once the way is clear, so it does not pop back.
+    public const float OutRate = 5f;
+    private static float shownLen = -1f, shownAt = -99f;
     private static bool failed, ahead = true;
 
     public static void Sample()
@@ -65,8 +69,13 @@ public static class SkateCamera
             // Nothing between the rider and the camera: it comes in to this side of a wall or a fence.
             var dir = want - focus; var len = dir.magnitude;
             RaycastHit hit;
+            var allowed = len;
             if (len > 0.01f && Physics.SphereCast(focus, 0.2f, dir / len, out hit, len, SkateRide.GroundMask, QueryTriggerInteraction.Ignore))
-                want = focus + dir / len * Math.Max(0.6f, hit.m_Distance - 0.05f);
+                allowed = Math.Max(0.6f, hit.m_Distance - 0.05f);
+            var t = Time.realtimeSinceStartup; var outSeconds = SkateRide.Clamp(t - shownAt, 0f, 0.1f); shownAt = t;
+            if (shownLen < 0f || allowed <= shownLen || outSeconds >= 0.1f) shownLen = allowed;
+            else shownLen += (allowed - shownLen) * (1f - (float)Math.Exp(-outSeconds * OutRate));
+            if (len > 0.01f) want = focus + dir / len * shownLen;
             cam.transform.position = want;
             cam.transform.LookAt(focus);
         }
