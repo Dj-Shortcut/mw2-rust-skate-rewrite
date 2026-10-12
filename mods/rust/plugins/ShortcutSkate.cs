@@ -1247,7 +1247,7 @@ namespace Oxide.Plugins
             public uint CarrierPrefab, ParentPrefab, ParentBone;
             public Vector3 Position;
             public Quaternion Rotation;
-            public bool Captured, SavingDisabled, PaymentSuppressed, CleanupReady, Removed, Unverified;
+            public bool BuildChecked, Admitted, Captured, SavingDisabled, PaymentSuppressed, CleanupReady, Removed, Unverified;
             public string Failure;
         }
 
@@ -2687,27 +2687,34 @@ namespace Oxide.Plugins
                 ReferenceEquals(parkBuildHookConstruction, construction) && ReferenceEquals(target.player, request.Player) &&
                 target.Equals(parkBuildHookTarget)) return null;
             BasePlayer player = planner == null ? null : planner.GetOwnerPlayer();
-            if (PendingNativeParkRequest(player, planner) != null) return false;
-            if (!TaggedNativeParkPlanner(player, planner)) return null;
-            string failure;
-            if (!TryNativeParkRequest(player, planner, construction, out request, out failure) ||
-                !target.valid || !ReferenceEquals(target.player, player) || target.shouldParent ||
+            ParkNativeRequest pending = PendingNativeParkRequest(player, planner);
+            if (pending == null)
+            {
+                if (!TaggedNativeParkPlanner(player, planner)) return null;
+                ReportParkFailures(player, new[] { "Park placement needs the original native affordability receipt; the build item was retained." });
+                return false;
+            }
+            if (pending.BuildChecked || pending.Admitted) return false;
+            pending.BuildChecked = true;
+            request = pending.Placement;
+            if (!ReferenceEquals(request.Player, player) || !ReferenceEquals(request.Planner, planner) ||
+                !ReferenceEquals(pending.Construction, construction) || !NativeParkConstruction(construction) ||
+                !CurrentParkRequest(request) || parkBusy || parkRefreshing || parkNativeCleaning)
+            {
+                pending.Failure = "The original administrator, building plan, build item, native construction or world changed after affordability; placement was refused.";
+                ReportParkFailures(request.Player, new[] { pending.Failure });
+                return false;
+            }
+            if (!target.valid || !ReferenceEquals(target.player, player) || target.shouldParent ||
                 (target.entity != null && target.entity.SupportsChildDeployables() && target.entity.ForceDeployableSetParent()) ||
                 !Coordinate(target.position) || !Coordinate(target.rotation) ||
                 !Coordinate(target.ray.origin) || !Coordinate(target.ray.direction))
             {
-                ReportParkFailures(player, new[] { failure ?? "Park placement needs a valid unparented native square-foundation target; the build item was retained." });
+                pending.Failure = "Park placement needs a valid unparented native square-foundation target; the build item was retained.";
+                ReportParkFailures(player, new[] { pending.Failure });
                 return false;
             }
-            var pending = new ParkNativeRequest { Placement = request, Construction = construction };
-            parkNativeRequests.Add(request.Owner, pending);
-            try { NextTick(() => FinishNativeParkRequest(pending)); }
-            catch (Exception error)
-            {
-                parkNativeRequests.Remove(request.Owner);
-                ReportParkFailures(player, new[] { "Native park placement could not be scheduled; the build item was retained. " + error.Message });
-                return false;
-            }
+            pending.Admitted = true;
             return null;
         }
 
@@ -2771,14 +2778,23 @@ namespace Oxide.Plugins
             ParkPlacementRequest request;
             string failure;
             bool allowed = TryNativeParkRequest(player, planner, construction, out request, out failure);
-            if (!allowed) ReportParkFailures(player, new[] { failure });
-            return allowed;
+            if (!allowed) { ReportParkFailures(player, new[] { failure }); return false; }
+            var pending = new ParkNativeRequest { Placement = request, Construction = construction };
+            parkNativeRequests.Add(request.Owner, pending);
+            try { NextTick(() => FinishNativeParkRequest(pending)); }
+            catch (Exception error)
+            {
+                parkNativeRequests.Remove(request.Owner);
+                ReportParkFailures(player, new[] { "Native park affordability could not be scheduled; the build item was retained. " + error.Message });
+                return false;
+            }
+            return true;
         }
 
         private object OnPayForPlacement(BasePlayer player, Planner planner, Construction construction)
         {
             ParkNativeRequest pending = PendingNativeParkRequest(player, planner);
-            if (pending == null || !ReferenceEquals(pending.Placement.Player, player) ||
+            if (pending == null || !pending.Admitted || !ReferenceEquals(pending.Placement.Player, player) ||
                 player == null || player.userID != pending.Placement.Owner ||
                 !ReferenceEquals(pending.Placement.Planner, planner) || !ReferenceEquals(pending.Construction, construction)) return null;
             // This bill belongs to the admitted native request even if a later callback changes the active item or authority.
@@ -3109,7 +3125,7 @@ namespace Oxide.Plugins
         {
             BasePlayer player = planner == null ? null : planner.GetOwnerPlayer();
             ParkNativeRequest native = PendingNativeParkRequest(player, planner);
-            if (native != null && ReferenceEquals(native.Placement.Planner, planner))
+            if (native != null && native.Admitted && ReferenceEquals(native.Placement.Planner, planner))
             {
                 CaptureNativeParkCarrier(native, gameObject);
                 return;
@@ -3282,6 +3298,8 @@ namespace Oxide.Plugins
             bool placed = false;
             try
             {
+                if (!pending.Admitted)
+                { failure = failure ?? "Native park confirmation was not admitted; the build item was retained."; return; }
                 bool valid = failure == null && pending.Captured && pending.SavingDisabled && pending.PaymentSuppressed &&
                     NativeParkCarrierMatches(pending) && NativeParkSavingDisabled(pending.Carrier) &&
                     CurrentParkRequest(request) && !parkBusy && !parkRefreshing && !SaveRestore.IsSaving;

@@ -15,15 +15,15 @@ The stock carrier is `building.planner`, skin0, amount1. Authored
 `instanceData.dataInt` markers `0x534B5001`–`0x534B5008` follow `SkateParkKind`;
 the [catalogue](../mods/rust/shared/SkateParkBuildItems.cs) supplies exact names.
 Tagged plans do not stack. Other plans retain ordinary placement and payment.
-The server captures the original owned item/planner/world and only that request's
-native material bill is suppressed. Its spawned foundation is made unsaved and
+The server captures item/planner/world before waiving native affordability.
+CanBuild consumes that receipt once; changed identity refuses placement. Only
+its native material bill is suppressed. The spawned foundation is unsaved and
 removed next tick, with exact captured-identity/destruction checks, before the
 park transaction. A kill veto or uncertain cleanup refuses the park/item debit
 and blocks further park creation. Unknown identities stay untouched; carrier
 tracking is instance-local, so interrupted callbacks/unload may need private cleanup.
 The temporary carrier can be visible. Only one marked transaction is admitted;
 no crafting recipe, material price or global building override is added.
-
 The final native foundation origin supplies X/Z/yaw and its Y is the support
 plane. Actual first-floor bounds determine the park baseline; no guessed top
 height is added. Client ghost agreement remains unverified. Full prefab/material,
