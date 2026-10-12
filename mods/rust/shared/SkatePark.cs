@@ -132,12 +132,12 @@ namespace Shortcut.RustMod
                 part.Prefab = LowWallPrefab; part.Material = SkateParkMaterial.Wood;
                 part.Right = (index % 2) * 3; part.Height = rise;
                 part.Forward = index < 18 ? backDeck - HalfLength : frontDeck + HalfLength;
-                part.Yaw = index < 18 ? 180 : 0;
+                part.Yaw = index < 18 ? 270 : 90;
                 return;
             }
             part.Prefab = HalfWallPrefab;
             part.Right = index % 2 == 0 ? -1.85 : 4.85;
-            part.Yaw = index % 2 == 0 ? 90 : 270;
+            part.Yaw = index % 2 == 0 ? 180 : 0;
             switch ((index - 20) / 2)
             {
                 case 0: part.Forward = 0; break;

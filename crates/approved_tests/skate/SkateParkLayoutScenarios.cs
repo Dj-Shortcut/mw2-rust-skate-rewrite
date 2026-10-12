@@ -75,26 +75,26 @@ internal static class SkateParkLayoutScenarios
             new ExpectedPart(3, -8.35523361173418, 2.4971864443607004, 0, SkateParkMaterial.Metal),
             new ExpectedPart(0, 11.35523361173418, 2.4971864443607004, 0, SkateParkMaterial.Metal),
             new ExpectedPart(3, 11.35523361173418, 2.4971864443607004, 0, SkateParkMaterial.Metal),
-            new ExpectedPart(0, -9.85523361173418, 2.4971864443607004, 0, SkateParkMaterial.Wood, LowWallPrefab, 180),
-            new ExpectedPart(3, -9.85523361173418, 2.4971864443607004, 0, SkateParkMaterial.Wood, LowWallPrefab, 180),
-            new ExpectedPart(0, 12.85523361173418, 2.4971864443607004, 0, SkateParkMaterial.Wood, LowWallPrefab),
-            new ExpectedPart(3, 12.85523361173418, 2.4971864443607004, 0, SkateParkMaterial.Wood, LowWallPrefab),
-            new ExpectedPart(-1.85, 0, 0, 0, SkateParkMaterial.Metal, HalfWallPrefab, 90),
-            new ExpectedPart(4.85, 0, 0, 0, SkateParkMaterial.Metal, HalfWallPrefab, 270),
-            new ExpectedPart(-1.85, 3, 0, 0, SkateParkMaterial.Metal, HalfWallPrefab, 90),
-            new ExpectedPart(4.85, 3, 0, 0, SkateParkMaterial.Metal, HalfWallPrefab, 270),
-            new ExpectedPart(-1.85, -2.9488887394336025, 0.3882285676537811, 0, SkateParkMaterial.Metal, HalfWallPrefab, 90),
-            new ExpectedPart(4.85, -2.9488887394336025, 0.3882285676537811, 0, SkateParkMaterial.Metal, HalfWallPrefab, 270),
-            new ExpectedPart(-1.85, -5.626505545300693, 1.6368217898341313, 0, SkateParkMaterial.Metal, HalfWallPrefab, 90),
-            new ExpectedPart(4.85, -5.626505545300693, 1.6368217898341313, 0, SkateParkMaterial.Metal, HalfWallPrefab, 270),
-            new ExpectedPart(-1.85, 5.9488887394336025, 0.3882285676537811, 0, SkateParkMaterial.Metal, HalfWallPrefab, 90),
-            new ExpectedPart(4.85, 5.9488887394336025, 0.3882285676537811, 0, SkateParkMaterial.Metal, HalfWallPrefab, 270),
-            new ExpectedPart(-1.85, 8.626505545300694, 1.6368217898341313, 0, SkateParkMaterial.Metal, HalfWallPrefab, 90),
-            new ExpectedPart(4.85, 8.626505545300694, 1.6368217898341313, 0, SkateParkMaterial.Metal, HalfWallPrefab, 270),
-            new ExpectedPart(-1.85, -8.35523361173418, 2.4971864443607004, 0, SkateParkMaterial.Metal, HalfWallPrefab, 90),
-            new ExpectedPart(4.85, -8.35523361173418, 2.4971864443607004, 0, SkateParkMaterial.Metal, HalfWallPrefab, 270),
-            new ExpectedPart(-1.85, 11.35523361173418, 2.4971864443607004, 0, SkateParkMaterial.Metal, HalfWallPrefab, 90),
-            new ExpectedPart(4.85, 11.35523361173418, 2.4971864443607004, 0, SkateParkMaterial.Metal, HalfWallPrefab, 270))
+            new ExpectedPart(0, -9.85523361173418, 2.4971864443607004, 0, SkateParkMaterial.Wood, LowWallPrefab, 270),
+            new ExpectedPart(3, -9.85523361173418, 2.4971864443607004, 0, SkateParkMaterial.Wood, LowWallPrefab, 270),
+            new ExpectedPart(0, 12.85523361173418, 2.4971864443607004, 0, SkateParkMaterial.Wood, LowWallPrefab, 90),
+            new ExpectedPart(3, 12.85523361173418, 2.4971864443607004, 0, SkateParkMaterial.Wood, LowWallPrefab, 90),
+            new ExpectedPart(-1.85, 0, 0, 0, SkateParkMaterial.Metal, HalfWallPrefab, 180),
+            new ExpectedPart(4.85, 0, 0, 0, SkateParkMaterial.Metal, HalfWallPrefab, 0),
+            new ExpectedPart(-1.85, 3, 0, 0, SkateParkMaterial.Metal, HalfWallPrefab, 180),
+            new ExpectedPart(4.85, 3, 0, 0, SkateParkMaterial.Metal, HalfWallPrefab, 0),
+            new ExpectedPart(-1.85, -2.9488887394336025, 0.3882285676537811, 0, SkateParkMaterial.Metal, HalfWallPrefab, 180),
+            new ExpectedPart(4.85, -2.9488887394336025, 0.3882285676537811, 0, SkateParkMaterial.Metal, HalfWallPrefab, 0),
+            new ExpectedPart(-1.85, -5.626505545300693, 1.6368217898341313, 0, SkateParkMaterial.Metal, HalfWallPrefab, 180),
+            new ExpectedPart(4.85, -5.626505545300693, 1.6368217898341313, 0, SkateParkMaterial.Metal, HalfWallPrefab, 0),
+            new ExpectedPart(-1.85, 5.9488887394336025, 0.3882285676537811, 0, SkateParkMaterial.Metal, HalfWallPrefab, 180),
+            new ExpectedPart(4.85, 5.9488887394336025, 0.3882285676537811, 0, SkateParkMaterial.Metal, HalfWallPrefab, 0),
+            new ExpectedPart(-1.85, 8.626505545300694, 1.6368217898341313, 0, SkateParkMaterial.Metal, HalfWallPrefab, 180),
+            new ExpectedPart(4.85, 8.626505545300694, 1.6368217898341313, 0, SkateParkMaterial.Metal, HalfWallPrefab, 0),
+            new ExpectedPart(-1.85, -8.35523361173418, 2.4971864443607004, 0, SkateParkMaterial.Metal, HalfWallPrefab, 180),
+            new ExpectedPart(4.85, -8.35523361173418, 2.4971864443607004, 0, SkateParkMaterial.Metal, HalfWallPrefab, 0),
+            new ExpectedPart(-1.85, 11.35523361173418, 2.4971864443607004, 0, SkateParkMaterial.Metal, HalfWallPrefab, 180),
+            new ExpectedPart(4.85, 11.35523361173418, 2.4971864443607004, 0, SkateParkMaterial.Metal, HalfWallPrefab, 0))
     };
 
     private static int Main(string[] args)
@@ -590,6 +590,7 @@ internal static class SkateParkLayoutScenarios
                  WorldEdge(SkateParkKind.LongLedge, 0, 1.5, side, x, y, z, yaw), "long-ledge: right seam corners.");
         }
         HalfpipeSeams(x, y, z, yaw);
+        HalfpipeWallSpans(x, y, z, yaw);
     }
 
     private static void HalfpipeSeams(double x, double y, double z, double yaw)
@@ -626,9 +627,9 @@ internal static class SkateParkLayoutScenarios
             Same(Centre(kind, 18 + lane, x, y, z, yaw), WorldEdge(kind, 14 + lane, 0, 1.5, x, y, z, yaw),
                  "halfpipe: wood front rail at deck edge.");
         }
-        Same(WorldEdge(kind, 16, -1.5, 0, x, y, z, yaw), WorldEdge(kind, 17, 1.5, 0, x, y, z, yaw),
+        Same(WorldEdge(kind, 16, 0, -1.5, x, y, z, yaw), WorldEdge(kind, 17, 0, 1.5, x, y, z, yaw),
              "halfpipe: joined back rail widths.");
-        Same(WorldEdge(kind, 18, 1.5, 0, x, y, z, yaw), WorldEdge(kind, 19, -1.5, 0, x, y, z, yaw),
+        Same(WorldEdge(kind, 18, 0, 1.5, x, y, z, yaw), WorldEdge(kind, 19, 0, -1.5, x, y, z, yaw),
              "halfpipe: joined front rail widths.");
         for (int station = 0; station < 8; station++)
         {
@@ -636,6 +637,34 @@ internal static class SkateParkLayoutScenarios
                  WorldEdge(kind, station * 2, -1.85, 0, x, y, z, yaw), "halfpipe: exterior left side panel.");
             Same(Centre(kind, 21 + station * 2, x, y, z, yaw),
                  WorldEdge(kind, station * 2 + 1, 1.85, 0, x, y, z, yaw), "halfpipe: exterior right side panel.");
+        }
+    }
+
+    private static void HalfpipeWallSpans(double x, double y, double z, double yaw)
+    {
+        double angle = yaw * Math.PI / 180, cos = Math.Cos(angle), sin = Math.Sin(angle);
+        for (int i = 16; i < 36; i++)
+        {
+            Point centre = Centre(SkateParkKind.Halfpipe, i, x, y, z, yaw);
+            foreach (double thickness in new[] { -0.10000000149011612, 0.10000000149011612 })
+            foreach (double length in new[] { -1.5, 1.5 })
+            {
+                double right, forward;
+                if (i < 20)
+                {
+                    right = i < 18 ? -length : length;
+                    forward = i < 18 ? thickness : -thickness;
+                }
+                else
+                {
+                    right = i % 2 == 0 ? -thickness : thickness;
+                    forward = i % 2 == 0 ? -length : length;
+                }
+                Same(WorldEdge(SkateParkKind.Halfpipe, i, thickness, length, x, y, z, yaw),
+                    new Point(centre.X + right * cos + forward * sin, centre.Y,
+                              centre.Z - right * sin + forward * cos),
+                    "halfpipe: native thin-X long-Z wall footprint.");
+            }
         }
     }
 
