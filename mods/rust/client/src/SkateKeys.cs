@@ -28,7 +28,7 @@ public static class SkateKeys
     // travels round the rim faster than RimMoving (degrees a second) is circling for a body varial,
     // not held to a side, however slowly it goes round.
     public const float SpinHold = 0.06f, RimMoving = 180f;
-    private static int rawSide; private static float sideSince = -99f, rimAngle, rimAt = -99f, movedAt = -99f; private static bool onRim;
+    private static int rawSide; private static float sideSince = -99f, rimAngle, rimAt = -99f, movedAt = -99f; private static bool onRim; private static int bodySeen;
     public static bool Mongo, HandplantFront, HandplantBack;
     private static float aTappedAt = -99f;
     // What a physics step has not seen yet. A pop comes with what the board does in it: whole flips
@@ -75,6 +75,10 @@ public static class SkateKeys
             {
                 Push = Brake = Left = Right = Crouch = Jump = Manual = NoseManual = Charging = false; Steer = Charge = Spin = wasSpin = 0f; Grab = SkateGrabKind.None;
                 wasPush = wasBrake = wasLeft = wasRight = wasJump = wasCrouch = wasToggle = wasCamera = false; EndStep(); SkatePad.DropPops();
+                // J and X held through chat or the console are not a press when the cursor locks
+                // again: their latches follow the keys while input is suspended.
+                if (kb != null) { try { wasStance = Down(kb.jKey); wasBody = Down(kb.xKey); } catch (Exception) { wasStance = wasBody = true; } }
+                else wasStance = wasBody = true;
                 return;
             }
             SkatePieces.Keys(Down(kb.pKey), Down(kb.qKey), Down(kb.eKey), Down(kb.oKey), Down(kb.backspaceKey));
@@ -143,6 +147,9 @@ public static class SkateKeys
                 // stick (a body varial) passes both sides without asking for a turn.
                 var side = x < -SpinFrom ? -1 : x > SpinFrom ? 1 : 0;
                 if (side != rawSide) { rawSide = side; sideSince = now; }
+                // A circle completed between two frames (the reader replays every sample) is no
+                // held side either: the body varial it made counts as the stick moving.
+                if (SkatePad.BodyVarials != bodySeen) { bodySeen = SkatePad.BodyVarials; movedAt = now; }
                 if (x * x + y * y > SpinFrom * SpinFrom)
                 {
                     var angle = (float)(Math.Atan2(x, y) * 180.0 / Math.PI);

@@ -230,6 +230,7 @@ public static class SkateRide
         SkateHud.Clear();
         Normal = ViewNormal = Vector3.up; Position = b.position; Tangent = Dir(yaw);
         airNoseOffset = airDeckOffset = 0f; comingRound = false;
+        SkateWatch.Reset();
         SkateGrind.Reset();
         // Getting on while going up (the second press of a double jump) finishes that jump on the
         // board; the ground is still within reach of the feet then, and ground movement would cut it.
