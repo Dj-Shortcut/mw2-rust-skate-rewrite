@@ -59,7 +59,7 @@ Start with `new SkateTrickState(ridingSwitch)` (default means the unturned rider
 
 `BoardSpin`/`BoardFlip`/`BoardShove` are accumulated degrees relative to takeoff. Spin rotates rider and board at `RotationRate`; flip rotates the board about its long axis at `FlipRate`; shove rotates the board under the feet at `ShoveRate` (720 degrees/s). Shove is relative to the rider: world deck yaw adds Spin+Shove, so a Bigspin is rider 180 plus a same-direction relative shove 180. Supply Rider a support frame following Spin only, excluding board-only Flip and Shove. Keep the deck's nose heading separate from Drive's physical travel heading: Drive clamps negative along-heading speed to zero, so feeding a rotated nose back into Drive would erase forward travel on a valid switch landing.
 
-Landing requires Flip within 25 degrees of a whole turn, and Spin/Shove within 25 degrees of half turns, at impact no greater than the chosen limit (8 m/s by default). A successful touchdown returns those **snapped** angles; commit them to persistent visual headings before the next step resets them. An odd rider half-spin toggles `result.Switch`; shove alone does not. The next input's mirror rule follows the resulting stance. The client supplies its continuously held analog Spin axis, rather than an automatic 180. Positive Spin/Shove is frontside, negative backside; positive Flip is kickflip, negative heelflip.
+Ground landing requires Flip within 25 degrees of a whole turn, and Spin/Shove within 25 degrees of half turns, at impact no greater than the chosen limit (8 m/s by default). A [Darkslide half-flip catch](DARKSLIDE.md) is the sole inverted-contact exception. A successful touchdown returns those **snapped** angles; commit them to persistent visual headings before the next step resets them. An odd rider half-spin toggles `result.Switch`; shove alone does not. The next input's mirror rule follows the resulting stance. The client supplies its continuously held analog Spin axis, rather than an automatic 180. Positive Spin/Shove is frontside, negative backside; positive Flip is kickflip, negative heelflip.
 
 The additive input constructor is `SkateTrickInput(spin,flip,shove,grabKind,airborne,grinding,impactSpeed,manual,noseManual,rollingSpeed,popKind)`. Axes stay in [-1,1]; enum values must be defined. At takeoff `popKind` selects Ollie or Nollie (None defaults to Ollie); subsequent None preserves that takeoff kind. Names include Pop Shove-it, Varial Kickflip/Heelflip, 360 Flip, Laser Flip, Hardflip, Inward Heelflip, Frontside/Backside Flip and Bigspin, plus composed 540/720, double-flip, shove and named-grab variants with a Nollie prefix. Names are cached English strings: no per-step construction. The old constructors retain their original names/scoring and map bool grab to Legacy. The composed path supports rider rotations through 720, flips through two turns and relative shoves through 360; greater rotations use a cached `Multiple Rotation Trick` name. Rotation scoring caps rider half-spins at four on the composed path, and flips/shove half-turns at two.
 
@@ -97,9 +97,19 @@ atomically. This library scores an observed contact; it does not detect entries,
 the deck or enforce those contact shapes. Client detection, `GrindDeck` poses, native
 contact and owner play acceptance remain separate work.
 
-The owner-approved `skate_trick_grind_names` scenario passes 20,850 checks on the actual
-genuine-reference net48 DLL, including transitions, round-to-even boundaries, cached-name
-identity, combo/bail/stance, duration saturation and atomic invalid state/request refusal.
+On an airborne-to-Darkslide transition only, Flip within 25 degrees of +/-180 snaps
+to that half turn; other catch/impact guards still apply. `State.DarkslideCaught` exposes
+the retained inverted half on the edge, independently of the kind's ordinary zero-flip
+legacy behavior. The catch emits `Landed` with its directional Darkslide name and zero
+air points; the grind duration scores on pop-out. The exit carries the half into the
+next flight; the adapter drives the remaining half toward an upright whole turn. A
+ground drop or contact-kind change while inverted bails without awarding the grind.
+See [the complete carry/events and client contract](DARKSLIDE.md).
+
+The owner-approved `skate_trick_grind_names` scenario passes 25,535 checks on the actual
+genuine-reference net48 DLL, including the original 20,850 vocabulary/scoring checks,
+signed half catches, inversion carry, actual exit completion/unwind, drop bails, all
+orientation/impact guards, explicit Fakie/Switch/pop inputs and atomic invalid state/request refusal.
 Warmed completion/lookup loops allocate zero measured bytes on Mac net8. The three
 owner-recorded flick scenarios also pass. These results do not verify native capture,
 deck poses, IL2CPP costs or gameplay.

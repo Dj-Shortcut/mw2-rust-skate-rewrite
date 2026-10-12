@@ -255,6 +255,285 @@ internal static class SkateTrickGrindNamesScenarios
             }
     }
 
+    private static SkateTrickState RotationState(double flip, bool air = true, bool grinding = false,
+                                                  SkateGrindKind kind = SkateGrindKind.None, bool frontside = false,
+                                                  bool ridingSwitch = false, double spin = 0, double shove = 0,
+                                                  double body = 0, double seconds = 0, long combo = 100,
+                                                  int count = 2, long total = 500)
+    {
+        foreach (var ctor in typeof(SkateTrickState).GetConstructors(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
+            if (ctor.GetParameters().Length == 22)
+                return (SkateTrickState)ctor.Invoke(new object[] { spin, flip, shove, seconds, 0.0, air, grinding,
+                    SkateGrabKind.None, ridingSwitch, combo, total, count, 0.0, false, false,
+                    air ? SkatePopKind.Ollie : SkatePopKind.None, false, kind, frontside, air && ridingSwitch, false, body });
+        throw new InvalidOperationException("existing body-aware state constructor unavailable");
+    }
+
+    private static SkateTrickInput RotatingInput(double flip = 0, bool air = true, bool grinding = false,
+                                                 SkateGrindKind kind = SkateGrindKind.None, bool frontside = false,
+                                                 double spin = 0, double shove = 0, double body = 0, double impact = 0)
+    { return new SkateTrickInput(spin, flip, shove, SkateGrabKind.None, air, grinding, impact, false, false, 6,
+        air ? SkatePopKind.Ollie : SkatePopKind.None, kind, frontside, false, body); }
+
+    private static SkateTrickResult Catch(SkateTrickState air, bool frontside = false)
+    {
+        var caught = Step(air, Input(SkateGrindKind.Darkslide, frontside, true));
+        Check(caught.Events == SkateTrickEvents.Landed && caught.TrickName == ExpectedName(18, frontside) && caught.Points == 0,
+            "half-flip touchdown catches directional darkslide without an air-trick award");
+        Check(object.ReferenceEquals(caught.TrickName, SkateTricks.GrindName(SkateGrindKind.Darkslide, frontside)), "catch reuses cached directional name");
+        Check(caught.State.DarkslideCaught && !caught.State.Airborne && caught.State.Grinding &&
+            caught.State.GrindKind == SkateGrindKind.Darkslide && caught.State.PopKind == SkatePopKind.None,
+            "caught marker derives from supported darkslide half-turn state");
+        Check(caught.State.Flip == (air.Flip < 0 ? -180 : 180) && caught.BoardFlip == caught.State.Flip,
+            "catch snaps and retains signed half flip");
+        Check(caught.State.ComboBasePoints == air.ComboBasePoints && caught.State.ComboCount == air.ComboCount &&
+            caught.TotalPoints == air.TotalPoints && caught.BankedPoints == 0, "catch neither changes nor banks the existing combo");
+        return caught;
+    }
+
+    private static void DarkslideCatchBoundariesAndHolding()
+    {
+        foreach (double flip in new[] { -205.0, -180, -155, 155, 180, 205 })
+            foreach (bool frontside in new[] { false, true })
+            {
+                var caught = Catch(RotationState(flip), frontside);
+                var state = caught.State;
+                for (int i = 0; i < 32; i++)
+                {
+                    var held = Step(state, Input(SkateGrindKind.Darkslide, frontside, true));
+                    Check(held.State.DarkslideCaught && held.State.Flip == caught.State.Flip && held.BoardFlip == caught.BoardFlip &&
+                        held.Events == SkateTrickEvents.None && held.Points == 0, "holding retains half flip without duplicate landing or award");
+                    Check(held.State.GrindSeconds == (i + 2) / 32.0 && held.State.ComboCount == 2 &&
+                        held.State.ComboBasePoints == 100 && held.TotalPoints == 500, "caught darkslide accumulates ordinary grind duration only");
+                    state = held.State;
+                }
+                var heldAxis = Step(state, RotatingInput(flip: flip < 0 ? -1 : 1, air: false, grinding: true,
+                    kind: SkateGrindKind.Darkslide, frontside: frontside), 0.05);
+                Check(heldAxis.State.DarkslideCaught && heldAxis.BoardFlip == caught.BoardFlip && heldAxis.Points == 0 &&
+                    heldAxis.Events == SkateTrickEvents.None, "held half turn does not integrate an aerial flip axis on the surface");
+            }
+        foreach (double flip in new[] { -205.0001, -154.9999, 154.9999, 205.0001 })
+        {
+            var failed = Step(RotationState(flip), Input(SkateGrindKind.Darkslide, false, true));
+            Check(failed.Events == SkateTrickEvents.Bailed && failed.Points == 0 && !failed.State.Grinding &&
+                !failed.State.DarkslideCaught && failed.State.ComboCount == 0 && failed.TotalPoints == 500,
+                "outside inclusive half-catch tolerance bails");
+        }
+        foreach (double flip in new[] { -385.0, -360, -335, -25, 0, 25, 335, 360, 385 })
+        {
+            var normal = Step(RotationState(flip), Input(SkateGrindKind.Darkslide, true, true));
+            bool wholeFlip = Math.Abs(flip) > 25;
+            string expected = !wholeFlip ? "Ollie" : flip > 0 ? "Kickflip" : "Heelflip";
+            Check(normal.Events == SkateTrickEvents.Landed && normal.TrickName == expected &&
+                normal.Points == (wholeFlip ? 150 : 50) && normal.State.Flip == 0 && !normal.State.DarkslideCaught &&
+                normal.State.ComboCount == 3, "near-zero/full-turn touchdown retains ordinary landing into an uncaught grind");
+        }
+        foreach (var kind in new[] { SkateGrindKind.None, SkateGrindKind.FiftyFifty, SkateGrindKind.Boardslide })
+            foreach (double flip in new[] { -180.0, 180 })
+            {
+                var failed = Step(RotationState(flip), Input(kind, false, kind != SkateGrindKind.None));
+                Check(failed.Events == SkateTrickEvents.Bailed && failed.Points == 0 && !failed.State.DarkslideCaught,
+                    "ordinary ground/other grind cannot catch a half-flipped board");
+            }
+    }
+
+    private static void DarkslideExitCompletionAndUnwind()
+    {
+        foreach (int sign in new[] { -1, 1 })
+            foreach (bool ridingSwitch in new[] { false, true })
+            {
+                var caught = Catch(RotationState(sign * 180, ridingSwitch: ridingSwitch));
+                var state = caught.State;
+                for (int i = 0; i < 31; i++) state = Step(state, Input(SkateGrindKind.Darkslide, false, true)).State;
+                var popped = Step(state, RotatingInput());
+                Check(popped.Events == SkateTrickEvents.GrindEnded && popped.TrickName == "Backside Darkslide" &&
+                    popped.Points == 190 && popped.State.ComboBasePoints == 290 && popped.State.ComboCount == 3,
+                    "one-second caught grind awards its duration once on popout");
+                Check(popped.State.Airborne && !popped.State.Grinding && !popped.State.DarkslideCaught &&
+                    popped.State.Flip == sign * 180 && popped.BoardFlip == sign * 180, "popout inherits half flip instead of a full upright turn");
+                Check(object.ReferenceEquals(popped.TrickName, SkateTricks.GrindName(SkateGrindKind.Darkslide, false)),
+                    "caught grind completion keeps cached directional name");
+                state = popped.State;
+                for (int i = 0; i < 5; i++)
+                {
+                    var rotated = Step(state, RotatingInput(sign), 0.05);
+                    Check(rotated.Events == SkateTrickEvents.None && rotated.Points == 0 && rotated.State.ComboCount == 3,
+                        "exit rotation never re-awards the grind");
+                    Check(rotated.BoardFlip == sign * (180 + (i + 1) * 36), "actual exit axis drives the remaining half turn");
+                    state = rotated.State;
+                }
+                var landed = Step(state, RotatingInput(air: false));
+                string expected = sign > 0 ? "Kickflip" : "Heelflip";
+                if (ridingSwitch) expected = "Switch " + expected;
+                long airPoints = ridingSwitch ? 175 : 150;
+                Check(landed.Events == SkateTrickEvents.Landed && landed.TrickName == expected && landed.Points == airPoints &&
+                    landed.State.ComboBasePoints == 290 + airPoints && landed.State.ComboCount == 4 && landed.TotalPoints == 500,
+                    "completed exit lands the actual signed flip with ordinary score");
+                Check(landed.State.Flip == 0 && !landed.State.DarkslideCaught && landed.Switch == ridingSwitch,
+                    "upright completion clears caught state and preserves stance");
+                state = landed.State;
+                for (int i = 0; i < 47; i++) state = Step(state, Input(SkateGrindKind.None, false, false)).State;
+                var banked = Step(state, Input(SkateGrindKind.None, false, false));
+                Check(banked.Events == SkateTrickEvents.ComboBanked && banked.BankedPoints == (290 + airPoints) * 4 &&
+                    banked.TotalPoints == 500 + banked.BankedPoints, "exit combo banks existing total plus real grind/flip points");
+
+                caught = Catch(RotationState(sign * 180, ridingSwitch: ridingSwitch));
+                state = Step(caught.State, RotatingInput()).State;
+                for (int i = 0; i < 5; i++) state = Step(state, RotatingInput(-sign), 0.05).State;
+                var unwound = Step(state, RotatingInput(air: false));
+                Check(unwound.Events == SkateTrickEvents.Landed && unwound.TrickName == (ridingSwitch ? "Switch Ollie" : "Ollie") &&
+                    unwound.Points == (ridingSwitch ? 75 : 50) && unwound.BoardFlip == 0,
+                    "reverse half unwind lands Ollie instead of inventing a complete flip");
+                var missed = Step(Step(caught.State, RotatingInput()).State, RotatingInput(air: false));
+                Check(missed.Events == SkateTrickEvents.Bailed && missed.Points == 0 && missed.State.ComboCount == 0 &&
+                    missed.State.ComboBasePoints == 0 && missed.TotalPoints == 500 && !missed.State.DarkslideCaught,
+                    "zero-axis popout cannot auto-catch the uncompleted half turn");
+                var firstAxis = Step(caught.State, RotatingInput(sign), 0.05);
+                Check(firstAxis.Events == SkateTrickEvents.GrindEnded && firstAxis.BoardFlip == sign * 216,
+                    "popout frame integrates its actual axis after inheriting the caught half turn");
+                state = firstAxis.State;
+                for (int i = 0; i < 4; i++) state = Step(state, RotatingInput(sign), 0.05).State;
+                var firstAxisLanded = Step(state, RotatingInput(air: false));
+                Check(firstAxisLanded.Events == SkateTrickEvents.Landed && firstAxisLanded.TrickName == expected &&
+                    firstAxisLanded.Points == airPoints, "flip begun on popout needs only the remaining actual rotation");
+                var legacy = State(SkateGrindKind.Darkslide, ridingSwitch: ridingSwitch);
+                Check(!legacy.DarkslideCaught && Step(Step(legacy, RotatingInput()).State, RotatingInput(air: false)).TrickName ==
+                    (ridingSwitch ? "Switch Ollie" : "Ollie"), "uncaught zero-flip darkslide pop remains ordinary Ollie");
+            }
+    }
+
+    private static void DarkslideDropBailAndGuards()
+    {
+        var caught = Catch(RotationState(180), true).State;
+        foreach (var input in new[] { Input(SkateGrindKind.None, false, false), Input(SkateGrindKind.FiftyFifty, false, true),
+                                     Input(SkateGrindKind.Bluntslide, false, true) })
+        {
+            var bailed = Step(caught, input);
+            Check(bailed.Events == SkateTrickEvents.Bailed && bailed.TrickName == "Bail" && bailed.Points == 0 && bailed.BankedPoints == 0 &&
+                bailed.State.ComboBasePoints == 0 && bailed.State.ComboCount == 0 && bailed.TotalPoints == 500 &&
+                bailed.State.GrindKind == SkateGrindKind.None && !bailed.State.Grinding && !bailed.State.DarkslideCaught,
+                "dropping/changing a caught darkslide bails before any grind completion award");
+            Catch(RotationState(-180, total: bailed.TotalPoints, combo: 0, count: 0));
+        }
+        foreach (double bad in new[] { double.NaN, double.PositiveInfinity, -1.0001, 1.0001 })
+        {
+            Reject(caught, RotatingInput(flip: bad, air: false));
+            Reject(caught, RotatingInput(spin: bad, air: false));
+            Reject(caught, RotatingInput(shove: bad, air: false));
+            Reject(caught, RotatingInput(body: bad, air: false));
+        }
+        foreach (double bad in new[] { 0, -1, double.NaN, double.PositiveInfinity, 0.0500001 })
+            Reject(caught, Input(SkateGrindKind.None, false, false), bad);
+        Reject(caught, RotatingInput(air: true, grinding: true, kind: SkateGrindKind.Darkslide));
+        foreach (double bad in new[] { -0.0001, double.NaN, double.PositiveInfinity, 100000.0001 })
+            Reject(caught, RotatingInput(air: false, impact: bad));
+        foreach (var state in new[] { RotationState(180, air: false),
+            RotationState(180, air: false, grinding: true, kind: SkateGrindKind.Boardslide),
+            RotationState(179, air: false, grinding: true, kind: SkateGrindKind.Darkslide),
+            RotationState(-181, air: false, grinding: true, kind: SkateGrindKind.Darkslide),
+            RotationState(180, air: false, grinding: true, kind: SkateGrindKind.Darkslide, body: 1) })
+            Reject(state, RotatingInput());
+        Check(!RotationState(180).DarkslideCaught && !RotationState(180, air: false).DarkslideCaught &&
+            !RotationState(180, air: false, grinding: true, kind: SkateGrindKind.Boardslide).DarkslideCaught,
+            "computed marker is limited to non-airborne Darkslide grind state");
+        foreach (double edge in new[] { -25.0, 25 })
+        {
+            var landed = Catch(RotationState(180, spin: edge, shove: edge, body: edge));
+            Check(landed.BoardSpin == 0 && landed.BoardShove == 0 && landed.BodySpin == 0 && !landed.Switch,
+                "inclusive spin/shove/body tolerance snaps to upright stance during catch");
+        }
+        foreach (var air in new[] { RotationState(180, spin: -25.0001), RotationState(180, spin: 25.0001),
+            RotationState(180, shove: -25.0001), RotationState(180, shove: 25.0001),
+            RotationState(180, body: -25.0001), RotationState(180, body: 25.0001), RotationState(180, body: 90) })
+        {
+            var failed = Step(air, Input(SkateGrindKind.Darkslide, false, true));
+            Check(failed.Events == SkateTrickEvents.Bailed && failed.Points == 0 && !failed.State.DarkslideCaught,
+                "darkslide catch still enforces spin/shove/body orientation");
+        }
+        var impact = Step(RotationState(180), RotatingInput(air: false, grinding: true, kind: SkateGrindKind.Darkslide,
+            impact: SkateMotion.MaximumLandingFallSpeed + 1));
+        Check(impact.Events == SkateTrickEvents.Bailed && impact.Points == 0 && !impact.State.DarkslideCaught, "darkslide catch keeps full impact bail");
+        foreach (bool initialSwitch in new[] { false, true })
+            foreach (double spin in new[] { 0.0, 180 })
+                foreach (double body in new[] { 0.0, 180 })
+                {
+                    var landed = Catch(RotationState(-180, ridingSwitch: initialSwitch, spin: spin, shove: 180, body: body));
+                    Check(landed.Switch == (initialSwitch ^ ((spin == 180) != (body == 180))) && landed.BoardSpin == spin &&
+                        landed.BodySpin == body && landed.BoardShove == 180, "half catch retains ordinary board/body stance parity and snapped visuals");
+                }
+    }
+
+    private static void DarkslideExplicitStanceFeed()
+    {
+        foreach (bool ridingSwitch in new[] { false, true })
+            foreach (bool tailLeads in new[] { false, true })
+                foreach (var popKind in new[] { SkatePopKind.Ollie, SkatePopKind.Nollie })
+                    foreach (int sign in new[] { -1, 1 })
+                    {
+                        var state = new SkateTrickState(ridingSwitch);
+                        var air = new SkateTrickInput(0, sign, 0, SkateGrabKind.None, true, false, 0,
+                            false, false, 6, popKind, SkateGrindKind.None, false, false, 0, tailLeads);
+                        for (int i = 0; i < 5; i++) state = Step(state, air, 0.05).State;
+                        var contact = new SkateTrickInput(0, 0, 0, SkateGrabKind.None, false, true, 0,
+                            false, false, 6, SkatePopKind.None, SkateGrindKind.Darkslide, true, false, 0, !tailLeads);
+                        var caught = Step(state, contact);
+                        Check(caught.State.DarkslideCaught && caught.TrickName == "Frontside Darkslide" &&
+                            caught.Points == 0 && caught.State.ComboCount == 0 && !caught.State.PopTailLeads,
+                            "explicit client feed catches half flip and clears airborne naming metadata");
+                        var popped = Step(caught.State, air, 0.05);
+                        Check(popped.State.Airborne && popped.State.Flip == sign * 216 &&
+                            popped.State.PopTailLeads == tailLeads && popped.State.PopKind == popKind &&
+                            popped.Events == SkateTrickEvents.GrindEnded,
+                            "explicit exit recaptures pop end and physical tail direction before carrying half");
+                        state = popped.State;
+                        for (int i = 0; i < 4; i++) state = Step(state, air, 0.05).State;
+                        var ground = new SkateTrickInput(0, 0, 0, SkateGrabKind.None, false, false, 0,
+                            false, false, 6, SkatePopKind.None, SkateGrindKind.None, false, false, 0, !tailLeads);
+                        var landed = Step(state, ground);
+                        string prefix = ridingSwitch ? (tailLeads ? "Fakie " : "Switch ") : "";
+                        if (popKind == SkatePopKind.Nollie) prefix += "Nollie ";
+                        Check(landed.Events == SkateTrickEvents.Landed &&
+                            landed.TrickName == prefix + (sign > 0 ? "Kickflip" : "Heelflip") &&
+                            landed.Points == (ridingSwitch ? 175 : 150) && landed.Switch == ridingSwitch &&
+                            landed.State.Flip == 0 && !landed.State.DarkslideCaught && !landed.State.PopTailLeads,
+                            "completed explicit Darkslide exit keeps takeoff Fakie/Switch and literal pop name");
+                    }
+    }
+
+    private static void DarkslideCatchAllocation()
+    {
+        foreach (int sign in new[] { -1, 1 })
+            foreach (bool frontside in new[] { false, true })
+            {
+                var air = RotationState(sign * 180); var input = Input(SkateGrindKind.Darkslide, frontside, true);
+                var caught = Catch(air, frontside); var expected = caught.TrickName;
+                var pop = RotatingInput(sign); var ground = RotatingInput(air: false);
+                var completed = RotationState(sign * 360);
+                var flipName = Step(completed, ground).TrickName;
+                Check(flipName == (sign > 0 ? "Kickflip" : "Heelflip"), "cached valid exit has actual signed flip name");
+                SkateTrickResult result; string error;
+                for (int i = 0; i < 200; i++)
+                {
+                    Check(SkateTricks.TryStep(air, input, 0.03125, out result, out error), "warm actual darkslide catch");
+                    Check(SkateTricks.TryStep(caught.State, pop, 0.05, out result, out error), "warm caught grind popout");
+                    Check(SkateTricks.TryStep(completed, ground, 0.03125, out result, out error), "warm valid exit landing");
+                }
+                long before = GC.GetAllocatedBytesForCurrentThread(); bool success = true;
+                for (int i = 0; i < 20000; i++)
+                {
+                    success &= SkateTricks.TryStep(air, input, 0.03125, out result, out error) && result.State.DarkslideCaught &&
+                        result.Points == 0 && object.ReferenceEquals(expected, result.TrickName);
+                    success &= SkateTricks.TryStep(caught.State, pop, 0.05, out result, out error) &&
+                        result.Events == SkateTrickEvents.GrindEnded && result.BoardFlip == sign * 216 &&
+                        object.ReferenceEquals(expected, result.TrickName);
+                    success &= SkateTricks.TryStep(completed, ground, 0.03125, out result, out error) &&
+                        result.Events == SkateTrickEvents.Landed && result.Points == 150 && object.ReferenceEquals(flipName, result.TrickName);
+                }
+                Check(success && GC.GetAllocatedBytesForCurrentThread() - before == 0,
+                    "cached signed catch, popout and valid exit landing allocate zero bytes after warmup");
+            }
+    }
+
     public static int Main(string[] args)
     {
         try
@@ -268,6 +547,7 @@ internal static class SkateTrickGrindNamesScenarios
             if (args.Length == 1) Check(string.Equals(args[0], digest, StringComparison.OrdinalIgnoreCase), "actual library hash pinned");
             VocabularyAndCompatibility(); EnterUpdateEndAndScoring(); SwitchFakieCombosAndBail();
             DurationAndScoreBoundaries(); InvalidKindsAndStates(); CachedNamesAndAllocation();
+            DarkslideCatchBoundariesAndHolding(); DarkslideExitCompletionAndUnwind(); DarkslideDropBailAndGuards(); DarkslideExplicitStanceFeed(); DarkslideCatchAllocation();
             Console.WriteLine("skate_trick_grind_names: " + checks + " checks passed");
             return 0;
         }
