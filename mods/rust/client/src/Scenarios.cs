@@ -101,7 +101,7 @@ public static class Scenarios
     // The server's own park pieces, ridden one after another: to a point in front of each, then
     // across it along its way, at a speed that should carry the board up and over; what came of it
     // is logged per piece. The pieces are those SkateParks found near the player.
-    public const float TourRun = 8f, TourReach = 1.5f, TourApproach = 25f, TourAcross = 7f, TourRest = 2f;
+    public const float TourRun = 8f, TourOut = 8f, TourReach = 0.7f, TourApproach = 25f, TourAcross = 5f, TourRest = 2f;
     private static int tourIndex = -1, tourStage, tourHeld, tourResets, tourBails, tourGrinds;
     private static float tourAt, tourStartY, tourRise, tourAir, tourTop;
     private static bool tourPopped;
@@ -132,9 +132,24 @@ public static class Scenarios
         // Beside a ledge, not on it: the board comes down on its edge from the side a little.
         if (IsLedge(kind)) start += SkateRide.Dir(heading - 90f) * 0.6f;
         var pos = SkateRide.On ? SkateRide.Position : SkateRig.LocalT.position;
-        var flat = start - pos; flat.y = 0f;
+        // First to a point further out on the piece's own line, then in along that line to the start:
+        // seen live, a straight way to the start went through the pieces and stuck under one.
+        var outer = start - along * TourOut;
+        var flat = (tourStage == 0 ? outer : start) - pos; flat.y = 0f;
         var stage = game - tourAt;
         if (tourStage == 0)
+        {
+            SkateKeys.Brake = false; SkateKeys.Jump = false;
+            SkateKeys.LookYaw = (float)(Math.Atan2(flat.x, flat.z) * 180.0 / Math.PI);
+            SkateKeys.Push = SkateRide.Speed < (flat.magnitude > 4f ? 5f : 2f);
+            if (flat.magnitude < TourReach * 2f || stage > TourApproach)
+            {
+                Say("tour " + kind + " #" + tourIndex + ": " + (flat.magnitude < TourReach * 2f ? "on its line" : "its line not reached, " + flat.magnitude.ToString("F1") + " m off") + " after " + stage.ToString("F1") + " s, at " + Out.V1(pos));
+                tourStage = 3; tourAt = game;
+            }
+            return;
+        }
+        if (tourStage == 3)
         {
             SkateKeys.Brake = false; SkateKeys.Jump = false;
             SkateKeys.LookYaw = (float)(Math.Atan2(flat.x, flat.z) * 180.0 / Math.PI);
@@ -148,7 +163,11 @@ public static class Scenarios
         }
         if (tourStage == 1)
         {
-            SkateKeys.LookYaw = heading;
+            // Back onto the piece's centre line when off it, a few degrees per 10 cm.
+            var side = SkateRide.Dir(heading + 90f);
+            var centre = IsLedge(kind) ? origin + SkateRide.Dir(heading - 90f) * 0.6f : origin;
+            var off = Vector3.Dot(pos - centre, side);
+            SkateKeys.LookYaw = heading - Math.Max(-20f, Math.Min(20f, off * 30f));
             SkateKeys.Push = SkateRide.Speed < TourSpeed(kind);
             tourRise = Math.Max(tourRise, pos.y - tourStartY);
             tourTop = Math.Max(tourTop, SkateRide.Speed);
