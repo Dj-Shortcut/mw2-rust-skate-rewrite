@@ -15,6 +15,7 @@ public static class SkateSfx
     private static AudioClip push, ollie, landing, bail;
     private static int pops, lands, bails, pushes;
     private static float rollVolume, grindVolume, slideVolume;
+    public static float SlideVolumeForTest { get { return slideVolume; } }
     private static bool failed, deaf, ranked = true;
     private static Il2CppStructArray<float> block;
     public static float RollHeard, GrindHeard, ShotsHeard;
@@ -160,11 +161,14 @@ public static class SkateSfx
             var on = SkateRide.On;
             var onEdge = on && SkateRide.Mode == RideMode.Grind && speed > 0.1f;
             var deck = SkateRide.GrindKind == SkateGrindKind.Boardslide || SkateRide.GrindKind == SkateGrindKind.Lipslide ||
-                SkateRide.GrindKind == SkateGrindKind.Noseslide || SkateRide.GrindKind == SkateGrindKind.Tailslide;
+                SkateRide.GrindKind == SkateGrindKind.Noseslide || SkateRide.GrindKind == SkateGrindKind.Tailslide ||
+                SkateRide.GrindKind == SkateGrindKind.Bluntslide || SkateRide.GrindKind == SkateGrindKind.Nosebluntslide || SkateRide.GrindKind == SkateGrindKind.Darkslide;
             var wantRoll = on && SkateRide.Mode == RideMode.Ground ? SkateRide.Clamp(speed / 9f, 0f, 1f) * 0.55f : 0f;
             var edgeVolume = 0.3f + ratio * 0.3f;
             var wantGrind = onEdge && !deck ? edgeVolume : 0f;
-            var wantSlide = onEdge && deck ? edgeVolume : 0f;
+            // A powerslide on the ground scrubs with the deck's own slide sound, louder the faster.
+            var sliding = on && SkateRide.Mode == RideMode.Ground && SkateRide.Powerslide > 0.3f && speed > 0.8f;
+            var wantSlide = onEdge && deck ? edgeVolume : sliding ? (0.25f + ratio * 0.35f) * SkateRide.Powerslide : 0f;
             var k = 1f - (float)Math.Exp(-12f * SkateRide.Clamp(frameSeconds, 0f, 0.1f));
             rollVolume += (wantRoll - rollVolume) * k;
             grindVolume += (wantGrind - grindVolume) * k; slideVolume += (wantSlide - slideVolume) * k;

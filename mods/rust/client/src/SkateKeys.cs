@@ -24,6 +24,11 @@ public static class SkateKeys
     // edge is a handplant: LB frontside, RB backside. On the keyboard Q (no comply) or Z (boneless)
     // held with Space.
     public const float NoComplyTap = 0.35f;
+    // How long the left stick must stay on a side, and still, before it is a turn: a stick that
+    // travels round the rim faster than RimMoving (degrees a second) is circling for a body varial,
+    // not held to a side, however slowly it goes round.
+    public const float SpinHold = 0.06f, RimMoving = 180f;
+    private static int rawSide; private static float sideSince = -99f, rimAngle, rimAt = -99f, movedAt = -99f; private static bool onRim; private static int bodySeen;
     public static bool Mongo, HandplantFront, HandplantBack;
     private static float aTappedAt = -99f;
     // What a physics step has not seen yet. A pop comes with what the board does in it: whole flips
@@ -32,6 +37,9 @@ public static class SkateKeys
     public static bool JumpPressed, SpinPressed;
     public static SkatePopKind PopKind = SkatePopKind.Ollie;
     public static int PopFlip, LateFlip;
+    // Asked for in the air: degrees of shove under the feet, and degrees of body varial (the rider
+    // turns, the board does not).
+    public static float LateShove, BodyVarial;
     public static float PopShove, PopScale = 1f;
     public static bool JumpTap, ToggleTap, CameraTap, CrouchTap;
     public static float LookYaw;
@@ -41,7 +49,7 @@ public static class SkateKeys
     // Held in the air: the rider's turn, +1 to his right as the stick or the keys say, and the grab.
     public static float Spin;
     public static SkateGrabKind Grab;
-    private static bool wasPush, wasBrake, wasLeft, wasRight, wasJump, wasCrouch, wasToggle, wasCamera;
+    private static bool wasPush, wasBrake, wasLeft, wasRight, wasJump, wasCrouch, wasToggle, wasCamera, wasStance, wasBody;
     private static float wasSpin;
     private static bool popKeys = true, crouchKeys = true, cameraKey = true, manualKey = true, taps = true, cursorKnown = true, failed;
 
@@ -67,15 +75,22 @@ public static class SkateKeys
             {
                 Push = Brake = Left = Right = Crouch = Jump = Manual = NoseManual = Charging = false; Steer = Charge = Spin = wasSpin = 0f; Grab = SkateGrabKind.None;
                 wasPush = wasBrake = wasLeft = wasRight = wasJump = wasCrouch = wasToggle = wasCamera = false; EndStep(); SkatePad.DropPops();
+                // J and X held through chat or the console are not a press when the cursor locks
+                // again: their latches follow the keys while input is suspended.
+                if (kb != null) { try { wasStance = Down(kb.jKey); wasBody = Down(kb.xKey); } catch (Exception) { wasStance = wasBody = true; } }
+                else wasStance = wasBody = true;
                 return;
             }
             SkatePieces.Keys(Down(kb.pKey), Down(kb.qKey), Down(kb.eKey), Down(kb.oKey), Down(kb.backspaceKey));
+            var stanceKey = Down(kb.jKey);
+            if (stanceKey && !wasStance) SkateRide.ToggleStance();
+            wasStance = stanceKey;
             bool push = Down(kb.wKey), brake = Down(kb.sKey), left = Down(kb.aKey), right = Down(kb.dKey);
-            bool jump = Down(kb.spaceKey), toggle = Down(kb.kKey), crouch = false, camera = false, manual = false, noComply = false, boneless = false;
+            bool jump = Down(kb.spaceKey), toggle = Down(kb.kKey), crouch = false, camera = false, manual = false, noComply = false, boneless = false, body = false;
             if (popKeys)
             {
-                try { noComply = Down(kb.qKey); boneless = Down(kb.zKey); }
-                catch (Exception e) { popKeys = false; Out.Say("INPUT no comply and boneless keys unavailable: " + e.GetType().Name + ": " + e.Message); }
+                try { noComply = Down(kb.qKey); boneless = Down(kb.zKey); body = Down(kb.xKey); }
+                catch (Exception e) { popKeys = false; Out.Say("INPUT no comply, boneless and body varial keys unavailable: " + e.GetType().Name + ": " + e.Message); }
             }
             if (crouchKeys)
             {
@@ -128,18 +143,34 @@ public static class SkateKeys
                     aTappedAt = -99f;
                 }
                 Brake = (SkatePad.Buttons & SkatePad.B) != 0 || (straight && y < -StickPush);
-                Left = x < -SpinFrom; Right = x > SpinFrom;
+                // A side counts as held after a moment of standing still there: a circle of the
+                // stick (a body varial) passes both sides without asking for a turn.
+                var side = x < -SpinFrom ? -1 : x > SpinFrom ? 1 : 0;
+                if (side != rawSide) { rawSide = side; sideSince = now; }
+                // A circle completed between two frames (the reader replays every sample) is no
+                // held side either: the body varial it made counts as the stick moving.
+                if (SkatePad.BodyVarials != bodySeen) { bodySeen = SkatePad.BodyVarials; movedAt = now; }
+                if (x * x + y * y > SpinFrom * SpinFrom)
+                {
+                    var angle = (float)(Math.Atan2(x, y) * 180.0 / Math.PI);
+                    if (onRim && now - rimAt > 0.0005f && Math.Abs(SkateRide.Delta(rimAngle, angle)) / (now - rimAt) > RimMoving) movedAt = now;
+                    rimAngle = angle; rimAt = now; onRim = true;
+                }
+                else onRim = false;
+                var held = side != 0 && now - sideSince >= SpinHold && now - movedAt >= SpinHold;
+                Left = held && side < 0; Right = held && side > 0;
                 Spin = Left ? -1f : Right ? 1f : 0f;
                 bool lt = SkatePad.LeftTrigger > SkatePad.Pulled, rt = SkatePad.RightTrigger > SkatePad.Pulled;
                 Crouch = lt || rt;
-                Grab = GrabOf(lt, rt, SkatePad.RightX, SkatePad.RightY, SkateRide.On && SkateRide.TailFirst);
+                Grab = GrabOf(lt, rt, SkatePad.RightX, SkatePad.RightY, SkateRide.Goofy != (SkateRide.On && SkateRide.TailFirst));
                 Manual = SkatePad.Manual; NoseManual = SkatePad.NoseManual; Jump = false;
                 Charging = SkatePad.Charging; Charge = SkatePad.Charge;
+                BodyVarial += SkatePad.TakeBodyVarial();
                 SkatePop pop;
                 while (SkatePad.TakePop(out pop))
                 {
                     var flips = (int)Math.Round(pop.FlipTurns);
-                    if (pop.Kind == SkatePopKind.None) LateFlip += flips;
+                    if (pop.Kind == SkatePopKind.None) { LateFlip += flips; LateShove += (float)pop.ShoveDegrees; }
                     else { JumpPressed = true; PopKind = PopWith(pop.Kind, now - aTappedAt < NoComplyTap && (SkatePad.Buttons & SkatePad.A) == 0, false); aTappedAt = -99f; PopFlip = flips; PopShove = (float)pop.ShoveDegrees; PopScale = LeastPop + (1f - LeastPop) * (float)pop.Strength; }
                 }
             }
@@ -151,6 +182,9 @@ public static class SkateKeys
                 Spin = Steer;
                 if (push && !wasPush) LateFlip++;
                 if (brake && !wasBrake) LateFlip--;
+                // X tapped in the air: a body varial, the rider's half round without the board.
+                if (body && !wasBody) BodyVarial += 180f;
+                wasBody = body;
                 Mongo = HandplantFront = HandplantBack = false;
                 if (jump && !wasJump) { JumpPressed = true; PopKind = PopWith(SkatePopKind.Ollie, noComply, boneless); PopFlip = 0; PopShove = 0f; PopScale = 1f; }
                 if (crouch && !wasCrouch) CrouchTap = true;
@@ -171,7 +205,7 @@ public static class SkateKeys
         return noComply ? SkatePopKind.NoComply : boneless ? SkatePopKind.Boneless : kind;
     }
 
-    public static void EndStep() { JumpPressed = SpinPressed = false; PopFlip = LateFlip = 0; PopShove = 0f; }
+    public static void EndStep() { JumpPressed = SpinPressed = false; PopFlip = LateFlip = 0; PopShove = LateShove = BodyVarial = 0f; }
 
     // Which grab the triggers and the right stick ask for. The triggers alone give the three plain
     // grabs; with the stick held up, down or to a side they give the others. The stick's sides are

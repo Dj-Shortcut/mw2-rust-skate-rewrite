@@ -10,6 +10,11 @@ temporary cleanup after real file-operation failures, including refusal to
 read a root-only prior source through the unprivileged worker. It requires container
 root and refuses an existing Rust installation or `rust` identity.
 
+The reviewed delivery pins ShortcutSkate **0.3.7**; the fixture supplies matching new
+load records and ignores an older 0.3.6 record. Its prior-source fixture and exact
+backup/rollback checks remain unchanged. It executes the same checksum-verified
+one-liner documented in [LINUX.md](../../../mods/rust/server/LINUX.md).
+
 The CI job **Skate plugin source installation** supplies Ubuntu 24.04 and GNU
 tools. Inside an equivalent disposable container with Bash, curl/CA certificates,
 coreutils, passwd/util-linux and Python 3:
@@ -30,7 +35,28 @@ a real kernel-lease-blocked backup,
 including caller status, worker exit before lease release and unchanged source
 afterward. Power loss/SIGKILL are not tested.
 
+## Server movement policy
+
+The owner approved `skate_server_movement_policy` by name on 12 October 2026. It executes
+the actual plugin's pure helpers: every segment's coordinate/path validation, total XZ
+distance, cap/tick bounds, deterministic accumulation, atomic refusals, all fresh filter
+guards and player eligibility. Existing compiled Bounds/Rearm helpers reproduce the
+two-second airtime refusal and unsupported/repeated-reset starvation; the fresh policy
+accepts the same in-cap paths independently of that diagnostic history.
+
+```sh
+dotnet build mods/rust/plugins/ShortcutSkate.csproj -p:RustManagedPath=/absolute/path/to/managed
+dotnet run --project crates/approved_tests/skate/SkateServerMovementPolicyScenarios.csproj -p:ActualPluginPath=/absolute/path/to/ShortcutSkate.dll -- EXPECTED_SHA256
+```
+
+The optional argument pins the actual DLL hash; its path/hash are always printed.
+Warmed helper loops measure allocation on the executing .NET runtime. Guard fixtures
+exercise production boolean policy, rather than constructing fake native players.
+No Rust/Oxide process, client, Shadow or live server starts. Real cache data, authority
+flags, Harmony invocation, native noclip and correction-free gameplay remain unverified.
+
 ## Recorded gestures
+
 
 The three scenarios requested by the owner through [issue #337](https://github.com/Dj-Shortcut/mw2-rust-rust-rewrite/issues/337#issuecomment-6098063930) replay the exact recorded stick positions and timestamps. Each position is held until the next timestamp; long holds are subdivided at the module's maximum step without interpolating new positions.
 
@@ -48,6 +74,30 @@ dotnet run --project crates/approved_tests/skate/SkateGestureScenarios.csproj
 An alternate built DLL can be supplied with `-p:SkateLibraryPath=/absolute/path/to/SkateMotion.dll`. Outputs stay in ignored `context/`.
 
 These scenarios check gesture recognition and its compositional/legacy outputs. They do not start the Rust client or server and do not establish controller feel, animation or a landed native trick.
+
+## Late flips and body varials
+
+The owner approved `skate_late_flips_and_body_varials` by name on 12 October 2026.
+The actual-DLL scenario checks second airborne held flips/shoves without another pop,
+existing side AirFlick/old constructors, complete left-stick circles and incomplete,
+interrupted, reversed, stale or discontinuous paths. It covers mirrored input, one body
+event per flight, support rearming, body/deck angle independence, catching/stance/score,
+cached names, bail/reset and atomic invalid input/state refusals.
+
+The same approved scenario checks explicit takeoff `tailLeads` naming across Ollie/Nollie,
+regular/Fakie/Switch, signed snapped rotations, late/body/grab modifiers and plants.
+It verifies takeoff latching, later flag changes, old constructor behavior, resets,
+atomic invalid-state refusals and cached-name allocation. Input directions are normalized;
+this is not a native regular/goofy controller or physical-pop/flip presentation test.
+
+```sh
+dotnet run --project crates/approved_tests/skate/SkateLateFlipsBodyVarialsScenarios.csproj -p:SkateLibraryPath=/absolute/path/to/SkateMotion.dll -- EXPECTED_SHA256
+```
+
+The optional argument pins the loaded DLL hash; path/hash are always printed. Run the
+three existing recorded gesture scenarios separately. No Rust client/server or Shadow
+starts; native input bindings, animation/contact, IL2CPP cost and controller feel remain
+unverified. See the [API](../../../mods/rust/shared/README.md#late-flips-and-rider-only-body-varials).
 
 ## Ride physics
 
@@ -123,6 +173,12 @@ world translation/rotation, isolated reset boundaries, variable dt, inverted han
 all 14 grab targets across regular/goofy and switch. Malformed rig/pose/state/history and dt
 refusals are atomic; warmed success/refusal loops check allocation on the executing runtime.
 
+The same scenario covers all eight `SkateRiderMotionOptions` combinations: suppressed
+pelvis spring, exact left/right/both hand targets before IK, retained free-hand/shoulder
+lag, warmed control toggles/history reset, near-reach fallback, transformed/reset poses
+and every grab/stance/switch/inverted plant. The original/default overloads must give
+identical pose/history bits. Each option has warmed success/refusal allocation checks.
+
 Build the genuine-reference shared DLL first, then run the approved scenario:
 
 ```sh
@@ -131,12 +187,36 @@ dotnet run --project crates/approved_tests/skate/SkateRiderMotionScenarios.cspro
 ```
 
 The optional single argument verifies the loaded DLL's SHA-256; its path/hash are always printed.
-Outputs stay in ignored `context/`. The integrated genuine net48 DLL passes 180,614 checks on
+Outputs stay in ignored `context/`. The integrated genuine net48 DLL passes 492,774 checks on
 Mac net8, with zero measured bytes in 20,000-call warmed success/refusal loops. These are
 secondary-motion geometry checks. The runner starts no Rust client/server or Shadow PC and
 does not establish hand/surface contact, native rendering, adapter integration or IL2CPP cost.
 See the [API and integration limits](../../../mods/rust/shared/README.md#rider-secondary-motion-api).
 
+## Grind vocabulary and scoring
+
+The owner approved `skate_trick_grind_names` by name on 12 October 2026. It exercises
+the actual shared DLL's append-only grind values, rates, Frontside/Backside names,
+cached references, entry/update/exit scoring, switch/fakie context, bail and banking,
+duration/rounding limits and atomic invalid-state refusal. Unknown input kinds retain
+their existing sanitization behavior. Warmed calls measure allocation on the executing runtime.
+
+The same approved scenario covers Darkslide catches within 25 degrees of +/-180, retained
+inversion, first-frame pop-out integration and actual completion/unwind of the other half.
+It checks zero air-award at catch, ordinary duration/landing/banking, ground-drop/kind-change
+bail without a restored combo, all existing orientation/impact guards, legacy zero-flip
+Darkslides, explicit Fakie/Switch/Ollie/Nollie feeds, atomic malformed histories and warmed
+catch/exit/landing allocations.
+
+```sh
+dotnet run --project crates/approved_tests/skate/SkateTrickGrindNamesScenarios.csproj -p:SkateLibraryPath=/absolute/path/to/SkateMotion.dll -- EXPECTED_SHA256
+```
+
+The optional argument verifies the loaded DLL hash; its path/hash are always printed.
+No client/server or Shadow PC starts. Native contact, entry recognition, poses and IL2CPP
+cost remain unverified. See the [grind contract](../../../mods/rust/shared/README.md#grind-vocabulary).
+
 ## Direct park placement requests
+
 
 The existing `skate_park_anchor_yaw_and_snap` also exercises the server's direct-placement request helper: aim versus explicit anchors, invariant numeric parsing, finite coordinate/yaw bounds, yaw normalization and atomic refusal outputs across cultures. It invokes the actual public helper by its exact reflected signature and requires that helper in `ShortcutSkate.dll`. The shared `SkateMotion.dll` contains geometry helpers only, so its layout run omits the server-request extension. These scalar checks do not execute native aim rays, building hooks, placement or gameplay.

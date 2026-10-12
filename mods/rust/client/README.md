@@ -57,19 +57,20 @@ game; see [The controller](#the-controller).
 | Control | On the ground | In the air |
 | --- | --- | --- |
 | `Y` | Get on; again gets off. | |
-| Left stick | Steer, by how far it is pushed. Far and straight forward or back: push or brake. | Held more than half way to a side: the rider turns that way for as long as it is held. |
-| `A` | Push with the back foot. Rolling tail first, the push drives on backward (a fakie push). | |
+| Left stick | Steer, by how far it is pushed. Far and straight forward or back: push or brake. | Held still more than half way to a side (for at least 0.06 s): the rider turns that way for as long as it is held. One full circle round the rim, after a pop, within a second: a body varial, the rider turns a half round and the board does not; the landing is switch. A stick travelling round the rim (faster than 180° a second) is never read as a held side, so the circle asks for no turn however easy its pace. |
+| `A` | Push with the back foot (pushing takes the board to 11 m/s; slopes take it on to 25 m/s, 90 km/h, over the ground, the limit the server plugin 0.3.7 is configured for): it comes down about 0.19 m beside the board on the toe side, the leg nearly straight, and sweeps back while the body dips a little; the foot stays where it came down while the board rolls on. Rolling tail first, the push drives on backward (a fakie push). | |
 | `X` | Push with the front foot (mongo). | |
 | `A` tapped while the right stick is held back, then the flick | No comply: the front foot steps down and the board pops off the back foot, a little lower than an ollie ("No Comply 180" with the left stick). | |
 | `LT` + `A`, `LT` + `X` or `RT` + `X`, `RT` + `A` | Foot plants: boneless, fastplant, beanplant (the front foot planted for a moment, a little higher than an ollie). | |
-| `B` | Brake | |
-| Right stick | The board: see below. Kept part of the way back or forward for 0.2 s: manual or nose manual. | Flicked to a side or a forward diagonal: a flip. Pulled back: set for the pop after the landing. |
+| `B` | Brake; with the left stick held to a side at more than walking pace, a powerslide: the board swings across the way of travel and scrubs speed until one of them is let go | |
+| Right stick | The board: see below. Kept part of the way back or forward for 0.2 s: manual or nose manual. | Flicked to a side or a forward diagonal: a flip; after a pop, a whole composition (held back then flicked, or rolled) is a late flip or late shove on top of what is under way, when the jump still lasts long enough. Pulled back: set for the pop after the landing. |
 | `LT`, `RT` | Held going down a transition and let go through its bottom: a pump (speed, by how long it was held and how steep the descent, once a pass; nothing on the flat or let go on the slope itself). | Held: grab; with the right stick held, another grab. |
 | Right stick click | View from behind or the game's first person | |
-| Left stick, right after landing a trick | Revert: the board turns round under the rider, who rolls on switch; it joins the combo. | |
-| Right stick back or forward, on an edge | 5-0 or nosegrind instead of the 50-50. | |
-| Coming down on an edge square to it, or slowly along it | A stall: the board stops on the edge. Square: a board stall, with the right stick back a tail stall, forward a nose stall, with `LB` or `RB` held a frontside or backside handplant; slowly along it a 50-50 stall. A pop leaves it; after 2.5 s the board rolls off. Out of a stall the rider goes back the way he came, tail first; out of a handplant he comes round and rolls back nose first. | |
-| In a grind or a stall | The deck sits on the edge the way that grind does: a 5-0 on the back truck with the nose up, a nosegrind the other way round, a smith with the nose dipped past the edge, a feeble over it, a crooked on its edge; a tail stall hangs the tail over the coping. The rider stands over the low end with the arms out. | |
+| Left stick, right after landing a trick | Revert: the rider and the board pivot a half turn together on the ground and roll on the same way, the other end of the deck leading (fakie after a regular landing, regular again after a fakie one); it joins the combo. | |
+| Right stick back or forward, on an edge | Along the edge: 5-0 or nosegrind instead of the 50-50. Across it on the tail, held back: bluntslide instead of the tailslide; on the nose, held forward: nosebluntslide. Let go, the slide goes back to the plain one. | |
+| A flip asked for coming down onto an edge, with room for half of it | Darkslide: the board is caught upside down on the edge, griptape on it; a pop finishes the flip the same way round (a kickflip lands as a kickflip); rolled off without a pop, the board comes down upside down and it is a bail. | |
+| Coming down on an edge square to it, or slowly along it | A stall: the board stops on the edge. Square: a board stall, with the right stick back a tail stall, forward a nose stall, with `LB` or `RB` held a frontside or backside handplant (the board goes from where it rode to the feet as the body goes up, and back as it comes down); slowly along it a 50-50 stall. A pop leaves it; after 2.5 s the board rolls off. Out of a stall the rider goes back the way he came, tail first; out of a handplant he comes round and rolls back nose first. | |
+| In a grind or a stall | The deck sits on the edge the way that grind does: a 5-0 on the back truck with the nose up, a nosegrind the other way round, a smith with the nose dipped past the edge, a feeble over it, a crooked on its edge, a bluntslide stands the deck up steeply on the tail (a nosebluntslide on the nose); a tail stall hangs the tail over the coping. The rider stands over the low end with the arms out. | |
 
 The right stick pops the board, and how it moves says what the board does in the jump. The sides
 are those of a regular rider going nose first, whose heels are on the stick's left; riding tail
@@ -90,16 +91,20 @@ first they are the other way round.
 An edge is taken when the rider comes down on it from an ollie: the way of travel within 60° of
 the edge, at least 1 m/s along it, the feet from 0.15 m below its top to 0.5 m above, the edge
 within 0.45 m to the side and 0.3 m ahead; the board's own angle is free. When an edge is near but
-not taken, the log says why (`GRIND edge near, not taken (...)`). A trick popped riding switch is named Switch (a nollie then is a fakie ollie). A grind is named by
+not taken, the log says why (`GRIND edge near, not taken (...)`). A trick popped after a half turn is named by which end of the deck leads: Fakie when the tail does (after a plain 180, or a revert), Switch when the nose does (a 180 and a half shove, which turns the deck round under the feet; a body varial too); a nollie keeps its name (Fakie Nollie, Switch Nollie). The speed meter says FAKIE or SWITCH to match. A grind is named by
 how the board meets the edge: along it a 50-50 (or a 5-0 / nosegrind with the stick), across it a
-boardslide, lipslide, noseslide or tailslide by which part of the board is on the edge, at an angle
-a crooked, smith or feeble grind; frontside when the edge is on the side the rider's chest faces.
+boardslide, lipslide, noseslide or tailslide by which part of the board is on the edge (a bluntslide
+or nosebluntslide with the stick held back or forward), at an angle a crooked, smith or feeble grind; frontside when the edge is on the side the rider's chest faces. On the edge the board keeps the angle it came down with (squared to the edge for a 50-50), and off the end it comes round to the way of travel over a moment (540° a second), not in a jump; a stall stops the board on the edge as it came, square across it.
 Landing on a slope, the part of the fall that runs along the slope becomes roll.
 
 A turn of the rider goes on for as long as the left stick is held and the next half turn can
 still be reached before the ground; let go, the rider is brought round to the nearest half turn.
-A turn with a shove the same way is a bigspin. Each rotation is only started when the jump lasts
-long enough to finish it.
+A turn with a shove the same way is a bigspin. As in Skate, a flip, shove-it, body varial or turn
+asked for too late is started all the same and does not come round before the ground: a bail (the
+log keeps each as `SKATE late ...`, which `zz last` sums up by kind); so is a grab still held as
+the wheels touch down. Late flips and shoves and body varials are named by the shared scorer
+("Late Kickflip", "Late Pop Shove-it", "Body Varial"); a body varial of a half round leaves the
+deck the other way round under the feet, as a shove does. Unverified in game.
 
 | Trigger | Right stick | Grab |
 | --- | --- | --- |
@@ -146,19 +151,22 @@ past two decoys; in game it has not run yet. Unverified in game as of this commi
 
 | Key | On the ground | In the air |
 | --- | --- | --- |
-| `K`, or `Space` twice quickly | Get on. `K` again gets off. | |
-| `W` | Push; rolling tail first, a fakie push | Tap: kickflip |
-| `S` | Brake | Tap: heelflip |
+| `K`, or `Space` twice quickly | Get on. `K` again gets off; stepped off while rolling, the board rolls on by itself and comes to rest ahead, where it lies for a while. | |
+| `W` | Push with the back foot; rolling tail first in the same stance, a fakie push with the foot at the tail, which leads (the front foot would have to cross the standing leg); after a 180 the stance is turned round and the trailing foot pushes on its own toe side | Tap: kickflip |
+| `S` | Brake; with `A` or `D` held at more than walking pace, a powerslide: the board swings across the way of travel and scrubs speed until the keys are let go (to the left: frontside, the chest to the front; to the right: backside) | Tap: heelflip |
 | `A` / `D` | Carve | Held: the rider turns to the left / right |
 | Mouse | The board turns toward the view | |
 | `Space` | Ollie; on a grind or a stall, ollie off. With `Q` held: no comply; with `Z` held: boneless. `Ctrl` held when the board meets an edge square: a handplant | |
 | `Shift` | Held while rolling: manual | |
+| `X` | | Tap: body varial, the rider's half round without the board; the landing is switch |
 | `Ctrl` or `C` | Held for a moment: get off | Held: grab |
 | `L` | View from behind or the game's first person | |
+| `J` (on foot; `Back`+`Y` on the controller) | Stance: regular (left foot forward, the right foot pushes) or goofy, the mirror image. Kept in `skate-stance.txt` in the game's own data folder (`AppData\LocalLow\Facepunch Studios LTD\Rust`) for the next start; the hint on foot names the current one. | |
 
 Coming down over an edge while moving along it starts a grind. A turn is called frontside when it
 brings the rider's chest round to the way he travels: to the left going nose first, to the right
-going tail first. Tricks score when landed, grinds and manuals by the second; tricks
+going tail first, and the other way round for a goofy rider; the controller's flick and grab
+directions mirror with the stance as they do when the tail leads. Tricks score when landed, grinds and manuals by the second; tricks
 in a row multiply, and the combo is banked after a moment of plain rolling. Coming down faster than 12 m/s, or with a
 rotation unfinished, is a bail: the combo is lost and the rider steps off. Water, death, a seat or
 a vehicle also end the ride. Nothing is read from keyboard or controller while the cursor is free
@@ -214,7 +222,8 @@ that commit and must match the hash; that is for shared code that is ahead on an
 | `SkateGrind.cs` | Samples the ground around the rider and asks the shared edge module for an edge. |
 | `SkateBoard.cs` | The board, what it is drawn with and where it sits. |
 | `RiderRig.cs` | Writes the shared rider pose onto the player model's skeleton; what is drawn in which view, the held item included. |
-| `SkateCamera.cs` | View from behind. |
+| `SkateWatch.cs` | A watch on what is drawn: a step of the board's angles or place, or of the rider's feet, hands or head, larger than a frame could carry is logged as `SKATE snap ...` with what was going on (at most 300 a session); `zz last` counts them by situation. |
+| `SkateCamera.cs` | View from behind: 3.4 m back, up to 1.2 m further at top speed and in again as the board slows; with a controller it swings in behind the way the board goes. It comes in at once to this side of anything between it and the rider, and goes back out gradually once the way is clear. |
 | `SkateHud.cs`, `SkateSfx.cs` | The score display and the sounds. |
 | `SkatePieces.cs`, `SkateConsole.cs` | The park-piece menu on the controller and the keyboard, its ghost preview, and the console line it sends to the server (`SkateConsole.Send`, a console packet on the client's connection found by name in the network library); without that, the screen shows the line to type. `SkateConsole` also keeps the console typist for the scripted checks. |
 | `Scenarios.cs` | Scripted checks in a world. |
@@ -237,11 +246,14 @@ Over each assembly the matching model from the ramp pack is drawn (its `Visual` 
 surface; the model sits 2 cm above the native tiles. The native tiles' renderers are switched
 off under it. The server keeps its own blocks: they are its collision and what unmodded clients
 see; nothing is sent. A demolished piece takes its model with it. The bank, kicker, ledges and
-funbox models match the native assemblies; the quarterpipe and halfpipe models are circular
-(2.5 m) and shorter than the native 15°/35° facets, so they are placed by their entry (the
-quarterpipe) and their flat (the halfpipe) and do not yet cover the native tiles. Without the
-`.glb` files next to the plugin the pieces are found and nothing is drawn; the log says which
-file is missing. Unverified in game.
+funbox models match the native assemblies. The quarterpipe and the halfpipe are not drawn from
+their authored models (circular, 2.5 m, shorter than the native tiles, which stood out of them):
+they are made in the client on the tiles' own tops, a 15° and a 35° face from the flat (a
+halfpipe both ways from its 6 m flat, with its 3 m decks), the two bends rounded with a 3 m radius
+so the board rolls through them, the coping edge left sharp, nowhere under a tile and at most
+about 10 cm above one; the riding surface is their collider, and their colour is the authored
+model's when it is there. Without the `.glb` files next to the plugin the other pieces are found
+and not drawn; the log says which file is missing. Unverified in game.
 
 ### Steps
 
@@ -253,7 +265,7 @@ file it runs `skate`. Runtime steps share one rig; the last scenario step select
 | `skate` | The mod as the owner plays it. |
 | `ride` | Scripted: ride out, brake, turn round, ride back, get off. |
 | `pose` | Scripted: rider and board in each state, standing still, from fixed cameras, then the score display in nine made-up states; `K` steps on. |
-| `trick` | Scripted: ollie, kickflip, heelflip, both spins, a grab, two presses that come too late and a manual. |
+| `trick` | Scripted: ollie, kickflip, heelflip, both spins, a grab let go before the landing, a manual, shove-its, varial and 360 flips, an impossible, a revert, a fakie nollie, a no comply, a boneless and a body varial; every name is logged as the scorer gives it, for the screen check of the names. |
 | `pad` | Scripted: the ride with a controller, played into the plugin without one. |
 | `status` | Scripted: a short ride, then the server's own view of the rider typed into the F1 console (`skate.status`, its speed and fly checks, its plugins), the console left open. |
 | `park` | Scripted: the authored park models one at a time 6 m ahead of the rider, 20 s each, seen from behind the rider, then a ride up the bank; nothing is placed on the server. |
@@ -322,7 +334,14 @@ On the server, [`ShortcutSkate`](../plugins/SKATE.md) accepts the rider's speed 
 practice area. The client asks it for nothing: the plugin accepts a rider by itself after a moment
 of ordinary movement. Without it the server allows a rider the pace of a player who walks, about
 10 km/h and a little more downhill, and puts a faster one back. The client never slows the board
-for that: a put-back is only counted and logged. Only a wall right in front takes speed off. So on
+for that: a put-back is only counted and logged. What does take speed off is being held back: when
+for three physics steps in a row the board got less than a third of what it rode (a wall, a post, a
+fence the rays miss), on the ground or along an edge, its speed comes down to what it actually did
+(measured along the whole path, so that a steep transition, where little of a step is horizontal,
+is not taken for a wall)
+plus a little, the meter with it, and a grind held back that way ends with the board coming down
+at that pace; a wall seen right in front stops it at once. The owner saw the meter run on against a
+wall and on a blocked grind before this (12 Oct); unverified in game since. So on
 a server that refuses skate speed the rider is pulled back instead of braked; the server has to
 allow it (the plugin, or its own speed checks turned off by the admin).
 

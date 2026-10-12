@@ -27,6 +27,9 @@ public static class SkatePad
     // in it, a flip added in the air.
     private static readonly SkatePop[] popped = new SkatePop[4];
     private static int poppedCount;
+    // A body varial the left stick asked for, in degrees, until the ride takes it.
+    public static float BodyVarialDegrees;
+    public static int BodyVarials;
     public static float Charge;
     public static bool Charging, Manual, NoseManual;
     public static int Slot = -1, Flicks;
@@ -96,7 +99,7 @@ public static class SkatePad
     private static void Lost()
     {
         Shared = false; Buttons = 0; LeftX = LeftY = RightX = RightY = LeftTrigger = RightTrigger = 0f;
-        poppedCount = 0; Charging = Manual = NoseManual = false; Charge = 0f; pressed = 0; flick = default(SkateFlickState);
+        poppedCount = 0; BodyVarialDegrees = 0f; Charging = Manual = NoseManual = false; Charge = 0f; pressed = 0; flick = default(SkateFlickState);
     }
 
     private static void Take(int at, float now, bool edges)
@@ -128,14 +131,18 @@ public static class SkatePad
         if (seconds > MostCatchUp) seconds = MostCatchUp;
         var air = SkateRide.Mode == RideMode.Air;
         var grabbing = air && (LeftTrigger > Pulled || RightTrigger > Pulled);
-        var input = new SkateFlickInput(grabbing ? 0f : SkateRide.Clamp(RightX, -1f, 1f), grabbing ? 0f : SkateRide.Clamp(RightY, -1f, 1f), air, SkateRide.On && SkateRide.TailFirst);
+        // The left stick goes along for the body varial (a full circle in the air), and whether this
+        // flight was popped: only then does a right-stick composition in the air count as a late flip.
+        var input = new SkateFlickInput(grabbing ? 0f : SkateRide.Clamp(RightX, -1f, 1f), grabbing ? 0f : SkateRide.Clamp(RightY, -1f, 1f), air, SkateRide.Goofy != (SkateRide.On && SkateRide.TailFirst),
+            SkateRide.Clamp(LeftX, -1f, 1f), SkateRide.Clamp(LeftY, -1f, 1f), air && SkateRide.Jumped);
         while (seconds > 0.000001)
         {
             var dt = seconds > 0.01 ? 0.01 : seconds; seconds -= dt;
             SkateFlickResult r; string error;
             if (!SkateFlick.TryStep(flick, input, dt, out r, out error)) { flick = default(SkateFlickState); return; }
             flick = r.State;
-            if (r.Events != SkateFlickEvents.None)
+            if ((r.Events & SkateFlickEvents.BodyVarial) != 0) { BodyVarialDegrees += (float)r.BodyVarialDegrees; BodyVarials++; }
+            if ((r.Events & ~SkateFlickEvents.BodyVarial) != SkateFlickEvents.None)
             {
                 if (poppedCount < popped.Length) popped[poppedCount++] = r.Composition;
                 Flicks++; SkatePadLog.Fired(r.Events, r.Composition);
@@ -157,7 +164,8 @@ public static class SkatePad
         return true;
     }
 
-    public static void DropPops() { poppedCount = 0; }
+    public static void DropPops() { poppedCount = 0; BodyVarialDegrees = 0f; }
+    public static float TakeBodyVarial() { var d = BodyVarialDegrees; BodyVarialDegrees = 0f; return d; }
 
     // A scripted check plays a controller without one: the same states, on a clock of its own.
     public static void Feed(long us, int buttons, float lt, float rt, float lx, float ly, float rx, float ry, float now)

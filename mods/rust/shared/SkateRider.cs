@@ -155,6 +155,9 @@ namespace Shortcut.RustMod
         public const double MinimumMeasurement = 0.01;
         public const double MaximumMeasurement = 5;
         private const double ReachMargin = 0.000001;
+        // A leg is never asked to be quite straight: a skeleton whose hips sit a little off the
+        // module's would then fall short of the ankle, and a foot on the ground would drag.
+        private const double LegReachMargin = 0.015;
 
         public static bool TryCreate(SkateRiderRig rig, SkateRiderInput input,
                                      out SkateRiderPose pose, out string error)
@@ -304,6 +307,9 @@ namespace Shortcut.RustMod
             if (!HeightRange(leftHipBase, leftAnkle, up, rig.ThighLength, rig.ShinLength, ref minimum, ref maximum) ||
                 !HeightRange(rightHipBase, rightAnkle, up, rig.ThighLength, rig.ShinLength, ref minimum, ref maximum))
             { error = "Skate rider legs cannot reach the foot positions."; return false; }
+            // The body dips a little for the push, settled before the foot is down: a pelvis that
+            // moved while the foot stands on the ground would drag it, since the secondary motion's
+            // pelvis lags the pose and the leg then falls short.
             double requested = rig.PelvisHeight - Math.Min(SkatePose.CrouchDrop, rig.PelvisHeight * 0.65) * crouch - PushDip * turn;
             double folded = grabbing ? Math.Min(1, input.GrabSeconds / GrabIn) : 0;
             folded = folded * folded * (3 - 2 * folded);
@@ -376,9 +382,11 @@ namespace Shortcut.RustMod
 
             double carving = Math.Min(1, Math.Abs(input.LeanDegrees) / SkatePose.MaximumLean);
             double air = input.Airborne ? 1 : 0;
-            double armOut = armLength * (0.17 + 0.10 * crouch + 0.15 * carving + 0.35 * air);
-            double armDown = armLength * (0.94 - 0.25 * crouch - 0.12 * carving - 0.40 * air);
-            double armAhead = armLength * (0.10 + 0.12 * crouch + 0.05 * speed);
+            // At rest the arms hang loosely a little out and ahead, the elbows bent, not straight
+            // down at the sides; they come up and out with a crouch, a carve and in the air.
+            double armOut = armLength * (0.26 + 0.10 * crouch + 0.15 * carving + 0.30 * air);
+            double armDown = armLength * (0.84 - 0.22 * crouch - 0.12 * carving - 0.34 * air);
+            double armAhead = armLength * (0.14 + 0.12 * crouch + 0.05 * speed);
             var along = travel * (armLength * (backIsLeft ? -1 : 1));
             var counterSwing = chestForward * (armLength * PushSwing * swing * (backIsLeft ? -1 : 1));
             var leftTarget = leftShoulder - chestRight * armOut + chestForward * armAhead - up * armDown
@@ -429,7 +437,7 @@ namespace Shortcut.RustMod
 
         private const double RidingPelvisYaw = 12, RidingChestYaw = 28, RidingLeadToe = 25, RidingBackToe = 5;
         private const double PushPelvisYaw = 55, PushChestYaw = 70, PushLeadToe = 60;
-        private const double AirYaw = 0.35, PushWeight = 0.28, PushSide = 0.03, PushDip = 0.06, PushLean = 0.34, PushSwing = 0.28;
+        private const double AirYaw = 0.35, PushWeight = 0.28, PushSide = 0.03, PushDip = 0.06, PushLean = 0.24, PushSwing = 0.28;
         // The pushing foot comes down PushPlant ahead of the board's middle and leaves it PushSweep
         // behind: the stroke, over which the foot is on the ground (push phase PushDown..PushUp).
         public const double PushPlant = 0.18, PushSweep = 0.44, PushDown = 0.25, PushUp = 0.6;
@@ -461,6 +469,13 @@ namespace Shortcut.RustMod
                 case SkateGrindKind.Feeble: pitchDegrees = -8; rollDegrees = 16; crouch = 0.45; break;
                 case SkateGrindKind.Tailslide: pitchDegrees = 8; crouch = 0.4; break;
                 case SkateGrindKind.Noseslide: pitchDegrees = -8; crouch = 0.42; break;
+                // A bluntslide stands on the tail with the deck pitched up steeply, the rider low
+                // over the back foot; a nosebluntslide the other way round. A darkslide rides the
+                // deck upside down, griptape on the edge: the roll turns the board over, the feet
+                // stand on what is now the top.
+                case SkateGrindKind.Bluntslide: pitchDegrees = 40; crouch = 0.6; break;
+                case SkateGrindKind.Nosebluntslide: pitchDegrees = -40; crouch = 0.6; break;
+                case SkateGrindKind.Darkslide: rollDegrees = 180; crouch = 0.5; break;
                 case SkateGrindKind.Boardslide: case SkateGrindKind.Lipslide: crouch = 0.45; break;
                 case SkateGrindKind.TailStall: pitchDegrees = 27; crouch = 0.32; break;
                 case SkateGrindKind.NoseStall: pitchDegrees = -27; crouch = 0.32; break;
@@ -503,10 +518,12 @@ namespace Shortcut.RustMod
                 case SkateGrabKind.Method: return new GrabGrip(!backIsLeft, -0.1, 0.04, 0.45, tuck: 0.015, bodyShift: -0.18);
                 // A nosebone: the back hand on the tail, the front leg pushed out straight toward the
                 // nose (the hips go back over the tail); a tailbone the other way round.
+                // The hips sit high and well back from the boned foot, so that leg straightens out
+                // along the board while the other knee stays bent.
                 case SkateGrabKind.Nosebone: return new GrabGrip(!noseIsLeft, 0, -0.36, 0.3, end: true,
-                    extension: 0.12, legShift: -0.15, chestTurn: -0.35);
+                    extension: 0.9, legShift: -0.2, chestTurn: -0.35);
                 case SkateGrabKind.Tailbone: return new GrabGrip(noseIsLeft, 0, 0.36, 0.3, end: true,
-                    extension: 0.12, legShift: 0.15, chestTurn: 0.35);
+                    extension: 0.9, legShift: 0.2, chestTurn: 0.35);
                 default: return default(GrabGrip);
             }
         }
@@ -557,15 +574,30 @@ namespace Shortcut.RustMod
             var leftHip = pelvis - pelvisRight * (rig.HipWidth * 0.5);
             var rightHip = pelvis + pelvisRight * (rig.HipWidth * 0.5);
             // The feet: on the board on the ground until the body comes past the lean, then folded in
-            // to the pike, a stance apart along the body's lateral axis.
+            // to the pike, a stance apart along the body's lateral axis. From the moment they leave
+            // the ground they are carried in the body's own frame, so that they swing round over the
+            // hand with the body, the way a cartwheel's legs do, and fold in on the way: a straight
+            // line from the ground to the pike would leave a foot hanging below the body half way.
             double f = Smooth(Math.Max(0, Math.Min(1, (theta - PlantLean) / (PlantFoldBy - PlantLean))));
             var deckGround = input.BoardPosition + up * SkatePose.FootLift;
-            var deckFold = pelvis + chestUp * (rig.SpineLength * PlantPikeUp) + chestForward * (legLength * PlantPikeOut);
             // On the ground the lead foot is ahead along travel; folded in, the feet are apart across
             // the body, each on its own side, so the body turning over carries them round with it.
             double leadSign = leadIsLeft ? 1 : -1;
-            var leftAnkle = Blend(deckGround + travel * (SkatePose.FootOffset * leadSign), deckFold - chestRight * SkatePose.FootOffset, f);
-            var rightAnkle = Blend(deckGround - travel * (SkatePose.FootOffset * leadSign), deckFold + chestRight * SkatePose.FootOffset, f);
+            var leftGround = deckGround + travel * (SkatePose.FootOffset * leadSign);
+            var rightGround = deckGround - travel * (SkatePose.FootOffset * leadSign);
+            // The body's frame at the moment the feet leave the ground, and the feet's places in it.
+            var up0 = up * Math.Cos(PlantLean) + travel * Math.Sin(PlantLean);
+            var right0 = Cross(up0, chestForward);
+            var pelvis0 = plantedJoint - up0 * rig.ShoulderRise - right0 * (rig.ShoulderWidth * 0.5 * (leadIsLeft ? -1 : 1)) - up0 * rig.SpineLength;
+            var leftLocal = Local(leftGround - pelvis0, up0, chestForward, right0);
+            var rightLocal = Local(rightGround - pelvis0, up0, chestForward, right0);
+            var pikeLocal = new SkateVector(rig.SpineLength * PlantPikeUp, legLength * PlantPikeOut, 0);
+            var leftFold = Blend(leftLocal, pikeLocal - new SkateVector(0, 0, SkatePose.FootOffset), f);
+            var rightFold = Blend(rightLocal, pikeLocal + new SkateVector(0, 0, SkatePose.FootOffset), f);
+            var leftAnkle = pelvis + chestUp * leftFold.X + chestForward * leftFold.Y + chestRight * leftFold.Z;
+            var rightAnkle = pelvis + chestUp * rightFold.X + chestForward * rightFold.Y + chestRight * rightFold.Z;
+            // Never below the ground: a foot still on the ground before the body passes the lean stays exactly there.
+            if (f <= 0) { leftAnkle = leftGround; rightAnkle = rightGround; }
             var leadAnkle = leadIsLeft ? leftAnkle : rightAnkle;
             var backAnkle = leadIsLeft ? rightAnkle : leftAnkle;
             var pole = facing - chestUp * f;
@@ -719,7 +751,7 @@ namespace Shortcut.RustMod
             var offset = ankle - hip;
             double vertical = SkateVector.Dot(offset, up);
             double horizontal = Math.Max(0, offset.LengthSquared - vertical * vertical);
-            double far = first + second - ReachMargin;
+            double far = first + second - LegReachMargin;
             double near = Math.Sqrt(Math.Abs(first * first - second * second)) + ReachMargin;
             if (horizontal > far * far) return false;
             minimum = Math.Max(minimum, vertical + Math.Sqrt(Math.Max(0, near * near - horizontal)));
@@ -839,6 +871,9 @@ namespace Shortcut.RustMod
         private static SkateVector Project(SkateVector value, SkateVector normal) { return value - normal * SkateVector.Dot(value, normal); }
         private static SkateVector Cross(SkateVector a, SkateVector b)
         { return new SkateVector(a.Y * b.Z - a.Z * b.Y, a.Z * b.X - a.X * b.Z, a.X * b.Y - a.Y * b.X); }
+        // A vector's coordinates along three frame axes, as (up, forward, right).
+        private static SkateVector Local(SkateVector v, SkateVector up, SkateVector forward, SkateVector right)
+        { return new SkateVector(SkateVector.Dot(v, up), SkateVector.Dot(v, forward), SkateVector.Dot(v, right)); }
         private static SkateVector Forward(double yaw)
         { double radians = yaw * Math.PI / 180; return new SkateVector(Math.Sin(radians), 0, Math.Cos(radians)); }
         private static SkateVector Blend(SkateVector a, SkateVector b, double t) { return a + (b - a) * t; }

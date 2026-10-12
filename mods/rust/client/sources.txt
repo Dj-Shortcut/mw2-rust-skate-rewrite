@@ -18,6 +18,7 @@ mods/rust/client/src/SkatePadLog.cs
 mods/rust/client/src/SkatePieces.cs
 mods/rust/client/src/SkateConsole.cs
 mods/rust/client/src/SkateParks.cs
+mods/rust/client/src/SkateWatch.cs
 mods/rust/shared/SkateBoardMesh.cs
 mods/rust/shared/SkateMotion.cs 297b71f08df94036db572dd5355f4a6afa671eff 4ad4153f639bfb8e6388bcd3b67dbaffc19584aeec6714a533d0f4bb4479e611
 mods/rust/shared/SkateRails.cs

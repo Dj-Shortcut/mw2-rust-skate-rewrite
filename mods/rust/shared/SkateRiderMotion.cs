@@ -2,6 +2,14 @@ using System;
 
 namespace Shortcut.RustMod
 {
+    public readonly struct SkateRiderMotionOptions
+    {
+        public readonly bool DisablePelvisSpring, PinLeftHand, PinRightHand;
+
+        public SkateRiderMotionOptions(bool disablePelvisSpring, bool pinLeftHand, bool pinRightHand)
+        { DisablePelvisSpring = disablePelvisSpring; PinLeftHand = pinLeftHand; PinRightHand = pinRightHand; }
+    }
+
     public readonly struct SkateRiderMotionState
     {
         public readonly bool Initialized;
@@ -38,6 +46,11 @@ namespace Shortcut.RustMod
 
         public static bool TryStep(SkateRiderMotionState state, SkateRiderRig rig, SkateRiderPose target, double dt,
                                    out SkateRiderPose shown, out SkateRiderMotionState next, out string error)
+        { return TryStep(state, rig, target, dt, default(SkateRiderMotionOptions), out shown, out next, out error); }
+
+        public static bool TryStep(SkateRiderMotionState state, SkateRiderRig rig, SkateRiderPose target, double dt,
+                                   SkateRiderMotionOptions options, out SkateRiderPose shown,
+                                   out SkateRiderMotionState next, out string error)
         {
             shown = default(SkateRiderPose); next = state; error = null;
             if (!Finite(dt) || dt < MinimumDelta || dt > MaximumDelta || !Valid(rig) ||
@@ -67,16 +80,19 @@ namespace Shortcut.RustMod
             var previousLeft = Transport(state.PreviousLeftHand, state.Target, target);
             var right = Transport(state.Shown.RightHand, state.Target, target);
             var previousRight = Transport(state.PreviousRightHand, state.Target, target);
+            if (options.DisablePelvisSpring) { pelvis = 0; previousPelvis = 0; }
+            if (options.PinLeftHand) { left = target.LeftHand; previousLeft = left; }
+            if (options.PinRightHand) { right = target.RightHand; previousRight = right; }
             int count = (int)Math.Ceiling(dt / Substep);
             double step = dt / count, oldStep = state.PreviousDelta;
             for (int i = 0; i < count; i++)
             {
-                Advance(ref pelvis, ref previousPelvis, step, oldStep);
+                if (!options.DisablePelvisSpring) Advance(ref pelvis, ref previousPelvis, step, oldStep);
                 Advance(ref chest, ref previousChest, target.Chest, 144, 9, step, oldStep);
                 Advance(ref leftShoulder, ref previousLeftShoulder, target.LeftShoulder, 144, 9, step, oldStep);
                 Advance(ref rightShoulder, ref previousRightShoulder, target.RightShoulder, 144, 9, step, oldStep);
-                Advance(ref left, ref previousLeft, target.LeftHand, 100, 7, step, oldStep);
-                Advance(ref right, ref previousRight, target.RightHand, 100, 7, step, oldStep);
+                if (!options.PinLeftHand) Advance(ref left, ref previousLeft, target.LeftHand, 100, 7, step, oldStep);
+                if (!options.PinRightHand) Advance(ref right, ref previousRight, target.RightHand, 100, 7, step, oldStep);
                 oldStep = step;
             }
 
@@ -84,7 +100,7 @@ namespace Shortcut.RustMod
             bool found = false;
             for (int i = 0; i < 12; i++)
             {
-                if (Build(rig, target, pelvis * factor, chest, leftShoulder, rightShoulder, left, right, factor, out shown) &&
+                if (Build(rig, target, pelvis * factor, chest, leftShoulder, rightShoulder, left, right, factor, options, out shown) &&
                     Bounded(shown, target) && Valid(shown, rig))
                 { found = true; break; }
                 factor *= 0.5;
@@ -134,7 +150,7 @@ namespace Shortcut.RustMod
         private static bool Build(SkateRiderRig rig, SkateRiderPose target, double height,
                                   SkateVector chestTarget, SkateVector leftShoulderTarget, SkateVector rightShoulderTarget,
                                   SkateVector leftTarget, SkateVector rightTarget,
-                                  double factor, out SkateRiderPose pose)
+                                  double factor, SkateRiderMotionOptions options, out SkateRiderPose pose)
         {
             pose = default(SkateRiderPose);
             var pelvis = target.Pelvis + Unit(target.PelvisUp) * height;
@@ -150,9 +166,9 @@ namespace Shortcut.RustMod
             var chest = pelvis + chestUp * rig.SpineLength;
             var leftShoulder = chest - chestRight * (rig.ShoulderWidth * 0.5);
             var rightShoulder = chest + chestRight * (rig.ShoulderWidth * 0.5);
-            var leftHand = Reach(leftShoulder, target.LeftHand + (leftTarget - target.LeftHand) * factor,
+            var leftHand = options.PinLeftHand ? target.LeftHand : Reach(leftShoulder, target.LeftHand + (leftTarget - target.LeftHand) * factor,
                 target.LeftHand - target.LeftShoulder, rig.UpperArmLength, rig.ForearmLength);
-            var rightHand = Reach(rightShoulder, target.RightHand + (rightTarget - target.RightHand) * factor,
+            var rightHand = options.PinRightHand ? target.RightHand : Reach(rightShoulder, target.RightHand + (rightTarget - target.RightHand) * factor,
                 target.RightHand - target.RightShoulder, rig.UpperArmLength, rig.ForearmLength);
             SkateVector leftKnee, rightKnee, leftElbow, rightElbow;
             if (!Limb(leftHip, target.LeftAnkle, rig.ThighLength, rig.ShinLength,

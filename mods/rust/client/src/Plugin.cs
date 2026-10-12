@@ -48,8 +48,9 @@ public class SkatePlugin : BasePlugin
     private string AddRig()
     {
         if (rig != null) return "already added";
+        SkateRide.LoadStance();
         rig = AddComponent<SkateRig>();
-        return "added=" + (rig != null);
+        return "added=" + (rig != null) + " stance=" + SkateRide.StanceName;
     }
 }
 

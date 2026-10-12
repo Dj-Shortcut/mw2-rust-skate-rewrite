@@ -41,6 +41,7 @@ public static class SkatePieces
         if ((padDown & SkatePad.RightBumper) != 0) Turn += TurnStep;
         if ((padDown & SkatePad.A) != 0) Place(now);
         if ((padDown & SkatePad.B) != 0) Ask("cancel", now);
+        if ((padDown & SkatePad.Y) != 0) SkateRide.ToggleStance();
         return padDown & ~(SkatePad.DpadUp | SkatePad.DpadDown | SkatePad.DpadLeft | SkatePad.DpadRight | SkatePad.A | SkatePad.B | SkatePad.X | SkatePad.Y | SkatePad.LeftBumper | SkatePad.RightBumper);
     }
 
@@ -154,7 +155,7 @@ public static class SkatePieces
         {
             var s = "PARK PIECE   ";
             for (var i = 0; i < Names.Length; i++) s += (i == Chosen ? "[" + Names[i].ToUpper() + "]" : Names[i]) + (i + 1 < Names.Length ? "   " : "");
-            s += keyboardOpen ? "      P: next   Q/E: turn   O: place where you aim   Backspace: close" : "      D-pad: choose   LB/RB: turn   A: place where you aim   B: cancel";
+            s += keyboardOpen ? "      P: next   Q/E: turn   O: place where you aim   Backspace: close" : "      D-pad: choose   LB/RB: turn   A: place where you aim   B: cancel   Y: stance (" + SkateRide.StanceName + ")";
             if (!AimOk) s += "   (aim at the ground)";
             if (Status.Length > 0) s += "   " + Status;
             return s;

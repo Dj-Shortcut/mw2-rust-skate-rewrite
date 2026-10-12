@@ -10,7 +10,14 @@ public static class SkateCamera
     public static bool Chase = true, Fixed;
     public const float FollowPitch = 14f, FollowRate = 3.5f;
     public static float LookYaw, LookPitch, SampledAt = -99f, Distance = 3.4f, Bearing = 180f, FixedDistance = 2.7f, FixedHeight = 1.15f, FollowYaw;
-    private static float followAt = -99f;
+    // The chase camera falls back a little as the board goes faster, for the sense of speed, and
+    // comes in again as it slows: up to SpeedPull further at top speed, eased at PullRate per second.
+    public const float SpeedPull = 1.2f, PullRate = 2.5f;
+    private static float followAt = -99f, pullNow, pullAt = -99f;
+    // How far out the camera stands along its line: in at once when something is in the way, out
+    // again at OutRate (a share a second) once the way is clear, so it does not pop back.
+    public const float OutRate = 5f;
+    private static float shownLen = -1f, shownAt = -99f;
     private static bool failed, ahead = true;
 
     public static void Sample()
@@ -54,13 +61,23 @@ public static class SkateCamera
                 else { FollowYaw = LookYaw; ahead = true; }
                 followAt = now;
                 var back = Quaternion.Euler(pitch, yaw, 0f) * Vector3.forward;
-                want = focus - back * Distance + Vector3.up * 0.3f;
+                var pullWant = SpeedPull * SkateRide.Clamp(Math.Abs(SkateRide.HorizontalSpeed) / SkateRide.MaxSpeed, 0f, 1f);
+                var pullSeconds = SkateRide.Clamp(now - pullAt, 0f, 0.1f); pullAt = now;
+                pullNow += (pullWant - pullNow) * (1f - (float)Math.Exp(-pullSeconds * PullRate));
+                want = focus - back * (Distance + pullNow) + Vector3.up * (0.3f + pullNow * 0.15f);
             }
             // Nothing between the rider and the camera: it comes in to this side of a wall or a fence.
             var dir = want - focus; var len = dir.magnitude;
             RaycastHit hit;
+            var allowed = len;
             if (len > 0.01f && Physics.SphereCast(focus, 0.2f, dir / len, out hit, len, SkateRide.GroundMask, QueryTriggerInteraction.Ignore))
-                want = focus + dir / len * Math.Max(0.6f, hit.m_Distance - 0.05f);
+                allowed = Math.Max(0.6f, hit.m_Distance - 0.05f);
+            // A slow frame eases at the capped step; only a real pause (half a second without a
+            // frame, a new ride) puts the camera straight where it may be.
+            var t = Time.realtimeSinceStartup; var gap = t - shownAt; var outSeconds = SkateRide.Clamp(gap, 0f, 0.1f); shownAt = t;
+            if (shownLen < 0f || allowed <= shownLen || gap > 0.5f) shownLen = allowed;
+            else shownLen += (allowed - shownLen) * (1f - (float)Math.Exp(-outSeconds * OutRate));
+            if (len > 0.01f) want = focus + dir / len * shownLen;
             cam.transform.position = want;
             cam.transform.LookAt(focus);
         }
