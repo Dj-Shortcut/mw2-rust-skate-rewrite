@@ -29,6 +29,7 @@ workspace.
 | `skate_park_piece_layouts` | bank, kicker, quarterpipe, ledges, funbox and full halfpipe block positions, orientations, materials and adjoining edges |
 | `skate_park_anchor_yaw_and_snap` | translate and rotate each layout from an existing native snapped building anchor |
 | `skate_park_gesture_selection` | admin-only configurable park-piece cycling, cancel, expiry and retained pending selection |
+| `skate_park_build_items` | eight exact item identities, single verified debit and complete paid-group recovery eligibility; invalid and historical free groups refuse |
 | `skate_audio_surfaces_and_events` | authored wheel, truck/deck contact and event PCM: duration, peak/DC, determinism, loop seams and invalid requests |
 | `skate_rider_secondary_motion` | planted ankles and toes, exact limb lengths, bounded secondary pose motion, deterministic steps and atomic invalid-input rejection |
 | `skate_server_plugin_install` | actual source installation, replacement/backup, guarded refusal and cleanup after real Linux file-operation failures |
@@ -47,6 +48,8 @@ The two park-layout scenarios were approved by name by the owner for [Task 4](ht
 The owner approved `skate_audio_surfaces_and_events` by name on 11 October 2026 in the handover chat for Task 8. It executes the actual shared C# DLL; waveform properties do not establish native playback or perceived sound quality.
 
 The owner approved `skate_park_gesture_selection` by name on 11 October 2026 for [Task 6](https://github.com/Dj-Shortcut/mw2-rust-skate-rewrite/issues/337#issuecomment-6106613104). It executes the plugin's pure selection policy; native gesture dispatch and admin chat remain separate verification.
+
+The owner approved `skate_park_build_items` by name on 12 October 2026 in the continuation chat. It executes the actual shared/plugin DLL's item identity, verified-debit and recovery predicates. Native item consumption/refund, save/reload, hammer removal and both building frontends remain separate acceptance. No Rust/client/server or Shadow starts.
 
 The owner approved `skate_rider_secondary_motion` by name on 11 October 2026 in the continuation chat for [the rider-motion handover](https://github.com/Dj-Shortcut/mw2-rust-skate-rewrite/issues/337#issuecomment-6108821492). It executes the actual engine-free shared C# DLL. Native rig integration, hand contact, rendering and visual quality remain separate verification.
 
