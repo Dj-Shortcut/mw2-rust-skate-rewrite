@@ -19,7 +19,12 @@ python3 crates/approved_tests/skate/SkateServerPluginInstallScenario.py
 ```
 
 This scenario never starts Rust/Oxide, the Rust client or Shadow, opens game ports
-or accesses the owner's server. Native plugin compile/load, patches, placement
+or accesses the owner's server. Synthetic Oxide log lines also exercise the
+selected-version verdict, stale/partial/copied records, log rotation/truncation,
+failure after a long fresh tail, guarded rollback, a real 90-second timeout and
+INT/TERM after source publication. Fresh log inodes are conservatively baselined
+at first-observed EOF. No fixture establishes native Oxide compilation/loading
+or filesystem-watcher behavior. Native plugin compile/load, patches, placement
 and riding remain separate acceptance. INT/TERM cancellation is checked during
 a real kernel-lease-blocked backup,
 including caller status, worker exit before lease release and unchanged source

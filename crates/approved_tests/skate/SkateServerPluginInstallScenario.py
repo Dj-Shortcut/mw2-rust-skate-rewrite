@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import grp
 import hashlib
+import json
 import os
 from pathlib import Path
 import pwd
@@ -11,11 +12,12 @@ import signal
 import stat
 import subprocess
 import sys
+import threading
 import time
 
 
-INSTALLER_COMMIT = "ace52fcbc20a84aa697cb37f79271411b5169a88"
-INSTALLER_SHA256 = "44b2f302ce01a7929d85a8c518a0a8d1b884ee4934890fc19d67243ce31ad539"
+INSTALLER_COMMIT = "f9cb4330c26fdbeb5b9df94b9aea1711a7b9e4b5"
+INSTALLER_SHA256 = "49489fe2096e83fb87f434a62c2e104b9254542b833a3b842458de7627805ef9"
 SOURCE_COMMIT = "6e08751ce932eca441842c852acd369977b459e1"
 SOURCE_SHA256 = "ca3cc15a2d507eafd5cfb9303a13f7bc6ca57d0966c9b43bfddbbb36fc2f077e"
 PRIOR_COMMIT = "5a9ed6e550a405365c8a18746dfd276a310b6848"
@@ -25,6 +27,8 @@ ROOT = Path("/srv/rust")
 PLUGINS = ROOT / "server/oxide/plugins"
 ACTIVE = PLUGINS / "ShortcutSkate.cs"
 BACKUP = PLUGINS / "ShortcutSkate.cs.bak"
+LOGS = ROOT / "server/oxide/logs"
+LOG = LOGS / "oxide_fixture.txt"
 MAX_DOWNLOAD_BYTES = 1024 * 1024
 COMMAND_PATH = "/usr/sbin:/usr/bin:/sbin:/bin"
 LEASE_HOLDER = r"""
@@ -128,7 +132,7 @@ def require_environment():
     require(Path("/srv").is_dir() and not Path("/srv").is_symlink(), "requires a regular /srv directory")
     require_private_target()
     require(hasattr(os, "pidfd_open") and hasattr(signal, "pidfd_send_signal"), "requires Linux pidfd process cleanup")
-    for name in ("sh", "bash", "curl", "sha256sum", "mktemp", "cat", "chmod", "cp", "mv", "rm", "runuser", "setsid", "useradd", "userdel", "groupdel"):
+    for name in ("sh", "bash", "curl", "sha256sum", "mktemp", "cat", "chmod", "cp", "mv", "rm", "runuser", "setsid", "useradd", "userdel", "groupdel", "python3"):
         require(shutil.which(name, path=COMMAND_PATH) is not None, "missing prerequisite: " + name)
     nobody = lookup_user("nobody")
     require(nobody is not None and nobody.pw_uid != 0, "requires a nonroot nobody identity")
@@ -285,7 +289,7 @@ class Scenario:
         return destination.read_bytes()
 
     def install(self, arguments=(), delivered=False):
-        return self.run(["bash", str(self.delivered if delivered else self.installer), *arguments])
+        return self.run(["bash", str(self.delivered if delivered else self.installer), *arguments], timeout=170)
 
     def clean_plugins(self):
         for path in PLUGINS.iterdir():
@@ -293,6 +297,58 @@ class Scenario:
                 path.unlink()
             else:
                 shutil.rmtree(path)
+        for path in LOGS.iterdir():
+            path.unlink()
+        LOG.touch()
+        if self.user_identity:
+            os.chown(LOG, *self.user_identity)
+        LOG.chmod(0o640)
+
+    def log(self, data, path=LOG):
+        with path.open("ab") as stream:
+            stream.write(data)
+        os.chown(path, *self.user_identity)
+        path.chmod(0o640)
+
+    def with_verdict(self, invoke, emit=None):
+        previous = ACTIVE.stat().st_ino if ACTIVE.exists() else None
+        finished = threading.Event()
+        errors = []
+
+        def writer():
+            deadline = time.monotonic() + 80
+            try:
+                while not finished.is_set() and time.monotonic() < deadline:
+                    states = list(PLUGINS.glob(".ShortcutSkate-verdict.*"))
+                    armed = False
+                    for path in states:
+                        if path.name.endswith(".new"):
+                            continue
+                        try:
+                            armed = armed or json.loads(path.read_text()).get("armed", False)
+                        except (OSError, ValueError):
+                            pass
+                    if armed and ACTIVE.exists() and ACTIVE.stat().st_ino != previous and digest(ACTIVE.read_bytes()) == SOURCE_SHA256:
+                        if emit is None:
+                            self.log(b"04:20 [Info] Loaded plugin ShortcutSkate v0.3.6 by Dj-Shortcut\n")
+                        else:
+                            emit(finished)
+                        return
+                    time.sleep(0.05)
+                raise ScenarioFailure("installer did not publish source before the synthetic verdict")
+            except BaseException as error:
+                errors.append(error)
+
+        worker = threading.Thread(target=writer, daemon=True)
+        worker.start()
+        try:
+            result = invoke()
+        finally:
+            finished.set()
+            worker.join(timeout=5)
+        require(not worker.is_alive(), "owned verdict fixture thread survived")
+        require(not errors, "synthetic verdict fixture failed: " + str(errors))
+        return result
 
     def no_staging(self):
         self.check(not any(path.name.startswith(".ShortcutSkate") for path in PLUGINS.iterdir()), "hidden installer staging remains")
@@ -404,15 +460,16 @@ class Scenario:
 
     def fresh(self):
         self.clean_plugins()
-        result = self.install(delivered=True)
+        result = self.with_verdict(lambda: self.install(delivered=True))
         self.check(result.returncode == 0, "delivered installer failed fresh installation: " + result.stderr.strip())
         self.check("ShortcutSkate v0.3.6 source installed" in result.stdout, "fresh installation lacked source-install acknowledgement")
+        self.check("oxide_fixture.txt: 04:20 [Info] Loaded plugin ShortcutSkate v0.3.6" in result.stdout, "fresh install did not print the observed load verdict and path")
         self.active_installed()
         self.check(not os.path.lexists(BACKUP), "fresh installation unexpectedly created a backup")
 
     def replacement(self):
         before = self.seed_prior()
-        result = self.install()
+        result = self.with_verdict(self.install)
         self.check(result.returncode == 0, "previous-source replacement failed: " + result.stderr.strip())
         self.active_installed()
         self.check(BACKUP.is_file() and not BACKUP.is_symlink(), "previous source was not backed up as a regular file")
@@ -422,7 +479,7 @@ class Scenario:
         self.clean_plugins()
         scratch = self.work / "tmp"
         self.check(not any(scratch.iterdir()), "documented entrypoint scratch was not empty")
-        result = self.run(["sh", "-c", self.entrypoint], timeout=150)
+        result = self.with_verdict(lambda: self.run(["sh", "-c", self.entrypoint], timeout=230))
         self.check(result.returncode == 0, "documented entrypoint failed: " + result.stderr.strip())
         self.check("ShortcutSkate v0.3.6 source installed" in result.stdout, "documented entrypoint did not execute the installer")
         self.active_installed()
@@ -453,6 +510,139 @@ class Scenario:
         self.check(snapshot(ACTIVE) == before, "backup failure changed active source or metadata")
         self.check(BACKUP.is_dir() and sentinel.read_bytes() == b"backup directory remains\n", "backup failure changed existing backup directory")
         self.no_staging()
+
+    def compile_failure(self, fresh=False):
+        before = None if fresh else self.seed_prior()
+        if fresh:
+            self.clean_plugins()
+        result = self.with_verdict(self.install, lambda _: self.log(
+            b"[Oxide] Error while compiling ShortcutSkate: fixture error CS0001 | Line: 17\n"))
+        self.check(result.returncode == 1, "compile failure did not fail the installer")
+        self.check("oxide_fixture.txt" in result.stderr and "fixture error CS0001 | Line: 17" in result.stderr, "compiler verdict/path was not printed")
+        self.check("Oxide reported loading" not in result.stdout, "compile failure claimed successful loading")
+        if fresh:
+            self.check(not os.path.lexists(ACTIVE) and not os.path.lexists(BACKUP), "failed fresh source or backup survived")
+            self.check("No prior source existed" in result.stderr, "fresh rollback outcome was not stated")
+        else:
+            self.check(snapshot(ACTIVE) == before and snapshot(BACKUP) == before, "compile failure did not restore exact previous bytes and metadata")
+            self.check("Previous ShortcutSkate.cs restored" in result.stderr, "backup restoration was not stated")
+        self.no_staging()
+
+    def stale_and_partial(self):
+        self.seed_prior()
+        self.log(b"Loaded plugin ShortcutSkate v0.3.6 by Dj-Shortcut\nError while compiling ShortcutSkate: old failure\nLoaded plugin ShortcutSkate v")
+
+        def emit(finished):
+            self.log(b"0.3.6 by Dj-Shortcut\nLoaded plugin ShortcutSkate v0.3.60 by Dj-Shortcut\nLoaded plugin ShortcutSkate v0.3.6")
+            time.sleep(1.5)
+            self.check(not finished.is_set(), "installer accepted stale, old partial or wrong-version verdict")
+            self.log(b" by Dj-Shortcut\n")
+
+        result = self.with_verdict(self.install, emit)
+        self.check(result.returncode == 0 and "Oxide reported loading ShortcutSkate v0.3.6" in result.stdout, "complete new selected-version verdict was not accepted")
+        self.active_installed()
+
+    def rotation(self):
+        self.seed_prior()
+        self.log(b"Loaded plugin ShortcutSkate v0.3.6 by Dj-Shortcut\n")
+
+        def emit(finished):
+            LOG.rename(LOGS / "oxide_rotated.txt")
+            self.log(b"other plugin compiled\n")
+            time.sleep(1)
+            self.check(not finished.is_set(), "rotated stale load verdict was accepted")
+            self.log(b"Loaded plugin ShortcutSkate v0.3.6 by Dj-Shortcut\n")
+
+        result = self.with_verdict(self.install, emit)
+        self.check(result.returncode == 0, "new log after rotation did not supply the load verdict")
+        self.active_installed()
+
+    def copied_log_and_other_plugin(self):
+        self.seed_prior()
+
+        def emit(finished):
+            self.log(b"Loaded plugin ShortcutSkate v0.3.6 by Dj-Shortcut\n", LOGS / "oxide_copied.txt")
+            self.log(b"ShortcutSkateHelper failed to compile: unrelated fixture\n")
+            self.log(b"04:20 [Info] [OtherPlugin] diagnostic: Loaded plugin ShortcutSkate v0.3.6 by Dj-Shortcut\n")
+            time.sleep(1.5)
+            self.check(not finished.is_set(), "copied historical log or unrelated plugin supplied a verdict")
+            self.log(b"Loaded plugin ShortcutSkate v0.3.6 by Dj-Shortcut\n")
+
+        result = self.with_verdict(self.install, emit)
+        self.check(result.returncode == 0, "correct verdict was not accepted after ignoring other records")
+        self.active_installed()
+
+    def long_tail_failure(self):
+        before = self.seed_prior()
+        tail = b"Loaded plugin ShortcutSkate v0.3.6 by Dj-Shortcut\n" + (b"unrelated log line\n" * 65000) + b"Error while compiling ShortcutSkate: final fixture failure\n"
+        self.check(len(tail) > 1048576, "long-tail fixture did not cross the previous first-chunk boundary")
+        result = self.with_verdict(self.install, lambda _: self.log(tail))
+        self.check(result.returncode == 1 and "final fixture failure" in result.stderr, "success before a later already-appended failure was accepted")
+        self.check(snapshot(ACTIVE) == before, "later compiler failure did not restore the prior source")
+        self.no_staging()
+
+    def changed_files(self, change_backup):
+        self.seed_prior()
+        changed = BACKUP if change_backup else ACTIVE
+        sentinel = b"another updater owns these bytes\n"
+
+        def emit(_):
+            changed.write_bytes(sentinel)
+            self.log(b"ShortcutSkate failed to compile: fixture failure\n")
+
+        result = self.with_verdict(self.install, emit)
+        self.check(result.returncode == 1 and "Rollback refused" in result.stderr, "changed source or backup was not protected")
+        self.check(changed.read_bytes() == sentinel, "rollback overwrote another updater's changed file")
+        self.check("Previous ShortcutSkate.cs restored" not in result.stderr, "refused rollback claimed restoration")
+        self.no_staging()
+
+    def log_truncation(self):
+        before = self.seed_prior()
+        self.log(b"old log prefix that is longer than the replacement\n")
+        result = self.with_verdict(self.install, lambda _: LOG.write_bytes(b"new\n"))
+        self.check(result.returncode == 1 and "truncated or rewritten" in result.stderr, "log truncation was accepted as fresh evidence")
+        self.check(snapshot(ACTIVE) == before, "unreliable log did not restore the previous source")
+        self.no_staging()
+
+    def verdict_timeout(self):
+        before = self.seed_prior()
+        self.log(b"Loaded plugin ShortcutSkate v0.3.6 by Dj-Shortcut\n")
+        started = time.monotonic()
+        result = self.run(["bash", str(self.installer)], timeout=170)
+        self.check(result.returncode == 1 and "within 90 seconds" in result.stderr, "missing fresh verdict did not time out")
+        self.check(90 <= time.monotonic() - started < 165, "load-verdict wait was not bounded around 90 seconds plus download")
+        self.check(snapshot(ACTIVE) == before, "timeout did not restore the prior source")
+        self.check("Previous ShortcutSkate.cs restored" in result.stderr, "timeout did not report restoration")
+        self.no_staging()
+
+    def interrupted_verdict(self, signum, expected_status):
+        before = self.seed_prior()
+        caller = subprocess.Popen(["bash", str(self.installer)], stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd="/", env=self.environment, start_new_session=True)
+        owned = set()
+        try:
+            deadline = time.monotonic() + 75
+            while time.monotonic() < deadline:
+                self.collect_owned_processes(caller, None, owned)
+                if ACTIVE.exists() and digest(ACTIVE.read_bytes()) == SOURCE_SHA256:
+                    break
+                require(caller.poll() is None, "installer exited before cancellation in the verdict wait")
+                time.sleep(0.05)
+            require(ACTIVE.exists() and digest(ACTIVE.read_bytes()) == SOURCE_SHA256, "source was not installed before verdict-wait cancellation")
+            caller.send_signal(signum)
+            stdout, stderr = caller.communicate(timeout=10)
+            self.check(caller.returncode == expected_status, "verdict-wait cancellation returned the wrong status")
+            self.check(snapshot(ACTIVE) == before, "cancellation after publication did not restore prior source")
+            self.check(b"Previous ShortcutSkate.cs restored" in stderr and b"Oxide reported loading" not in stdout, "cancellation did not report guarded restoration")
+            inventory = self.collect_owned_processes(caller, None, owned)
+            self.check(not self.live_owned_processes(inventory, owned), "caller returned before owned verdict worker exited")
+            self.no_staging()
+        finally:
+            self.collect_owned_processes(caller, None, owned)
+            if caller.poll() is None:
+                caller.send_signal(signal.SIGTERM)
+            self.stop_owned_processes(owned)
+            caller.communicate(timeout=5)
 
     def collect_owned_processes(self, caller, holder, owned):
         inventory = process_inventory()
@@ -614,6 +804,7 @@ class Scenario:
             self.work.mkdir(mode=0o700)
             (self.work / "tmp").mkdir(mode=0o700)
             PLUGINS.mkdir(parents=True)
+            LOGS.mkdir()
             self.group("reviewed_delivery", self.delivery)
             self.group("missing_owner", self.missing_owner)
             self.group("admission_guards", self.guards)
@@ -622,6 +813,18 @@ class Scenario:
             self.group("fresh_install", self.fresh)
             self.group("prior_source_replacement", self.replacement)
             self.group("backup_rename_failure", self.backup_failure)
+            self.group("compile_failure_restore", self.compile_failure)
+            self.group("fresh_compile_failure", lambda: self.compile_failure(fresh=True))
+            self.group("stale_partial_wrong_version", self.stale_and_partial)
+            self.group("log_rotation", self.rotation)
+            self.group("copied_log_and_other_plugin", self.copied_log_and_other_plugin)
+            self.group("long_tail_failure", self.long_tail_failure)
+            self.group("changed_source_guard", lambda: self.changed_files(False))
+            self.group("changed_backup_guard", lambda: self.changed_files(True))
+            self.group("log_truncation", self.log_truncation)
+            self.group("verdict_timeout", self.verdict_timeout)
+            self.group("sigterm_during_verdict", lambda: self.interrupted_verdict(signal.SIGTERM, 143))
+            self.group("sigint_during_verdict", lambda: self.interrupted_verdict(signal.SIGINT, 130))
             self.group("sigterm_during_backup", lambda: self.interrupted_replacement(signal.SIGTERM, 143))
             self.group("sigint_during_backup", lambda: self.interrupted_replacement(signal.SIGINT, 130))
             self.group("documented_delivery_and_failure", self.documented_entrypoint)

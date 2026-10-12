@@ -38,15 +38,21 @@ After a real install, record actual server startup, matching framework, listener
 
 ## Update the skate plugin
 
+**Installation hold:** the owner reports that 0.3.6 did not load after source
+replacement; the actual compiler/load diagnostic is still unavailable.
+Keep the owner-advised 0.3.5 live baseline until that failure is understood.
+This updater's source and fixture checks do not establish native acceptance.
+
 `add-skate.sh` installs reviewed ShortcutSkate **0.3.6** from the owner-merged
 [PR #375](https://github.com/Dj-Shortcut/mw2-rust-skate-rewrite/pull/375), commit
 `6e08751ce932eca441842c852acd369977b459e1`, with source SHA-256
 `ca3cc15a2d507eafd5cfb9303a13f7bc6ca57d0966c9b43bfddbbb36fc2f077e`.
 It targets the existing `/srv/rust/server/oxide/plugins` installation created by
-`bootstrap-ubuntu.sh`, with its `rust` user/group. It needs Bash, curl and
+`bootstrap-ubuntu.sh`, with its `rust` user/group. It needs Bash, Python 3, curl and
 sha256sum; installation uses the GNU/Linux file tools plus runuser and setsid
 from util-linux. The plugins folder must be writable by the nonroot rust
-account, and an existing source must be readable by that account.
+account, and an existing source must be readable by that account. Oxide's
+`oxide/logs` directory and regular `oxide_*.txt` files must also be readable.
 
 From this checkout, verify the pinned download without root or a server:
 
@@ -55,8 +61,9 @@ bash mods/rust/server/add-skate.sh --check
 ```
 
 This mode downloads into a temporary file, checks its SHA-256 and removes it.
-It does not access the server's plugins folder. On the existing Linux host, run
-the installer as root, with no other plugin update running:
+It does not access the server's plugins folder. After the installation hold is
+resolved, run the installer as root on the existing Linux host, with the server
+running and no other plugin update running:
 
 For an existing ShortcutSkate installation, first back up
 `oxide/config/ShortcutSkate.json` under the server root. To adopt the current
@@ -74,10 +81,10 @@ warmup acceptance. Deliberately lower custom limits still restrict that ride.
     skate_update_dir=$(mktemp -d /tmp/ShortcutSkate-update.XXXXXX)
     trap 'rm -rf -- "$skate_update_dir"' EXIT
     curl -fsSL --connect-timeout 15 --max-time 60 \
-        https://raw.githubusercontent.com/Dj-Shortcut/mw2-rust-skate-rewrite/ace52fcbc20a84aa697cb37f79271411b5169a88/mods/rust/server/add-skate.sh \
+        https://raw.githubusercontent.com/Dj-Shortcut/mw2-rust-skate-rewrite/f9cb4330c26fdbeb5b9df94b9aea1711a7b9e4b5/mods/rust/server/add-skate.sh \
         -o "$skate_update_dir/add-skate.sh"
     printf '%s  %s\n' \
-        44b2f302ce01a7929d85a8c518a0a8d1b884ee4934890fc19d67243ce31ad539 \
+        49489fe2096e83fb87f434a62c2e104b9254542b833a3b842458de7627805ef9 \
         "$skate_update_dir/add-skate.sh" | sha256sum -c -
     bash "$skate_update_dir/add-skate.sh"
 )
@@ -87,12 +94,26 @@ The installer itself is downloaded from an immutable reviewed commit and checked
 before execution. A failed or incomplete download stops the command; it does
 not execute whatever happens to be on `main`.
 
-After updating the source and configuration, run `oxide.reload ShortcutSkate`
-in the authenticated server console or administrator's Rust F1 console. Check
+The installer waits up to 90 seconds for a newly observed
+`Loaded plugin ShortcutSkate v0.3.6` line in `oxide/logs/oxide_*.txt` and prints
+its path and text. If automatic plugin reload is disabled, run
+`oxide.reload ShortcutSkate` in the authenticated server console or
+administrator's Rust F1 console during that wait. Check
 `skate.status` in the player's F1 console for the configured limits; a playerless
 server console requires `skate.status <SteamID64>` for a connected player.
-These are game-console commands; the shell installer only replaces source.
-Loading and riding remain owner verification.
+These are game-console commands. The updater observes logs and replaces source;
+it does not send console commands. A log verdict establishes only that Oxide
+reported loading the selected version; placement and riding remain owner checks.
+
+Only complete lines appended after the post-replacement observation cut count.
+Existing historical lines, unfinished baseline lines and other versions are
+ignored. A newly discovered log inode is baselined at its first observed end,
+so copied historical content cannot confirm loading. A genuine message written
+before the observation cut, or before that new inode is first observed, can be
+missed conservatively. On log truncation, unreadable/irregular logs, an oversized
+line or more than 8 MiB of new tail in a poll, verification fails safely. Each
+captured tail is fully scanned before accepting success; a target-plugin compile
+failure in that tail takes precedence.
 
 The source is downloaded and verified in a private temporary directory under
 `/tmp`. Root opens those verified bytes, then a separate session runs all plugin
@@ -104,27 +125,42 @@ An existing backup is overwritten at that stage, even if the final replacement
 fails. Download, checksum, privilege-drop or backup failure leaves the active
 source untouched. The installer does not grant the service account access to
 root-only files. On INT/TERM the caller signals and waits for its tracked worker
-before returning cancellation. An already-published rename is not rolled back.
+before returning cancellation. Until a matching fresh load verdict is accepted,
+a compile failure, timeout, observation error or catchable cancellation restores
+the backup through another same-directory rename as `rust`. A fresh installation
+without a prior source instead removes the unconfirmed new source. Rollback
+requires the active source and saved backup to retain their captured identities
+and hashes; changed files are refused and the outcome is printed. These guards
+are not a lock against a simultaneous external update; do not run two updaters.
+The backup remains available. Verify that Oxide reloads the restored version.
 Catchable exits clean staging; SIGKILL/power loss can leave it behind. The script
-does not restart the server
-or change its configuration/world.
+does not restart the server or change its configuration/world.
 
-After installation, check the server console for successful compilation and
-`Loaded plugin ShortcutSkate v0.3.6`, then run `oxide.plugins`. Keep the backup
+On failure, the updater prints the observed diagnostic, log location, recent new
+compiler-related lines and restoration/refusal result, then exits nonzero.
+Keep raw operational logs private. After a successful observed verdict,
+run `oxide.plugins` in the server console. Keep the backup
 until the owner has checked placement and riding. Source installation alone
 does not prove plugin loading, park placement or movement without corrections.
 The owner-approved `skate_server_plugin_install` scenario exercises the actual
 installer in a disposable Ubuntu 24.04 CI container, including fresh installation,
 previous-source backup and refusal/cleanup after real file-operation failures.
-It also verifies that root-only source bytes/metadata remain unchanged when the
+It uses synthetic Oxide verdict lines to exercise successful observation,
+compile failure, the real 90-second timeout, restoration, log rotation, stale
+and partial messages, copied logs, exact plugin/version matching, long tails,
+changed-file refusal and cancellation while waiting. These fixtures do not run
+Oxide or prove its actual logging/reload behavior. It also verifies that
+root-only source bytes/metadata remain unchanged when the
 unprivileged backup operation is refused. INT/TERM cases hold a real Linux file
 lease during backup, cancel the caller, and check worker exit before lease
 release plus unchanged source and clean staging afterward.
 It uses genuine pinned public downloads and starts no Rust/Oxide process. No live
 server, Rust client or Shadow PC is used. The unchanged pinned 0.3.6 source
-compiled locally as net48/C#7.3 against genuine server references with zero
-errors/warnings. Native compilation/loading, movement acceptance and park
-placement still need owner validation.
+compiled locally as net48/C#7.3 against genuine cached server references with
+zero errors/warnings. Offline review found no confirmed 0.3.5-to-0.3.6 API
+regression in that snapshot. The owner's actual compiler verdict and installed
+assembly identities remain needed to diagnose the reported failure. Native
+compilation/loading, movement acceptance and park placement are still open.
 
 ## Native installation evidence
 
