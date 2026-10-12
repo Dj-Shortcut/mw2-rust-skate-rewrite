@@ -557,15 +557,30 @@ namespace Shortcut.RustMod
             var leftHip = pelvis - pelvisRight * (rig.HipWidth * 0.5);
             var rightHip = pelvis + pelvisRight * (rig.HipWidth * 0.5);
             // The feet: on the board on the ground until the body comes past the lean, then folded in
-            // to the pike, a stance apart along the body's lateral axis.
+            // to the pike, a stance apart along the body's lateral axis. From the moment they leave
+            // the ground they are carried in the body's own frame, so that they swing round over the
+            // hand with the body, the way a cartwheel's legs do, and fold in on the way: a straight
+            // line from the ground to the pike would leave a foot hanging below the body half way.
             double f = Smooth(Math.Max(0, Math.Min(1, (theta - PlantLean) / (PlantFoldBy - PlantLean))));
             var deckGround = input.BoardPosition + up * SkatePose.FootLift;
-            var deckFold = pelvis + chestUp * (rig.SpineLength * PlantPikeUp) + chestForward * (legLength * PlantPikeOut);
             // On the ground the lead foot is ahead along travel; folded in, the feet are apart across
             // the body, each on its own side, so the body turning over carries them round with it.
             double leadSign = leadIsLeft ? 1 : -1;
-            var leftAnkle = Blend(deckGround + travel * (SkatePose.FootOffset * leadSign), deckFold - chestRight * SkatePose.FootOffset, f);
-            var rightAnkle = Blend(deckGround - travel * (SkatePose.FootOffset * leadSign), deckFold + chestRight * SkatePose.FootOffset, f);
+            var leftGround = deckGround + travel * (SkatePose.FootOffset * leadSign);
+            var rightGround = deckGround - travel * (SkatePose.FootOffset * leadSign);
+            // The body's frame at the moment the feet leave the ground, and the feet's places in it.
+            var up0 = up * Math.Cos(PlantLean) + travel * Math.Sin(PlantLean);
+            var right0 = Cross(up0, chestForward);
+            var pelvis0 = plantedJoint - up0 * rig.ShoulderRise - right0 * (rig.ShoulderWidth * 0.5 * (leadIsLeft ? -1 : 1)) - up0 * rig.SpineLength;
+            var leftLocal = Local(leftGround - pelvis0, up0, chestForward, right0);
+            var rightLocal = Local(rightGround - pelvis0, up0, chestForward, right0);
+            var pikeLocal = new SkateVector(rig.SpineLength * PlantPikeUp, legLength * PlantPikeOut, 0);
+            var leftFold = Blend(leftLocal, pikeLocal - new SkateVector(0, 0, SkatePose.FootOffset), f);
+            var rightFold = Blend(rightLocal, pikeLocal + new SkateVector(0, 0, SkatePose.FootOffset), f);
+            var leftAnkle = pelvis + chestUp * leftFold.X + chestForward * leftFold.Y + chestRight * leftFold.Z;
+            var rightAnkle = pelvis + chestUp * rightFold.X + chestForward * rightFold.Y + chestRight * rightFold.Z;
+            // Never below the ground: a foot still on the ground before the body passes the lean stays exactly there.
+            if (f <= 0) { leftAnkle = leftGround; rightAnkle = rightGround; }
             var leadAnkle = leadIsLeft ? leftAnkle : rightAnkle;
             var backAnkle = leadIsLeft ? rightAnkle : leftAnkle;
             var pole = facing - chestUp * f;
@@ -839,6 +854,9 @@ namespace Shortcut.RustMod
         private static SkateVector Project(SkateVector value, SkateVector normal) { return value - normal * SkateVector.Dot(value, normal); }
         private static SkateVector Cross(SkateVector a, SkateVector b)
         { return new SkateVector(a.Y * b.Z - a.Z * b.Y, a.Z * b.X - a.X * b.Z, a.X * b.Y - a.Y * b.X); }
+        // A vector's coordinates along three frame axes, as (up, forward, right).
+        private static SkateVector Local(SkateVector v, SkateVector up, SkateVector forward, SkateVector right)
+        { return new SkateVector(SkateVector.Dot(v, up), SkateVector.Dot(v, forward), SkateVector.Dot(v, right)); }
         private static SkateVector Forward(double yaw)
         { double radians = yaw * Math.PI / 180; return new SkateVector(Math.Sin(radians), 0, Math.Cos(radians)); }
         private static SkateVector Blend(SkateVector a, SkateVector b, double t) { return a + (b - a) * t; }
