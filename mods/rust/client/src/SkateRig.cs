@@ -154,6 +154,7 @@ public class SkateRig : MonoBehaviour
         var frame = SkateRide.Clamp(now - lastFrame, 0.001f, 0.1f); lastFrame = now;
         SkateCamera.Sample();
         SkateParks.Frame(now);
+        SkatePieces.Frame(now);
         // With a controller the rider looks where the board goes, a little into the turn; the view
         // itself is turned by the right stick's flicks and says nothing.
         if (!SkateKeys.Scripted) SkateKeys.LookYaw = SkateKeys.Pad && SkateRide.On ? SkateRide.Yaw + SkateKeys.Steer * 35f : SkateCamera.LookYaw;

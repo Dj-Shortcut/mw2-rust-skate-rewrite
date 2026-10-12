@@ -51,9 +51,9 @@ PC reliably from a distance.
 | `runtime` | Builds the changed `Il2CppInterop.Runtime.dll` from the pinned upstream source and [`rt/`](rt/README.md). Needed once. |
 | `build` | Compiles the plugin from [`../sources.txt`](../sources.txt) at the head of the branch, or at `$pcommit`, and copies the park models of [`../models.txt`](../models.txt) next to it. |
 | `session` | One bounded run of the client with the loader; see below. Normally started by one of the next five. |
-| `play` | Build, then a session to play in, started directly, sound on. |
-| `pad` | The same through the owner's Steam shortcut, so that the controller layout applies off the board; the owner joins his server from the menu. |
-| `ride`, `pose`, `park`, `send`, `tricks`, `flick` | Build, then a muted session that runs one scripted check in the world and ends by itself. `flick` plays a controller into the plugin without one; `park` draws the authored park models for a look and a ride, on this client only. |
+| `play` | Build, then a session to play in, sound on, started through the owner's Steam shortcut so that the controller layout applies off the board too; the owner joins his server from the menu (QUICK JOIN), or gives the shortcut `+connect <address>` as its launch options in Steam once. `$pdirect=1` starts the client directly and joins the server in `server.txt` at start instead: keyboard and mouse only, since a client that Steam did not start gets no Steam Input. |
+| `pad` | The same as `play` without its options. |
+| `ride`, `pose`, `park`, `send`, `place`, `tricks`, `flick` | Build, then a muted session that runs one scripted check in the world and ends by itself. `flick` plays a controller into the plugin without one; `park` draws the authored park models for a look and a ride, on this client only; `place` sends `skate.place bank` to the server and reports whether a piece appeared and was drawn (server plugin 0.3.6 or later). |
 | `status` | Build, then a session on the owner's server that rides until the server puts the rider back, steps off and types `skate.status`, the server's speed and fly checks and `oxide.plugins` into the F1 console, one every eight seconds; the console stays open so each answer can be read from the screen. |
 | `sticks` | Watches the controller from outside the game for `$pwatch` seconds and says what it saw in each slot. The same script is the reader that a session starts beside the client. |
 | `flicks` | The last session's right-stick movements, one row each: where the rider was, what came of it, and the shape of the movement. `$pshow` prints one of them point by point. |
@@ -61,7 +61,7 @@ PC reliably from a distance.
 | `file` | Another file of the last session, by default the game's `Player.log`. |
 | `more` | The next page of whatever was shown last. |
 | `last` | Makes the newest session folder the one that `log`, `logall` and `file` show, and sums up its ride: seconds on the board, top speed, the lowest speed cap, how often the server put the rider back, tricks and bails. For a session of the owner's launcher, which runs in a window of its own. |
-| `clean` | Moves a loader that these tools left in the Rust folder out of it. |
+| `clean` | Moves a loader that these tools left in the Rust folder out of it. A file still held by a closing client or its crash handler is tried again for a minute; what is left is named. |
 | `survey` | Lists what the interop set of the installed build offers for given type names. |
 | `launcher` | Installs or updates the owner's launcher from the commit in [`release.txt`](release.txt). |
 | `launchertest` | Starts the installed launcher, kills it while Rust runs, closes Rust and reports whether the Rust folder was cleaned all the same. |
@@ -75,13 +75,20 @@ PC reliably from a distance.
 plugin into the Rust folder, starts the client, waits, closes the client and moves every file it
 added out again into the session's own folder. The last part runs in a `finally` block: the loader
 must not stay in the Rust folder, because any later start of Rust would load it too, also on a
-server with anti-cheat. It refuses to start when the loader is already there, when Rust is running
+server with anti-cheat. A file of the loader can still be held for a while after the client has
+exited (its `ErrorLog.log` was seen held once, which left the whole loader in place when the first
+failed move ended the block): a move that fails is tried again for a minute, with a lingering client
+or crash handler ended in between, and whatever is still there at the end is named, with `clean`
+as the next step. It refuses to start when the loader is already there, when Rust is running
 or when there is no interop set for the installed build; a set generated for another build crashes
 the client.
 
 The client is started directly (`RustClient.exe`, which does not start the anti-cheat) or through
 the owner's non-Steam shortcut `RustClient` for the same executable. With `$pconnect` a directly
-started client joins the server in `server.txt`; nothing has to be typed in the game.
+started client joins the server in `server.txt`; nothing has to be typed in the game. Only a client
+that Steam started gets Steam Input: started directly, the controller works on the board (the
+plugin reads it through its own reader) but not on foot, which is what the owner saw in a `play`
+session before `play` went through the shortcut.
 
 While its loader is in the Rust folder, `session` keeps a note in the staging folder that names two
 of the loader's files by their hash. `clean` moves a loader out only when that note is there and
@@ -138,7 +145,7 @@ Set by the scripts for one another; `sv name value` sets one by hand.
 | `$psteps` | `session` | Steps for the plugin. |
 | `$pplug`, `$prt` | `session` | Folder with the plugin, folder with the changed runtime. |
 | `$pdone` | `session` | Seconds after which a session in a world is ended. |
-| `$plimit`, `$pquiet` | `play` | End the session that many seconds after its start; turn the sound down. |
+| `$plimit`, `$pquiet`, `$pdirect` | `play` | End the session that many seconds after its start; turn the sound down; start the client directly with `+connect` instead of through the Steam shortcut. |
 | `$pgentest` | `interop` | Generate into a folder of its own instead of the one sessions use. |
 | `$psteam`, `$pshortcut` | `session` | Start through the Steam shortcut of that name. |
 | `$pconnect` | `session` | Join the server in `server.txt` at start (direct start only). |
