@@ -251,7 +251,7 @@ public static class Scenarios
         SkateRide.PushMongo = v.State == "mongo";
         // The leading foot pushes in a mongo push and in a push rolling tail first.
         SkateRide.PushLead = v.State == "mongo" || v.State == "fakie";
-        SkateRide.Speed = v.State == "fakie" ? -2f : 0f;
+        SkateRide.Speed = v.State == "fakie" ? -2f : 0f; SkateRide.SenseRollingBack();
         SkateRide.PlantedUntil = v.State == "plant" ? now + 999f : -99f;
         SkateRide.Stalling = v.State == "stall";
         SkateRide.GrindKind = v.State == "stall" || v.State == "grind" ? (SkateGrindKind)(int)v.Value : SkateGrindKind.None;

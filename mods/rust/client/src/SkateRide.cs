@@ -170,7 +170,12 @@ public static class SkateRide
         Speed = Clamp(Speed, -reverse / h, forward / h);
         if (Mode == RideMode.Grind) SkateGrind.Speed = Speed;
     }
-    public static bool TailFirst { get { return Trick.Switch != (Speed < -0.3f); } }
+    // Which end leads: the stance's half turns, and whether the board rolls against its heading. The
+    // latter is read with a band (from -0.5 m/s back, to -0.1 m/s forward again), so a board rocking
+    // about a standstill does not turn the rider's chest back and forth.
+    public static bool TailFirst { get { return Trick.Switch != rollingBack; } }
+    private static bool rollingBack;
+    public static void SenseRollingBack() { if (Speed < -0.5f) rollingBack = true; else if (Speed > -0.1f) rollingBack = false; }
     // The rider's stance: regular (left foot forward, chest to the right of the nose) or goofy, the
     // mirror image. Read from the stance file at start, switched on foot with J or Back+Y, and kept.
     public static bool Goofy;
@@ -214,7 +219,7 @@ public static class SkateRide
         if (mountAt - putBackAt > CapForget) ForgetServer();
         VSpeed = 0f; AirTime = 0f; flipLeft = shoveLeft = pendShove = bodyLeft = 0f; pendFlip = 0; SpinDeg = FlipDeg = ShoveDeg = BodyDeg = 0; LateTrick = false; Jumped = TrickAir = Braking = Manual = NoseManual = spinning = DeckReversed = false; PushPhase = 0f; stuck = 0; heldSteps = 0; Held = false;
         Grab = SkateGrabKind.None; spinSide = 1f; wantKind = SkatePopKind.Ollie; wantFlip = 0; wantShove = 0f; wantScale = 1f;
-        PumpHeld = RevertLeft = revertTurned = 0f; landedTrick = fastFakie = false; steppedAt = -99f; StepUps = 0; Pump = default(SkatePumpState); SlopeDegrees = 0f; ContactNormal = Vector3.up; GrindKind = SkateGrindKind.None; GrindFrontside = GrindAlong = false; GrindDeck = 0f; Stalling = false; Stalls = 0; PlantedUntil = -99f; PushMongo = PushLead = false; handDownAt = -99f;
+        PumpHeld = RevertLeft = revertTurned = 0f; landedTrick = fastFakie = false; steppedAt = -99f; StepUps = 0; Pump = default(SkatePumpState); SlopeDegrees = 0f; ContactNormal = Vector3.up; GrindKind = SkateGrindKind.None; GrindFrontside = GrindAlong = false; GrindDeck = 0f; Stalling = false; Stalls = 0; PlantedUntil = -99f; PushMongo = PushLead = false; handDownAt = -99f; rollingBack = false;
         Trick = new SkateTrickState(false); TrickName = ""; ComboPoints = 0; TrickAt = BankedAt = LandAt = jumpWanted = -99f; OffReason = "";
         SkateHud.Clear();
         Normal = ViewNormal = Vector3.up; Position = b.position; Tangent = Dir(yaw);
@@ -265,6 +270,7 @@ public static class SkateRide
             var pos = body.position; var game = body.linearVelocity;
             Position = pos;
             if (pos.y < SeaLevel && OpenSky(pos)) { Dismount("in the water"); return; }
+            SenseRollingBack();
             Measure(pos, dt);
             Sense(pos);
             if (Mode != RideMode.Grind) SkateGrind.Tick(dt);
