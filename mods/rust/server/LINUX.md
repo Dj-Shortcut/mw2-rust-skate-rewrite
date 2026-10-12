@@ -113,13 +113,14 @@ and no other plugin update running:
 
 For an existing ShortcutSkate installation, first back up
 `oxide/config/ShortcutSkate.json` under the server root. To adopt the current
-stock skate allowances, edit its existing `MaximumHorizontalSpeed` field to
-`25` and `MaximumAirtime` to `2` before replacing the plugin source. Retain
-`Version: 1` and every other field, including permissions, automatic activation
-and park gestures. Existing files keep their saved values: the installer does
+stock horizontal speed limit, edit its existing `MaximumHorizontalSpeed` field to
+`25` before replacing the plugin source. Retain `Version: 1` and every other field,
+including permissions, park gestures and the diagnostic timing values.
+`MaximumAirtime`, `AutomaticEligiblePlayers` and `AutomaticRearmSeconds` control
+diagnostics only in 0.3.7. Existing files keep their saved values: the installer does
 not update configuration, and new defaults apply only when creating a config.
-Leaving the old `14` m/s limit rejects a `16.5` m/s rider even with the new
-warmup acceptance. Deliberately lower custom limits still restrict that ride.
+Leaving the old `14` m/s cap still rejects a measured `16.5` m/s rider; deliberately
+lower custom speed caps remain enforced.
 
 ```sh
 (set -eu; skate_update_dir=$(mktemp -d /tmp/ShortcutSkate-update.XXXXXX); trap 'rm -rf -- "$skate_update_dir"' EXIT; curl -fsSL --connect-timeout 15 --max-time 60 https://raw.githubusercontent.com/Dj-Shortcut/mw2-rust-skate-rewrite/4cf4c313d6da3b874c1c1201b8030efb4a428a78/mods/rust/server/add-skate.sh -o "$skate_update_dir/add-skate.sh"; printf '%s  %s\n' 87ddd9a92e3701dc91794300de3faf0ae3005290929ce2abf51d516f78ac3202 "$skate_update_dir/add-skate.sh" | sha256sum -c -; bash "$skate_update_dir/add-skate.sh")
