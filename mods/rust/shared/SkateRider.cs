@@ -376,9 +376,11 @@ namespace Shortcut.RustMod
 
             double carving = Math.Min(1, Math.Abs(input.LeanDegrees) / SkatePose.MaximumLean);
             double air = input.Airborne ? 1 : 0;
-            double armOut = armLength * (0.17 + 0.10 * crouch + 0.15 * carving + 0.35 * air);
-            double armDown = armLength * (0.94 - 0.25 * crouch - 0.12 * carving - 0.40 * air);
-            double armAhead = armLength * (0.10 + 0.12 * crouch + 0.05 * speed);
+            // At rest the arms hang loosely a little out and ahead, the elbows bent, not straight
+            // down at the sides; they come up and out with a crouch, a carve and in the air.
+            double armOut = armLength * (0.26 + 0.10 * crouch + 0.15 * carving + 0.30 * air);
+            double armDown = armLength * (0.84 - 0.22 * crouch - 0.12 * carving - 0.34 * air);
+            double armAhead = armLength * (0.14 + 0.12 * crouch + 0.05 * speed);
             var along = travel * (armLength * (backIsLeft ? -1 : 1));
             var counterSwing = chestForward * (armLength * PushSwing * swing * (backIsLeft ? -1 : 1));
             var leftTarget = leftShoulder - chestRight * armOut + chestForward * armAhead - up * armDown
@@ -429,7 +431,7 @@ namespace Shortcut.RustMod
 
         private const double RidingPelvisYaw = 12, RidingChestYaw = 28, RidingLeadToe = 25, RidingBackToe = 5;
         private const double PushPelvisYaw = 55, PushChestYaw = 70, PushLeadToe = 60;
-        private const double AirYaw = 0.35, PushWeight = 0.28, PushSide = 0.03, PushDip = 0.06, PushLean = 0.34, PushSwing = 0.28;
+        private const double AirYaw = 0.35, PushWeight = 0.28, PushSide = 0.03, PushDip = 0.12, PushLean = 0.24, PushSwing = 0.28;
         // The pushing foot comes down PushPlant ahead of the board's middle and leaves it PushSweep
         // behind: the stroke, over which the foot is on the ground (push phase PushDown..PushUp).
         public const double PushPlant = 0.18, PushSweep = 0.44, PushDown = 0.25, PushUp = 0.6;
