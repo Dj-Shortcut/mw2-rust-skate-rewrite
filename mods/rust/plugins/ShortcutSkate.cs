@@ -405,13 +405,6 @@ namespace Shortcut.RustMod
         }
     }
 
-        public static bool CanExemptFly(bool trusted, double dt, double vertical)
-        {
-            return trusted && SkateSessionBounds.Finite(dt) && dt > 0 && dt <= SkateSessionBounds.MaximumBatchSeconds &&
-                SkateSessionBounds.Finite(vertical) && vertical >= 0 && vertical <= MaximumFlyVerticalSpeed * dt;
-        }
-    }
-
     public enum SkateParkSelectionAction { Next, Cancel, PlacementFailed, PlacementSucceeded }
 
     public struct SkateParkSelectionState
