@@ -7,7 +7,12 @@ $global:prepo = 'Dj-Shortcut/mw2-rust-skate-rewrite'
 # The address of a file at a commit, on the raw host: a commit cannot be stale there, and the API
 # answers a caller without a key only sixty times an hour, which three builds would use up.
 function global:zu($path, $commit) { "https://raw.githubusercontent.com/$prepo/$commit/$path" }
-function global:zg($f) { irm -Headers @{ Accept = 'application/vnd.github.raw' } ("https://api.github.com/repos/$prepo/contents/mods/rust/client/tools/{0}?ref={1}" -f $f, $pref) }
+# When the API refuses (its hourly limit for a caller without a key), the raw host is asked
+# instead: it may hand out a branch a few minutes old, which beats no script at all.
+function global:zg($f) {
+  try { irm -Headers @{ Accept = 'application/vnd.github.raw' } ("https://api.github.com/repos/$prepo/contents/mods/rust/client/tools/{0}?ref={1}" -f $f, $pref) -ErrorAction Stop }
+  catch { irm ("https://raw.githubusercontent.com/$prepo/$pref/mods/rust/client/tools/{0}" -f $f) }
+}
 function global:zz($n) { iex (zg "$n.ps1") }
 $global:ErrorActionPreference = 'Continue'
 "zz ready, branch $pref"

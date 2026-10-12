@@ -18,7 +18,15 @@ New-Item -ItemType Directory -Force "$probe\plugin","$probe\src" | Out-Null
 # exact commit, which cannot be stale.
 $ref = 'main'; if ($pref) { $ref = $pref }
 $head = "$pcommit"
-if (-not $head) { $head = ("" + (irm -Headers @{ Accept = 'application/vnd.github.sha' } "https://api.github.com/repos/$prepo/commits/$ref")).Trim() }
+if (-not $head) { try { $head = ("" + (irm -Headers @{ Accept = 'application/vnd.github.sha' } "https://api.github.com/repos/$prepo/commits/$ref" -ErrorAction Stop)).Trim() } catch { $head = '' } }
+# Over the API's hourly limit: the branch head from git's own ref listing, which has no such limit.
+if ($head -notmatch '^[0-9a-f]{40}$') {
+  try {
+    $refs = "" + (iwr -UseBasicParsing "https://github.com/$prepo.git/info/refs?service=git-upload-pack" -ErrorAction Stop).Content
+    $m = [regex]::Match($refs, '([0-9a-f]{40}) refs/heads/' + [regex]::Escape($ref) + '(\s|$)')
+    if ($m.Success) { $head = $m.Groups[1].Value }
+  } catch { }
+}
 if ($head -notmatch '^[0-9a-f]{40}$') { Write-Host 'ABORT: could not read the commit to build'; return }
 $global:pbuilt = $null
 $list = ("" + (irm (zu 'mods/rust/client/sources.txt' $head))) -split "`n"
