@@ -22,7 +22,8 @@ if (-not $head) { try { $head = ("" + (irm -Headers @{ Accept = 'application/vnd
 # Over the API's hourly limit: the branch head from git's own ref listing, which has no such limit.
 if ($head -notmatch '^[0-9a-f]{40}$') {
   try {
-    $refs = "" + (iwr -UseBasicParsing "https://github.com/$prepo.git/info/refs?service=git-upload-pack" -ErrorAction Stop).Content
+    # RawContent: the listing is served as a binary type, whose .Content is bytes, not text.
+    $refs = "" + (iwr -UseBasicParsing "https://github.com/$prepo.git/info/refs?service=git-upload-pack" -ErrorAction Stop).RawContent
     $m = [regex]::Match($refs, '([0-9a-f]{40}) refs/heads/' + [regex]::Escape($ref) + '(\s|$)')
     if ($m.Success) { $head = $m.Groups[1].Value }
   } catch { }
