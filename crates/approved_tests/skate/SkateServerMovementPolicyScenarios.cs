@@ -97,6 +97,8 @@ internal static class SkateServerMovementPolicyScenarios
         Accumulate(bottom, top, ref horizontal, ref vertical);
         Check(horizontal == 0 && vertical == 200000 && Allow(0.03125, horizontal, 25, SkateSessionReason.None),
             "finite vertical motion does not become a horizontal speed gate");
+        Check(!SkateMovementPolicy.CanExemptFly(true, 0.03125, vertical),
+            "world-spanning vertical motion never exempts native fly checks even for a trusted player");
         horizontal = vertical = 0;
         var zero = default(SkateMovementPoint); var fast = new SkateMovementPoint(0.8, 0, 0);
         Accumulate(zero, fast, ref horizontal, ref vertical);
@@ -197,6 +199,56 @@ internal static class SkateServerMovementPolicyScenarios
         Check(Allow(0.1, 0.5, 25, SkateSessionReason.None), "fresh scalar batch ignores previous clock history");
     }
 
+    private static void TrustedFlyPolicy()
+    {
+        Check(SkateMovementPolicy.MaximumFlyVerticalSpeed == 200, "explicit full vertical batch rate budget");
+        foreach (double dt in new[] { double.Epsilon, 0.0001, 0.03125, 0.5 })
+        {
+            foreach (double rate in new[] { 0.0, 6, 19, 30, 45.869597533611945, 50, 150, 200 })
+            {
+                double vertical = rate * dt;
+                Check(SkateMovementPolicy.CanExemptFly(true, dt, vertical), "trusted stationary, pop, steep transition, lip assist and capped fall rates accepted");
+                Check(!SkateMovementPolicy.CanExemptFly(false, dt, vertical), "ordinary permitted movement cannot authorize flight");
+            }
+            Check(!SkateMovementPolicy.CanExemptFly(true, dt, 200 * dt + 0.000001), "vertical rate excess keeps native fly result");
+        }
+        foreach (double dt in new[] { double.NaN, double.PositiveInfinity, double.NegativeInfinity, -1, 0, 0.500000001 })
+            Check(!SkateMovementPolicy.CanExemptFly(true, dt, 0), "malformed delta cannot exempt flight");
+        foreach (double path in new[] { double.NaN, double.PositiveInfinity, double.NegativeInfinity, -0.000001, double.MaxValue })
+            Check(!SkateMovementPolicy.CanExemptFly(true, 0.1, path), "malformed or enormous vertical path cannot exempt flight");
+        double horizontal = 0, verticalPath = 0;
+        var bottom = default(SkateMovementPoint); var top = new SkateMovementPoint(0, 4, 0);
+        Accumulate(bottom, top, ref horizontal, ref verticalPath);
+        Accumulate(top, bottom, ref horizontal, ref verticalPath);
+        Near(verticalPath, 8, "fly budget uses full out-and-back vertical travel");
+        Check(!SkateMovementPolicy.CanExemptFly(true, 0.03125, verticalPath), "zero net vertical displacement cannot hide an excessive path");
+        double steepPop = 13 * Math.Sqrt(1 - 0.31 * 0.31) / 0.31 + 6;
+        Near(steepPop, 45.869597533611945, "horizontal pace and steep surface preserve launch vertical component");
+        Check(SkateMovementPolicy.CanExemptFly(true, 0.03125, steepPop / 32), "source-valid steep pop remains fly-exempt for a trusted player");
+        Check(SkateMovementPolicy.CanExemptFly(true, 0.003, 0.25 * 0.6), "source-valid short-step lip lift remains fly-exempt");
+        Check(SkateMovementPolicy.CanExemptFly(true, 0.001, 0.25 * 0.6), "lip lift at its minimum denominator remains fly-exempt");
+        for (int mask = 0; mask < 256; mask++)
+        {
+            bool movement = SkateMovementPolicy.CanFilter((mask & 1) != 0, (mask & 2) != 0, (mask & 4) != 0,
+                (mask & 8) != 0, (mask & 16) != 0, (mask & 32) != 0, (mask & 64) != 0, (mask & 128) != 0);
+            Check((movement && SkateMovementPolicy.CanExemptFly(true, 0.1, 3)) == (mask == 127),
+                "fly exemption retains every fresh movement guard");
+            Check(!(movement && SkateMovementPolicy.CanExemptFly(false, 0.1, 3)), "general permission never bypasses separate fly authority");
+        }
+        for (int tick = 1; tick <= 320; tick++)
+            Check(SkateMovementPolicy.CanExemptFly(true, 1.0 / 32, 30.0 / 32),
+                "ten-second trusted fall has no inherited airtime or warmup cutoff");
+        Check(!SkateMovementPolicy.CanExemptFly(false, 0.1, 1) && SkateMovementPolicy.CanExemptFly(true, 0.1, 1) &&
+            !SkateMovementPolicy.CanExemptFly(false, 0.1, 1), "fresh trusted grant and revocation take effect without activation history");
+        for (int i = 0; i < 200; i++)
+            Check(SkateMovementPolicy.CanExemptFly(true, 0.1, 3), "warm fly decision");
+        long before = GC.GetAllocatedBytesForCurrentThread(); bool correct = true;
+        for (int i = 0; i < 20000; i++)
+            correct &= SkateMovementPolicy.CanExemptFly(true, 0.1, 3) && !SkateMovementPolicy.CanExemptFly(false, 0.1, 3) &&
+                !SkateMovementPolicy.CanExemptFly(true, 0.1, 21);
+        Check(correct && GC.GetAllocatedBytesForCurrentThread() - before == 0, "warm fly grant and denial decisions allocate zero bytes");
+    }
+
     private static void DeterminismAndAllocation()
     {
         var from = new SkateMovementPoint(1, 2, 3); var to = new SkateMovementPoint(1.3, 5, 3.4);
@@ -236,7 +288,7 @@ internal static class SkateServerMovementPolicyScenarios
             Console.WriteLine("Actual plugin: " + library + "\nSHA-256: " + digest);
             if (args.Length == 1) Check(string.Equals(args[0], digest, StringComparison.OrdinalIgnoreCase), "actual plugin hash pinned");
             TickCountsAndCoordinates(); FullPathAndHorizontalPolicy(); NumberBoundaries(); AccessAndFreshness();
-            LegacyHistoryCannotStarveMovement(); DeterminismAndAllocation();
+            LegacyHistoryCannotStarveMovement(); TrustedFlyPolicy(); DeterminismAndAllocation();
             Console.WriteLine("skate_server_movement_policy: " + checks + " checks passed");
             return 0;
         }
