@@ -246,11 +246,14 @@ Over each assembly the matching model from the ramp pack is drawn (its `Visual` 
 surface; the model sits 2 cm above the native tiles. The native tiles' renderers are switched
 off under it. The server keeps its own blocks: they are its collision and what unmodded clients
 see; nothing is sent. A demolished piece takes its model with it. The bank, kicker, ledges and
-funbox models match the native assemblies; the quarterpipe and halfpipe models are circular
-(2.5 m) and shorter than the native 15°/35° facets, so they are placed by their entry (the
-quarterpipe) and their flat (the halfpipe) and do not yet cover the native tiles. Without the
-`.glb` files next to the plugin the pieces are found and nothing is drawn; the log says which
-file is missing. Unverified in game.
+funbox models match the native assemblies. The quarterpipe and the halfpipe are not drawn from
+their authored models (circular, 2.5 m, shorter than the native tiles, which stood out of them):
+they are made in the client on the tiles' own tops, a 15° and a 35° face from the flat (a
+halfpipe both ways from its 6 m flat, with its 3 m decks), the two bends rounded with a 3 m radius
+so the board rolls through them, the coping edge left sharp, nowhere under a tile and at most
+about 10 cm above one; the riding surface is their collider, and their colour is the authored
+model's when it is there. Without the `.glb` files next to the plugin the other pieces are found
+and not drawn; the log says which file is missing. Unverified in game.
 
 ### Steps
 
