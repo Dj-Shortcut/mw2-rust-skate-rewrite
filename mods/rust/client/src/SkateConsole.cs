@@ -8,6 +8,7 @@
 using System;
 using System.Runtime.InteropServices;
 using UnityEngine;
+using BepInEx;
 
 public static class SkateConsole
 {
@@ -138,7 +139,7 @@ public static class SkateConsole
         try
         {
             var net = FindType("Network.Net");
-            if (net == null) { SendState = "no Network.Net type"; return false; }
+            if (net == null) { SendState = "no Network.Net type (network assemblies loaded: " + NetworkAssemblies() + ")"; return false; }
             var cl = net.GetField("cl", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
             var clValue = cl != null ? cl.GetValue(null) : null;
             if (clValue == null)
@@ -183,12 +184,42 @@ public static class SkateConsole
         catch (Exception e) { SendState = "preparing threw " + e.GetType().Name + ": " + e.Message; return false; }
     }
 
+    // The network library's interop assembly is loaded only when something refers to it: it is
+    // asked for by name first, then by its file next to the other interop assemblies.
+    private static bool networkLoaded;
     private static Type FindType(string name)
     {
+        if (!networkLoaded)
+        {
+            networkLoaded = true;
+            try { System.Reflection.Assembly.Load("Facepunch.Network"); }
+            catch (Exception)
+            {
+                try
+                {
+                    var interop = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(Paths.PluginPath.TrimEnd('\\', '/')), "interop");
+                    var file = System.IO.Path.Combine(interop, "Facepunch.Network.dll");
+                    if (System.IO.File.Exists(file)) System.Reflection.Assembly.LoadFrom(file);
+                    else Out.Say("CONSOLE no Facepunch.Network.dll at " + file);
+                }
+                catch (Exception e) { Out.Say("CONSOLE loading the network library failed: " + e.GetType().Name + ": " + e.Message); }
+            }
+        }
         foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
         {
             try { var t = assembly.GetType(name, false); if (t != null) return t; } catch (Exception) { }
         }
         return null;
+    }
+
+    // The loaded assemblies whose names mention the network, for the log when a type is missing.
+    private static string NetworkAssemblies()
+    {
+        var names = new System.Collections.Generic.List<string>();
+        foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+        {
+            try { var n = assembly.GetName().Name; if (n.IndexOf("Network", StringComparison.OrdinalIgnoreCase) >= 0 || n.IndexOf("Facepunch", StringComparison.OrdinalIgnoreCase) >= 0) names.Add(n); } catch (Exception) { }
+        }
+        return names.Count == 0 ? "none" : string.Join(",", names.ToArray());
     }
 }
