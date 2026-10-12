@@ -16,10 +16,10 @@ import threading
 import time
 
 
-INSTALLER_COMMIT = "f9cb4330c26fdbeb5b9df94b9aea1711a7b9e4b5"
-INSTALLER_SHA256 = "49489fe2096e83fb87f434a62c2e104b9254542b833a3b842458de7627805ef9"
-SOURCE_COMMIT = "6e08751ce932eca441842c852acd369977b459e1"
-SOURCE_SHA256 = "ca3cc15a2d507eafd5cfb9303a13f7bc6ca57d0966c9b43bfddbbb36fc2f077e"
+INSTALLER_COMMIT = "4cf4c313d6da3b874c1c1201b8030efb4a428a78"
+INSTALLER_SHA256 = "87ddd9a92e3701dc91794300de3faf0ae3005290929ce2abf51d516f78ac3202"
+SOURCE_COMMIT = "6a17ac3d2c9a721464304f8455c457449bb2c19a"
+SOURCE_SHA256 = "54268cb81a504c45209c48afbf4d8545de51a412598258a5826b46066dfae15d"
 PRIOR_COMMIT = "5a9ed6e550a405365c8a18746dfd276a310b6848"
 PRIOR_SHA256 = "078508fbdb67683f92d4943480250c7987bcbe051e60565713df06e41cbb465e"
 PUBLIC_ROOT = "https://raw.githubusercontent.com/Dj-Shortcut/mw2-rust-skate-rewrite"
@@ -330,7 +330,7 @@ class Scenario:
                             pass
                     if armed and ACTIVE.exists() and ACTIVE.stat().st_ino != previous and digest(ACTIVE.read_bytes()) == SOURCE_SHA256:
                         if emit is None:
-                            self.log(b"04:20 [Info] Loaded plugin ShortcutSkate v0.3.6 by Dj-Shortcut\n")
+                            self.log(b"04:20 [Info] Loaded plugin ShortcutSkate v0.3.7 by Dj-Shortcut\n")
                         else:
                             emit(finished)
                         return
@@ -462,8 +462,8 @@ class Scenario:
         self.clean_plugins()
         result = self.with_verdict(lambda: self.install(delivered=True))
         self.check(result.returncode == 0, "delivered installer failed fresh installation: " + result.stderr.strip())
-        self.check("ShortcutSkate v0.3.6 source installed" in result.stdout, "fresh installation lacked source-install acknowledgement")
-        self.check("oxide_fixture.txt: 04:20 [Info] Loaded plugin ShortcutSkate v0.3.6" in result.stdout, "fresh install did not print the observed load verdict and path")
+        self.check("ShortcutSkate v0.3.7 source installed" in result.stdout, "fresh installation lacked source-install acknowledgement")
+        self.check("oxide_fixture.txt: 04:20 [Info] Loaded plugin ShortcutSkate v0.3.7" in result.stdout, "fresh install did not print the observed load verdict and path")
         self.active_installed()
         self.check(not os.path.lexists(BACKUP), "fresh installation unexpectedly created a backup")
 
@@ -481,7 +481,7 @@ class Scenario:
         self.check(not any(scratch.iterdir()), "documented entrypoint scratch was not empty")
         result = self.with_verdict(lambda: self.run(["sh", "-c", self.entrypoint], timeout=230))
         self.check(result.returncode == 0, "documented entrypoint failed: " + result.stderr.strip())
-        self.check("ShortcutSkate v0.3.6 source installed" in result.stdout, "documented entrypoint did not execute the installer")
+        self.check("ShortcutSkate v0.3.7 source installed" in result.stdout, "documented entrypoint did not execute the installer")
         self.active_installed()
         self.check(not os.path.lexists(BACKUP), "documented fresh installation unexpectedly created a backup")
         self.check(not any(scratch.iterdir()), "documented entrypoint retained private download staging")
@@ -530,28 +530,28 @@ class Scenario:
 
     def stale_and_partial(self):
         self.seed_prior()
-        self.log(b"Loaded plugin ShortcutSkate v0.3.6 by Dj-Shortcut\nError while compiling ShortcutSkate: old failure\nLoaded plugin ShortcutSkate v")
+        self.log(b"Loaded plugin ShortcutSkate v0.3.7 by Dj-Shortcut\nError while compiling ShortcutSkate: old failure\nLoaded plugin ShortcutSkate v")
 
         def emit(finished):
-            self.log(b"0.3.6 by Dj-Shortcut\nLoaded plugin ShortcutSkate v0.3.60 by Dj-Shortcut\nLoaded plugin ShortcutSkate v0.3.6")
+            self.log(b"0.3.7 by Dj-Shortcut\nLoaded plugin ShortcutSkate v0.3.6 by Dj-Shortcut\nLoaded plugin ShortcutSkate v0.3.70 by Dj-Shortcut\nLoaded plugin ShortcutSkate v0.3.7")
             time.sleep(1.5)
             self.check(not finished.is_set(), "installer accepted stale, old partial or wrong-version verdict")
             self.log(b" by Dj-Shortcut\n")
 
         result = self.with_verdict(self.install, emit)
-        self.check(result.returncode == 0 and "Oxide reported loading ShortcutSkate v0.3.6" in result.stdout, "complete new selected-version verdict was not accepted")
+        self.check(result.returncode == 0 and "Oxide reported loading ShortcutSkate v0.3.7" in result.stdout, "complete new selected-version verdict was not accepted")
         self.active_installed()
 
     def rotation(self):
         self.seed_prior()
-        self.log(b"Loaded plugin ShortcutSkate v0.3.6 by Dj-Shortcut\n")
+        self.log(b"Loaded plugin ShortcutSkate v0.3.7 by Dj-Shortcut\n")
 
         def emit(finished):
             LOG.rename(LOGS / "oxide_rotated.txt")
             self.log(b"other plugin compiled\n")
             time.sleep(1)
             self.check(not finished.is_set(), "rotated stale load verdict was accepted")
-            self.log(b"Loaded plugin ShortcutSkate v0.3.6 by Dj-Shortcut\n")
+            self.log(b"Loaded plugin ShortcutSkate v0.3.7 by Dj-Shortcut\n")
 
         result = self.with_verdict(self.install, emit)
         self.check(result.returncode == 0, "new log after rotation did not supply the load verdict")
@@ -561,12 +561,12 @@ class Scenario:
         self.seed_prior()
 
         def emit(finished):
-            self.log(b"Loaded plugin ShortcutSkate v0.3.6 by Dj-Shortcut\n", LOGS / "oxide_copied.txt")
+            self.log(b"Loaded plugin ShortcutSkate v0.3.7 by Dj-Shortcut\n", LOGS / "oxide_copied.txt")
             self.log(b"ShortcutSkateHelper failed to compile: unrelated fixture\n")
-            self.log(b"04:20 [Info] [OtherPlugin] diagnostic: Loaded plugin ShortcutSkate v0.3.6 by Dj-Shortcut\n")
+            self.log(b"04:20 [Info] [OtherPlugin] diagnostic: Loaded plugin ShortcutSkate v0.3.7 by Dj-Shortcut\n")
             time.sleep(1.5)
             self.check(not finished.is_set(), "copied historical log or unrelated plugin supplied a verdict")
-            self.log(b"Loaded plugin ShortcutSkate v0.3.6 by Dj-Shortcut\n")
+            self.log(b"Loaded plugin ShortcutSkate v0.3.7 by Dj-Shortcut\n")
 
         result = self.with_verdict(self.install, emit)
         self.check(result.returncode == 0, "correct verdict was not accepted after ignoring other records")
@@ -574,7 +574,7 @@ class Scenario:
 
     def long_tail_failure(self):
         before = self.seed_prior()
-        tail = b"Loaded plugin ShortcutSkate v0.3.6 by Dj-Shortcut\n" + (b"unrelated log line\n" * 65000) + b"Error while compiling ShortcutSkate: final fixture failure\n"
+        tail = b"Loaded plugin ShortcutSkate v0.3.7 by Dj-Shortcut\n" + (b"unrelated log line\n" * 65000) + b"Error while compiling ShortcutSkate: final fixture failure\n"
         self.check(len(tail) > 1048576, "long-tail fixture did not cross the previous first-chunk boundary")
         result = self.with_verdict(self.install, lambda _: self.log(tail))
         self.check(result.returncode == 1 and "final fixture failure" in result.stderr, "success before a later already-appended failure was accepted")
@@ -606,7 +606,7 @@ class Scenario:
 
     def verdict_timeout(self):
         before = self.seed_prior()
-        self.log(b"Loaded plugin ShortcutSkate v0.3.6 by Dj-Shortcut\n")
+        self.log(b"Loaded plugin ShortcutSkate v0.3.7 by Dj-Shortcut\n")
         started = time.monotonic()
         result = self.run(["bash", str(self.installer)], timeout=170)
         self.check(result.returncode == 1 and "within 90 seconds" in result.stderr, "missing fresh verdict did not time out")

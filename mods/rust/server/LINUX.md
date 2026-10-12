@@ -39,11 +39,15 @@ After a real install, record actual server startup, matching framework, listener
 ## Update the skate plugin
 
 The [12 October owner report](https://github.com/Dj-Shortcut/mw2-rust-skate-rewrite/issues/337#issuecomment-6117276716)
-describes corrections on loaded 0.3.5 and an unresolved 0.3.6 loading failure. Keep the
-owner-advised 0.3.5 baseline until its actual compiler/load verdict is available. The
-0.3.7 movement-policy source is offline development, with no native acceptance. The
-installer procedure below follows its separate reviewed delivery pin; it does not select
-this new development source. No live configuration is changed by Codex.
+describes corrections on loaded 0.3.5 and an unresolved 0.3.6 loading failure. The
+pinned updater below selects reviewed 0.3.7 movement-policy source from
+[PR #382](https://github.com/Dj-Shortcut/mw2-rust-skate-rewrite/pull/382), as requested in
+[the installer handover](https://github.com/Dj-Shortcut/mw2-rust-skate-rewrite/issues/337#issuecomment-6124387924).
+It waits for a fresh selected-version load verdict and restores the captured previous
+source on a guarded failure. If 0.3.5 is installed before the update, that is the source
+restored; its reload still needs verification. The cause of the reported 0.3.6 failure
+and native 0.3.7 loading/movement remain unverified. No live configuration is changed
+by Codex.
 
 ### Private-server alternative
 
@@ -85,10 +89,10 @@ does not prove successful loading; preserve the actual console verdict and check
 
 ### Existing pinned installer
 
-`add-skate.sh` installs reviewed ShortcutSkate **0.3.6** from the owner-merged
-[PR #375](https://github.com/Dj-Shortcut/mw2-rust-skate-rewrite/pull/375), commit
-`6e08751ce932eca441842c852acd369977b459e1`, with source SHA-256
-`ca3cc15a2d507eafd5cfb9303a13f7bc6ca57d0966c9b43bfddbbb36fc2f077e`.
+`add-skate.sh` installs reviewed ShortcutSkate **0.3.7** from the owner-merged
+[PR #382](https://github.com/Dj-Shortcut/mw2-rust-skate-rewrite/pull/382), commit
+`6a17ac3d2c9a721464304f8455c457449bb2c19a`, with source SHA-256
+`54268cb81a504c45209c48afbf4d8545de51a412598258a5826b46066dfae15d`.
 It targets the existing `/srv/rust/server/oxide/plugins` installation created by
 `bootstrap-ubuntu.sh`, with its `rust` user/group. It needs Bash, Python 3, curl and
 sha256sum; installation uses the GNU/Linux file tools plus runuser and setsid
@@ -103,9 +107,9 @@ bash mods/rust/server/add-skate.sh --check
 ```
 
 This mode downloads into a temporary file, checks its SHA-256 and removes it.
-It does not access the server's plugins folder. After the installation hold is
-resolved, run the installer as root on the existing Linux host, with the server
-running and no other plugin update running:
+It does not access the server's plugins folder. For an owner-controlled update, run
+the following one-liner as root on the existing Linux host, with the server running
+and no other plugin update running:
 
 For an existing ShortcutSkate installation, first back up
 `oxide/config/ShortcutSkate.json` under the server root. To adopt the current
@@ -118,18 +122,7 @@ Leaving the old `14` m/s limit rejects a `16.5` m/s rider even with the new
 warmup acceptance. Deliberately lower custom limits still restrict that ride.
 
 ```sh
-(
-    set -eu
-    skate_update_dir=$(mktemp -d /tmp/ShortcutSkate-update.XXXXXX)
-    trap 'rm -rf -- "$skate_update_dir"' EXIT
-    curl -fsSL --connect-timeout 15 --max-time 60 \
-        https://raw.githubusercontent.com/Dj-Shortcut/mw2-rust-skate-rewrite/f9cb4330c26fdbeb5b9df94b9aea1711a7b9e4b5/mods/rust/server/add-skate.sh \
-        -o "$skate_update_dir/add-skate.sh"
-    printf '%s  %s\n' \
-        49489fe2096e83fb87f434a62c2e104b9254542b833a3b842458de7627805ef9 \
-        "$skate_update_dir/add-skate.sh" | sha256sum -c -
-    bash "$skate_update_dir/add-skate.sh"
-)
+(set -eu; skate_update_dir=$(mktemp -d /tmp/ShortcutSkate-update.XXXXXX); trap 'rm -rf -- "$skate_update_dir"' EXIT; curl -fsSL --connect-timeout 15 --max-time 60 https://raw.githubusercontent.com/Dj-Shortcut/mw2-rust-skate-rewrite/4cf4c313d6da3b874c1c1201b8030efb4a428a78/mods/rust/server/add-skate.sh -o "$skate_update_dir/add-skate.sh"; printf '%s  %s\n' 87ddd9a92e3701dc91794300de3faf0ae3005290929ce2abf51d516f78ac3202 "$skate_update_dir/add-skate.sh" | sha256sum -c -; bash "$skate_update_dir/add-skate.sh")
 ```
 
 The installer itself is downloaded from an immutable reviewed commit and checked
@@ -137,7 +130,7 @@ before execution. A failed or incomplete download stops the command; it does
 not execute whatever happens to be on `main`.
 
 The installer waits up to 90 seconds for a newly observed
-`Loaded plugin ShortcutSkate v0.3.6` line in `oxide/logs/oxide_*.txt` and prints
+`Loaded plugin ShortcutSkate v0.3.7` line in `oxide/logs/oxide_*.txt` and prints
 its path and text. If automatic plugin reload is disabled, run
 `oxide.reload ShortcutSkate` in the authenticated server console or
 administrator's Rust F1 console during that wait. Check
@@ -197,11 +190,11 @@ unprivileged backup operation is refused. INT/TERM cases hold a real Linux file
 lease during backup, cancel the caller, and check worker exit before lease
 release plus unchanged source and clean staging afterward.
 It uses genuine pinned public downloads and starts no Rust/Oxide process. No live
-server, Rust client or Shadow PC is used. The unchanged pinned 0.3.6 source
+server, Rust client or Shadow PC is used. The unchanged pinned 0.3.7 source
 compiled locally as net48/C#7.3 against genuine cached server references with
-zero errors/warnings. Offline review found no confirmed 0.3.5-to-0.3.6 API
-regression in that snapshot. The owner's actual compiler verdict and installed
-assembly identities remain needed to diagnose the reported failure. Native
+zero errors/warnings. The owner's actual 0.3.6 compiler verdict and installed
+assembly identities remain needed to diagnose the reported failure. The new source
+has not been compiled or loaded on the owner's server by Codex. Native
 compilation/loading, movement acceptance and park placement are still open.
 
 ## Native installation evidence
