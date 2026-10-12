@@ -222,6 +222,7 @@ that commit and must match the hash; that is for shared code that is ahead on an
 | `SkateGrind.cs` | Samples the ground around the rider and asks the shared edge module for an edge. |
 | `SkateBoard.cs` | The board, what it is drawn with and where it sits. |
 | `RiderRig.cs` | Writes the shared rider pose onto the player model's skeleton; what is drawn in which view, the held item included. |
+| `SkateWatch.cs` | A watch on what is drawn: a step of the board's angles or place, or of the rider's feet, hands or head, larger than a frame could carry is logged as `SKATE snap ...` with what was going on (at most 300 a session); `zz last` counts them by situation. |
 | `SkateCamera.cs` | View from behind: 3.4 m back, up to 1.2 m further at top speed and in again as the board slows; with a controller it swings in behind the way the board goes. It comes in at once to this side of anything between it and the rider, and goes back out gradually once the way is clear. |
 | `SkateHud.cs`, `SkateSfx.cs` | The score display and the sounds. |
 | `SkatePieces.cs`, `SkateConsole.cs` | The park-piece menu on the controller and the keyboard, its ghost preview, and the console line it sends to the server (`SkateConsole.Send`, a console packet on the client's connection found by name in the network library); without that, the screen shows the line to type. `SkateConsole` also keeps the console typist for the scripted checks. |

@@ -199,7 +199,10 @@ public class SkateRig : MonoBehaviour
         SkateBoard.Tilt(ref feet, ref tilted);
         var t2 = SkateClock.Now(); RiderRig.Frame(feet, up, !third, frame); SkateClock.Add(SkateClock.Rider, t2);
         var t3 = SkateClock.Now(); SkateCamera.Apply(at - Vector3.up * SkateBoard.Pop); SkateClock.Add(SkateClock.Camera, t3);
+        try { SkateWatch.Frame(LocalT, board, now); }
+        catch (Exception e) { if (!watchFailed) { watchFailed = true; Say("watch threw " + e.GetType().Name + ": " + e.Message); } }
     }
+    private static bool watchFailed;
 
     private void OnDestroy()
     {

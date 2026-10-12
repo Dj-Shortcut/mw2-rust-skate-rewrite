@@ -94,7 +94,7 @@ public static class Scenarios
         System.IO.File.WriteAllText(System.IO.Path.Combine(BepInEx.Paths.PluginPath, "skate.done"), "done");
         var real = Time.realtimeSinceStartup - startAt;
         Say("DONE pace=" + (real > 0.5f ? (Time.time - startGame) / real : 1f).ToString("F2") + " top speed=" + SkateRide.Top.ToString("F1") + " pull-backs=" + SkateRide.Resets + " late calls=" + LateDriver.Calls + " pops=" + SkateRide.Pops + " lands=" + SkateRide.Lands + " bails=" + SkateRide.Bails
-            + " refused presses=" + SkateRide.Refused + " score=" + SkateRide.Trick.TotalPoints + " grind scans=" + SkateGrind.Scans + " flicks=" + SkatePad.Flicks + " audio=" + SkateSfx.State + " | loudest output: " + SkateSfx.Heard);
+            + " refused presses=" + SkateRide.Refused + " snaps=" + SkateWatch.Snaps + " score=" + SkateRide.Trick.TotalPoints + " grind scans=" + SkateGrind.Scans + " flicks=" + SkatePad.Flicks + " audio=" + SkateSfx.State + " | loudest output: " + SkateSfx.Heard);
     }
 
     private static void Ride(float s)

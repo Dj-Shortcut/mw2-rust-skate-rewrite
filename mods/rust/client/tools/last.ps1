@@ -16,11 +16,15 @@ function most($pattern, $lowest) {
 }
 function count($pattern) { @($l | ? { $_ -match $pattern }).Count }
 'lines=' + $l.Count + ' mounts=' + (count '^SKATE MOUNT') + ' seconds on the board=' + (count '^SKATE (Ground|Air|Grind|Bail) speed') + ' top speed=' + (most ' top=([0-9.]+)' $false) + ' lowest cap=' + (most ' cap=([0-9.]+)' $true) + ' put backs=' + (count '^SKATE put back')
-'tricks=' + (count '^SKATE trick ') + ' bails=' + (count '^SKATE bail') + ' grinds=' + (count 'Grind speed') + ' threw=' + (count 'threw') + ' refused=' + (count '^SKATE refused ') + ' held back=' + (count '^SKATE held back')
+'tricks=' + (count '^SKATE trick ') + ' bails=' + (count '^SKATE bail') + ' grinds=' + (count 'Grind speed') + ' threw=' + (count 'threw') + ' refused=' + (count '^SKATE refused ') + ' held back=' + (count '^SKATE held back') + ' snaps=' + (count '^SKATE snap ')
 # Presses in the air that there was no room for, by what was asked: many of one kind say the
 # jumps are too low for it, or that the press comes too late in the arc.
 $no = @($l | ? { $_ -match '^SKATE refused (.+?): ' } | % { $Matches[1] })
 if ($no.Count -gt 0) { 'refused: ' + (($no | Group-Object | Sort-Object -Property Count -Descending | % { $_.Name + ' x' + $_.Count }) -join ', ') }
+# What was drawn and jumped between two frames (the client's own watch), by what was going on:
+# the mode (and the change of mode) and the last trick, most often first.
+$snaps = @($l | ? { $_ -match '^SKATE snap .*\| (.+?) speed [-0-9.]+(.*?) last=' } | % { $Matches[1] + $Matches[2] })
+if ($snaps.Count -gt 0) { 'snaps: ' + (($snaps | Group-Object | Sort-Object -Property Count -Descending | Select-Object -First 8 | % { $_.Name.Trim() + ' x' + $_.Count }) -join ', ') }
 # The names the scorer gave, most often first: what the owner saw on the screen.
 $names = @{}
 foreach ($line in $l) { if ($line -match '^SKATE trick (.+?) \+\d+ combo=') { $n = $Matches[1]; if ($names.ContainsKey($n)) { $names[$n]++ } else { $names[$n] = 1 } } }
