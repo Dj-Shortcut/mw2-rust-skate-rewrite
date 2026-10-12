@@ -47,7 +47,7 @@ public static class SkateKeys
     // Held in the air: the rider's turn, +1 to his right as the stick or the keys say, and the grab.
     public static float Spin;
     public static SkateGrabKind Grab;
-    private static bool wasPush, wasBrake, wasLeft, wasRight, wasJump, wasCrouch, wasToggle, wasCamera, wasStance;
+    private static bool wasPush, wasBrake, wasLeft, wasRight, wasJump, wasCrouch, wasToggle, wasCamera, wasStance, wasBody;
     private static float wasSpin;
     private static bool popKeys = true, crouchKeys = true, cameraKey = true, manualKey = true, taps = true, cursorKnown = true, failed;
 
@@ -80,11 +80,11 @@ public static class SkateKeys
             if (stanceKey && !wasStance) SkateRide.ToggleStance();
             wasStance = stanceKey;
             bool push = Down(kb.wKey), brake = Down(kb.sKey), left = Down(kb.aKey), right = Down(kb.dKey);
-            bool jump = Down(kb.spaceKey), toggle = Down(kb.kKey), crouch = false, camera = false, manual = false, noComply = false, boneless = false;
+            bool jump = Down(kb.spaceKey), toggle = Down(kb.kKey), crouch = false, camera = false, manual = false, noComply = false, boneless = false, body = false;
             if (popKeys)
             {
-                try { noComply = Down(kb.qKey); boneless = Down(kb.zKey); }
-                catch (Exception e) { popKeys = false; Out.Say("INPUT no comply and boneless keys unavailable: " + e.GetType().Name + ": " + e.Message); }
+                try { noComply = Down(kb.qKey); boneless = Down(kb.zKey); body = Down(kb.xKey); }
+                catch (Exception e) { popKeys = false; Out.Say("INPUT no comply, boneless and body varial keys unavailable: " + e.GetType().Name + ": " + e.Message); }
             }
             if (crouchKeys)
             {
@@ -166,6 +166,9 @@ public static class SkateKeys
                 Spin = Steer;
                 if (push && !wasPush) LateFlip++;
                 if (brake && !wasBrake) LateFlip--;
+                // X tapped in the air: a body varial, the rider's half round without the board.
+                if (body && !wasBody) BodyVarial += 180f;
+                wasBody = body;
                 Mongo = HandplantFront = HandplantBack = false;
                 if (jump && !wasJump) { JumpPressed = true; PopKind = PopWith(SkatePopKind.Ollie, noComply, boneless); PopFlip = 0; PopShove = 0f; PopScale = 1f; }
                 if (crouch && !wasCrouch) CrouchTap = true;

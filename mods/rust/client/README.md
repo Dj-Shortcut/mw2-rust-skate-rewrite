@@ -155,6 +155,7 @@ past two decoys; in game it has not run yet. Unverified in game as of this commi
 | Mouse | The board turns toward the view | |
 | `Space` | Ollie; on a grind or a stall, ollie off. With `Q` held: no comply; with `Z` held: boneless. `Ctrl` held when the board meets an edge square: a handplant | |
 | `Shift` | Held while rolling: manual | |
+| `X` | | Tap: body varial, the rider's half round without the board; the landing is switch |
 | `Ctrl` or `C` | Held for a moment: get off | Held: grab |
 | `L` | View from behind or the game's first person | |
 | `J` (on foot; `Back`+`Y` on the controller) | Stance: regular (left foot forward, the right foot pushes) or goofy, the mirror image. Kept in `skate-stance.txt` in the game's own data folder (`AppData\LocalLow\Facepunch Studios LTD\Rust`) for the next start; the hint on foot names the current one. | |
