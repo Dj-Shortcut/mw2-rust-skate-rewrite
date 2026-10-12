@@ -463,6 +463,13 @@ namespace Shortcut.RustMod
                 case SkateGrindKind.Feeble: pitchDegrees = -8; rollDegrees = 16; crouch = 0.45; break;
                 case SkateGrindKind.Tailslide: pitchDegrees = 8; crouch = 0.4; break;
                 case SkateGrindKind.Noseslide: pitchDegrees = -8; crouch = 0.42; break;
+                // A bluntslide stands on the tail with the deck pitched up steeply, the rider low
+                // over the back foot; a nosebluntslide the other way round. A darkslide rides the
+                // deck upside down, griptape on the edge: the roll turns the board over, the feet
+                // stand on what is now the top.
+                case SkateGrindKind.Bluntslide: pitchDegrees = 40; crouch = 0.6; break;
+                case SkateGrindKind.Nosebluntslide: pitchDegrees = -40; crouch = 0.6; break;
+                case SkateGrindKind.Darkslide: rollDegrees = 180; crouch = 0.5; break;
                 case SkateGrindKind.Boardslide: case SkateGrindKind.Lipslide: crouch = 0.45; break;
                 case SkateGrindKind.TailStall: pitchDegrees = 27; crouch = 0.32; break;
                 case SkateGrindKind.NoseStall: pitchDegrees = -27; crouch = 0.32; break;

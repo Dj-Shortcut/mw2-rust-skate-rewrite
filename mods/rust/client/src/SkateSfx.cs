@@ -161,7 +161,8 @@ public static class SkateSfx
             var on = SkateRide.On;
             var onEdge = on && SkateRide.Mode == RideMode.Grind && speed > 0.1f;
             var deck = SkateRide.GrindKind == SkateGrindKind.Boardslide || SkateRide.GrindKind == SkateGrindKind.Lipslide ||
-                SkateRide.GrindKind == SkateGrindKind.Noseslide || SkateRide.GrindKind == SkateGrindKind.Tailslide;
+                SkateRide.GrindKind == SkateGrindKind.Noseslide || SkateRide.GrindKind == SkateGrindKind.Tailslide ||
+                SkateRide.GrindKind == SkateGrindKind.Bluntslide || SkateRide.GrindKind == SkateGrindKind.Nosebluntslide || SkateRide.GrindKind == SkateGrindKind.Darkslide;
             var wantRoll = on && SkateRide.Mode == RideMode.Ground ? SkateRide.Clamp(speed / 9f, 0f, 1f) * 0.55f : 0f;
             var edgeVolume = 0.3f + ratio * 0.3f;
             var wantGrind = onEdge && !deck ? edgeVolume : 0f;

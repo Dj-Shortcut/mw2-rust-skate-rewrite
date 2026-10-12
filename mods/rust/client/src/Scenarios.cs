@@ -185,6 +185,8 @@ public static class Scenarios
         new View("smith grind", 90f, "grind", (float)SkateGrindKind.Smith), new View("feeble grind", 90f, "grind", (float)SkateGrindKind.Feeble),
         new View("crooked grind", 90f, "grind", (float)SkateGrindKind.Crooked), new View("boardslide, seen along the rail", 180f, "grind", (float)SkateGrindKind.Boardslide),
         new View("tailslide", 90f, "grind", (float)SkateGrindKind.Tailslide),
+        new View("bluntslide", 90f, "grind", (float)SkateGrindKind.Bluntslide),
+        new View("nosebluntslide", 90f, "grind", (float)SkateGrindKind.Nosebluntslide),
         new View("moving, pushing off", 115f, "move", 0f), new View("moving, turning round", 115f, "turn", 0f),
         new View("finish", 90f, "end", 0f) };
     private static float stepAt, nearAt, hudAt;

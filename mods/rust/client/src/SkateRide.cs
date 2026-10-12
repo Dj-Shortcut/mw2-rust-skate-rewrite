@@ -881,6 +881,9 @@ public static class SkateRide
         GrindVelocity(pos);
         // Along the edge the stick leans the board onto one truck: back for a 5-0, forward for a nosegrind.
         if (GrindAlong) GrindKind = SkateKeys.Manual ? SkateGrindKind.FiveO : SkateKeys.NoseManual ? SkateGrindKind.Nosegrind : SkateGrindKind.FiftyFifty;
+        // Across the edge on the tail or the nose, the stick held back or forward stands the deck up: a bluntslide.
+        else if (GrindKind == SkateGrindKind.Tailslide || GrindKind == SkateGrindKind.Bluntslide) GrindKind = SkateKeys.Manual ? SkateGrindKind.Bluntslide : SkateGrindKind.Tailslide;
+        else if (GrindKind == SkateGrindKind.Noseslide || GrindKind == SkateGrindKind.Nosebluntslide) GrindKind = SkateKeys.NoseManual ? SkateGrindKind.Nosebluntslide : SkateGrindKind.Noseslide;
         TrickTick(false, true, 0, 0, 0, 0, dt);
     }
 
@@ -906,7 +909,7 @@ public static class SkateRide
         grindNose = Delta(SkateGrind.Heading, NoseYaw);
         GrindDeck = GrindAlong ? (Math.Abs(rel) > 90f ? 180f : 0f) : rel;
         if (GrindAlong) GrindKind = SkateGrindKind.FiftyFifty;
-        else if (across > 65f) GrindKind = t > 0.25f ? SkateGrindKind.Noseslide : t < -0.25f ? SkateGrindKind.Tailslide : grindNoseFar > 0f ? SkateGrindKind.Boardslide : SkateGrindKind.Lipslide;
+        else if (across > 65f) GrindKind = t > 0.25f ? (SkateKeys.NoseManual ? SkateGrindKind.Nosebluntslide : SkateGrindKind.Noseslide) : t < -0.25f ? (SkateKeys.Manual ? SkateGrindKind.Bluntslide : SkateGrindKind.Tailslide) : grindNoseFar > 0f ? SkateGrindKind.Boardslide : SkateGrindKind.Lipslide;
         else GrindKind = t > 0.1f ? SkateGrindKind.Crooked : grindNoseFar > 0f ? SkateGrindKind.Feeble : SkateGrindKind.Smith;
         Out.Say("GRIND kind " + SkateTricks.GrindName(GrindKind, GrindFrontside) + " (deck " + rel.ToString("F0") + " deg to the edge, crossing at " + t.ToString("F2") + " m)");
     }
