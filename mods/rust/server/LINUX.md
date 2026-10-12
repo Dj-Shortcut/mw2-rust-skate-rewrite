@@ -88,15 +88,15 @@ does not prove successful loading; preserve the actual console verdict and check
 
 ### Existing pinned installer
 
-`add-skate.sh` selects ShortcutSkate **0.3.10**, commit
-`e906bef8d5fd1d820ab7f62b273f43d85c794896`, source SHA-256
-`3718d3234fa6b9db6d508ff8ead58d01b40deb843aa8d66f54c3218b51b602e5`.
+`add-skate.sh` selects ShortcutSkate **0.3.11**, commit
+`f2fa488eda8224a7b20671aac6b34e99c6b90a1e`, source SHA-256
+`4d642dc49cb1110d2db2da4a38f5f16cf8a04a6010539d7ace65084e9aa9e213`.
 It targets the existing `/srv/rust/server/oxide/plugins` installation and its
 nonroot `rust` user/group. It needs Bash, Python 3, curl, sha256sum, GNU file tools,
 runuser and setsid. The plugins folder must be writable by `rust`; any prior
 source must be a regular nonsymlink file readable by that account.
 
-The selected source is the building-item backend in [PR #398](https://github.com/Dj-Shortcut/mw2-rust-skate-rewrite/pull/398); merge that source PR before this delivery PR. Native inventory, both Claude-owned building frontends and placement remain unverified.
+The selected source is the building-item backend in [PR #398](https://github.com/Dj-Shortcut/mw2-rust-skate-rewrite/pull/398); merge that source PR before this delivery PR. The source now uses native square-foundation input; its actual hooks/inventory and both requested building frontends remain unverified. Current0.3.10 relies on the failed client-command route and should not be installed.
 Keep a private backup of `oxide/data/ShortcutSkate.Parks.json` with its matching world/source before upgrading. Older 0.3.9 rejects nonzero build-item provenance; source-only downgrade is not park-data rollback. Never remove paid provenance to force a downgrade.
 
 Preview the pinned public bytes without root or a server:
@@ -112,7 +112,7 @@ plugin update. Keep the prior source backup until native loading and riding pass
 The immutable installer and its hash are verified before execution:
 
 ```sh
-(set -eu; skate_update_dir=$(mktemp -d /tmp/ShortcutSkate-update.XXXXXX); trap 'rm -rf -- "$skate_update_dir"' EXIT; curl -fsSL --connect-timeout 15 --max-time 60 https://raw.githubusercontent.com/Dj-Shortcut/mw2-rust-skate-rewrite/6531c2b852f977d8d299a3a1edaef0e92aa1aed8/mods/rust/server/add-skate.sh -o "$skate_update_dir/add-skate.sh"; printf '%s  %s\n' 6fdc7a6255500837ed413ee313f70e91094405dc2364a65377ffcdafd54cd22d "$skate_update_dir/add-skate.sh" | sha256sum -c -; bash "$skate_update_dir/add-skate.sh" --defer-reload; systemctl restart rust-server)
+(set -eu; skate_update_dir=$(mktemp -d /tmp/ShortcutSkate-update.XXXXXX); trap 'rm -rf -- "$skate_update_dir"' EXIT; curl -fsSL --connect-timeout 15 --max-time 60 https://raw.githubusercontent.com/Dj-Shortcut/mw2-rust-skate-rewrite/e45ff6b6cc69e7358bf59d8d58632f83d726d591/mods/rust/server/add-skate.sh -o "$skate_update_dir/add-skate.sh"; printf '%s  %s\n' b4079e632321d2e09657daddd52d38b971b86e80e4fed785857126b2c8184841 "$skate_update_dir/add-skate.sh" | sha256sum -c -; bash "$skate_update_dir/add-skate.sh" --defer-reload; systemctl restart rust-server)
 ```
 
 `--defer-reload` deliberately returns **source-installed/native-unverified**
@@ -123,11 +123,11 @@ operation, not plugin loading. If the restart command fails, the new source and
 backup remain for inspection; this command does not automatically restore them.
 
 After startup, check the private [load diagnostic](#plugin-load-diagnostic) for a
-fresh `Loaded plugin ShortcutSkate v0.3.10` and readiness/patch errors. Confirm
+fresh `Loaded plugin ShortcutSkate v0.3.11` and readiness/patch errors. Confirm
 `oxide.plugins` and `skate.status` in the authenticated game/server console, then
 placement and riding. Do not infer native success from `source installed` or
 `systemctl restart`. If corrected source fails to load, stop this service, verify
-that the active source still matches the 0.3.10 hash above and the backup is the
+that the active source still matches the 0.3.11 hash above and the backup is the
 intended prior source, restore that captured backup as `rust`, then restart and
 check the prior version's actual load verdict. Changed files require inspection
 before overwriting them. Keep raw logs, credentials and account details private.
@@ -142,7 +142,7 @@ use grants do not give other players `shortcutskate.fly`. See the
 [permission contract](../plugins/SKATE.md).
 
 With automatic reload or a separate administrator console, plain invocation
-instead waits up to **90 seconds** for a new matching 0.3.10 load line, and performs
+instead waits up to **90 seconds** for a new matching 0.3.11 load line, and performs
 guarded restoration on compiler failure, timeout, observation error or caught
 cancellation. Run `oxide.reload ShortcutSkate` in that console during the wait if
 needed. These are game-console commands; the script sends no RCON command.
@@ -178,7 +178,7 @@ No Rust/Oxide process, live server, Rust client or Shadow PC is started by these
 checks. The selected source compiles as net48/C#7.3 against genuine cached server
 references with zero errors/warnings and passes the approved movement/gesture
 scenarios. Claude reported the owner’s 0.3.8 native load/readiness and visible long-ledge
-after a local manifest patch; 0.3.10 full-halfpipe, permissions, restart and riding
+after a local manifest patch; 0.3.11 full-halfpipe, permissions, restart and riding
 remain owner acceptance.
 
 ## Native installation evidence
