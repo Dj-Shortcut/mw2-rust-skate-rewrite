@@ -16,4 +16,10 @@ function most($pattern, $lowest) {
 }
 function count($pattern) { @($l | ? { $_ -match $pattern }).Count }
 'lines=' + $l.Count + ' mounts=' + (count '^SKATE MOUNT') + ' seconds on the board=' + (count '^SKATE (Ground|Air|Grind|Bail) speed') + ' top speed=' + (most ' top=([0-9.]+)' $false) + ' lowest cap=' + (most ' cap=([0-9.]+)' $true) + ' put backs=' + (count '^SKATE put back')
-'tricks=' + (count '^SKATE trick ') + ' bails=' + (count '^SKATE bail') + ' grinds=' + (count 'Grind speed') + ' threw=' + (count 'threw') + ' refused=' + (count 'refused')
+'tricks=' + (count '^SKATE trick ') + ' bails=' + (count '^SKATE bail') + ' grinds=' + (count 'Grind speed') + ' threw=' + (count 'threw') + ' refused=' + (count 'refused') + ' held back=' + (count '^SKATE held back')
+# The names the scorer gave, most often first: what the owner saw on the screen.
+$names = @{}
+foreach ($line in $l) { if ($line -match '^SKATE trick (.+?) \+\d+ combo=') { $n = $Matches[1]; if ($names.ContainsKey($n)) { $names[$n]++ } else { $names[$n] = 1 } } }
+if ($names.Count -gt 0) { 'names: ' + (($names.GetEnumerator() | Sort-Object -Property Value -Descending | % { $_.Key + ' x' + $_.Value }) -join ', ') }
+$off = @($l | ? { $_ -match '^SKATE OFF \((.+?)\)' } | % { $Matches[1] })
+if ($off.Count -gt 0) { 'stepped off: ' + (($off | Group-Object | Sort-Object -Property Count -Descending | % { $_.Name + ' x' + $_.Count }) -join ', ') }

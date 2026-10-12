@@ -60,7 +60,7 @@ PC reliably from a distance.
 | `log`, `logall` | The plugin's log of the last session, without or with its once-a-second status lines. `$pinc` filters. |
 | `file` | Another file of the last session, by default the game's `Player.log`. |
 | `more` | The next page of whatever was shown last. |
-| `last` | Makes the newest session folder the one that `log`, `logall` and `file` show, and sums up its ride: seconds on the board, top speed, the lowest speed cap, how often the server put the rider back, tricks and bails. For a session of the owner's launcher, which runs in a window of its own. |
+| `last` | Makes the newest session folder the one that `log`, `logall` and `file` show, and sums up its ride: seconds on the board, top speed, the lowest speed cap, how often the server put the rider back or held it back, tricks and bails, every trick name the scorer gave with its count, and why the rider stepped off. For a session of the owner's launcher, which runs in a window of its own. |
 | `clean` | Moves a loader that these tools left in the Rust folder out of it. A file still held by a closing client or its crash handler is tried again for a minute; what is left is named. |
 | `survey` | Lists what the interop set of the installed build offers for given type names. |
 | `launcher` | Installs or updates the owner's launcher from the commit in [`release.txt`](release.txt). |
