@@ -235,7 +235,9 @@ public static class SkateConsole
             foreach (var m in methods)
             {
                 var ps = m.GetParameters();
-                if (ps.Length == 1 && ps[0].ParameterType == messageType && pid == null) pid = m;
+                // The packet id is written as the enum, or (a build that took the enum out of the
+                // signature) as its underlying integer.
+                if (ps.Length == 1 && (ps[0].ParameterType == messageType || ps[0].ParameterType == Enum.GetUnderlyingType(messageType)) && m.ReturnType == typeof(void) && pid == null) pid = m;
                 if (ps.Length >= 1 && ps.Length <= 2 && ps[0].ParameterType == typeof(string) && (ps.Length == 1 || ps[1].ParameterType == typeof(bool)) && m.ReturnType == typeof(void) && (str == null || ps.Length < extra + 1)) { str = m; extra = ps.Length - 1; }
                 if (ps.Length == 1 && ps[0].ParameterType.IsValueType && !ps[0].ParameterType.IsPrimitive && !ps[0].ParameterType.IsEnum && snd == null)
                 {
@@ -248,6 +250,15 @@ public static class SkateConsole
                 }
             }
             if (pid != null && str != null && snd != null) { writeType = w; foundPacketId = pid; foundString = str; foundSend = snd; foundSendInfo = info; writeStringExtra = extra; break; }
+        }
+        if (writeType != null && foundPacketId.GetParameters()[0].ParameterType != messageType)
+        {
+            // Written as a plain integer: which of the write's integer methods writes the packet
+            // id cannot be told from its signature, and the wrong one would send a broken packet.
+            // Nothing is sent; the log names them for the next build.
+            var bytes = new System.Text.StringBuilder();
+            foreach (var m in writeType.GetMethods(flags)) { var ps = m.GetParameters(); if (ps.Length == 1 && ps[0].ParameterType == foundPacketId.GetParameters()[0].ParameterType && m.ReturnType == typeof(void)) bytes.Append(bytes.Length > 0 ? "," : "").Append(m.Name); }
+            return "a write type " + writeType.FullName + " (string " + foundString.Name + ", send " + foundSend.Name + "(" + foundSendInfo.FullName + ")) takes the packet id only as " + foundPacketId.GetParameters()[0].ParameterType.Name + ": " + bytes + "; not sent (which one is the packet id is not known)";
         }
         if (writeType != null) break;
         tried.Append(tried.Length > 0 ? " | " : "").Append(messageType.Assembly.GetName().Name).Append(':').Append(messageType.FullName).Append(' ').Append(Taking(all, messageType));
@@ -288,6 +299,7 @@ public static class SkateConsole
         if (conn == null) { sendPrepared = false; return "the client at " + where + " has no connection yet"; }
         netClient = clientValue; connection = conn; startWrite = foundStart; packetId = foundPacketId; writeString = foundString; sendWrite = foundSend; sendInfoType = foundSendInfo;
         consoleCommandId = Enum.Parse(messageType, "ConsoleCommand");
+        if (packetId.GetParameters()[0].ParameterType != messageType) consoleCommandId = Convert.ChangeType(consoleCommandId, packetId.GetParameters()[0].ParameterType);
         sendFailed = false; SendState = "ready";
         Out.Say("CONSOLE the console path by shape: client " + where + " (" + clientType.FullName + "), write " + writeType.FullName + "." + foundStart.Name + "(), packet " + foundPacketId.Name + "(" + messageType.FullName + "), string " + foundString.Name + ", send " + foundSend.Name + "(" + foundSendInfo.FullName + "), connection " + connectionMember.Name);
         return "";
