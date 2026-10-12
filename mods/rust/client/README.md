@@ -99,8 +99,10 @@ Landing on a slope, the part of the fall that runs along the slope becomes roll.
 
 A turn of the rider goes on for as long as the left stick is held and the next half turn can
 still be reached before the ground; let go, the rider is brought round to the nearest half turn.
-A turn with a shove the same way is a bigspin. Each rotation is only started when the jump lasts
-long enough to finish it. Late flips and shoves and body varials are named by the shared scorer
+A turn with a shove the same way is a bigspin. As in Skate, a flip, shove-it, body varial or turn
+asked for too late is started all the same and does not come round before the ground: a bail (the
+log keeps each as `SKATE late ...`, which `zz last` sums up by kind); so is a grab still held as
+the wheels touch down. Late flips and shoves and body varials are named by the shared scorer
 ("Late Kickflip", "Late Pop Shove-it", "Body Varial"); a body varial of a half round leaves the
 deck the other way round under the feet, as a shove does. Unverified in game.
 
@@ -199,9 +201,7 @@ landed (coloured by its kind: grinds cool, manuals and reverts warm, grabs green
 or grind by its name, or a bail in the upper middle; under the score the session's best combo, top
 speed, longest grind and manual; at the bottom left the speed, above it the last five tricks landed
 with their points (newest largest, gone five seconds after the last), and the controls for the first
-seconds on the board. A press in the air that the arc has no room for (a flip, shove-it, body
-varial or spin that could not finish before the ground) is not started; nothing is shown for it on
-screen, the log keeps each one as `SKATE refused ...`, which `zz last` sums up by kind. A client build keeps only the engine methods the
+seconds on the board. A client build keeps only the engine methods the
 game itself calls, so the condensed system font, the flat panels and the bars are each tried once
 and done without when they are missing; the plugin's log says which (`HUD ...`).
 
@@ -262,7 +262,7 @@ file it runs `skate`. Runtime steps share one rig; the last scenario step select
 | `skate` | The mod as the owner plays it. |
 | `ride` | Scripted: ride out, brake, turn round, ride back, get off. |
 | `pose` | Scripted: rider and board in each state, standing still, from fixed cameras, then the score display in nine made-up states; `K` steps on. |
-| `trick` | Scripted: ollie, kickflip, heelflip, both spins, a grab, two presses that come too late, a manual, shove-its, varial and 360 flips, an impossible, a revert, a fakie nollie, a no comply, a boneless and a body varial; every name is logged as the scorer gives it, for the screen check of the names. |
+| `trick` | Scripted: ollie, kickflip, heelflip, both spins, a grab let go before the landing, a manual, shove-its, varial and 360 flips, an impossible, a revert, a fakie nollie, a no comply, a boneless and a body varial; every name is logged as the scorer gives it, for the screen check of the names. |
 | `pad` | Scripted: the ride with a controller, played into the plugin without one. |
 | `status` | Scripted: a short ride, then the server's own view of the rider typed into the F1 console (`skate.status`, its speed and fly checks, its plugins), the console left open. |
 | `park` | Scripted: the authored park models one at a time 6 m ahead of the rider, 20 s each, seen from behind the rider, then a ride up the bank; nothing is placed on the server. |

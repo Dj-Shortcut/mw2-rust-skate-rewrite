@@ -69,6 +69,7 @@ public static class SkateRide
     public const float StallSpeed = 7f, StallMax = 2.5f, StallOut = 2.5f;
     // How near a half flip the board must be for the edge to take it upside down (the scorer's tolerance).
     public const double DarkCatch = 25.0;
+    private static bool spinLate;
     // How much higher than the take-off the ground under the board must be for that.
     public const float DarkOver = 0.15f;
     private static float Over() { return Clearance > 50f ? -99f : Position.y - Clearance - takeOffY; }
@@ -573,7 +574,7 @@ public static class SkateRide
         Enter(RideMode.Air);
         // A manual survives a hop over a bump; a jump ends it, and so does a longer fall below.
         Jumped = jumped; TrickAir = jumped; if (jumped) Manual = NoseManual = false; VSpeed = vertical; AirTime = 0f; AirPeak = 0f; takeOffY = Position.y;
-        flipLeft = shoveLeft = bodyLeft = 0f; spinning = false; PushPhase = 0f; Braking = false; stuck = 0; heldSteps = 0; Held = false; LateTrick = false;
+        flipLeft = shoveLeft = bodyLeft = 0f; spinning = spinLate = false; PushPhase = 0f; Braking = false; stuck = 0; heldSteps = 0; Held = false; LateTrick = false;
         popKind = jumped ? wantKind : SkatePopKind.Ollie; pendFlip = jumped ? wantFlip : 0; pendShove = jumped ? wantShove : 0f;
         wantFlip = 0; wantShove = 0f; wantKind = SkatePopKind.Ollie;
     }
@@ -603,22 +604,19 @@ public static class SkateRide
         var flips = pendFlip + SkateKeys.LateFlip; var lateFlips = SkateKeys.LateFlip != 0 && Jumped && AirTime > LateAfter; pendFlip = 0;
         if (flips != 0 && (Math.Abs(flipLeft) < 0.001f || Math.Sign(flipLeft) == Math.Sign(flips)))
         {
-            if (left >= (Math.Abs(flipLeft) + 360f * Math.Abs(flips)) / (float)SkateMotion.FlipRate) { flipLeft += 360f * flips; TrickAir = true; if (lateFlips) LateTrick = true; }
-            // Coming down onto something raised, or with an edge found under the fall (a ledge, a
-            // rail, a coping), with room for half a
-            // flip and no more: the flip is started for a darkslide, the board caught upside down
-            // on the edge. Missed, it lands upside down and that is a bail.
-            else if (Math.Abs(flips) == 1 && Math.Abs(flipLeft) < 0.001f && Math.Abs(shoveLeft) < 0.001f && !spinning && (Over() > DarkOver || now - SkateGrind.NearAt < 0.3f)
-                && left >= 180f / (float)SkateMotion.FlipRate) { flipLeft += 360f * flips; TrickAir = true; if (lateFlips) LateTrick = true; Out.Say("SKATE flip started over an edge, for a darkslide"); }
-            else Refuse(Math.Abs(flips) > 1 ? "a double flip" : "a flip", left);
+            // As in Skate: a flip is started whenever it is asked for. One asked too late does not
+            // come round before the ground, and that is a bail, unless the board meets an edge half
+            // way round (a darkslide).
+            if (left < (Math.Abs(flipLeft) + 360f * Math.Abs(flips)) / (float)SkateMotion.FlipRate) Late("a flip", left);
+            flipLeft += 360f * flips; TrickAir = true; if (lateFlips) LateTrick = true;
         }
         // A shove asked for in the air goes on top of what is under way, the same way round.
         var lateShove = Jumped ? SkateKeys.LateShove : 0f;
         if (lateShove != 0f && (Math.Abs(shoveLeft) < 0.001f || Math.Sign(shoveLeft) == Math.Sign(lateShove))) pendShove += lateShove;
         if (pendShove != 0f)
         {
-            if (left >= (Math.Abs(shoveLeft) + Math.Abs(pendShove)) / (float)SkateMotion.ShoveRate) { shoveLeft += pendShove; TrickAir = true; if (lateShove != 0f && AirTime > LateAfter) LateTrick = true; }
-            else Refuse(Math.Abs(shoveLeft) + Math.Abs(pendShove) > 200f ? "a 360 shove-it" : "a shove-it", left);
+            if (left < (Math.Abs(shoveLeft) + Math.Abs(pendShove)) / (float)SkateMotion.ShoveRate) Late("a shove-it", left);
+            shoveLeft += pendShove; TrickAir = true; if (lateShove != 0f && AirTime > LateAfter) LateTrick = true;
             pendShove = 0f;
         }
         // A body varial: the rider turns a half round, the board keeps its yaw. Only when the arc
@@ -626,8 +624,8 @@ public static class SkateRide
         var body = Jumped ? SkateKeys.BodyVarial : 0f;
         if (body != 0f && Math.Abs(bodyLeft) < 0.001f && Math.Abs(BodyDeg) < 0.001)
         {
-            if (left >= Math.Abs(body) / (float)SkateMotion.RotationRate) { bodyLeft = body; TrickAir = true; }
-            else Refuse("a body varial", left);
+            if (left < Math.Abs(body) / (float)SkateMotion.RotationRate) Late("a body varial", left);
+            bodyLeft = body; TrickAir = true;
         }
         var spinAxis = SpinAxis(left, dt);
         Grab = TrickAir ? SkateKeys.Grab : SkateGrabKind.None;
@@ -703,9 +701,12 @@ public static class SkateRide
         {
             var next = at + want * step;
             var ahead = want > 0f ? (float)Math.Ceiling(next / 180.0 - 0.0001) * 180f - next : next - (float)Math.Floor(next / 180.0 + 0.0001) * 180f;
-            if (ahead <= (left - dt) * rate + SpinSlack) { TrickAir = spinning = true; SpinLead = want * SpinLeadMost; return want; }
-            if (SkateKeys.SpinPressed) Refuse(Math.Abs(at) > 45f ? "the next half spin" : "a spin", left);
+            if (ahead <= (left - dt) * rate + SpinSlack || spinLate) { TrickAir = spinning = true; SpinLead = want * SpinLeadMost; return want; }
+            // A turn asked for afresh too late is started all the same, and turns for as long as it
+            // is held: not round before the ground, it is a bail.
+            if (SkateKeys.SpinPressed) { Late(Math.Abs(at) > 45f ? "the next half spin" : "a spin", left); spinLate = true; TrickAir = spinning = true; SpinLead = want * SpinLeadMost; return want; }
         }
+        else spinLate = false;
         if (!TrickAir) { SpinLead = 0f; return 0f; }
         var rest = (float)Math.Round(at / 180.0, MidpointRounding.AwayFromZero) * 180f - at;
         spinning = Math.Abs(rest) > 1f;
@@ -713,12 +714,12 @@ public static class SkateRide
         return Clamp(rest / step, -1f, 1f);
     }
 
-    // A press in the air that the arc cannot hold is refused rather than started and bailed; the
-    // log keeps it for the ride summary. Nothing is shown on screen.
-    private static void Refuse(string what, float left)
+    // A press in the air that the arc cannot finish: started all the same (it will be a bail), and
+    // logged for the ride summary. Nothing is shown on screen.
+    private static void Late(string what, float left)
     {
         Refused++;
-        Out.Say("SKATE refused " + what + ": " + (left < 0f ? 0f : left).ToString("F2") + " s of air left, " + AirTime.ToString("F2") + " s in");
+        Out.Say("SKATE late " + what + ": " + (left < 0f ? 0f : left).ToString("F2") + " s of air left, " + AirTime.ToString("F2") + " s in");
     }
 
     private static string AirLine(string end)
@@ -739,7 +740,10 @@ public static class SkateRide
         else if (!recovery) { Physics_(error); Bail(); return; }
         if (AirTime > 0.12f || impact > 1.5f) { Lands++; LandAt = now; LandImpact = impact; }
         landedTrick = TrickAir; spinAtLand = SkateKeys.Spin;
+        // As in Skate: a grab still held as the wheels touch down is a bail.
+        var heldGrab = TrickAir && !recovery && (Grab != SkateGrabKind.None || SkateKeys.Grab != SkateGrabKind.None);
         Enter(RideMode.Ground);
+        if (heldGrab) { Out.Say("SKATE bail: the grab was still held at the landing"); Bail(); return; }
         if (TrickAir) TrickTick(false, false, 0, 0, 0, impact, dt);
         else if (impact > BailImpact) Bail();
         else TrickTick(false, false, 0, 0, 0, 0, dt);

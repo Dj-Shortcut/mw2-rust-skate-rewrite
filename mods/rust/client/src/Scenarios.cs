@@ -94,7 +94,7 @@ public static class Scenarios
         System.IO.File.WriteAllText(System.IO.Path.Combine(BepInEx.Paths.PluginPath, "skate.done"), "done");
         var real = Time.realtimeSinceStartup - startAt;
         Say("DONE pace=" + (real > 0.5f ? (Time.time - startGame) / real : 1f).ToString("F2") + " top speed=" + SkateRide.Top.ToString("F1") + " pull-backs=" + SkateRide.Resets + " late calls=" + LateDriver.Calls + " pops=" + SkateRide.Pops + " lands=" + SkateRide.Lands + " bails=" + SkateRide.Bails
-            + " refused presses=" + SkateRide.Refused + " snaps=" + SkateWatch.Snaps + " score=" + SkateRide.Trick.TotalPoints + " grind scans=" + SkateGrind.Scans + " flicks=" + SkatePad.Flicks + " audio=" + SkateSfx.State + " | loudest output: " + SkateSfx.Heard);
+            + " late presses=" + SkateRide.Refused + " snaps=" + SkateWatch.Snaps + " score=" + SkateRide.Trick.TotalPoints + " grind scans=" + SkateGrind.Scans + " flicks=" + SkatePad.Flicks + " audio=" + SkateSfx.State + " | loudest output: " + SkateSfx.Heard);
     }
 
     private static void Ride(float s)
@@ -374,7 +374,7 @@ public static class Scenarios
         ShovePath = "0:0,-100 250:0,-100 262:-38,-92 274:-71,-71 286:-92,-38 298:-100,0 340:-100,0 380:0,0",
         // Held at the back right and flicked straight across to the front left: the same with a kickflip in it.
         VarialPath = "0:71,-71 250:71,-71 262:20,-20 274:-45,45 286:-64,64 300:-64,64 340:0,0";
-    private static readonly float[] padAt = { 1f, 2f, 4.5f, 5.5f, 6.5f, 8f, 10.5f, 13f, 15.5f, 16.9f, 17.6f, 17.75f, 18.4f, 20.5f, 23f, 25.4f, 25.5f, 25.95f, 28f, 28.15f, 28.8f, 30.5f, 32f, 33.5f, 35.5f, 36.5f };
+    private static readonly float[] padAt = { 1f, 2f, 4.5f, 5.5f, 6.5f, 8f, 10.5f, 13f, 15.5f, 16.9f, 17.6f, 17.75f, 18.15f, 20.5f, 23f, 25.4f, 25.5f, 25.95f, 28f, 28.15f, 28.55f, 30.5f, 32f, 33.5f, 35.5f, 36.5f };
     private static readonly string[] padDo = { "y", "push", "right", "left", "straight", "ollie", "kickflip", "heelflip", "manual", "release", "ollie", "grab", "release", "shove", "varial", "left", "ollie", "straight",
         "ollie", "nose grab", "release", "nose manual", "release", "brake", "y", "finish" };
     private static long padUs = 1000000;
@@ -430,8 +430,9 @@ public static class Scenarios
         }
     }
 
-    private static readonly float[] trickAt = { 3f, 6f, 8.9f, 9f, 9.4f, 11f, 14f, 16.9f, 17f, 17.5f, 20f, 20.12f, 23f, 23.45f, 25f, 27f, 29f, 30.6f, 32.2f, 33.5f, 35.5f, 35.5f, 37.5f, 39.5f, 41.5f, 43.5f, 43.6f, 46f, 48.5f };
-    private static readonly string[] trickDo = { "ollie", "ollie+kick", "left", "ollie", "release", "turn", "ollie+heel", "right+grab", "ollie", "release", "ollie+kick", "kick", "ollie", "kick",
+    // A grab is let go before the landing: held into it, it is a bail, as in Skate.
+    private static readonly float[] trickAt = { 3f, 6f, 8.9f, 9f, 9.4f, 11f, 14f, 16.9f, 17f, 17.5f, 20f, 23f, 25f, 27f, 29f, 30.6f, 32.2f, 33.5f, 35.5f, 35.5f, 37.5f, 39.5f, 41.5f, 43.5f, 43.6f, 46f, 48.5f };
+    private static readonly string[] trickDo = { "ollie", "ollie+kick", "left", "ollie", "release", "turn", "ollie+heel", "right+grab", "ollie", "release", "ollie+kick", "ollie",
         "ollie+shove", "ollie+kick+shove", "ollie+kick+shove+shove", "manual", "release", "ollie+shove+shove", "ollie", "revert", "nollie", "nocomply ollie", "boneless ollie", "ollie", "body", "brake", "finish" };
     private static bool wantRevert; private static int landsAtRevert; private static float revertRelease = -1f;
 
