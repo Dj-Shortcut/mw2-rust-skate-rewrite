@@ -128,7 +128,7 @@ public static class SkatePad
         if (seconds > MostCatchUp) seconds = MostCatchUp;
         var air = SkateRide.Mode == RideMode.Air;
         var grabbing = air && (LeftTrigger > Pulled || RightTrigger > Pulled);
-        var input = new SkateFlickInput(grabbing ? 0f : SkateRide.Clamp(RightX, -1f, 1f), grabbing ? 0f : SkateRide.Clamp(RightY, -1f, 1f), air, SkateRide.On && SkateRide.TailFirst);
+        var input = new SkateFlickInput(grabbing ? 0f : SkateRide.Clamp(RightX, -1f, 1f), grabbing ? 0f : SkateRide.Clamp(RightY, -1f, 1f), air, SkateRide.Goofy != (SkateRide.On && SkateRide.TailFirst));
         while (seconds > 0.000001)
         {
             var dt = seconds > 0.01 ? 0.01 : seconds; seconds -= dt;

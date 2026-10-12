@@ -119,26 +119,35 @@ The picker: on foot, holding `Back` (the view button) shows the eight pieces; th
 `LB`/`RB` turn the piece in 15° steps, `A` places it where the view meets the ground and `B`
 cancels. On the keyboard `P` opens the picker and steps to the next piece, `Q`/`E` turn it, `O`
 places it and `Backspace` closes it. While the picker is open the chosen piece's authored model
-is drawn where the view meets the ground, turned as asked, as a preview. Placing sends
+is drawn where the view meets the ground, turned as asked, as a ghost preview: drawn without
+colliders, so that a preview following the aim never stands in the player's way. Placing sends
 `skate.place <name>` to the server (the server finds the place from the player's own view and
 lifts the piece clear of the ground) or, when the piece was turned, `skate.place <name> x y z yaw`
 with the preview's anchor lifted by a floor tile's thickness (read from the last floor seen, a
 guess of 0.1 m before that) plus 4 cm, which the server takes exactly as given. The command goes
-as a console packet on the client's own connection
-(`SkateConsole.Send`: the game's console class is renamed in this client build, but the network
-library keeps its names, so the packet is written the way the console writes it); the server
-builds the piece there (0.3.6, Codex). Where sending is not available the old route stays: `A`
-or `O` queue `skate.piece <name>` for typing and a foundation is placed. Typing through
-injected keys never reached the game's console, so that route depends on the player. `Y` in the
-menu does not mount the board. The send check (`send` step) shows whether sending reaches the
-server: a chat line that appears on the screen. Unverified in game as of this commit.
+as a console packet on the client's own connection (`SkateConsole.Send`); the server builds the
+piece there, from ShortcutSkate 0.3.6 (Codex; 0.3.5, which the owner's server runs, answers
+nothing to `skate.place`). Where sending is not available nothing reaches the server from the
+plugin, and the screen says so, with both lines to type in F1 instead: `skate.piece <name>` and a
+square foundation within two minutes (0.3.5), or `skate.place <name>` (0.3.6 or later). The console
+typist (injected keys) is not tried for the picker: it never reached this client's console. `Y` in
+the menu does not mount the board. The send check (`send` step) shows whether sending reaches the
+server: a chat line that appears on the screen. In the two send sessions so far the packet path was
+not found: the loaded `Facepunch.Network` interop has no `Network.Net` type by that name. Since
+then the plugin looks for the path by its shape when the names are gone (the enum with a
+`ConsoleCommand` member; the write type with a method taking it, one taking a string and one
+taking a struct built from a connection; the client type with a parameterless method returning
+that write and a connection of its own; a static field or property holding the client), logs the
+names the build gives them, and writes a listing of the library's types (`console-net.txt` next
+to the plugin) when even that fails. Offline the shape search finds a renamed mirror of the path
+past two decoys; in game it has not run yet. Unverified in game as of this commit.
 
 ### Keys
 
 | Key | On the ground | In the air |
 | --- | --- | --- |
 | `K`, or `Space` twice quickly | Get on. `K` again gets off. | |
-| `W` | Push; rolling tail first, a fakie push | Tap: kickflip |
+| `W` | Push with the back foot; rolling tail first in the same stance, a fakie push with the foot at the tail, which leads (the front foot would have to cross the standing leg); after a 180 the stance is turned round and the trailing foot pushes on its own toe side | Tap: kickflip |
 | `S` | Brake | Tap: heelflip |
 | `A` / `D` | Carve | Held: the rider turns to the left / right |
 | Mouse | The board turns toward the view | |
@@ -146,10 +155,12 @@ server: a chat line that appears on the screen. Unverified in game as of this co
 | `Shift` | Held while rolling: manual | |
 | `Ctrl` or `C` | Held for a moment: get off | Held: grab |
 | `L` | View from behind or the game's first person | |
+| `J` (on foot; `Back`+`Y` on the controller) | Stance: regular (left foot forward, the right foot pushes) or goofy, the mirror image. Kept in `skate-stance.txt` in the game's own data folder (`AppData\LocalLow\Facepunch Studios LTD\Rust`) for the next start; the hint on foot names the current one. | |
 
 Coming down over an edge while moving along it starts a grind. A turn is called frontside when it
 brings the rider's chest round to the way he travels: to the left going nose first, to the right
-going tail first. Tricks score when landed, grinds and manuals by the second; tricks
+going tail first, and the other way round for a goofy rider; the controller's flick and grab
+directions mirror with the stance as they do when the tail leads. Tricks score when landed, grinds and manuals by the second; tricks
 in a row multiply, and the combo is banked after a moment of plain rolling. Coming down faster than 12 m/s, or with a
 rotation unfinished, is a bail: the combo is lost and the rider steps off. Water, death, a seat or
 a vehicle also end the ride. Nothing is read from keyboard or controller while the cursor is free
@@ -207,7 +218,7 @@ that commit and must match the hash; that is for shared code that is ahead on an
 | `RiderRig.cs` | Writes the shared rider pose onto the player model's skeleton; what is drawn in which view, the held item included. |
 | `SkateCamera.cs` | View from behind. |
 | `SkateHud.cs`, `SkateSfx.cs` | The score display and the sounds. |
-| `SkatePieces.cs`, `SkateConsole.cs` | The park-piece menu on the controller and the console line it sends to the server (`SkateConsole.Send`, a console packet on the client's connection found by name in the network library) or, failing that, types for the player. |
+| `SkatePieces.cs`, `SkateConsole.cs` | The park-piece menu on the controller and the keyboard, its ghost preview, and the console line it sends to the server (`SkateConsole.Send`, a console packet on the client's connection found by name in the network library); without that, the screen shows the line to type. `SkateConsole` also keeps the console typist for the scripted checks. |
 | `Scenarios.cs` | Scripted checks in a world. |
 | `SkateParks.cs` | Draws the authored park models over the server's park pieces (below). |
 
@@ -249,6 +260,7 @@ file it runs `skate`. Runtime steps share one rig; the last scenario step select
 | `status` | Scripted: a short ride, then the server's own view of the rider typed into the F1 console (`skate.status`, its speed and fly checks, its plugins), the console left open. |
 | `park` | Scripted: the authored park models one at a time 6 m ahead of the rider, 20 s each, seen from behind the rider, then a ride up the bank; nothing is placed on the server. |
 | `send` | Scripted: a chat line and `skate.status` sent to the server as console packets on the client's own connection (the way the game's console sends them), not typed; the chat line shows on the screen when it arrives. |
+| `place` | Scripted: `skate.place bank` sent to the server the same way, where the player looks; then the server's blocks and the model drawn over them are waited for (20 s) and reported. Needs ShortcutSkate 0.3.6 or later and open ground in view; says so when nothing came. |
 | `mute` | Turns the whole client down until nothing can be heard. |
 | `nogrind` | No grinding. |
 
@@ -315,3 +327,16 @@ of ordinary movement. Without it the server allows a rider the pace of a player 
 for that: a put-back is only counted and logged. Only a wall right in front takes speed off. So on
 a server that refuses skate speed the rider is pulled back instead of braked; the server has to
 allow it (the plugin, or its own speed checks turned off by the admin).
+
+The owner still saw rubber-banding with ShortcutSkate 0.3.5 live (12 Oct). The plugin lets a rider
+through only while its session is armed, and any server correction, more than two seconds without
+ground under the path, or a steep slope disarms it, after which the next fast move is refused and
+the correction disarms it again: that loop is the likeliest cause, and is with Codex (#337). On a
+private server the admin's own setting ends it without the plugin: `antihack.speedhack_protection 0`,
+`antihack.flyhack_protection 0` and `antihack.noclip_protection 0` in the server's configuration
+(noclip as well, because the client's park colliders are not the server's native blocks).
+
+Only a client that Steam started gets the controller through Steam Input. `play` and the launcher
+start through the owner's Steam shortcut for that reason; a client started directly (`$pdirect`,
+the scripted checks) rides with the controller through the plugin's own reader but walks with the
+keyboard only, which the owner saw as "the controls stop working when I step off".

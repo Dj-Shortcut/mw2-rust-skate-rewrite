@@ -19,13 +19,39 @@ python3 crates/approved_tests/skate/SkateServerPluginInstallScenario.py
 ```
 
 This scenario never starts Rust/Oxide, the Rust client or Shadow, opens game ports
-or accesses the owner's server. Native plugin compile/load, patches, placement
+or accesses the owner's server. Synthetic Oxide log lines also exercise the
+selected-version verdict, stale/partial/copied records, log rotation/truncation,
+failure after a long fresh tail, guarded rollback, a real 90-second timeout and
+INT/TERM after source publication. Fresh log inodes are conservatively baselined
+at first-observed EOF. No fixture establishes native Oxide compilation/loading
+or filesystem-watcher behavior. Native plugin compile/load, patches, placement
 and riding remain separate acceptance. INT/TERM cancellation is checked during
 a real kernel-lease-blocked backup,
 including caller status, worker exit before lease release and unchanged source
 afterward. Power loss/SIGKILL are not tested.
 
+## Server movement policy
+
+The owner approved `skate_server_movement_policy` by name on 12 October 2026. It executes
+the actual plugin's pure helpers: every segment's coordinate/path validation, total XZ
+distance, cap/tick bounds, deterministic accumulation, atomic refusals, all fresh filter
+guards and player eligibility. Existing compiled Bounds/Rearm helpers reproduce the
+two-second airtime refusal and unsupported/repeated-reset starvation; the fresh policy
+accepts the same in-cap paths independently of that diagnostic history.
+
+```sh
+dotnet build mods/rust/plugins/ShortcutSkate.csproj -p:RustManagedPath=/absolute/path/to/managed
+dotnet run --project crates/approved_tests/skate/SkateServerMovementPolicyScenarios.csproj -p:ActualPluginPath=/absolute/path/to/ShortcutSkate.dll -- EXPECTED_SHA256
+```
+
+The optional argument pins the actual DLL hash; its path/hash are always printed.
+Warmed helper loops measure allocation on the executing .NET runtime. Guard fixtures
+exercise production boolean policy, rather than constructing fake native players.
+No Rust/Oxide process, client, Shadow or live server starts. Real cache data, authority
+flags, Harmony invocation, native noclip and correction-free gameplay remain unverified.
+
 ## Recorded gestures
+
 
 The three scenarios requested by the owner through [issue #337](https://github.com/Dj-Shortcut/mw2-rust-rust-rewrite/issues/337#issuecomment-6098063930) replay the exact recorded stick positions and timestamps. Each position is held until the next timestamp; long holds are subdivided at the module's maximum step without interpolating new positions.
 
@@ -43,6 +69,24 @@ dotnet run --project crates/approved_tests/skate/SkateGestureScenarios.csproj
 An alternate built DLL can be supplied with `-p:SkateLibraryPath=/absolute/path/to/SkateMotion.dll`. Outputs stay in ignored `context/`.
 
 These scenarios check gesture recognition and its compositional/legacy outputs. They do not start the Rust client or server and do not establish controller feel, animation or a landed native trick.
+
+## Late flips and body varials
+
+The owner approved `skate_late_flips_and_body_varials` by name on 12 October 2026.
+The actual-DLL scenario checks second airborne held flips/shoves without another pop,
+existing side AirFlick/old constructors, complete left-stick circles and incomplete,
+interrupted, reversed, stale or discontinuous paths. It covers mirrored input, one body
+event per flight, support rearming, body/deck angle independence, catching/stance/score,
+cached names, bail/reset and atomic invalid input/state refusals.
+
+```sh
+dotnet run --project crates/approved_tests/skate/SkateLateFlipsBodyVarialsScenarios.csproj -p:SkateLibraryPath=/absolute/path/to/SkateMotion.dll -- EXPECTED_SHA256
+```
+
+The optional argument pins the loaded DLL hash; path/hash are always printed. Run the
+three existing recorded gesture scenarios separately. No Rust client/server or Shadow
+starts; native input bindings, animation/contact, IL2CPP cost and controller feel remain
+unverified. See the [API](../../../mods/rust/shared/README.md#late-flips-and-rider-only-body-varials).
 
 ## Ride physics
 
@@ -114,6 +158,12 @@ world translation/rotation, isolated reset boundaries, variable dt, inverted han
 all 14 grab targets across regular/goofy and switch. Malformed rig/pose/state/history and dt
 refusals are atomic; warmed success/refusal loops check allocation on the executing runtime.
 
+The same scenario covers all eight `SkateRiderMotionOptions` combinations: suppressed
+pelvis spring, exact left/right/both hand targets before IK, retained free-hand/shoulder
+lag, warmed control toggles/history reset, near-reach fallback, transformed/reset poses
+and every grab/stance/switch/inverted plant. The original/default overloads must give
+identical pose/history bits. Each option has warmed success/refusal allocation checks.
+
 Build the genuine-reference shared DLL first, then run the approved scenario:
 
 ```sh
@@ -122,7 +172,7 @@ dotnet run --project crates/approved_tests/skate/SkateRiderMotionScenarios.cspro
 ```
 
 The optional single argument verifies the loaded DLL's SHA-256; its path/hash are always printed.
-Outputs stay in ignored `context/`. The integrated genuine net48 DLL passes 180,614 checks on
+Outputs stay in ignored `context/`. The integrated genuine net48 DLL passes 492,774 checks on
 Mac net8, with zero measured bytes in 20,000-call warmed success/refusal loops. These are
 secondary-motion geometry checks. The runner starts no Rust client/server or Shadow PC and
 does not establish hand/surface contact, native rendering, adapter integration or IL2CPP cost.
@@ -145,5 +195,6 @@ No client/server or Shadow PC starts. Native contact, entry recognition, poses a
 cost remain unverified. See the [grind contract](../../../mods/rust/shared/README.md#grind-vocabulary).
 
 ## Direct park placement requests
+
 
 The existing `skate_park_anchor_yaw_and_snap` also exercises the server's direct-placement request helper: aim versus explicit anchors, invariant numeric parsing, finite coordinate/yaw bounds, yaw normalization and atomic refusal outputs across cultures. It invokes the actual public helper by its exact reflected signature and requires that helper in `ShortcutSkate.dll`. The shared `SkateMotion.dll` contains geometry helpers only, so its layout run omits the server-request extension. These scalar checks do not execute native aim rays, building hooks, placement or gameplay.

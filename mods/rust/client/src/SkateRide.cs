@@ -77,6 +77,12 @@ public static class SkateRide
     public static bool FootPlanted { get { return Mode == RideMode.Air && now < PlantedUntil; } }
     // The push with the front foot (mongo), as the push began.
     public static bool PushMongo;
+    // Which foot a push uses: the trailing foot as a rule (the back foot, or the front one in a
+    // mongo push); rolling tail first in the same stance, the tail foot leads and pushes, as a
+    // skater pushing fakie does: the trailing foot would have to cross the standing leg to reach
+    // the toe side. After a 180 the stance itself is turned round (NoseYaw), and the trailing foot
+    // pushes on its own toe side. PushLead: the foot that leads in the way of travel pushes.
+    public static bool PushLead;
     // The deck's angle to the edge, taken when the grind begins and kept through it.
     public static float GrindDeck;
     private static float grindCross, grindNoseFar, grindNose, airNoseOffset, airDeckOffset;
@@ -113,7 +119,8 @@ public static class SkateRide
     }
 
     // Frontside is the turn that brings the rider's chest round to the way he travels: to the left
-    // for a regular rider going nose first, to the right when the tail leads. NoseYaw is where the
+    // for a regular rider going nose first, to the right when the tail leads, and the other way
+    // round for a goofy rider. NoseYaw is where the
     // rider's stance points (spin included), DeckYaw where the board's own nose points.
     public static float SpinYaw { get { return -(float)SpinDeg * spinSide; } }
     public static float NoseYaw { get { return Mode == RideMode.Grind ? SkateGrind.Heading + grindNose : Yaw + (Trick.Switch ? 180f : 0f) + SpinYaw + airNoseOffset; } }
@@ -135,8 +142,34 @@ public static class SkateRide
         if (Mode == RideMode.Grind) SkateGrind.Speed = Speed;
     }
     public static bool TailFirst { get { return Trick.Switch != (Speed < -0.3f); } }
+    // The rider's stance: regular (left foot forward, chest to the right of the nose) or goofy, the
+    // mirror image. Read from the stance file at start, switched on foot with J or Back+Y, and kept.
+    public static bool Goofy;
+    public static float StanceSign { get { return Goofy ? -1f : 1f; } }
+    public const string StanceFile = "skate-stance.txt";
+    public static string StanceName { get { return Goofy ? "goofy" : "regular"; } }
+    public static string StancePath()
+    {
+        try { return System.IO.Path.Combine(Application.persistentDataPath, StanceFile); } catch (Exception) { return null; }
+    }
+    public static void LoadStance()
+    {
+        try { var path = StancePath(); Goofy = path != null && System.IO.File.Exists(path) && System.IO.File.ReadAllText(path).Trim().ToLowerInvariant() == "goofy"; }
+        catch (Exception e) { Goofy = false; Out.Say("STANCE could not be read: " + e.GetType().Name + ": " + e.Message); }
+    }
+    // Only off the board: the feet are placed on getting on.
+    public static bool ToggleStance()
+    {
+        if (On) return false;
+        Goofy = !Goofy;
+        try { var path = StancePath(); if (path != null) System.IO.File.WriteAllText(path, StanceName); }
+        catch (Exception e) { Out.Say("STANCE could not be kept: " + e.GetType().Name + ": " + e.Message); }
+        Out.Say("STANCE " + StanceName);
+        SkatePieces.Said = "Stance: " + StanceName + " (" + (Goofy ? "right" : "left") + " foot forward)"; SkatePieces.SaidAt = Time.realtimeSinceStartup;
+        return true;
+    }
     // Which way round a frontside turn goes from here: the sign a left-stick turn gets in the trick module.
-    public static float SpinSide { get { return TailFirst ? -1f : 1f; } }
+    public static float SpinSide { get { return (TailFirst ? -1f : 1f) * StanceSign; } }
     public static bool Rotating { get { return spinning || Math.Abs(flipLeft) > 0.001f || Math.Abs(shoveLeft) > 0.001f; } }
 
     public static void ForgetServer() { Cap = MaxSpeed; raiseWait = RaiseWait; refusedSinceRaise = false; raisedAt = putBackAt = -999f; }
@@ -152,7 +185,7 @@ public static class SkateRide
         if (mountAt - putBackAt > CapForget) ForgetServer();
         VSpeed = 0f; AirTime = 0f; flipLeft = shoveLeft = pendShove = 0f; pendFlip = 0; SpinDeg = FlipDeg = ShoveDeg = 0; Jumped = TrickAir = Braking = Manual = NoseManual = spinning = DeckReversed = false; PushPhase = 0f; stuck = 0;
         Grab = SkateGrabKind.None; spinSide = 1f; wantKind = SkatePopKind.Ollie; wantFlip = 0; wantShove = 0f; wantScale = 1f;
-        PumpHeld = RevertLeft = 0f; landedTrick = fastFakie = false; steppedAt = -99f; StepUps = 0; Pump = default(SkatePumpState); SlopeDegrees = 0f; ContactNormal = Vector3.up; GrindKind = SkateGrindKind.None; GrindFrontside = GrindAlong = false; GrindDeck = 0f; Stalling = false; Stalls = 0; PlantedUntil = -99f; PushMongo = false; handDownAt = -99f;
+        PumpHeld = RevertLeft = 0f; landedTrick = fastFakie = false; steppedAt = -99f; StepUps = 0; Pump = default(SkatePumpState); SlopeDegrees = 0f; ContactNormal = Vector3.up; GrindKind = SkateGrindKind.None; GrindFrontside = GrindAlong = false; GrindDeck = 0f; Stalling = false; Stalls = 0; PlantedUntil = -99f; PushMongo = PushLead = false; handDownAt = -99f;
         Trick = new SkateTrickState(false); TrickName = ""; ComboPoints = 0; TrickAt = BankedAt = LandAt = jumpWanted = -99f; OffReason = "";
         SkateHud.Clear();
         Normal = ViewNormal = Vector3.up; Position = b.position; Tangent = Dir(yaw);
@@ -334,7 +367,7 @@ public static class SkateRide
         LimitSpeed(Cap, fastFakie ? Cap : Math.Min(MaxReverse, Cap));
         if (pushing || PushPhase > 0f)
         {
-            if (PushPhase <= 0f) { Pushes++; PushMongo = SkateKeys.Mongo; }
+            if (PushPhase <= 0f) { Pushes++; PushMongo = SkateKeys.Mongo; PushLead = PushMongo != fakiePush; }
             // While the foot is on the ground it stays where it came down and the board rolls on
             // past it: the stroke runs by the distance the board moves, not by the clock (a board
             // that cannot move gets the slow clock), so the foot never slides along the ground.
@@ -449,7 +482,7 @@ public static class SkateRide
     private static void TakeOff(bool jumped, float vertical)
     {
         // Read while the board still rolls: which end leads decides which way is frontside.
-        spinSide = TailFirst ? -1f : 1f;
+        spinSide = (TailFirst ? -1f : 1f) * StanceSign;
         Enter(RideMode.Air);
         // A manual survives a hop over a bump; a jump ends it, and so does a longer fall below.
         Jumped = jumped; TrickAir = jumped; if (jumped) Manual = NoseManual = false; VSpeed = vertical; AirTime = 0f; AirPeak = 0f; takeOffY = Position.y;
@@ -671,7 +704,7 @@ public static class SkateRide
             : SkateKeys.Manual ? SkateGrindKind.TailStall : SkateKeys.NoseManual ? SkateGrindKind.NoseStall : SkateGrindKind.BoardStall;
         SkateGrind.BeginStall(pos);
         var to = SkateGrind.Target - pos; to.y = 0f;
-        GrindFrontside = Vector3.Dot(to, Dir(NoseYaw + 90f)) > 0f; GrindAlong = false;
+        GrindFrontside = Vector3.Dot(to, Dir(NoseYaw + 90f * StanceSign)) > 0f; GrindAlong = false;
         if (GrindKind == SkateGrindKind.Handplant && (SkateKeys.HandplantFront || SkateKeys.HandplantBack)) GrindFrontside = SkateKeys.HandplantFront;
         Enter(RideMode.Grind); GrindStarts++; Stalls++; Stalling = true; stallAt = now; handDownAt = -99f;
         Speed = 0f; VSpeed = 0f;
@@ -773,7 +806,7 @@ public static class SkateRide
         var rail = Dir(SkateGrind.Heading); var deck = Dir(DeckYaw);
         var rel = Delta(SkateGrind.Heading, DeckYaw); var across = Math.Abs(rel) > 90f ? 180f - Math.Abs(rel) : Math.Abs(rel);
         var to = SkateGrind.Target - pos; to.y = 0f;
-        var chest = Dir(NoseYaw + 90f);
+        var chest = Dir(NoseYaw + 90f * StanceSign);
         GrindFrontside = Vector3.Dot(to, chest) > 0f;
         // Where the edge crosses the board's own axis, from its middle in metres; the nose is "far"
         // when it points away from the side the rider came from.

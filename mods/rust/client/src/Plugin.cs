@@ -37,7 +37,7 @@ public class SkatePlugin : BasePlugin
         switch (s)
         {
             case "skate": return AddRig();
-            case "ride": case "pose": case "trick": case "pad": case "piece": case "status": case "park": case "send": Scenarios.Name = s; return AddRig();
+            case "ride": case "pose": case "trick": case "pad": case "piece": case "status": case "park": case "send": case "place": Scenarios.Name = s; return AddRig();
             case "nogrind": SkateGrind.Enabled = false; return "grinding off";
             case "yaw90": case "yaw180": case "yaw270": Scenarios.YawOffset = float.Parse(s.Substring(3)); return "scenario yaw offset " + Scenarios.YawOffset;
             case "mute": SkateRig.Mute = true; AudioListener.volume = SkateRig.MuteVolume; return "volume=" + AudioListener.volume;
@@ -48,8 +48,9 @@ public class SkatePlugin : BasePlugin
     private string AddRig()
     {
         if (rig != null) return "already added";
+        SkateRide.LoadStance();
         rig = AddComponent<SkateRig>();
-        return "added=" + (rig != null);
+        return "added=" + (rig != null) + " stance=" + SkateRide.StanceName;
     }
 }
 

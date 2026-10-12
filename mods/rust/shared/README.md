@@ -114,6 +114,60 @@ The convention is regular heel-left: back-to-forward-left gives kickflip, right 
 
 The three exact owner-recorded timestamp sequences are permanent scenarios in [approved_tests/skate](../../../crates/approved_tests/skate/README.md): airborne pullback gives Ollie, grounded diagonal gives Ollie+Kickflip, and grounded roll/recoil gives Ollie without a manual. They test recognition and the composition contract; native controller feel remains a client verification step.
 
+### Late flips and rider-only body varials
+
+The additive flick input is `SkateFlickInput(x,y,airborne,mirrored,leftX,leftY,poppedInAir)`.
+The original constructor supplies zero left-stick axes and `false` pop context. The adapter
+sets `poppedInAir` after the current flight's real pop and clears it on support/bail; the
+reader cannot infer whether a requested ground pop actually launched. While airborne with
+that context, a subsequent held right-stick composition emits flip/shove targets with
+`Kind=None`, `Pop=0`, `Strength=0` and `Composition.Late=true`. Existing lateral AirFlicks
+also expose `Late`; their recognition and event bits are unchanged. A first pullback in an
+already-airborne recorded gesture remains an Ollie with the original constructor. Neutral
+rearms the right-stick reader; each emitted composition is applied once.
+
+The left stick reads independently. A complete net 360-degree circle at radius at least
+`HeldZone` within `BodyCircleSeconds` emits `BodyVarial` (bit 64) and signed
+`BodyVarialDegrees=180`, mirrored to -180. Clockwise is positive using `atan2(leftX,leftY)`.
+Adjacent angle changes greater than 90 degrees, reversal, center/radius interruption or
+timeout discard partial progress. A completed circle latches until support, preventing
+repeated body-varial events during one flight. Right-stick composition is separate and
+can occur on the same frame. A partial circle or a held direction emits nothing.
+
+The additive scorer input appends `late,bodySpin` after `grindKind,grindFrontside`.
+`bodySpin` is a separate axis in [-1,1]; it integrates at `RotationRate`, capped at +/-180
+degrees per flight. Drive it toward the emitted body-varial target, then supply zero.
+Keep the original pop kind; a late target has no additional pop. Mark the board-only
+flip/shove axes `late=true` while applying the late target. Old scorer constructors
+supply `false,0`. `State.BodySpin` accumulates the rider-only angle and `result.BodySpin`
+retains its snapped landing angle; `RiderSpin=BoardSpin+BodySpin`. Deck world yaw remains
+`BoardSpin+BoardShove`, and its roll remains `BoardFlip`. The rider support frame follows
+`RiderSpin`. Commit both separately on landing; body rotation must not turn the board.
+
+Body catching uses the same 25-degree half-turn tolerance and impact/bail rules. An odd
+body half-turn toggles riding stance in addition to the original rider/board half-turns;
+two odd turns cancel that parity. A completed body half-turn adds 100 base points. Late
+has no score bonus. Support/bail clears the new histories. Cached names include
+`Late Kickflip`, `Late Pop Shove-it`, `Body Varial`, `Body Varial Kickflip` and combined
+late/body variants, with existing stance/pop/grab prefixes. Late metadata labels the
+final accumulated board composition, rather than naming each sequential flip separately;
+zero completed board rotations never become `Late Ollie`.
+
+Existing public methods/constructors remain; the added state/input/result fields change
+struct layout, so rebuild adapters with the shared DLL. Three extra name tables and
+fallback variants are created at static initialization; subsequent stepping/naming uses
+cached strings. Native IL2CPP startup/memory cost, left-stick conflicts with steering,
+input timing, body/deck application, catching and visuals remain unverified. These APIs
+read and score authored input; they do not change the client adapter.
+
+The approved `skate_late_flips_and_body_varials` scenario passes 3,703 checks on the
+actual genuine-reference net48 DLL, including late no-boost targets, signed circles,
+simultaneous events, interruption/timeout/latch, separate body/board angles, stance,
+catch/bail/reset, old constructors, cached names and atomic invalid requests/state.
+Warmed modified-name landings and left-stick steps allocate zero measured bytes on
+Mac net8. The three original recorded flick scenarios also pass. Native acceptance
+and performance remain unverified.
+
 The integrated genuine-reference net48 DLL passes those three scenarios, 238,534 private gesture assertions and 205,900 private trick assertions across 6,300 compositions. Checks cover mirrored/nollie chart paths, ordinary pullbacks through 40 degrees remaining plain flips, settled diagonals, stale setup, snapped landing tolerance/impact, 540/720 generic grabs, rider-only stance parity, manual changes and atomic refusals. Warm gesture success/rejection and trick landing/rejection loops allocate zero measured bytes on Mac net8. These checks do not prove native input, catching or server acceptance.
 
 ## Rider joint API
@@ -146,15 +200,17 @@ The client adapter must also own the local held-item/arm visibility while using 
 
 `SkateRiderMotion.TryStep(state,rig,target,dt,out shown,out next,out error)` adds bounded secondary motion after `SkateRider.TryCreate`. Pass the same explicit `SkateRiderRig` that produced the target; a pose does not contain its limb measurements. Begin with default `SkateRiderMotionState`, retain `next` after success, and use default state to deliberately reset a contact or mode transition. Existing rider APIs are unchanged.
 
-The pelvis springs along target PelvisUp; the chest, both shoulders and both hands have Verlet history. Shoulder constraints reconstruct a coherent chest frame, and analytic two-bone IK re-solves knees/elbows from the moved roots/endpoints. Every returned joint is within 0.12 m of its target, checked after IK. Hip/shoulder spans, spine/neck/head and all limb lengths match the supplied rig. Both ankles and toes are copied exactly from the target: their ordinary movement follows that input, with no added secondary offset.
+The additive overload is `TryStep(state,rig,target,dt,options,out shown,out next,out error)`. `SkateRiderMotionOptions(disablePelvisSpring,pinLeftHand,pinRightHand)` controls those three parts independently; default options preserve the original behavior. Disable the pelvis spring when another animation supplies its vertical motion, while keeping chest/shoulder and free-hand lag. A pinned hand is copied exactly from the target before solving its arm; either or both hands can be pinned. Suppressed/pinned parts clear their own velocity history on every step, so releasing the control cannot revive an earlier stored impulse.
+
+The enabled pelvis springs along target PelvisUp; the chest, both shoulders and free hands have Verlet history. Shoulder constraints reconstruct a coherent chest frame, and analytic two-bone IK re-solves knees/elbows from the moved roots/endpoints. Every returned joint is within 0.12 m of its target, checked after IK. Hip/shoulder spans, spine/neck/head and all limb lengths match the supplied rig. Both ankles and toes are copied exactly from the target: their ordinary movement follows that input, with no added secondary offset. Secondary movement is attenuated when a moved shoulder cannot reach an exact pinned hand; target fallback preserves the contact, lengths and bounds.
 
 Finite dt is [0.0001,0.05] seconds, internally subdivided to at most 1/120 second. History is transported with the ankle-centre translation and pelvis-frame rotation, retaining lag during ordinary riding. A rig change, translation over 2 m or a pelvis forward/up change over 120 degrees resets to the target. Secondary speed is limited to 6 m/s independently of world riding speed. Constraint reduction or target fallback clears excess history so clipped motion cannot store a later impulse.
 
 Target/state coordinates must be finite within +/-100,000 m, frames unit/perpendicular within 1e-6 and geometry consistent with the rig within 1e-6 m. Inverted valid poses are accepted. HeadForward is independently unit and need not be perpendicular to ChestUp. Invalid rig, target, state or dt returns default shown, the unchanged supplied state and a static English error, including on initialization/reset. Results are deterministic for identical inputs on the same runtime.
 
-The genuine-reference net48/C#7.3 build has zero warnings/errors. The owner-approved `skate_rider_secondary_motion` runner executes that actual DLL and passes 180,614 checks, including all 14 grab targets across stance/switch combinations, isolated shoulder-yaw lag/overshoot, exact feet/lengths, bounds, transport/reset, variable dt, inverted poses and atomic rejection. Warm 20,000-call success and refusal loops allocate zero measured bytes on Mac net8. This establishes the stated geometry/runtime contract, not native IL2CPP cost or visible rider quality.
+The genuine-reference net48/C#7.3 build has zero warnings/errors. The owner-approved `skate_rider_secondary_motion` runner executes that actual DLL and passes 492,774 checks, including all eight controls, all 14 grab targets across stance/switch combinations, fixed hands, free-arm/shoulder lag, control toggles/history, near-reach/reset, exact feet/lengths, bounds, transport, variable dt, inverted poses and atomic rejection. The original/default overloads give identical pose/history bits. Warm 20,000-call success and refusal loops for each option allocate zero measured bytes on Mac net8. This establishes the stated geometry/runtime contract, not native IL2CPP cost or visible rider quality.
 
-The generic target has no ground/deck/hand contact flags. Secondary hand motion can separate a gripping or planted hand from its surface, and exact target feet alone do not establish mesh/collider contact. The adapter must bypass/reset motion for constrained modes or solve held-hand contact after secondary motion; filtering a solved grip afterward cannot keep its contact exact. Claude still owns its `RiderRig` integration, actual ground/grip constraints, transition tuning and native visual verification.
+The generic target has no ground/deck/hand contact flags. The adapter chooses which hands to pin and supplies targets already on the required grip or plant surface; an exact target does not establish mesh/collider contact. Preserve contact through the options before IK rather than filtering a solved hand afterward. Claude still owns its `RiderRig` integration, actual ground/grip constraints, transition tuning and native visual verification.
 
 ## Height-sampled edges API
 

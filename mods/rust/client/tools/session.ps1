@@ -183,20 +183,40 @@ try {
   # The reader ends by itself when the client has closed; one that never saw a client is ended here.
   if ($reader -and -not $reader.HasExited) { Stop-Process -Id $reader.Id -Force -ErrorAction SilentlyContinue }
   $bx = Join-Path $rust 'BepInEx'
-  if (Test-Path "$bx\plugins\skate.log") { Copy-Item "$bx\plugins\skate.log" $run }
-  foreach ($f in 'LogOutput.log','ErrorLog.log') { if (Test-Path "$bx\$f") { Copy-Item "$bx\$f" $run } }
-  ls $rust -Filter 'preloader_*.log' -ErrorAction SilentlyContinue | % { Copy-Item $_.FullName $run }
-  $pl = "$HOME\AppData\LocalLow\Facepunch Studios LTD\Rust\Player.log"
-  if (Test-Path $pl) { Copy-Item $pl $run }
+  # Copies of the logs first. A copy that fails must not keep the loader in the Rust folder.
+  try {
+    if (Test-Path "$bx\plugins\skate.log") { Copy-Item "$bx\plugins\skate.log" $run -ErrorAction SilentlyContinue }
+    foreach ($f in 'LogOutput.log','ErrorLog.log') { if (Test-Path "$bx\$f") { Copy-Item "$bx\$f" $run -ErrorAction SilentlyContinue } }
+    ls $rust -Filter 'preloader_*.log' -ErrorAction SilentlyContinue | % { Copy-Item $_.FullName $run -ErrorAction SilentlyContinue }
+    $pl = "$HOME\AppData\LocalLow\Facepunch Studios LTD\Rust\Player.log"
+    if (Test-Path $pl) { Copy-Item $pl $run -ErrorAction SilentlyContinue }
+  } catch { say ('log copies: ' + $_.Exception.Message) }
   New-Item -ItemType Directory -Force "$run\removed" | Out-Null
-  foreach ($n in ($roots + (ls $rust -Filter 'preloader_*.log' -ErrorAction SilentlyContinue | % Name))) {
-    $src = Join-Path $rust $n
-    if (Test-Path -LiteralPath $src) { Move-Item -LiteralPath $src -Destination "$run\removed" }
+  # The loader goes out whatever happened. A client that is still shutting down, or its crash
+  # handler, can hold a file in the loader's folder for a while (ErrorLog.log was seen held after
+  # a normal exit): a move that fails is tried again for a minute, those processes are ended in
+  # between, and what is still there at the end is said out loud, not thrown past the rest.
+  $left = @(); $why = ''; $t1 = Get-Date
+  while ($true) {
+    $left = @()
+    foreach ($n in ($roots + (ls $rust -Filter 'preloader_*.log' -ErrorAction SilentlyContinue | % Name))) {
+      $src = Join-Path $rust $n
+      if (-not (Test-Path -LiteralPath $src)) { continue }
+      try { Move-Item -LiteralPath $src -Destination "$run\removed" -ErrorAction Stop }
+      catch { $left += $n; $why = $_.Exception.Message }
+    }
+    if ($left.Count -eq 0 -or ((Get-Date) - $t1).TotalSeconds -gt 60) { break }
+    Get-Process RustClient, UnityCrashHandler64 -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    Start-Sleep 3
   }
   $after = (ls $rust -Force | % Name | sort) -join '|'
   if (-not ($roots | ? { Test-Path -LiteralPath (Join-Path $rust $_) })) { Remove-Item -LiteralPath $mark -ErrorAction SilentlyContinue }
   say ('rollback clean=' + ($before -eq $after))
   if ($before -ne $after) { say "before=$before"; say "after=$after" }
+  if ($left.Count -gt 0) {
+    say ('WARNING: still in the Rust folder: ' + ($left -join ',') + ' (' + $why + ')')
+    say 'Run zz clean, or "Rust Skate - remove mod files.cmd" on the desktop, before Rust is started normally.'
+  }
   if ($typed -ne [IntPtr]::Zero) {
     $back = try { ToFront $typed } catch { 'not brought to the front: ' + $_.Exception.Message }
     if ($back -ne 'in front') { say ('the window this was typed into: ' + $back) }

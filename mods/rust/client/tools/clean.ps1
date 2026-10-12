@@ -21,8 +21,22 @@ foreach ($line in (Get-Content -LiteralPath $mark | ? { $_ -like 'file *' })) {
 }
 $dst = "$probe\removed-" + (Get-Date -Format 'yyyyMMdd-HHmmss')
 New-Item -ItemType Directory -Force $dst | Out-Null
-foreach ($n in $found) { Move-Item -LiteralPath (Join-Path $rust $n) -Destination $dst }
+# A file of the loader can still be held by a client that is shutting down or by its crash
+# handler: a move that fails is tried again for a minute, with the crash handler ended in between.
+$why = ''; $t0 = Get-Date
+while ($true) {
+  $busy = @()
+  foreach ($n in $found) {
+    $src = Join-Path $rust $n
+    if (-not (Test-Path -LiteralPath $src)) { continue }
+    try { Move-Item -LiteralPath $src -Destination $dst -ErrorAction Stop } catch { $busy += $n; $why = $_.Exception.Message }
+  }
+  if ($busy.Count -eq 0 -or ((Get-Date) - $t0).TotalSeconds -gt 60) { break }
+  Get-Process UnityCrashHandler64 -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+  Start-Sleep 3
+}
 $left = @($roots | ? { Test-Path -LiteralPath (Join-Path $rust $_) })
 if (-not $left) { Remove-Item -LiteralPath $mark -ErrorAction SilentlyContinue }
-'moved out: ' + ($found -join ',')
+'moved out: ' + (@($found | ? { $_ -notin $left }) -join ',')
 'left behind: ' + (($left -join ',') + ' (empty means clean)')
+if ($left -and $why) { 'the last failure: ' + $why }

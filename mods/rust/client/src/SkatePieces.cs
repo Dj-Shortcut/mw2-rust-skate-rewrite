@@ -1,8 +1,8 @@
 // The park picker: a piece chosen on the controller or the keyboard, its authored model drawn
-// where the player aims as a preview, turned in steps, and placed with one press: the client sends
-// `skate.place <piece> x y z yaw` to the server as a console packet (SkateConsole.Send), and the
-// server builds the piece there. Where sending is not available the old route is kept: the line
-// is typed for the player (`skate.piece`), who then places a square foundation.
+// where the player aims as a ghost preview (no colliders), turned in steps, and placed with one
+// press: the client sends `skate.place <piece> x y z yaw` to the server as a console packet
+// (SkateConsole.Send), and the server builds the piece there. Where sending is not available
+// nothing reaches the server from here; the screen then shows the line to type in F1 instead.
 using System;
 using System.Globalization;
 using Shortcut.RustMod;
@@ -41,6 +41,7 @@ public static class SkatePieces
         if ((padDown & SkatePad.RightBumper) != 0) Turn += TurnStep;
         if ((padDown & SkatePad.A) != 0) Place(now);
         if ((padDown & SkatePad.B) != 0) Ask("cancel", now);
+        if ((padDown & SkatePad.Y) != 0) SkateRide.ToggleStance();
         return padDown & ~(SkatePad.DpadUp | SkatePad.DpadDown | SkatePad.DpadLeft | SkatePad.DpadRight | SkatePad.A | SkatePad.B | SkatePad.X | SkatePad.Y | SkatePad.LeftBumper | SkatePad.RightBumper);
     }
 
@@ -91,7 +92,7 @@ public static class SkatePieces
         var kind = (SkateParks.Kind)Chosen;
         if ((int)kind != previewKind)
         {
-            var line = SkateParks.PreviewAt(kind, Aim, Yaw);
+            var line = SkateParks.PreviewAt(kind, Aim, Yaw, false);
             previewKind = (int)kind; previewAt = Aim; previewYaw = Yaw;
             Status = line.StartsWith("not drawn") ? line : "";
         }
@@ -102,12 +103,14 @@ public static class SkatePieces
     }
 
     // The chosen piece where the preview stands: sent to the server to build it there. Without a
-    // way to send, the old route: the piece is asked for by a typed line and a foundation.
+    // way to send, nothing reaches the server from here, and the line to type is shown instead.
+    // The console typist (SendInput) is not tried: it does not reach this client's console.
     public static void Place(float now)
     {
         var name = Names[Chosen];
-        if (!SkateConsole.CanSend) { Ask(name, now); return; }
-        if (!AimOk) { Said = "Aim at the ground first"; SaidAt = now; return; }
+        SaidAt = now;
+        if (!SkateConsole.CanSend) { Said = Manual(name); return; }
+        if (!AimOk) { Said = "Aim at the ground first"; return; }
         var ci = CultureInfo.InvariantCulture;
         // Untouched, the server places the piece where the player looks and lifts it clear of the
         // ground itself; turned, the preview's own anchor goes along, lifted by a floor tile's
@@ -117,25 +120,32 @@ public static class SkatePieces
             : "skate.place " + name + " " + Aim.x.ToString("F2", ci) + " " + (Aim.y + lift).ToString("F2", ci) + " " + Aim.z.ToString("F2", ci) + " " + Yaw.ToString("F0", ci);
         if (SkateConsole.Send(line))
         {
-            Placed++; SaidAt = now; Asked = "";
-            Said = "Asked the server for a " + name + " at " + Out.V1(Aim) + " (yaw " + Yaw.ToString("F0") + "); the server answers in F1";
+            Placed++; Asked = "";
+            Said = "Asked the server for a " + name + " at " + Out.V1(Aim) + " (yaw " + Yaw.ToString("F0") + "); the server answers in F1 (skate.place needs ShortcutSkate 0.3.6 or later)";
             return;
         }
-        Said = "Not sent: " + SkateConsole.SendState; SaidAt = now;
+        Said = "Not sent: " + SkateConsole.SendState;
     }
 
+    // The piece asked for by name alone, the way a server with ShortcutSkate 0.3.5 takes it: the
+    // next square foundation becomes the piece. Sent when sending works; shown to type otherwise.
     public static void Ask(string name, float now)
     {
         var line = "skate.piece " + name;
-        var sending = SkateConsole.CanSend;
-        var ok = sending ? SkateConsole.Send(line) : SkateConsole.Queue(line, now);
         SaidAt = now;
-        if (!ok) { Said = sending ? "Not sent: " + SkateConsole.SendState : "The console is still busy; press again in a moment"; return; }
+        if (!SkateConsole.CanSend) { Said = Manual(name); return; }
+        if (!SkateConsole.Send(line)) { Said = "Not sent: " + SkateConsole.SendState; return; }
         Sent++;
-        var how = sending ? "Sent to the server: " : "Typed in the console: ";
-        if (name == "cancel") { Asked = ""; Said = how + line; return; }
+        if (name == "cancel") { Asked = ""; Said = "Sent to the server: " + line; return; }
         Asked = name; AskedAt = now;
-        Said = how + line + "  -  now place one square foundation with the building plan within " + (int)PlaceSeconds + " s (admin only; the server answers in F1)";
+        Said = "Sent to the server: " + line + "  -  now place one square foundation with the building plan within " + (int)PlaceSeconds + " s (admin only; the server answers in F1)";
+    }
+
+    // What to type in F1 when the plugin cannot send: the 0.3.5 route, and the 0.3.6 one.
+    public static string Manual(string name)
+    {
+        if (name == "cancel") return "Cannot send to the server (" + SkateConsole.SendState + "). In F1 type: skate.piece cancel";
+        return "Cannot send to the server (" + SkateConsole.SendState + "). In F1 type: skate.piece " + name + "  then place one square foundation within " + (int)PlaceSeconds + " s (ShortcutSkate 0.3.5); or skate.place " + name + " (0.3.6 or later)";
     }
 
     // What the screen shows: the menu while open, the last answer for a few seconds, the pending piece.
@@ -145,7 +155,7 @@ public static class SkatePieces
         {
             var s = "PARK PIECE   ";
             for (var i = 0; i < Names.Length; i++) s += (i == Chosen ? "[" + Names[i].ToUpper() + "]" : Names[i]) + (i + 1 < Names.Length ? "   " : "");
-            s += keyboardOpen ? "      P: next   Q/E: turn   O: place where you aim   Backspace: close" : "      D-pad: choose   LB/RB: turn   A: place where you aim   B: cancel";
+            s += keyboardOpen ? "      P: next   Q/E: turn   O: place where you aim   Backspace: close" : "      D-pad: choose   LB/RB: turn   A: place where you aim   B: cancel   Y: stance (" + SkateRide.StanceName + ")";
             if (!AimOk) s += "   (aim at the ground)";
             if (Status.Length > 0) s += "   " + Status;
             return s;

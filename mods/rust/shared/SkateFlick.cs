@@ -2,10 +2,6 @@ using System;
 
 namespace Shortcut.RustMod
 {
-    // A no comply pops the board off the back foot with the front foot stepped down; a boneless
-    // plants the front foot and jumps up with the board, a fastplant plants the back foot, a
-    // beanplant plants a foot and holds the board by hand. The flick module itself only reads
-    // ollies and nollies.
     public enum SkatePopKind { None = 0, Ollie = 1, Nollie = 2, NoComply = 3, Boneless = 4, Fastplant = 5, Beanplant = 6 }
 
     public struct SkatePop
@@ -14,6 +10,7 @@ namespace Shortcut.RustMod
         public readonly double FlipTurns;
         public readonly double ShoveDegrees;
         public readonly double Strength;
+        public bool Late { get { return Kind == SkatePopKind.None && (FlipTurns != 0 || ShoveDegrees != 0); } }
         public SkatePop(SkatePopKind kind, double flipTurns, double shoveDegrees, double strength)
         { Kind = kind; FlipTurns = flipTurns; ShoveDegrees = shoveDegrees; Strength = strength; }
     }
@@ -27,7 +24,8 @@ namespace Shortcut.RustMod
         Kickflip = 4,
         Heelflip = 8,
         ShoveFrontside = 16,
-        ShoveBackside = 32
+        ShoveBackside = 32,
+        BodyVarial = 64
     }
 
     public struct SkateFlickInput
@@ -36,9 +34,15 @@ namespace Shortcut.RustMod
         public readonly double Y;
         public readonly bool Airborne;
         public readonly bool Mirrored;
+        public readonly double LeftX, LeftY;
+        public readonly bool PoppedInAir;
 
         public SkateFlickInput(double x, double y, bool airborne, bool mirrored)
-        { X = x; Y = y; Airborne = airborne; Mirrored = mirrored; }
+            : this(x, y, airborne, mirrored, 0, 0, false) { }
+        public SkateFlickInput(double x, double y, bool airborne, bool mirrored,
+                               double leftX, double leftY, bool poppedInAir)
+        { X = x; Y = y; Airborne = airborne; Mirrored = mirrored;
+          LeftX = leftX; LeftY = leftY; PoppedInAir = poppedInAir; }
     }
 
     public struct SkateFlickState
@@ -65,6 +69,8 @@ namespace Shortcut.RustMod
         internal double PreviousY;
         internal double PreviousSeconds;
         internal bool BandForward;
+        internal bool BodyRimValid, BodySpent;
+        internal double BodyRimAngle, BodySweepDegrees, BodySeconds;
     }
 
     public struct SkateFlickResult
@@ -77,13 +83,17 @@ namespace Shortcut.RustMod
         public readonly bool Manual;
         public readonly bool NoseManual;
         public readonly SkatePop Composition;
+        public readonly double BodyVarialDegrees;
 
         public SkateFlickResult(SkateFlickState state, SkateFlickEvents events, double pop, double charge, bool charging, bool manual, bool noseManual)
             : this(state, events, pop, charge, charging, manual, noseManual, Legacy(events, pop)) { }
         public SkateFlickResult(SkateFlickState state, SkateFlickEvents events, double pop, double charge,
                                 bool charging, bool manual, bool noseManual, SkatePop composition)
+            : this(state, events, pop, charge, charging, manual, noseManual, composition, 0) { }
+        public SkateFlickResult(SkateFlickState state, SkateFlickEvents events, double pop, double charge,
+                                bool charging, bool manual, bool noseManual, SkatePop composition, double bodyVarialDegrees)
         { State = state; Events = events; Pop = pop; Charge = charge; Charging = charging;
-          Manual = manual; NoseManual = noseManual; Composition = composition; }
+          Manual = manual; NoseManual = noseManual; Composition = composition; BodyVarialDegrees = bodyVarialDegrees; }
 
         private static SkatePop Legacy(SkateFlickEvents events, double strength)
         {
@@ -122,6 +132,7 @@ namespace Shortcut.RustMod
         public const double ManualGrace = 0.06;
         public const double FullCharge = 0.3;
         public const double MinimumPop = 0.6;
+        public const double BodyCircleSeconds = 1;
 
         private const int Rest = 0, Held = 1, Flicking = 2, Spent = 3, AirFlick = 4;
         private const double MaximumTimer = 86400;
@@ -134,6 +145,7 @@ namespace Shortcut.RustMod
             result = new SkateFlickResult(state, SkateFlickEvents.None, 0, 0, false, state.Manual, state.NoseManual);
             error = null;
             if (!Finite(input.X) || !Finite(input.Y) || Math.Abs(input.X) > 1.0001 || Math.Abs(input.Y) > 1.0001 ||
+                !Finite(input.LeftX) || !Finite(input.LeftY) || Math.Abs(input.LeftX) > 1.0001 || Math.Abs(input.LeftY) > 1.0001 ||
                 !Finite(dt) || !(dt > 0) || dt > MaximumStep || !Valid(state))
             { error = "Invalid skate flick request."; return false; }
 
@@ -202,6 +214,11 @@ namespace Shortcut.RustMod
                         pop = MinimumPop + (1 - MinimumPop) * Math.Min(1, state.HeldSeconds / FullCharge);
                         composition = Compose(state, settled ? x : state.BestX,
                             settled ? toward : state.Forward ? -state.BestY : state.BestY, input.Mirrored, pop);
+                        if (input.Airborne && input.PoppedInAir)
+                        {
+                            pop = 0;
+                            composition = new SkatePop(SkatePopKind.None, composition.FlipTurns, composition.ShoveDegrees, 0);
+                        }
                         events = Flags(composition);
                         state.Phase = Spent;
                     }
@@ -227,6 +244,8 @@ namespace Shortcut.RustMod
             else if (state.Phase == Spent && far <= DeadZone)
             { state.Phase = Rest; state.SetSeconds = 0; state.SideLead = 0; state.SetupSide = 0; state.SweepDegrees = 0; state.ShallowSide = 0; state.RimValid = false; }
 
+            double bodyVarial = StepBody(ref state, input, dt);
+            if (bodyVarial != 0) events |= SkateFlickEvents.BodyVarial;
             bool charging = state.Phase == Held;
             bool backBand = -y >= ManualFrom && -y <= ManualTo && Math.Abs(x) <= ManualSide;
             bool forwardBand = y >= ManualFrom && y <= ManualTo && Math.Abs(x) <= ManualSide;
@@ -249,9 +268,38 @@ namespace Shortcut.RustMod
 
             double charge = charging ? Math.Min(1, state.HeldSeconds / FullCharge) : 0;
             state.PreviousX = x; state.PreviousY = y; state.PreviousSeconds = dt;
-            result = new SkateFlickResult(state, events, pop, charge, charging, state.Manual, state.NoseManual, composition);
+            result = new SkateFlickResult(state, events, pop, charge, charging, state.Manual, state.NoseManual, composition, bodyVarial);
             return true;
         }
+
+        private static double StepBody(ref SkateFlickState state, SkateFlickInput input, double dt)
+        {
+            if (!input.Airborne) { ResetBody(ref state); state.BodySpent = false; return 0; }
+            if (state.BodySpent) return 0;
+            double far = Math.Sqrt(input.LeftX * input.LeftX + input.LeftY * input.LeftY);
+            if (far < HeldZone) { ResetBody(ref state); return 0; }
+            double angle = Math.Atan2(input.LeftX, input.LeftY) * 180 / Math.PI;
+            if (!state.BodyRimValid) { StartBody(ref state, angle, dt); return 0; }
+            double seconds = state.BodySeconds + dt;
+            double change = Delta(state.BodyRimAngle, angle);
+            if (seconds > BodyCircleSeconds + 1e-10 || Math.Abs(change) > 90.000001)
+            { StartBody(ref state, angle, dt); return 0; }
+            if (change * state.BodySweepDegrees < 0)
+            { state.BodySweepDegrees = 0; seconds = dt; }
+            state.BodyRimAngle = angle;
+            state.BodySeconds = Math.Min(BodyCircleSeconds, seconds);
+            state.BodySweepDegrees = Math.Max(-360, Math.Min(360, state.BodySweepDegrees + change));
+            if (Math.Abs(state.BodySweepDegrees) < 360 - 1e-6) return 0;
+            double degrees = Math.Sign(state.BodySweepDegrees) * (input.Mirrored ? -180 : 180);
+            ResetBody(ref state); state.BodySpent = true;
+            return degrees;
+        }
+
+        private static void StartBody(ref SkateFlickState state, double angle, double dt)
+        { state.BodyRimValid = true; state.BodyRimAngle = angle; state.BodySweepDegrees = 0; state.BodySeconds = dt; }
+
+        private static void ResetBody(ref SkateFlickState state)
+        { state.BodyRimValid = false; state.BodyRimAngle = state.BodySweepDegrees = state.BodySeconds = 0; }
 
         private static SkatePop Compose(SkateFlickState state, double x, double toward, bool mirrored, double strength)
         {
@@ -311,7 +359,13 @@ namespace Shortcut.RustMod
                 Finite(state.RimAngle) && Math.Abs(state.RimAngle) <= 180 && Finite(state.SweepDegrees) && Math.Abs(state.SweepDegrees) <= 360 &&
                 Finite(state.PreviousX) && Math.Abs(state.PreviousX) <= 1.0001 && Finite(state.PreviousY) && Math.Abs(state.PreviousY) <= 1.0001 &&
                 Finite(state.PreviousSeconds) && state.PreviousSeconds >= 0 && state.PreviousSeconds <= MaximumStep &&
-                Side(state.SetupSide) && Side(state.SideLead) && Side(state.ShallowSide) && !(state.Manual && state.NoseManual);
+                Side(state.SetupSide) && Side(state.SideLead) && Side(state.ShallowSide) && !(state.Manual && state.NoseManual) &&
+                Finite(state.BodyRimAngle) && Math.Abs(state.BodyRimAngle) <= 180 &&
+                Finite(state.BodySweepDegrees) && Math.Abs(state.BodySweepDegrees) < 360 - 1e-6 &&
+                Finite(state.BodySeconds) && state.BodySeconds >= 0 && state.BodySeconds <= BodyCircleSeconds &&
+                (state.BodyRimValid ? state.BodySeconds > 0 :
+                    state.BodyRimAngle == 0 && state.BodySweepDegrees == 0 && state.BodySeconds == 0) &&
+                !(state.BodySpent && state.BodyRimValid);
         }
 
         private static double Degrees(double across, double along) { return Math.Atan2(across, along) * 180 / Math.PI; }
