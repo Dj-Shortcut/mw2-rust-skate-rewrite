@@ -348,6 +348,55 @@ namespace Shortcut.RustMod
         }
     }
 
+    public readonly struct SkateMovementPoint
+    {
+        public readonly double X, Y, Z;
+        public SkateMovementPoint(double x, double y, double z) { X = x; Y = y; Z = z; }
+    }
+
+    public static class SkateMovementPolicy
+    {
+        public static bool ValidTickCount(int count, int bufferSize) { return count >= 1 && count < bufferSize; }
+
+        private static bool Coordinate(SkateMovementPoint point)
+        { return SkateSessionBounds.Finite(point.X) && SkateSessionBounds.Finite(point.Y) &&
+            SkateSessionBounds.Finite(point.Z) && Math.Abs(point.X) <= 100000 &&
+            Math.Abs(point.Y) <= 100000 && Math.Abs(point.Z) <= 100000; }
+
+        public static bool TryAccumulate(SkateMovementPoint from, SkateMovementPoint to, double horizontal,
+                                         double vertical, out double nextHorizontal, out double nextVertical)
+        {
+            nextHorizontal = horizontal; nextVertical = vertical;
+            if (!Coordinate(from) || !Coordinate(to) || !SkateSessionBounds.Finite(horizontal) || horizontal < 0 ||
+                !SkateSessionBounds.Finite(vertical) || vertical < 0) return false;
+            double x = to.X - from.X, z = to.Z - from.Z;
+            double nextH = horizontal + Math.Sqrt(x * x + z * z), nextV = vertical + Math.Abs(to.Y - from.Y);
+            if (!SkateSessionBounds.Finite(nextH) || !SkateSessionBounds.Finite(nextV)) return false;
+            nextHorizontal = nextH; nextVertical = nextV;
+            return true;
+        }
+
+        public static bool TryAllow(double dt, double horizontal, double maximumSpeed,
+                                    out bool allowed, out SkateSessionReason reason)
+        {
+            allowed = false; reason = SkateSessionReason.None;
+            if (!SkateSessionBounds.Finite(dt) || dt <= 0 || dt > SkateSessionBounds.MaximumBatchSeconds)
+                reason = SkateSessionReason.InvalidDelta;
+            else if (!SkateSessionBounds.Finite(horizontal) || horizontal < 0)
+                reason = SkateSessionReason.InvalidHorizontalPath;
+            else if (!SkateSessionBounds.Finite(maximumSpeed) || maximumSpeed < 1 || maximumSpeed > 50)
+                reason = SkateSessionReason.InvalidMaximumSpeed;
+            if (reason != SkateSessionReason.None) return false;
+            allowed = horizontal <= maximumSpeed * dt;
+            reason = allowed ? SkateSessionReason.None : SkateSessionReason.HorizontalSpeed;
+            return true;
+        }
+
+        public static bool CanFilter(bool ready, bool validating, bool matchingBatch, bool matchingIdentity,
+                                      bool movementAllowed, bool eligible, bool permitted, bool optedOut)
+        { return ready && validating && matchingBatch && matchingIdentity && movementAllowed && eligible && permitted && !optedOut; }
+    }
+
     public enum SkateParkKind { Bank, Kicker, QuarterPipe, LedgeLow, LedgeHigh, LongLedge, Funbox, Halfpipe }
     public enum SkateParkMaterial { Stone, Metal, Wood }
 
@@ -697,7 +746,7 @@ namespace Shortcut.RustMod
 
 namespace Oxide.Plugins
 {
-    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.6")]
+    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.7")]
     [Description("Player-scoped skateboard movement bounds and saved park assemblies.")]
     public sealed class ShortcutSkate : RustPlugin
     {
@@ -1011,6 +1060,8 @@ namespace Oxide.Plugins
             public bool HasEnd;
             public long Batch;
             public bool Allowed;
+            public bool MovementAllowed;
+            public SkateSessionReason MovementReason = SkateSessionReason.Inactive;
             public Vector3 LastEnd;
             public double LastObserved;
             public SkateSessionHistory History;
@@ -1083,10 +1134,11 @@ namespace Oxide.Plugins
             InitializeGroundedBuildings();
             InitializeParks();
             InitializeParkGestures();
-            ready = settings != null && groundMask != 0 && Patched("ValidateMoves", typeof(MovePatch), false) &&
+            ready = settings != null && Patched("ValidateMoves", typeof(MovePatch), false) &&
                 Patched("AreSpeeding", typeof(SpeedPatch), true) && Patched("AreFlying", typeof(FlyPatch), true);
             if (!ready) PrintError("Skating is disabled: matching movement patches and valid config are required.");
-            else Puts("Skating ready: movement patches installed; up to " + settings.MaximumHorizontalSpeed + " m/s, " + settings.MaximumAirtime + " s in the air.");
+            else Puts("Skating ready: movement patches installed; permitted eligible players up to " + settings.MaximumHorizontalSpeed +
+                " m/s; support, airtime and rearm are diagnostic only.");
             timer.Every(0.1f, Sweep);
         }
 
@@ -1334,8 +1386,9 @@ namespace Oxide.Plugins
             bool candidate = sessions.TryGetValue(player.userID, out session) && ReferenceEquals(player, session.Player);
             if (candidate && (!ready || !Eligible(player) || !Permitted(player) || OptedOut(player)))
             { Stop(player, PolicyReason(player)); candidate = false; }
-            string state = candidate ? (session.Bounds.Active ? "Skating on." : "Skating waiting for supported movement.") :
-                (OptedOut(player) ? "Skating off; automatic skating is disabled for this connection." : "Skating off.");
+            bool authorized = ready && Eligible(player) && Permitted(player) && !OptedOut(player);
+            string state = authorized ? "Skating enabled; each complete movement batch must stay within the speed limit." :
+                (OptedOut(player) ? "Skating off for this connection." : "Skating unavailable or not permitted.");
             SkateSessionHistory history;
             if (!diagnostics.TryGet(player.userID, player, out history))
                 history = diagnostics.GetOrCreate(player.userID, player);
@@ -1345,21 +1398,25 @@ namespace Oxide.Plugins
             bool pending = parkSelections.TryGetValue(player.userID, out selection) && ReferenceEquals(selection.Player, player) &&
                 SkateParkSelections.Active(selection.State, now);
             arg.ReplyWith(state + "\nSteam ID " + target.ToString(CultureInfo.InvariantCulture) +
-                "; ready=" + ready + "; unavailable-reason=" + (ready ? SkateSessionReason.None : unavailableReason) + "; mode=" + (candidate ? (session.Manual ? "manual" : "automatic") : "inactive") +
-                "; last-batch-allowed=" + (candidate && session.Allowed) +
+                "; ready=" + ready + "; unavailable-reason=" + (ready ? SkateSessionReason.None : unavailableReason) +
+                "; diagnostic-mode=" + (candidate ? (session.Manual ? "manual" : settings.AutomaticEligiblePlayers ? "automatic" : "disabled") : "inactive") +
+                "; movement-policy=permitted-horizontal-cap; last-batch-allowed=" + (candidate && session.MovementAllowed) +
+                "; movement-reason=" + (candidate ? session.MovementReason : SkateSessionReason.Inactive) +
+                "; diagnostics-active=" + (candidate && session.Bounds.Active) +
+                "; diagnostics-batch-allowed=" + (candidate && session.Allowed) +
                 "; park-selection=" + (pending ? SkateParkLayout.Name(selection.Kind) : "none") +
                 "; park-selection-remaining=" + (pending ? SkateStatusReport.Number(selection.Expires - now) : "0") + "s" +
                 "; park-gestures=" + gestureAvailable + "; gesture-source=" + (gestureAvailable ? (gestureNativeHook ? "native" : "bridge") : "unavailable") +
                 "; gesture-diagnostic=" + (gestureAvailable ? "none" : gestureFailure) +
                 "; speed-limit=" + SkateStatusReport.Number(settings == null ? double.NaN : settings.MaximumHorizontalSpeed) +
-                "m/s; air-limit=" + SkateStatusReport.Number(settings == null ? double.NaN : settings.MaximumAirtime) +
-                "s; automatic=" + (settings != null && settings.AutomaticEligiblePlayers) +
-                "; rearm-required=" + SkateStatusReport.Number(settings == null ? double.NaN : settings.AutomaticRearmSeconds) +
+                "m/s; diagnostic-air-limit=" + SkateStatusReport.Number(settings == null ? double.NaN : settings.MaximumAirtime) +
+                "s; automatic-diagnostics=" + (settings != null && settings.AutomaticEligiblePlayers) +
+                "; diagnostic-rearm-required=" + SkateStatusReport.Number(settings == null ? double.NaN : settings.AutomaticRearmSeconds) +
                 "s; grounded-building=" + (settings != null && settings.GroundedBuilding) +
                 "; grounded-ready=" + groundedReady + "; grounded-records=" + groundedMembers.Count.ToString(CultureInfo.InvariantCulture) +
                 ".\n" + (privileged && gestureNameMissing ? "Native gestures: " +
                     (string.IsNullOrEmpty(gestureCatalogNames) ? "(no readable names)" : gestureCatalogNames) + "\n" : "") +
-                SkateStatusReport.Format(history, clock.Elapsed.TotalSeconds));
+                "Session diagnostics only:\n" + SkateStatusReport.Format(history, clock.Elapsed.TotalSeconds));
         }
 
         private void Command(ConsoleSystem.Arg arg, int action)
@@ -1377,24 +1434,25 @@ namespace Oxide.Plugins
             }
             if (!ready) { arg.ReplyWith("Skating is unavailable. Ask the server administrator."); return; }
             if (!Permitted(player)) { arg.ReplyWith("You do not have permission to skate."); return; }
-            if (!Eligible(player) || !Supported(player.transform.position))
-            { arg.ReplyWith("Stand on dry ground, alive and awake, to skate."); return; }
+            if (!Eligible(player))
+            { arg.ReplyWith("Be alive, awake, unmounted and out of water to skate."); return; }
             optedOut.Remove(player.userID);
-            if (candidate && session.Bounds.Active) { session.Manual = true; arg.ReplyWith("Skating on."); return; }
+            if (candidate) { session.Manual = true; arg.ReplyWith("Skating enabled; movement stays within the speed limit."); return; }
             Stop(player, SkateSessionReason.ManualRestart);
             session = new Session { Player = player, Manual = true, HasEnd = true, LastEnd = player.transform.position,
                 History = diagnostics.GetOrCreate(player.userID, player) };
             session.LastObserved = clock.Elapsed.TotalSeconds;
-            if (!session.Bounds.Begin(session.LastObserved, true)) return;
+            bool diagnosticStarted = session.Bounds.Begin(session.LastObserved, Supported(player.transform.position));
             sessions[player.userID] = session;
             SkateSessionObservation activation = session.Bounds.LastObservation;
-            activation.Reason = SkateSessionReason.ManualOn;
+            activation.Reason = diagnosticStarted ? SkateSessionReason.ManualOn : SkateSessionReason.Unsupported;
             activation.MaximumSpeed = settings.MaximumHorizontalSpeed;
             activation.MaximumAirtime = settings.MaximumAirtime;
             activation.RearmSeconds = 0; activation.RequiredRearmSeconds = settings.AutomaticRearmSeconds;
             session.Observation = activation;
-            if (session.History != null) { session.History.Sample(activation); session.History.Activate(activation); }
-            arg.ReplyWith("Skating on.");
+            if (session.History != null)
+            { session.History.Sample(activation); if (diagnosticStarted) session.History.Activate(activation); }
+            arg.ReplyWith("Skating enabled; movement stays within the speed limit.");
         }
 
         private SkateSessionReason PolicyReason(BasePlayer player)
@@ -1454,7 +1512,7 @@ namespace Oxide.Plugins
             if (observation.WasActive && instance != null && said - session.SaidAt > 2)
             {
                 session.SaidAt = said;
-                instance.Puts("Skating stopped for " + (session.Player == null ? "?" : session.Player.displayName) + ": " + observation.Reason);
+                instance.Puts("Skate diagnostics reset for " + (session.Player == null ? "?" : session.Player.displayName) + ": " + observation.Reason);
             }
             session.Observation = observation;
             if (session.History != null)
@@ -3161,15 +3219,15 @@ namespace Oxide.Plugins
                 }
                 if (session == null)
                 {
-                    if (!settings.AutomaticEligiblePlayers) continue;
                     session = new Session { Player = player, History = diagnostics.GetOrCreate(player.userID, player),
                         Observation = SkateSessionObservation.Empty(now, SkateSessionReason.None) };
                     sessions[player.userID] = session;
                 }
                 if (session.History == null) session.History = diagnostics.GetOrCreate(player.userID, player);
                 session.Allowed = false;
+                session.MovementAllowed = false;
+                session.MovementReason = SkateSessionReason.Inactive;
                 session.Batch = batch;
-                if (!session.Manual && !settings.AutomaticEligiblePlayers) { Stop(player, SkateSessionReason.AutomaticDisabled); continue; }
                 SkateSessionObservation value = Snapshot(session, SkateSessionReason.None, now);
                 value.Batch = batch; value.DeltaSeconds = value.HorizontalPath = value.VerticalPath = double.NaN;
                 value.SegmentCount = value.BufferSize = -1; value.PositionGap = double.NaN; value.SupportKnown = false;
@@ -3178,32 +3236,51 @@ namespace Oxide.Plugins
                     var cache = states.TickCache;
                     int count = cache.Infos[index].Count;
                     value.SegmentCount = count; value.BufferSize = cache.BufferSize;
-                    if (count < 1 || count >= cache.BufferSize)
-                    { value.Reason = SkateSessionReason.InvalidTickCount; Disarm(session, value); continue; }
+                    if (!SkateMovementPolicy.ValidTickCount(count, cache.BufferSize))
+                    { session.MovementReason = value.Reason = SkateSessionReason.InvalidTickCount; Disarm(session, value); continue; }
                     int offset = checked(index * cache.BufferSize);
                     double dt = states.TickDeltaTime[index];
                     value.DeltaSeconds = dt;
-                    if (!SkateSessionBounds.Finite(dt) || dt <= 0 || dt > SkateSessionBounds.MaximumBatchSeconds)
-                    { value.Reason = SkateSessionReason.InvalidDelta; Disarm(session, value); continue; }
+                    bool allowed;
+                    SkateSessionReason movementReason;
+                    if (!SkateMovementPolicy.TryAllow(dt, 0, settings.MaximumHorizontalSpeed, out allowed, out movementReason))
+                    { session.MovementReason = value.Reason = movementReason; Disarm(session, value); continue; }
                     Vector3 previous = cache.Segments[offset].point;
                     if (!Coordinate(previous))
-                    { value.Reason = SkateSessionReason.InvalidCoordinate; Disarm(session, value); continue; }
+                    { session.MovementReason = value.Reason = SkateSessionReason.InvalidCoordinate; Disarm(session, value); continue; }
                     if (session.HasEnd) value.PositionGap = Math.Sqrt((previous - session.LastEnd).sqrMagnitude);
-                    if (session.HasEnd && (previous - session.LastEnd).sqrMagnitude > 0.0001f)
-                    { value.Reason = SkateSessionReason.PositionDiscontinuity; Disarm(session, value); continue; }
-                    bool supported = Supported(previous);
-                    value.FullySupported = supported; value.SupportKnown = true;
+                    Vector3 start = previous;
                     double horizontal = 0, vertical = 0;
-                    bool invalidCoordinate = false, supportComplete = true;
+                    bool invalidCoordinate = false;
                     for (int s = 1; s <= count; s++)
                     {
                         Vector3 point = cache.Segments[offset + s].point;
-                        if (!Coordinate(point)) { horizontal = double.NaN; invalidCoordinate = true; supportComplete = false; break; }
-                        double x = (double)point.x - previous.x, z = (double)point.z - previous.z;
-                        horizontal += Math.Sqrt(x * x + z * z);
-                        vertical += Math.Abs((double)point.y - previous.y);
-                        value.HorizontalPath = horizontal; value.VerticalPath = vertical;
-                        if (horizontal > settings.MaximumHorizontalSpeed * dt || vertical > 40 * dt) { supportComplete = false; break; }
+                        double nextHorizontal, nextVertical;
+                        if (!SkateMovementPolicy.TryAccumulate(new SkateMovementPoint(previous.x, previous.y, previous.z),
+                            new SkateMovementPoint(point.x, point.y, point.z), horizontal, vertical,
+                            out nextHorizontal, out nextVertical))
+                        { invalidCoordinate = true; break; }
+                        horizontal = nextHorizontal; vertical = nextVertical; previous = point;
+                    }
+                    value.HorizontalPath = horizontal; value.VerticalPath = vertical;
+                    if (invalidCoordinate)
+                    { session.MovementReason = value.Reason = SkateSessionReason.InvalidCoordinate; Disarm(session, value); continue; }
+                    if (!SkateMovementPolicy.TryAllow(dt, horizontal, settings.MaximumHorizontalSpeed, out allowed, out movementReason))
+                    { session.MovementReason = value.Reason = movementReason; Disarm(session, value); continue; }
+                    session.MovementAllowed = allowed;
+                    session.MovementReason = movementReason;
+                    if (!allowed) { value.Reason = movementReason; Disarm(session, value); continue; }
+                    if (!session.Manual && !settings.AutomaticEligiblePlayers)
+                    { value.Reason = SkateSessionReason.AutomaticDisabled; Disarm(session, value); continue; }
+                    if (session.HasEnd && (start - session.LastEnd).sqrMagnitude > 0.0001f)
+                    { value.Reason = SkateSessionReason.PositionDiscontinuity; Disarm(session, value); continue; }
+                    previous = start;
+                    bool supported = Supported(start);
+                    value.FullySupported = supported; value.SupportKnown = true;
+                    bool supportComplete = vertical <= 40 * dt;
+                    for (int s = 1; supportComplete && s <= count; s++)
+                    {
+                        Vector3 point = cache.Segments[offset + s].point;
                         int samples = Math.Max(1, (int)Math.Ceiling((point - previous).magnitude / 0.1));
                         for (int sample = 1; sample <= samples; sample++)
                             supported = Supported(Vector3.Lerp(previous, point, (float)sample / samples)) && supported;
@@ -3217,8 +3294,6 @@ namespace Oxide.Plugins
                         value = Context(session.Bounds.LastObservation, value);
                         value.SupportKnown = supportComplete;
                         value.RearmSeconds = priorWarmup;
-                        if (invalidCoordinate && value.Reason == SkateSessionReason.InvalidHorizontalPath)
-                            value.Reason = SkateSessionReason.InvalidCoordinate;
                         if (!session.Allowed) { Disarm(session, value); continue; }
                     }
                     else
@@ -3228,12 +3303,7 @@ namespace Oxide.Plugins
                         value = Context(session.Rearm.LastObservation, value);
                         value.SupportKnown = supportComplete;
                         value.AirSeconds = session.Bounds.AirSeconds;
-                        if (invalidCoordinate && value.Reason == SkateSessionReason.InvalidHorizontalPath)
-                            value.Reason = SkateSessionReason.InvalidCoordinate;
                         if (session.Rearm.Seconds == 0) { Disarm(session, value); continue; }
-                        // A warming batch within the bounds is accepted as well: if the game's own
-                        // speed check refused it, its correction would be a discontinuity and the
-                        // warmup would start over for as long as the rider is faster than a walk.
                         session.Allowed = true;
                         if (rearmed)
                         {
@@ -3247,7 +3317,7 @@ namespace Oxide.Plugins
                             {
                                 value.Reason = SkateSessionReason.AutomaticRearm;
                                 if (session.History != null) session.History.Activate(value);
-                                if (now - session.SaidAt > 2) { session.SaidAt = now; Puts("Skating accepted for " + player.displayName + "."); }
+                                if (now - session.SaidAt > 2) { session.SaidAt = now; Puts("Skate diagnostics active for " + player.displayName + "."); }
                             }
                             session.Rearm.Reset();
                             if (!session.Allowed) { Disarm(session, value); continue; }
@@ -3256,11 +3326,15 @@ namespace Oxide.Plugins
                     session.Observation = value;
                     if (session.History != null) session.History.Sample(value);
                     session.HasEnd = true;
-                    session.LastEnd = previous;
+                    session.LastEnd = cache.Segments[offset + count].point;
                     session.LastObserved = now;
                 }
                 catch (Exception)
-                { value.Reason = SkateSessionReason.BatchException; value.SupportKnown = false; Disarm(session, value); }
+                {
+                    if (!session.MovementAllowed) session.MovementReason = SkateSessionReason.BatchException;
+                    value.Reason = SkateSessionReason.BatchException;
+                    value.SupportKnown = false; Disarm(session, value);
+                }
             }
         }
 
@@ -3280,10 +3354,10 @@ namespace Oxide.Plugins
                 int index = indices[n];
                 BasePlayer player = states.PlayerCache.Objects[index];
                 Session session;
-                if (player != null && player.ActivePlayerInd == index &&
-                    sessions.TryGetValue(player.userID, out session) && ReferenceEquals(player, session.Player) &&
-                    session.Batch == batch && session.Allowed && (session.Bounds.Active || session.Rearm.Seconds > 0) &&
-                    !OptedOut(player) && Eligible(player) && Permitted(player)) results[n] = false;
+                if (player == null || !sessions.TryGetValue(player.userID, out session)) continue;
+                if (SkateMovementPolicy.CanFilter(ready, validating, session.Batch == batch,
+                    player.ActivePlayerInd == index && ReferenceEquals(player, session.Player), session.MovementAllowed,
+                    Eligible(player), Permitted(player), OptedOut(player))) results[n] = false;
             }
         }
 
