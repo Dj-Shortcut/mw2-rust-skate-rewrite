@@ -1,50 +1,50 @@
 # Rust park building assets
 
-The owner requested both park pieces in the building-plan menu and individual
-placeable hotbar items. ShortcutSkate source **0.3.10** supplies the server/item
-contract; Claude owns the client menu, authored preview and input integration.
-Neither route has native acceptance yet. Commands are admin setup/fallback tools.
+The owner requested both a building-plan menu and individual hotbar items.
+ShortcutSkate source **0.3.11** handles eight marked items through native square-
+foundation placement. Claude owns the client picker, ghost and input; adding
+stock radial entries or accepting an alternative picker remains unresolved.
+Neither frontend has native acceptance. Commands are admin setup/fallback tools.
+An eligible administrator can request `skate.items all` or `bank`, `kicker`,
+`quarterpipe`, `ledge-low`, `ledge-high`, `long-ledge`, `funbox`, `halfpipe`.
+Hold the matching item, select the stock square foundation and use native aim,
+rotation and confirmation. No client console-command submission is required.
+Native client ghost validity and woodless submission still need verification.
 
-An in-game eligible administrator can request `skate.items all`, or one of
-`bank`, `kicker`, `quarterpipe`, `ledge-low`, `ledge-high`, `long-ledge`, `funbox`,
-`halfpipe`. Each named item contains one piece. No material costs or crafting
-recipes are added. Ordinary park-building permissions remain admin-only.
+The stock carrier is `building.planner`, skin0, amount1. Authored
+`instanceData.dataInt` markers `0x534B5001`–`0x534B5008` follow `SkateParkKind`;
+the [catalogue](../mods/rust/shared/SkateParkBuildItems.cs) supplies exact names.
+Tagged plans do not stack. Other plans retain ordinary placement and payment.
+The server captures the original owned item/planner/world and only that request's
+native material bill is suppressed. Its spawned foundation is made unsaved and
+removed next tick, with exact captured-identity/destruction checks, before the
+park transaction. A kill veto or uncertain cleanup refuses the park/item debit
+and blocks further park creation. Unknown identities stay untouched; carrier
+tracking is instance-local, so interrupted callbacks/unload may need private cleanup.
+The temporary carrier can be visible. Only one marked transaction is admitted;
+no crafting recipe, material price or global building override is added.
 
-Client placement chooses a piece, aims/rotates its preview and confirms once.
-Cancel submits nothing. The menu uses the existing authenticated placement
-backend; a held park item uses `skate.placeitem [x y z yaw]`. It must suppress
-ordinary foundation confirmation. This is a frontend contract, not a verified UI.
+The final native foundation origin supplies X/Z/yaw and its Y is the support
+plane. Actual first-floor bounds determine the park baseline; no guessed top
+height is added. Client ghost agreement remains unverified. Full prefab/material,
+privilege, terrain/water, occupancy, range25m, save identity and assembly guards
+remain. Typed `skate.placeitem [x y z yaw]` / `skate.place <kind> [pose]` are admin
+fallbacks; explicit coordinates remain exact [layout origins](RUST-SKATE-RAMP-ASSETS.md).
 
-The stock carrier is `building.planner`, skin 0, amount 1. Authored
-`instanceData.dataInt` values `0x534B5001`–`0x534B5008` follow `SkateParkKind` order;
-the [shared catalogue](../mods/rust/shared/SkateParkBuildItems.cs) supplies exact
-English names. Reserved tagged plans do not stack or build ordinary foundations.
-Other plans retain normal behavior. No Workshop skin or external asset is needed.
+Only the original item's verified quantity1→0 pays after complete registration.
+Earlier refusals retain it. Post-debit rollback returns it only after complete
+cleanup and verified metadata; ambiguous state never mints a replacement.
+Version1 `BuildItemState` records `None`, `Preparing`, `Paid`, `RecoveryClaimed`.
+Only the eligible admin owner of a complete paid group recovers one item after
+all parts and metadata are removed. Partial/free groups return none; the claim
+is saved before destruction, and an intact veto can restore payment eligibility.
 
-The server derives kind from the unchanged active owned item. `skate.place` also
-requires that item's matching kind and payment when it is active. Full native
-metadata, building privilege, terrain/water, occupancy, range, save identity and
-assembly checks remain. Explicit coordinates use the exact layout origin within
-25 metres; the client accounts for floor thickness. See [layouts](RUST-SKATE-RAMP-ASSETS.md).
+Inventory/JSON have no atomic crash commit. Interrupted preparing/claimed states
+refuse automatic minting. Delivery retries use the same created UID only within
+this plugin instance; reload may need private operator recovery. Older0.3.9
+refuses nonzero provenance: retain matching private park-data/source backups.
 
-Payment occurs after complete assembly registration checks. Only the same item's
-verified native quantity change 1→0 counts as payment. Earlier refusals do not
-spend it. A later failure returns a verified debit only after complete cleanup
-and verified rollback metadata; ambiguous state never manufactures a replacement.
-
-Version 1 groups have optional `BuildItemState`: historical/free `None`,
-unconfirmed `Preparing`, verified `Paid`, or `RecoveryClaimed`. Only the eligible
-admin owner of a complete paid group can recover one item after all parts are
-demolished and removal metadata is verified. Partial groups return none. A claim
-is saved before destruction; an intact veto can restore payment eligibility.
-
-Inventory and plugin JSON have no atomic crash commit. Interrupted preparing or
-claimed states refuse automatic minting. Exceptional delivery retries track the
-same created UID only during this plugin instance; reload may need private
-operator recovery. These limits are not crash-proof inventory conservation.
-Older 0.3.9 refuses nonzero provenance fields; retain matching private park-data and source backups before a downgrade.
-
-The approved `skate_park_build_items` exercises the actual compiled pure catalogue,
-identity/debit and recovery predicates. Native inventory, hooks, save/reload,
-hammer delivery, client menu/preview and visible placement remain unverified.
-Codex runs no Rust client, Shadow PC or server; owner/Claude provide those gates.
+Approved `skate_park_build_items` checks the actual compiled pure catalogue,
+identity/debit/recovery predicates. Native construction/payment/cleanup, inventory,
+reload/hammer delivery, ghost and placement remain unverified. Codex runs no Rust
+client, Shadow PC or server; owner/Claude provide native acceptance.
