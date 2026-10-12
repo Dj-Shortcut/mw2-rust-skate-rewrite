@@ -104,14 +104,37 @@ public static class SkateBoard
         }
     }
 
+    // Stepped off while rolling: the board rolls on by itself, slowing at RollOutDecel, and then
+    // lies where it stopped for a while, as after a bail.
+    public const float RollOutDecel = 2.5f, RollOutFrom = 0.8f;
+    private static bool rollingOut; private static Vector3 rollAt, rollDir, rollUp = Vector3.up, rollNose; private static float rollSpeed, rolledAt;
+    public static bool RollingOut { get { return rollingOut; } }
+    public static Vector3 RollOutAt { get { return rollAt; } }
+
     public static void Follow(GameObject board, Transform playerT)
     {
         var now = Time.realtimeSinceStartup;
         var riding = SkateRide.On && playerT != null;
         // A bail ends on foot: the board stays where it came to rest for a while, or until the
-        // rider gets on again.
-        if (riding) lying = SkateRide.Mode == RideMode.Bail;
+        // rider gets on again. Stepped off while rolling, it rolls on and comes to rest.
+        if (riding) { lying = SkateRide.Mode == RideMode.Bail; rollingOut = false; }
         else if (lying) { lying = false; lieUntil = now + LieSeconds; }
+        else if (wasRiding && SkateRide.OffReason == "stepped off" && Math.Abs(lastSpeed) > RollOutFrom)
+        {
+            rollingOut = true; rollAt = lastAt; rollDir = lastTravel * (lastSpeed < 0f ? -1f : 1f); rollUp = lastUp; rollNose = lastNose; rollSpeed = Math.Abs(lastSpeed); rolledAt = now; lieUntil = now + 999f;
+        }
+        wasRiding = riding;
+        if (rollingOut)
+        {
+            var dt = SkateRide.Clamp(now - rolledAt, 0f, 0.1f); rolledAt = now;
+            rollSpeed = Math.Max(0f, rollSpeed - RollOutDecel * dt);
+            rollAt += rollDir * (rollSpeed * dt);
+            if (rollSpeed <= 0.001f) { rollingOut = false; lieUntil = now + LieSeconds; }
+            board.transform.rotation = Quaternion.LookRotation(rollNose, rollUp);
+            board.transform.position = rollAt + rollUp * RiderRig.DeckTop - (board.transform.rotation * Vector3.up) * RiderRig.DeckTop;
+            WheelSpin = (WheelSpin + rollSpeed / WheelRadius * 57.29578f * dt) % 360f;
+            for (var i = 0; i < wheels.Length; i++) wheels[i].localRotation = Quaternion.AngleAxis(WheelSpin, wheelAxes[i]);
+        }
         var show = riding || now < lieUntil;
         if (board.activeSelf != show) board.SetActive(show);
         if (!riding) return;
@@ -170,7 +193,9 @@ public static class SkateBoard
         board.transform.rotation = rot;
         board.transform.position = centre;
         Parts(now, travel, nose);
+        lastAt = at; lastTravel = travel; lastUp = up; lastNose = nose; lastSpeed = SkateRide.Speed;
     }
+    private static bool wasRiding; private static Vector3 lastAt, lastTravel, lastUp = Vector3.up, lastNose = Vector3.forward; private static float lastSpeed;
 
     // The trucks steer with the lean, the front one into the turn and the rear one out of it, each
     // about its own kingpin; the wheels roll with the speed, the way the deck's nose is pointing.

@@ -148,7 +148,7 @@ past two decoys; in game it has not run yet. Unverified in game as of this commi
 
 | Key | On the ground | In the air |
 | --- | --- | --- |
-| `K`, or `Space` twice quickly | Get on. `K` again gets off. | |
+| `K`, or `Space` twice quickly | Get on. `K` again gets off; stepped off while rolling, the board rolls on by itself and comes to rest ahead, where it lies for a while. | |
 | `W` | Push with the back foot; rolling tail first in the same stance, a fakie push with the foot at the tail, which leads (the front foot would have to cross the standing leg); after a 180 the stance is turned round and the trailing foot pushes on its own toe side | Tap: kickflip |
 | `S` | Brake; with `A` or `D` held at more than walking pace, a powerslide: the board swings across the way of travel and scrubs speed until the keys are let go (to the left: frontside, the chest to the front; to the right: backside) | Tap: heelflip |
 | `A` / `D` | Carve | Held: the rider turns to the left / right |
