@@ -333,6 +333,8 @@ of ordinary movement. Without it the server allows a rider the pace of a player 
 for that: a put-back is only counted and logged. What does take speed off is being held back: when
 for three physics steps in a row the board got less than a third of what it rode (a wall, a post, a
 fence the rays miss), on the ground or along an edge, its speed comes down to what it actually did
+(measured along the whole path, so that a steep transition, where little of a step is horizontal,
+is not taken for a wall)
 plus a little, the meter with it, and a grind held back that way ends with the board coming down
 at that pace; a wall seen right in front stops it at once. The owner saw the meter run on against a
 wall and on a blocked grind before this (12 Oct); unverified in game since. So on

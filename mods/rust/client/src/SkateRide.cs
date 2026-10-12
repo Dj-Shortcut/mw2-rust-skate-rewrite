@@ -296,6 +296,9 @@ public static class SkateRide
     {
         if (!hasLast) return;
         var moved = pos - lastPos;
+        // The whole path, up a transition as much as along the flat: on a steep bank the
+        // horizontal part of a step is small while the board rides the full step along the slope.
+        var path = moved.magnitude / dt;
         ActualV = moved.y / dt; moved.y = 0f;
         Actual = Vector3.Dot(moved, lastDir) / dt;
         // Through a revert the board's heading and the way of travel part: no pull-back can be read.
@@ -314,8 +317,9 @@ public static class SkateRide
         // did not get as far as it rode for a few steps in a row. Its speed then comes down to what
         // it actually does, so the meter and the tricks do not run on against the wall; a little is
         // left so that a push away from it starts again. A single short step is not that: a lip
-        // stepped over, a slope, a frame of the server's.
-        var rode = Math.Abs(Speed); var got = Math.Abs(Actual);
+        // stepped over, a slope, a frame of the server's. Measured along the whole path, so that a
+        // steep transition, where little of a step is horizontal, is not taken for a wall.
+        var rode = Math.Abs(Speed); var got = path;
         if ((Mode == RideMode.Ground || Mode == RideMode.Grind) && rode > 1f && got < rode * HeldShare) heldSteps++; else heldSteps = 0;
         Held = heldSteps >= HeldSteps;
         if (Held)
