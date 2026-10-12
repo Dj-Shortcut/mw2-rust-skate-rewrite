@@ -13,7 +13,7 @@ public enum RideMode { Off, Ground, Air, Grind, Bail }
 public static class SkateRide
 {
     // Ground speed remains tangent speed across changing slopes; server feedback and caps are X/Z.
-    public const float PushAccel = 7f, MaxPush = 11f, BrakeDecel = 12f, RollDecel = 0.45f, MaxSpeed = 13f, MaxReverse = 6f, TurnRate = 150f, SlopeGain = 1.6f;
+    public const float PushAccel = 7f, MaxPush = 11f, BrakeDecel = 12f, RollDecel = 0.45f, MaxSpeed = 25f, MaxReverse = 6f, TurnRate = 150f, SlopeGain = 1.6f;
     // A powerslide: the brake with a turn held while rolling faster than PowerslideFrom swings the
     // board across the way of travel (PowerslideDegrees) and scrubs speed at PowerslideDecel; the
     // board keeps its line while it slides and swings back when the brake or the turn is let go.
@@ -540,6 +540,15 @@ public static class SkateRide
         KeepAirPose(nose, deck);
     }
 
+    // The shared edge finder takes speeds up to the shared ground limit: a faster board is taken
+    // onto the edge at that speed.
+    private static Vector3 EdgeVelocity(Vector3 v)
+    {
+        var flat = Flat(v); var most = (float)SkateMotion.MaximumGroundSpeed - 0.01f;
+        if (flat.magnitude <= most) return v;
+        flat = flat.normalized * most; return new Vector3(flat.x, v.y, flat.z);
+    }
+
     private static void KeepAirPose(float nose, float deck)
     {
         airNoseOffset = Delta(Yaw + (Trick.Switch ? 180f : 0f), nose);
@@ -652,7 +661,7 @@ public static class SkateRide
         // A board half way through a flip, upside down, may come down onto an edge: a darkslide.
         var halfFlipped = !spinning && Math.Abs(shoveLeft) < 0.001f && Math.Abs(bodyLeft) < 0.001f && Math.Abs(flipLeft) > 0.001f
             && Math.Abs(Math.Abs(FlipDeg) - 180.0) <= DarkCatch;
-        if (VSpeed < 0f && Jumped && (!Rotating || halfFlipped) && SkateGrind.TryCapture(pos, velocity, NoseYaw, dt))
+        if (VSpeed < 0f && Jumped && (!Rotating || halfFlipped) && SkateGrind.TryCapture(pos, EdgeVelocity(velocity), NoseYaw, dt))
         {
             LastAir = AirLine(halfFlipped ? "darkslide" : "grind");
             var impact = -VSpeed;
