@@ -53,7 +53,7 @@ The integrated genuine-reference net48/C#7.3 library builds with zero warnings/e
 
 ## Tricks and scoring API
 
-Start with `new SkateTrickState(ridingSwitch)` (default means regular). Call `SkateTricks.TryStep(state, new SkateTrickInput(spin, flip, grab, airborne, grinding, impactSpeed), dt, out result, out error)` once per observation, with axes in [-1,1], seconds in (0,0.05], mutually exclusive airborne/grinding and a finite nonnegative downward impact speed. Capture velocity **before** the physics landing response removes it; ImpactSpeed is only used on the airborne-to-supported transition. Keep `result.State` only on success. Invalid calls retain it and produce no events.
+Start with `new SkateTrickState(ridingSwitch)` (default means the unturned rider stance; regular/goofy is a separate adapter choice). Call `SkateTricks.TryStep(state, new SkateTrickInput(spin, flip, grab, airborne, grinding, impactSpeed), dt, out result, out error)` once per observation, with axes in [-1,1], seconds in (0,0.05], mutually exclusive airborne/grinding and a finite nonnegative downward impact speed. Capture velocity **before** the physics landing response removes it; ImpactSpeed is only used on the airborne-to-supported transition. Keep `result.State` only on success. Invalid calls retain it and produce no events.
 
 `TryStep(state,input,dt,maximumLandingImpact,out result,out error)` allows a finite landing-impact limit in (0,100000] m/s. The original overload forwards with `SkateMotion.MaximumLandingFallSpeed` (8 m/s), preserving its default. Supply the actual pre-contact impact; do not clamp it to bypass the default. The chosen limit changes only the impact bail, not spin/flip tolerance, scoring or input/state validation. Invalid limits reject atomically even on a step without touchdown.
 
@@ -114,6 +114,14 @@ supply `false,0`. `State.BodySpin` accumulates the rider-only angle and `result.
 retains its snapped landing angle; `RiderSpin=BoardSpin+BodySpin`. Deck world yaw remains
 `BoardSpin+BoardShove`, and its roll remains `BoardFlip`. The rider support frame follows
 `RiderSpin`. Commit both separately on landing; body rotation must not turn the board.
+
+The full overload can additionally append `tailLeads`. It captures the physical deck end
+with `PopSwitch` at takeoff as `State.PopTailLeads`; later input changes do not rename that
+flight. Explicit calls select Fakie for `PopSwitch && PopTailLeads`, Switch for
+`PopSwitch && !PopTailLeads`, and no stance prefix otherwise. Nollie remains explicit,
+including `Fakie Nollie` and `Switch Nollie`. Old constructor signatures retain their
+historical naming and scoring. The new fields change struct layout: rebuild adapters.
+See the [complete stance/pop/rotation table and normalized-axis contract](TRICK-NAMES.md).
 
 Body catching uses the same 25-degree half-turn tolerance and impact/bail rules. An odd
 body half-turn toggles riding stance in addition to the original rider/board half-turns;
