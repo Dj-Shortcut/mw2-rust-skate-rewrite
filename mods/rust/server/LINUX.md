@@ -89,8 +89,8 @@ does not prove successful loading; preserve the actual console verdict and check
 ### Existing pinned installer
 
 `add-skate.sh` selects ShortcutSkate **0.3.11**, commit
-`f2fa488eda8224a7b20671aac6b34e99c6b90a1e`, source SHA-256
-`4d642dc49cb1110d2db2da4a38f5f16cf8a04a6010539d7ace65084e9aa9e213`.
+`fa0ffa78448cbfdd8a572d8cf029e41d5514d899`, source SHA-256
+`8e7525b090468dd10a7cdab27e53ed5bfac693e6fb75d0d2bbeb7669bf68078c`.
 It targets the existing `/srv/rust/server/oxide/plugins` installation and its
 nonroot `rust` user/group. It needs Bash, Python 3, curl, sha256sum, GNU file tools,
 runuser and setsid. The plugins folder must be writable by `rust`; any prior
@@ -112,7 +112,7 @@ plugin update. Keep the prior source backup until native loading and riding pass
 The immutable installer and its hash are verified before execution:
 
 ```sh
-(set -eu; skate_update_dir=$(mktemp -d /tmp/ShortcutSkate-update.XXXXXX); trap 'rm -rf -- "$skate_update_dir"' EXIT; curl -fsSL --connect-timeout 15 --max-time 60 https://raw.githubusercontent.com/Dj-Shortcut/mw2-rust-skate-rewrite/e45ff6b6cc69e7358bf59d8d58632f83d726d591/mods/rust/server/add-skate.sh -o "$skate_update_dir/add-skate.sh"; printf '%s  %s\n' b4079e632321d2e09657daddd52d38b971b86e80e4fed785857126b2c8184841 "$skate_update_dir/add-skate.sh" | sha256sum -c -; bash "$skate_update_dir/add-skate.sh" --defer-reload; systemctl restart rust-server)
+(set -eu; skate_update_dir=$(mktemp -d /tmp/ShortcutSkate-update.XXXXXX); trap 'rm -rf -- "$skate_update_dir"' EXIT; curl -fsSL --connect-timeout 15 --max-time 60 https://raw.githubusercontent.com/Dj-Shortcut/mw2-rust-skate-rewrite/199bc61e82e5629ae769c8eacb1db8ce65a305e3/mods/rust/server/add-skate.sh -o "$skate_update_dir/add-skate.sh"; printf '%s  %s\n' 221c2df74093f4ff8dc91d1cb4306eea0c834ed98ed04f0dcf20f6965f5f80a3 "$skate_update_dir/add-skate.sh" | sha256sum -c -; bash "$skate_update_dir/add-skate.sh" --defer-reload; systemctl restart rust-server)
 ```
 
 `--defer-reload` deliberately returns **source-installed/native-unverified**
