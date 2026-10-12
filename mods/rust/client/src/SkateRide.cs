@@ -67,6 +67,11 @@ public static class SkateRide
     // A stall holds the board still on an edge (Mode is Grind, GrindKind a stall kind); a handplant
     // is the stall with a hand on the edge. StallMax: how long one is held before rolling off.
     public const float StallSpeed = 7f, StallMax = 2.5f, StallOut = 2.5f;
+    // How near a half flip the board must be for the edge to take it upside down (the scorer's tolerance).
+    public const double DarkCatch = 25.0;
+    // How much higher than the take-off the ground under the board must be for that.
+    public const float DarkOver = 0.15f;
+    private static float Over() { return Clearance > 50f ? -99f : Position.y - Clearance - takeOffY; }
     // A handplant comes down before it leaves the edge: the body swings back onto the board over
     // HandDownSeconds, held still on the edge meanwhile.
     public const float HandDownSeconds = 0.4f;
@@ -599,6 +604,12 @@ public static class SkateRide
         if (flips != 0 && (Math.Abs(flipLeft) < 0.001f || Math.Sign(flipLeft) == Math.Sign(flips)))
         {
             if (left >= (Math.Abs(flipLeft) + 360f * Math.Abs(flips)) / (float)SkateMotion.FlipRate) { flipLeft += 360f * flips; TrickAir = true; if (lateFlips) LateTrick = true; }
+            // Coming down onto something raised, or with an edge found under the fall (a ledge, a
+            // rail, a coping), with room for half a
+            // flip and no more: the flip is started for a darkslide, the board caught upside down
+            // on the edge. Missed, it lands upside down and that is a bail.
+            else if (Math.Abs(flips) == 1 && Math.Abs(flipLeft) < 0.001f && Math.Abs(shoveLeft) < 0.001f && !spinning && (Over() > DarkOver || now - SkateGrind.NearAt < 0.3f)
+                && left >= 180f / (float)SkateMotion.FlipRate) { flipLeft += 360f * flips; TrickAir = true; if (lateFlips) LateTrick = true; Out.Say("SKATE flip started over an edge, for a darkslide"); }
             else Refuse(Math.Abs(flips) > 1 ? "a double flip" : "a flip", left);
         }
         // A shove asked for in the air goes on top of what is under way, the same way round.
@@ -640,11 +651,20 @@ public static class SkateRide
             return;
         }
         velocity = dir * Speed + Vector3.up * VSpeed;
-        if (VSpeed < 0f && Jumped && !Rotating && SkateGrind.TryCapture(pos, velocity, NoseYaw, dt))
+        // A board half way through a flip, upside down, may come down onto an edge: a darkslide.
+        var halfFlipped = !spinning && Math.Abs(shoveLeft) < 0.001f && Math.Abs(bodyLeft) < 0.001f && Math.Abs(flipLeft) > 0.001f
+            && Math.Abs(Math.Abs(FlipDeg) - 180.0) <= DarkCatch;
+        if (VSpeed < 0f && Jumped && (!Rotating || halfFlipped) && SkateGrind.TryCapture(pos, velocity, NoseYaw, dt))
         {
-            LastAir = AirLine("grind");
+            LastAir = AirLine(halfFlipped ? "darkslide" : "grind");
             var impact = -VSpeed;
             ClassifyGrind(pos);
+            if (halfFlipped)
+            {
+                // The rest of the flip is not done: the board stays over, the griptape on the edge.
+                GrindKind = SkateGrindKind.Darkslide; flipLeft = 0f; SkateBoard.GrindRoll = 180f;
+                Out.Say("GRIND kind " + SkateTricks.GrindName(GrindKind, GrindFrontside) + " (caught half way through the flip)");
+            }
             Enter(RideMode.Grind); GrindStarts++;
             Yaw = SkateGrind.Heading; Speed = SkateGrind.Speed; VSpeed = 0f;
             LimitSpeed(Cap, Cap);
@@ -891,10 +911,15 @@ public static class SkateRide
         if (now - jumpWanted < 0.12f)
         {
             var nose = NoseYaw; var deck = DeckYaw;
+            // Out of a darkslide the board finishes the flip it was caught in: the remaining half,
+            // the same way round, before the ground; the scorer carries the half it has.
+            var dark = Trick.DarkslideCaught ? Math.Sign(Trick.Flip) : 0;
             Pops++; GrindEnds++; jumpWanted = -99f; SkateGrind.Release(dt);
             Speed = SkateGrind.Speed; Yaw = SkateGrind.Heading;
             LimitSpeed(Cap, Cap);
+            if (dark != 0) { wantFlip = 0; wantShove = 0f; }
             TakeOff(true, OlliePop * wantScale * PopHeight(wantKind) + AirGravity * dt);
+            if (dark != 0) { flipLeft = 180f * dark; SkateBoard.GrindRoll = 0f; FlipDeg = Trick.Flip; }
             KeepAirPose(nose, deck);
             AirStep(pos, dt);
             return;
@@ -932,7 +957,8 @@ public static class SkateRide
         Tangent = Dir(SkateGrind.Heading);
         GrindVelocity(pos);
         // Along the edge the stick leans the board onto one truck: back for a 5-0, forward for a nosegrind.
-        if (GrindAlong) GrindKind = SkateKeys.Manual ? SkateGrindKind.FiveO : SkateKeys.NoseManual ? SkateGrindKind.Nosegrind : SkateGrindKind.FiftyFifty;
+        if (GrindKind == SkateGrindKind.Darkslide) { }
+        else if (GrindAlong) GrindKind = SkateKeys.Manual ? SkateGrindKind.FiveO : SkateKeys.NoseManual ? SkateGrindKind.Nosegrind : SkateGrindKind.FiftyFifty;
         // Across the edge on the tail or the nose, the stick held back or forward stands the deck up: a bluntslide.
         else if (GrindKind == SkateGrindKind.Tailslide || GrindKind == SkateGrindKind.Bluntslide) GrindKind = SkateKeys.Manual ? SkateGrindKind.Bluntslide : SkateGrindKind.Tailslide;
         else if (GrindKind == SkateGrindKind.Noseslide || GrindKind == SkateGrindKind.Nosebluntslide) GrindKind = SkateKeys.NoseManual ? SkateGrindKind.Nosebluntslide : SkateGrindKind.Noseslide;

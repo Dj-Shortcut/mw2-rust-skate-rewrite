@@ -25,6 +25,8 @@ public static class SkateGrind
     private static float nearSaidAt = -99f;
     // An edge met too square or too slowly for a grind is a stall: the board stops on it.
     public static bool StallCandidate, StallSquare;
+    // When an edge was last found under the way the board falls, taken or not.
+    public static float NearAt = -99f;
     private static SkateEdge stallEdge;
 
     public static void Reset() { cooldown = 0; edge = default(SkateEdge); Speed = 0f; Last = ""; }
@@ -85,7 +87,7 @@ public static class SkateGrind
             SkateEdge found; string error;
             if (!SkateEdges.TryFind(grid, new SkateVector(vx, 0, vz), out found, out error)) { Last = "find refused: " + error; return false; }
             if (!found.Found) return false;
-            Finds++;
+            Finds++; NearAt = Time.realtimeSinceStartup;
             var previous = edge; edge = found;
             var off = Aim(pos);
             var feet = pos.y - (float)found.TopHeight;
