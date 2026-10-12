@@ -50,6 +50,39 @@ internal static class SkateRiderMotionScenarios
         return shown;
     }
 
+    private static SkateRiderMotionOptions Options(int mask)
+    { return new SkateRiderMotionOptions((mask & 1) != 0, (mask & 2) != 0, (mask & 4) != 0); }
+
+    private static SkateRiderPose Step(ref SkateRiderMotionState state, SkateRiderRig rig, SkateRiderPose target,
+                                      double dt, SkateRiderMotionOptions options)
+    {
+        SkateRiderPose shown; SkateRiderMotionState next; string error;
+        Check(SkateRiderMotion.TryStep(state, rig, target, dt, options, out shown, out next, out error) && error == null,
+            "valid per-part secondary motion step");
+        Check(next.Initialized, "per-part state initialized");
+        if (options.DisablePelvisSpring)
+            Check(shown.Pelvis.Equals(target.Pelvis), "disabled pelvis stays exactly on target");
+        if (options.PinLeftHand)
+            Check(shown.LeftHand.Equals(target.LeftHand), "left hand stays exactly on target");
+        if (options.PinRightHand)
+            Check(shown.RightHand.Equals(target.RightHand), "right hand stays exactly on target");
+        Verify(shown, target, rig);
+        state = next;
+        return shown;
+    }
+
+    private static bool SameBits(object a, object b)
+    {
+        var type = a.GetType();
+        if (type != b.GetType()) return false;
+        if (type == typeof(double))
+            return BitConverter.DoubleToInt64Bits((double)a) == BitConverter.DoubleToInt64Bits((double)b);
+        if (type == typeof(bool)) return (bool)a == (bool)b;
+        foreach (var field in type.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
+            if (!SameBits(field.GetValue(a), field.GetValue(b))) return false;
+        return true;
+    }
+
     private static void Verify(SkateRiderPose p, SkateRiderPose target, SkateRiderRig rig)
     {
         Check(p.LeftAnkle.Equals(target.LeftAnkle) && p.RightAnkle.Equals(target.RightAnkle) &&
@@ -266,12 +299,156 @@ internal static class SkateRiderMotionScenarios
             }
     }
 
+    private static void DefaultOverloadCompatibility()
+    {
+        var oldState = default(SkateRiderMotionState); var explicitState = oldState;
+        for (int i = 0; i < 160; i++)
+        {
+            var target = Target(Rig, 0.14 + Math.Sin(i * 0.09) * 0.12, Math.Sin(i * 0.13) * 8,
+                SkateStance.Goofy, true, true, (i % 60) / 59.0);
+            double dt = i % 3 == 0 ? 0.007 : i % 3 == 1 ? 0.013 : 0.025;
+            var oldShown = Step(ref oldState, Rig, target, dt);
+            var explicitShown = Step(ref explicitState, Rig, target, dt, default(SkateRiderMotionOptions));
+            Check(SameBits(oldShown, explicitShown), "old/default overload poses agree bit for bit");
+            Check(SameBits(oldState, explicitState), "old/default overload histories agree bit for bit");
+        }
+    }
+
+    private static void PartControlsAndHistories()
+    {
+        var start = Target(Rig); var moved = ChestYaw(Target(Rig, 0.08, 4), 8);
+        for (int mask = 0; mask < 8; mask++)
+        {
+            var options = Options(mask);
+            Check(options.DisablePelvisSpring == ((mask & 1) != 0) && options.PinLeftHand == ((mask & 2) != 0) &&
+                options.PinRightHand == ((mask & 4) != 0), "options constructor preserves independent controls");
+            var state = default(SkateRiderMotionState);
+            Check(Step(ref state, Rig, start, 0.01, options).Equals(start), "all options initialize at exact target");
+            bool shouldersLag = false, leftLags = false, rightLags = false;
+            for (int i = 0; i < 40; i++)
+            {
+                var shown = Step(ref state, Rig, moved, i % 2 == 0 ? 0.007 : 0.013, options);
+                shouldersLag |= (shown.LeftShoulder - moved.LeftShoulder).Length > 0.00001 ||
+                    (shown.RightShoulder - moved.RightShoulder).Length > 0.00001;
+                leftLags |= (shown.LeftHand - moved.LeftHand).Length > 0.00001;
+                rightLags |= (shown.RightHand - moved.RightHand).Length > 0.00001;
+                if (options.DisablePelvisSpring)
+                    Check(state.PreviousPelvis.Equals(state.Shown.Pelvis), "disabled pelvis has no hidden spring velocity");
+                if (options.PinLeftHand)
+                    Check(state.PreviousLeftHand.Equals(state.Shown.LeftHand), "pinned left hand has no hidden velocity");
+                if (options.PinRightHand)
+                    Check(state.PreviousRightHand.Equals(state.Shown.RightHand), "pinned right hand has no hidden velocity");
+            }
+            Check(shouldersLag, "admissible shoulder motion remains active with per-part controls");
+            if (!options.PinLeftHand) Check(leftLags, "free left hand retains secondary motion");
+            if (!options.PinRightHand) Check(rightLags, "free right hand retains secondary motion");
+
+            Step(ref state, Rig, start, 0.01);
+            Step(ref state, Rig, moved, 0.01);
+            var pinned = Step(ref state, Rig, moved, 0.01, Options(7));
+            Check(state.PreviousPelvis.Equals(pinned.Pelvis) && state.PreviousLeftHand.Equals(pinned.LeftHand) &&
+                state.PreviousRightHand.Equals(pinned.RightHand), "enabling controls clears already warmed histories");
+            var released = Step(ref state, Rig, moved, 0.01, Options(0));
+            Near(released.Pelvis, moved.Pelvis, 1e-12, "releasing pelvis restarts without old spring kick");
+            for (int i = 0; i < 48; i++)
+            {
+                options = Options(i % 8);
+                var target = ChestYaw(Target(Rig, 0.08 + Math.Sin(i * 0.21) * 0.06, Math.Sin(i * 0.17) * 5),
+                    Math.Sin(i * 0.19) * 8);
+                Step(ref state, Rig, target, i % 2 == 0 ? 0.007 : 0.021, options);
+            }
+        }
+    }
+
+    private static SkateRiderPose StraightArm(SkateRiderPose target, bool left)
+    {
+        var root = left ? target.LeftShoulder : target.RightShoulder;
+        var hand = left ? target.LeftHand : target.RightHand;
+        var direction = (hand - root) * (1 / (hand - root).Length);
+        target = Changed(target, left ? "LeftElbow" : "RightElbow", root + direction * Rig.UpperArmLength);
+        return Changed(target, left ? "LeftHand" : "RightHand", root + direction * (Rig.UpperArmLength + Rig.ForearmLength));
+    }
+
+    private static void ControlledReachAndReset()
+    {
+        var target = Target(Rig); var extended = StraightArm(StraightArm(ChestYaw(target, 8), true), false);
+        var changedRig = new SkateRiderRig(0.76, 0.27, 0.43, 0.43, 0.18, 0.46, 0.36, 0.29, 0.27, 0.17);
+        for (int mask = 0; mask < 8; mask++)
+        {
+            var options = Options(mask); var state = default(SkateRiderMotionState);
+            Step(ref state, Rig, target, 0.01, options);
+            for (int i = 0; i < 12; i++) Step(ref state, Rig, extended, 0.01, options);
+            var teleported = Transform(extended, 0, new SkateVector(3, 0, 0));
+            Check(Step(ref state, Rig, teleported, 0.01, options).Equals(teleported), "controlled teleport resets at exact target");
+            var anchor = (teleported.LeftAnkle + teleported.RightAnkle) * 0.5;
+            var turned = Transform(teleported, 180, anchor - Rotate(anchor, 180));
+            Check(Step(ref state, Rig, turned, 0.01, options).Equals(turned), "controlled frame reversal resets exactly");
+            var changedTarget = Target(changedRig, 0.12);
+            Check(Step(ref state, changedRig, changedTarget, 0.01, options).Equals(changedTarget),
+                "controlled rig change resets old geometry/history");
+            var inverted = Target(Rig, airborne: true, handplant: 1);
+            Step(ref state, Rig, inverted, 0.01, options);
+            for (int i = 0; i < 8; i++)
+                Step(ref state, Rig, ChestYaw(inverted, Math.Sin(i * 0.31) * 4), 0.013, options);
+        }
+    }
+
+    private static void ControlledGrabTransitions()
+    {
+        foreach (var stance in new[] { SkateStance.Regular, SkateStance.Goofy })
+            foreach (bool ridingSwitch in new[] { false, true })
+                for (int mask = 0; mask < 8; mask++)
+                {
+                    var options = Options(mask); var state = default(SkateRiderMotionState);
+                    Step(ref state, Rig, Target(Rig, stance: stance, ridingSwitch: ridingSwitch), 0.01, options);
+                    foreach (SkateGrabKind grab in Enum.GetValues(typeof(SkateGrabKind)))
+                        for (int i = 0; i < 4; i++)
+                        {
+                            var target = Target(Rig, crouch: 0.22 + i * 0.01, lean: i * 2,
+                                stance: stance, ridingSwitch: ridingSwitch, airborne: true, grab: grab);
+                            Step(ref state, Rig, target, i % 2 == 0 ? 0.007 : 0.021, options);
+                        }
+                }
+    }
+
+    private static void ControlledDeterminismAndTransport()
+    {
+        for (int mask = 0; mask < 8; mask++)
+        {
+            var options = Options(mask); var a = default(SkateRiderMotionState); var b = a;
+            for (int i = 0; i < 80; i++)
+            {
+                var target = Target(Rig, 0.12 + Math.Sin(i * 0.09) * 0.08, Math.Sin(i * 0.07) * 8,
+                    SkateStance.Goofy, true, true, (i % 40) / 39.0);
+                double dt = i % 3 == 0 ? 0.007 : i % 3 == 1 ? 0.013 : 0.025;
+                var x = Step(ref a, Rig, target, dt, options); var y = Step(ref b, Rig, target, dt, options);
+                Check(SameBits(x, y) && SameBits(a, b), "controlled sequence reproduces exact pose/history bits");
+            }
+            var finalTarget = a.Target; var still = a; var moving = a;
+            var stillShown = Step(ref still, Rig, finalTarget, 0.025, options);
+            var translation = new SkateVector(0.4, 0.05, -0.2);
+            var movedTarget = Transform(finalTarget, 15, translation);
+            var movingShown = Step(ref moving, Rig, movedTarget, 0.025, options);
+            var expected = Transform(stillShown, 15, translation);
+            foreach (var name in PoseFields)
+                Near(Field(movingShown, name), Field(expected, name), 1e-8, "controlled rigid frame transport " + name);
+        }
+    }
+
     private static void Reject(SkateRiderMotionState state, SkateRiderRig rig, SkateRiderPose target, double dt)
     {
         SkateRiderPose shown; SkateRiderMotionState next; string error;
         Check(!SkateRiderMotion.TryStep(state, rig, target, dt, out shown, out next, out error) && error != null,
             "invalid motion request refused");
         Check(shown.Equals(default(SkateRiderPose)) && next.Equals(state), "invalid request preserves state atomically");
+    }
+    private static void Reject(SkateRiderMotionState state, SkateRiderRig rig, SkateRiderPose target,
+                               double dt, SkateRiderMotionOptions options)
+    {
+        SkateRiderPose shown; SkateRiderMotionState next; string error;
+        Check(!SkateRiderMotion.TryStep(state, rig, target, dt, options, out shown, out next, out error) && error != null,
+            "invalid per-part motion request refused");
+        Check(shown.Equals(default(SkateRiderPose)) && SameBits(next, state), "per-part refusal preserves state bits atomically");
     }
     private static SkateRiderMotionState Corrupt(SkateRiderMotionState state, int index, object value)
     {
@@ -338,6 +515,63 @@ internal static class SkateRiderMotionScenarios
         Check(rejected && allocated == 0, "warmed refusals allocate zero bytes");
     }
 
+    private static void ControlledInvalidInputsAndAllocation()
+    {
+        var target = Target(Rig); var state = default(SkateRiderMotionState);
+        Step(ref state, Rig, target, 0.01);
+        for (int mask = 0; mask < 8; mask++)
+        {
+            var options = Options(mask);
+            foreach (double dt in new[] { double.NaN, double.NegativeInfinity, double.PositiveInfinity, -1, 0,
+                                         double.Epsilon, 0.00009999, 0.05000001 })
+                Reject(state, Rig, target, dt, options);
+            Reject(state, default(SkateRiderRig), target, 0.01, options);
+            Reject(state, Rig, default(SkateRiderPose), 0.01, options);
+            foreach (var name in PoseFields)
+                for (int component = 0; component < 3; component++)
+                {
+                    var value = Field(target, name);
+                    var bad = new SkateVector(component == 0 ? double.NaN : value.X,
+                        component == 1 ? double.PositiveInfinity : value.Y,
+                        component == 2 ? double.NegativeInfinity : value.Z);
+                    Reject(state, Rig, Changed(target, name, bad), 0.01, options);
+                }
+            Reject(state, Rig, Changed(target, "LeftAnkle", target.LeftAnkle + Up * 0.01), 0.01, options);
+            Reject(state, Rig, Changed(target, "Chest", target.Chest + Up * 0.01), 0.01, options);
+            for (int i = 3; i <= 8; i++)
+            {
+                Reject(Corrupt(state, i, new SkateVector(double.NaN, 0, 0)), Rig, target, 0.01, options);
+                Reject(Corrupt(state, i, new SkateVector(1000, 0, 0)), Rig, target, 0.01, options);
+            }
+            Reject(Corrupt(state, 9, double.NaN), Rig, target, 0.01, options);
+            Reject(Corrupt(state, 9, 0.06), Rig, target, 0.01, options);
+            for (int i = 0; i < 3; i++)
+                Reject(Corrupt(state, i, i == 0 ? (object)default(SkateRiderRig) : default(SkateRiderPose)),
+                    Rig, target, 0.01, options);
+
+            SkateRiderPose shown; SkateRiderMotionState next; string error;
+            for (int i = 0; i < 200; i++)
+            {
+                Check(SkateRiderMotion.TryStep(state, Rig, target, 0.01, options, out shown, out next, out error),
+                    "warm actual controlled step");
+                state = next;
+            }
+            long before = GC.GetAllocatedBytesForCurrentThread(); bool success = true;
+            for (int i = 0; i < 20000; i++)
+            {
+                success &= SkateRiderMotion.TryStep(state, Rig, target, 0.01, options, out shown, out next, out error);
+                state = next;
+            }
+            long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+            Check(success && allocated == 0, "warmed controlled steps allocate zero bytes");
+            before = GC.GetAllocatedBytesForCurrentThread(); bool rejected = true;
+            for (int i = 0; i < 20000; i++)
+                rejected &= !SkateRiderMotion.TryStep(state, Rig, target, double.NaN, options, out shown, out next, out error);
+            allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+            Check(rejected && allocated == 0, "warmed controlled refusals allocate zero bytes");
+        }
+    }
+
     public static int Main(string[] args)
     {
         try
@@ -349,6 +583,8 @@ internal static class SkateRiderMotionScenarios
             Console.WriteLine("Actual library: " + library + "\nSHA-256: " + digest);
             if (args.Length == 1) Check(string.Equals(args[0], digest, StringComparison.OrdinalIgnoreCase), "actual library hash pinned");
             InitializationAndResponse(); TransportAndReset(); TimestepsAndReach(); Determinism(); GrabTransitions(); InvalidInputsAndAllocation();
+            DefaultOverloadCompatibility(); PartControlsAndHistories(); ControlledReachAndReset(); ControlledGrabTransitions();
+            ControlledDeterminismAndTransport(); ControlledInvalidInputsAndAllocation();
             Console.WriteLine("skate_rider_secondary_motion: " + checks + " checks passed");
             return 0;
         }
