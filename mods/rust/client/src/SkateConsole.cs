@@ -139,7 +139,7 @@ public static class SkateConsole
         try
         {
             var net = FindType("Network.Net");
-            if (net == null) { SendState = "no Network.Net type (network assemblies loaded: " + NetworkAssemblies() + ")"; return false; }
+            if (net == null) { SendState = "no Network.Net type (network assemblies loaded: " + NetworkAssemblies() + "; " + DumpNetwork() + ")"; return false; }
             var cl = net.GetField("cl", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
             var clValue = cl != null ? cl.GetValue(null) : null;
             if (clValue == null)
@@ -210,6 +210,48 @@ public static class SkateConsole
             try { var t = assembly.GetType(name, false); if (t != null) return t; } catch (Exception) { }
         }
         return null;
+    }
+
+    // What the network library's interop assembly holds, written next to the log once: every type
+    // with its public static members and method names, so a renamed console path can be found by
+    // its shape. Returns where the listing went.
+    private static string DumpNetwork()
+    {
+        try
+        {
+            var sb = new System.Text.StringBuilder();
+            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                string name; try { name = assembly.GetName().Name; } catch (Exception) { continue; }
+                if (name != "Facepunch.Network") continue;
+                Type[] types; try { types = assembly.GetTypes(); } catch (System.Reflection.ReflectionTypeLoadException e) { types = e.Types; }
+                foreach (var t in types)
+                {
+                    if (t == null) continue;
+                    sb.Append("TYPE ").Append(t.FullName).Append(t.IsEnum ? " enum" : t.IsValueType ? " struct" : t.IsAbstract && t.IsSealed ? " static" : "").Append('\n');
+                    try
+                    {
+                        foreach (var f in t.GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.DeclaredOnly))
+                            sb.Append("  ").Append(f.IsStatic ? "static field " : "field ").Append(f.FieldType.Name).Append(' ').Append(f.Name).Append('\n');
+                        foreach (var pr in t.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.DeclaredOnly))
+                            sb.Append("  ").Append(pr.GetGetMethod() != null && pr.GetGetMethod().IsStatic ? "static property " : "property ").Append(pr.PropertyType.Name).Append(' ').Append(pr.Name).Append('\n');
+                        foreach (var m in t.GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.DeclaredOnly))
+                        {
+                            if (m.IsSpecialName) continue;
+                            sb.Append("  ").Append(m.IsStatic ? "static " : "").Append(m.ReturnType.Name).Append(' ').Append(m.Name).Append('(');
+                            var ps = m.GetParameters();
+                            for (var i = 0; i < ps.Length; i++) sb.Append(i > 0 ? ", " : "").Append(ps[i].ParameterType.Name);
+                            sb.Append(")\n");
+                        }
+                    }
+                    catch (Exception e) { sb.Append("  (members unreadable: ").Append(e.GetType().Name).Append(")\n"); }
+                }
+            }
+            var path = System.IO.Path.Combine(Paths.PluginPath, "console-net.txt");
+            System.IO.File.WriteAllText(path, sb.ToString());
+            return "listing in " + path + ", " + sb.Length + " chars";
+        }
+        catch (Exception e) { return "no listing: " + e.GetType().Name + ": " + e.Message; }
     }
 
     // The loaded assemblies whose names mention the network, for the log when a type is missing.
