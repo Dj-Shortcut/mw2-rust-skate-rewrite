@@ -16,10 +16,10 @@ import threading
 import time
 
 
-INSTALLER_COMMIT = "4cf4c313d6da3b874c1c1201b8030efb4a428a78"
-INSTALLER_SHA256 = "87ddd9a92e3701dc91794300de3faf0ae3005290929ce2abf51d516f78ac3202"
-SOURCE_COMMIT = "6a17ac3d2c9a721464304f8455c457449bb2c19a"
-SOURCE_SHA256 = "54268cb81a504c45209c48afbf4d8545de51a412598258a5826b46066dfae15d"
+INSTALLER_COMMIT = "eda2572fcc75baff1a349dad0a5ea7bf0839ac0c"
+INSTALLER_SHA256 = "69586270871f1b58eaa35d644c2fc3212d674ee00904e617a653115b8a7cc954"
+SOURCE_COMMIT = "9eeddc7814a28c10cd8dfe1be8c3763144e5afdf"
+SOURCE_SHA256 = "bb72d7e4ccbbead77341101196dad4c996d9fb9ebd097f9fc0edd177d242784f"
 PRIOR_COMMIT = "5a9ed6e550a405365c8a18746dfd276a310b6848"
 PRIOR_SHA256 = "078508fbdb67683f92d4943480250c7987bcbe051e60565713df06e41cbb465e"
 PUBLIC_ROOT = "https://raw.githubusercontent.com/Dj-Shortcut/mw2-rust-skate-rewrite"
@@ -31,6 +31,47 @@ LOGS = ROOT / "server/oxide/logs"
 LOG = LOGS / "oxide_fixture.txt"
 MAX_DOWNLOAD_BYTES = 1024 * 1024
 COMMAND_PATH = "/usr/sbin:/usr/bin:/sbin:/bin"
+SERVICE_CONTROLLER = r"""
+import hashlib
+import json
+from pathlib import Path
+import stat
+import sys
+
+directory = Path(__file__).resolve().parent
+expected = json.loads((directory / "restart_expectation.json").read_text())
+with (directory / "restart_attempts.jsonl").open("a") as stream:
+    stream.write(json.dumps(sys.argv[1:]) + "\n")
+if sys.argv[1:] != ["restart", "rust-server"]:
+    sys.exit("synthetic systemctl refused unexpected arguments")
+
+def snapshot(path):
+    if not path.is_file() or path.is_symlink():
+        sys.exit("synthetic restart requires a regular source file")
+    data = path.read_bytes()
+    metadata = path.stat()
+    return [data.hex(), metadata.st_uid, metadata.st_gid,
+        stat.S_IMODE(metadata.st_mode), metadata.st_mtime_ns]
+
+active = Path(expected["active"])
+backup = Path(expected["backup"])
+installed = snapshot(active)
+if hashlib.sha256(bytes.fromhex(installed[0])).hexdigest() != expected["sha256"]:
+    sys.exit("synthetic restart ran before the selected source was installed")
+if installed[1:4] != expected["identity"] + [0o644]:
+    sys.exit("synthetic restart ran before source ownership and mode were set")
+if expected["prior"] is None:
+    if backup.exists() or backup.is_symlink():
+        sys.exit("synthetic fresh restart found an unexpected backup")
+elif snapshot(backup) != expected["prior"]:
+    sys.exit("synthetic restart ran without the exact prior backup")
+with (directory / "restart_calls.jsonl").open("a") as stream:
+    stream.write(json.dumps(sys.argv[1:]) + "\n")
+if expected["exit_status"]:
+    print("synthetic rust-server restart failed", file=sys.stderr)
+    sys.exit(expected["exit_status"])
+print("synthetic rust-server restart requested")
+"""
 LEASE_HOLDER = r"""
 import fcntl
 import os
@@ -225,6 +266,7 @@ class Scenario:
         require(len(entries) == 1, "requires one documented skate_update_dir shell entrypoint")
         self.entrypoint = entries[0]
         require(INSTALLER_COMMIT in self.entrypoint and INSTALLER_SHA256 in self.entrypoint, "documented entrypoint does not pin the reviewed installer")
+        require(re.search(r'bash\s+"\$skate_update_dir/add-skate\.sh"\s+--defer-reload\s*(?:&&|;)\s*systemctl\s+restart\s+rust-server\s*\)?\s*$', self.entrypoint), "documented entrypoint must defer reload before restarting rust-server")
         self.root_identity = None
         self.user_identity = None
         self.group_identity = None
@@ -288,8 +330,8 @@ class Scenario:
         require(destination.stat().st_size <= MAX_DOWNLOAD_BYTES, "public source exceeds size limit")
         return destination.read_bytes()
 
-    def install(self, arguments=(), delivered=False):
-        return self.run(["bash", str(self.delivered if delivered else self.installer), *arguments], timeout=170)
+    def install(self, arguments=(), delivered=False, timeout=170, environment=None):
+        return self.run(["bash", str(self.delivered if delivered else self.installer), *arguments], timeout=timeout, environment=environment)
 
     def clean_plugins(self):
         for path in PLUGINS.iterdir():
@@ -330,7 +372,7 @@ class Scenario:
                             pass
                     if armed and ACTIVE.exists() and ACTIVE.stat().st_ino != previous and digest(ACTIVE.read_bytes()) == SOURCE_SHA256:
                         if emit is None:
-                            self.log(b"04:20 [Info] Loaded plugin ShortcutSkate v0.3.7 by Dj-Shortcut\n")
+                            self.log(b"04:20 [Info] Loaded plugin ShortcutSkate v0.3.8 by Dj-Shortcut\n")
                         else:
                             emit(finished)
                         return
@@ -374,21 +416,21 @@ class Scenario:
         print("prior: " + PRIOR_COMMIT + " sha256=" + digest(prior), flush=True)
         print("documented entrypoint: sha256=" + digest(self.entrypoint.encode("utf-8")), flush=True)
 
-    def missing_owner(self):
+    def missing_owner(self, arguments=()):
         before = self.seed_prior()
-        result = self.install()
+        result = self.install(arguments)
         self.check(result.returncode == 1, "missing rust identity did not fail installation")
         self.check("runuser:" in result.stderr and "rust" in result.stderr, "missing owner did not reach real runuser failure")
         self.check(snapshot(ACTIVE) == before, "missing owner changed the active source or metadata")
         self.check(not os.path.lexists(BACKUP), "missing owner created a backup")
         self.no_staging()
 
-    def guards(self):
+    def guards(self, arguments=()):
         before = self.seed_prior()
         result = self.install(("--unknown",))
         self.check(result.returncode == 2 and "usage:" in result.stderr, "unknown argument guard failed")
         self.check(snapshot(ACTIVE) == before, "unknown argument changed active source")
-        result = self.run(["bash", "-s"], input_bytes=self.installer_bytes, nonroot=True)
+        result = self.run(["bash", "-s", "--", *arguments], input_bytes=self.installer_bytes, nonroot=True)
         self.check(result.returncode == 1 and "run as root" in result.stderr, "nonroot guard failed")
         self.check(snapshot(ACTIVE) == before, "nonroot call changed active source")
         self.no_staging()
@@ -396,7 +438,7 @@ class Scenario:
         moved = self.work / "missing-plugins"
         PLUGINS.rename(moved)
         try:
-            result = self.install()
+            result = self.install(arguments)
             self.check(result.returncode == 1 and "no Oxide plugins folder" in result.stderr, "missing-folder guard failed")
             self.check(not os.path.lexists(PLUGINS), "missing-folder guard recreated the folder")
             self.check(snapshot(moved / ACTIVE.name) == before, "missing-folder guard changed active source")
@@ -405,21 +447,21 @@ class Scenario:
 
         ACTIVE.unlink()
         ACTIVE.mkdir()
-        result = self.install()
+        result = self.install(arguments)
         self.check(result.returncode == 1 and "must be a regular file" in result.stderr, "directory-source guard failed")
         self.check(ACTIVE.is_dir() and not any(ACTIVE.iterdir()), "directory-source guard changed its target")
         self.no_staging()
         ACTIVE.rmdir()
         ACTIVE.symlink_to(self.prior)
         prior_before = snapshot(self.prior)
-        result = self.install()
+        result = self.install(arguments)
         self.check(result.returncode == 1 and "must be a regular file" in result.stderr, "symlink-source guard failed")
         self.check(ACTIVE.is_symlink() and ACTIVE.readlink() == self.prior, "symlink-source guard changed the link")
         self.check(snapshot(self.prior) == prior_before, "symlink-source guard changed the linked source")
         self.no_staging()
         ACTIVE.unlink()
         ACTIVE.symlink_to(self.work / "absent.cs")
-        result = self.install()
+        result = self.install(arguments)
         self.check(result.returncode == 1 and "must be a regular file" in result.stderr, "dangling-symlink guard failed")
         self.check(ACTIVE.is_symlink() and not ACTIVE.exists(), "dangling-symlink guard changed the link")
         self.no_staging()
@@ -438,12 +480,12 @@ class Scenario:
         os.chown(PLUGINS, *self.user_identity)
         PLUGINS.chmod(0o755)
 
-    def protected_active_refusal(self):
+    def protected_active_refusal(self, arguments=()):
         self.seed_prior()
         os.chown(ACTIVE, 0, 0)
         ACTIVE.chmod(0o600)
         before = snapshot(ACTIVE)
-        result = self.install()
+        result = self.install(arguments)
         self.check(result.returncode == 1, "worker overwrote a root-only active source")
         self.check("cp:" in result.stderr and "Permission denied" in result.stderr and "ShortcutSkate.cs" in result.stderr, "root-only source did not reach real worker copy refusal")
         self.check(snapshot(ACTIVE) == before, "worker changed root-only source bytes or metadata")
@@ -462,8 +504,8 @@ class Scenario:
         self.clean_plugins()
         result = self.with_verdict(lambda: self.install(delivered=True))
         self.check(result.returncode == 0, "delivered installer failed fresh installation: " + result.stderr.strip())
-        self.check("ShortcutSkate v0.3.7 source installed" in result.stdout, "fresh installation lacked source-install acknowledgement")
-        self.check("oxide_fixture.txt: 04:20 [Info] Loaded plugin ShortcutSkate v0.3.7" in result.stdout, "fresh install did not print the observed load verdict and path")
+        self.check("ShortcutSkate v0.3.8 source installed" in result.stdout, "fresh installation lacked source-install acknowledgement")
+        self.check("oxide_fixture.txt: 04:20 [Info] Loaded plugin ShortcutSkate v0.3.8" in result.stdout, "fresh install did not print the observed load verdict and path")
         self.active_installed()
         self.check(not os.path.lexists(BACKUP), "fresh installation unexpectedly created a backup")
 
@@ -475,19 +517,120 @@ class Scenario:
         self.check(BACKUP.is_file() and not BACKUP.is_symlink(), "previous source was not backed up as a regular file")
         self.check(snapshot(BACKUP) == before, "backup did not retain exact prior bytes, owner, group, mode and mtime")
 
+    def deferred_acknowledgement(self, result):
+        self.check("ShortcutSkate v0.3.8 source installed" in result.stdout, "deferred installation lacked source-install acknowledgement")
+        self.check("Reload deferred; source-only/native-unverified. No compile or load verdict was observed." in result.stdout, "deferred installation did not state its source-only scope")
+        self.check("Restart or reload the server explicitly" in result.stdout, "deferred installation omitted the explicit reload instruction")
+        self.check("Waiting up to 90 seconds" not in result.stdout, "deferred installation entered the native-verdict wait")
+        self.check("Oxide reported loading" not in result.stdout and "Loaded plugin ShortcutSkate" not in result.stdout, "deferred installation claimed an Oxide load verdict")
+        self.check("Previous ShortcutSkate.cs restored" not in result.stderr and "unconfirmed new source was removed" not in result.stderr, "settled deferred installation triggered rollback")
+
+    def deferred_install(self, fresh=False, missing_logs=False):
+        before = None if fresh else self.seed_prior()
+        if fresh:
+            self.clean_plugins()
+        self.log(b"Error while compiling ShortcutSkate: deferred historical fixture failure\n")
+        log_before = snapshot(LOG)
+        moved = self.work / "deferred-logs"
+        if missing_logs:
+            LOGS.rename(moved)
+        try:
+            result = self.install(("--defer-reload",), delivered=fresh, timeout=75)
+            self.check(result.returncode == 0, "deferred source installation failed: " + result.stderr.strip())
+            self.deferred_acknowledgement(result)
+            self.active_installed()
+            if fresh:
+                self.check(not os.path.lexists(BACKUP), "deferred fresh installation unexpectedly created a backup")
+                self.check("No prior source existed; no rollback backup was created." in result.stdout, "deferred fresh installation misstated its backup")
+            else:
+                self.check(snapshot(BACKUP) == before, "deferred installation did not retain exact previous source bytes and metadata")
+                self.check("Previous source backup retained at " + str(BACKUP) in result.stdout, "deferred installation did not identify its retained backup")
+            if missing_logs:
+                self.check(not os.path.lexists(LOGS), "deferred installation created or required an Oxide logs directory")
+                self.check(snapshot(moved / LOG.name) == log_before, "deferred installation changed the displaced log")
+            else:
+                self.check(snapshot(LOG) == log_before, "deferred installation changed the existing log")
+                self.log(b"Error while compiling ShortcutSkate: later deferred fixture failure\n")
+                self.check(digest(ACTIVE.read_bytes()) == SOURCE_SHA256, "later synthetic failure rolled back settled deferred source")
+                if before is not None:
+                    self.check(snapshot(BACKUP) == before, "later synthetic failure changed the retained previous source")
+            self.check(not any(self.user_identity[0] in record["uids"] and record["state"] not in ("Z", "X") for record in process_inventory().values()), "deferred installer left a worker running after settlement")
+        finally:
+            if missing_logs:
+                moved.rename(LOGS)
+
+    def incompatible_options(self):
+        before = self.seed_prior()
+        for arguments in (("--check", "--defer-reload"), ("--defer-reload", "--check"), ("--check", "--check"), ("--defer-reload", "--defer-reload")):
+            result = self.install(arguments)
+            self.check(result.returncode == 2 and "usage:" in result.stderr, "incompatible installer options were accepted: " + str(arguments))
+            self.check(snapshot(ACTIVE) == before, "incompatible options changed active source or metadata")
+            self.check(not os.path.lexists(BACKUP), "incompatible options published a backup")
+            self.no_staging()
+
+    def check_only(self):
+        before = self.seed_prior()
+        result = self.install(("--check",), timeout=75)
+        self.check(result.returncode == 0, "check-only source verification failed: " + result.stderr.strip())
+        self.check("ShortcutSkate v0.3.8 source verified: " + SOURCE_SHA256 + "; nothing installed." in result.stdout, "check-only acknowledgement did not name the exact verified source")
+        self.check(snapshot(ACTIVE) == before, "check-only changed active source or metadata")
+        self.check(not os.path.lexists(BACKUP), "check-only published a backup")
+        self.check("source installed" not in result.stdout and "Oxide reported loading" not in result.stdout, "check-only claimed installation or loading")
+        self.no_staging()
+
+    def deferred_download_failure(self):
+        before = self.seed_prior()
+        failed_environment = self.environment.copy()
+        missing_ca = self.work / "absent-ca.pem"
+        require(not os.path.lexists(missing_ca), "TLS failure fixture must not exist")
+        failed_environment["CURL_CA_BUNDLE"] = str(missing_ca)
+        result = self.install(("--defer-reload",), timeout=75, environment=failed_environment)
+        self.check(result.returncode != 0 and "curl:" in result.stderr and str(missing_ca) in result.stderr, "deferred source download did not fail on the owned nonexistent CA bundle")
+        self.check(snapshot(ACTIVE) == before, "deferred download failure changed active source or metadata")
+        self.check(not os.path.lexists(BACKUP), "deferred download failure created a backup")
+        self.check("source installed" not in result.stdout and "Reload deferred" not in result.stdout, "deferred download failure claimed settlement")
+        self.no_staging()
+
+    def restart_environment(self, prior, exit_status=0):
+        directory = self.work / "service-controller"
+        directory.mkdir(mode=0o700, exist_ok=True)
+        expectation = {
+            "active": str(ACTIVE), "backup": str(BACKUP), "sha256": SOURCE_SHA256,
+            "identity": list(self.user_identity), "exit_status": exit_status,
+            "prior": None if prior is None else [prior[0].hex(), *prior[1:]],
+        }
+        (directory / "restart_expectation.json").write_text(json.dumps(expectation))
+        for name in ("restart_attempts.jsonl", "restart_calls.jsonl"):
+            (directory / name).unlink(missing_ok=True)
+        controller = directory / "systemctl"
+        controller.write_text("#!" + sys.executable + "\n" + SERVICE_CONTROLLER)
+        controller.chmod(0o700)
+        environment = self.environment.copy()
+        environment["PATH"] = str(directory) + ":" + COMMAND_PATH
+        return environment
+
+    def restart_records(self, name):
+        path = self.work / "service-controller" / name
+        return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
+
     def documented_entrypoint(self):
         self.clean_plugins()
         scratch = self.work / "tmp"
         self.check(not any(scratch.iterdir()), "documented entrypoint scratch was not empty")
-        result = self.with_verdict(lambda: self.run(["sh", "-c", self.entrypoint], timeout=230))
+        environment = self.restart_environment(None)
+        result = self.run(["sh", "-c", self.entrypoint], timeout=150, environment=environment)
         self.check(result.returncode == 0, "documented entrypoint failed: " + result.stderr.strip())
-        self.check("ShortcutSkate v0.3.7 source installed" in result.stdout, "documented entrypoint did not execute the installer")
+        self.check("ShortcutSkate v0.3.8 source installed" in result.stdout, "documented entrypoint did not execute the installer")
+        self.deferred_acknowledgement(result)
+        self.check(self.restart_records("restart_attempts.jsonl") == [["restart", "rust-server"]], "documented entrypoint did not invoke exactly the synthetic rust-server restart")
+        self.check(self.restart_records("restart_calls.jsonl") == [["restart", "rust-server"]], "documented restart ran before selected source ownership, mode or backup were ready")
+        self.check("synthetic rust-server restart requested" in result.stdout, "documented restart stand-in did not acknowledge its synthetic request")
         self.active_installed()
         self.check(not os.path.lexists(BACKUP), "documented fresh installation unexpectedly created a backup")
         self.check(not any(scratch.iterdir()), "documented entrypoint retained private download staging")
 
         before = snapshot(ACTIVE)
-        failed_environment = self.environment.copy()
+        failed_environment = self.restart_environment(None)
         missing_ca = self.work / "absent-ca.pem"
         require(not os.path.lexists(missing_ca), "TLS failure fixture must not exist")
         failed_environment["CURL_CA_BUNDLE"] = str(missing_ca)
@@ -497,14 +640,46 @@ class Scenario:
         self.check(snapshot(ACTIVE) == before, "outer download failure changed active source or metadata")
         self.check(not os.path.lexists(BACKUP), "outer download failure executed the installer and created a backup")
         self.check(not any(scratch.iterdir()), "outer download failure retained private staging")
+        self.check(not self.restart_records("restart_attempts.jsonl"), "outer download failure attempted a service restart")
         self.no_staging()
 
-    def backup_failure(self):
+    def documented_replacement(self, restart_failure=False):
+        before = self.seed_prior()
+        environment = self.restart_environment(before, 23 if restart_failure else 0)
+        result = self.run(["sh", "-c", self.entrypoint], timeout=150, environment=environment)
+        self.check(result.returncode == (23 if restart_failure else 0), "documented entrypoint lost the synthetic restart exit status")
+        self.deferred_acknowledgement(result)
+        self.check(self.restart_records("restart_attempts.jsonl") == [["restart", "rust-server"]], "documented replacement did not invoke exactly one synthetic restart")
+        self.check(self.restart_records("restart_calls.jsonl") == [["restart", "rust-server"]], "documented replacement restarted before exact previous-source backup and selected metadata were ready")
+        self.active_installed()
+        self.check(snapshot(BACKUP) == before, "documented replacement or restart result changed the exact prior backup")
+        if restart_failure:
+            self.check("synthetic rust-server restart failed" in result.stderr, "synthetic restart failure was not visible")
+            self.check("synthetic rust-server restart requested" not in result.stdout, "failed synthetic restart claimed success")
+        else:
+            self.check("synthetic rust-server restart requested" in result.stdout, "successful synthetic restart was not visible")
+        self.check(not any((self.work / "tmp").iterdir()), "documented replacement retained private staging")
+
+    def documented_install_failure(self):
         before = self.seed_prior()
         BACKUP.mkdir()
         sentinel = BACKUP / "retained"
         sentinel.write_bytes(b"backup directory remains\n")
-        result = self.install()
+        environment = self.restart_environment(before)
+        result = self.run(["sh", "-c", self.entrypoint], timeout=150, environment=environment)
+        self.check(result.returncode == 1 and "mv:" in result.stderr, "documented backup failure did not preserve the real installer refusal")
+        self.check(snapshot(ACTIVE) == before, "documented backup failure changed active source or metadata")
+        self.check(BACKUP.is_dir() and sentinel.read_bytes() == b"backup directory remains\n", "documented backup failure changed the existing backup directory")
+        self.check(not self.restart_records("restart_attempts.jsonl"), "documented failed source installation attempted a service restart")
+        self.check("source installed" not in result.stdout and "Oxide reported loading" not in result.stdout, "documented installation failure claimed success")
+        self.no_staging()
+
+    def backup_failure(self, arguments=()):
+        before = self.seed_prior()
+        BACKUP.mkdir()
+        sentinel = BACKUP / "retained"
+        sentinel.write_bytes(b"backup directory remains\n")
+        result = self.install(arguments)
         self.check(result.returncode == 1, "backup-directory replacement did not fail")
         self.check("mv:" in result.stderr and "ShortcutSkate.cs.bak" in result.stderr, "backup failure did not reach real GNU mv")
         self.check(snapshot(ACTIVE) == before, "backup failure changed active source or metadata")
@@ -530,28 +705,28 @@ class Scenario:
 
     def stale_and_partial(self):
         self.seed_prior()
-        self.log(b"Loaded plugin ShortcutSkate v0.3.7 by Dj-Shortcut\nError while compiling ShortcutSkate: old failure\nLoaded plugin ShortcutSkate v")
+        self.log(b"Loaded plugin ShortcutSkate v0.3.8 by Dj-Shortcut\nError while compiling ShortcutSkate: old failure\nLoaded plugin ShortcutSkate v")
 
         def emit(finished):
-            self.log(b"0.3.7 by Dj-Shortcut\nLoaded plugin ShortcutSkate v0.3.6 by Dj-Shortcut\nLoaded plugin ShortcutSkate v0.3.70 by Dj-Shortcut\nLoaded plugin ShortcutSkate v0.3.7")
+            self.log(b"0.3.8 by Dj-Shortcut\nLoaded plugin ShortcutSkate v0.3.7 by Dj-Shortcut\nLoaded plugin ShortcutSkate v0.3.80 by Dj-Shortcut\nLoaded plugin ShortcutSkate v0.3.8")
             time.sleep(1.5)
             self.check(not finished.is_set(), "installer accepted stale, old partial or wrong-version verdict")
             self.log(b" by Dj-Shortcut\n")
 
         result = self.with_verdict(self.install, emit)
-        self.check(result.returncode == 0 and "Oxide reported loading ShortcutSkate v0.3.7" in result.stdout, "complete new selected-version verdict was not accepted")
+        self.check(result.returncode == 0 and "Oxide reported loading ShortcutSkate v0.3.8" in result.stdout, "complete new selected-version verdict was not accepted")
         self.active_installed()
 
     def rotation(self):
         self.seed_prior()
-        self.log(b"Loaded plugin ShortcutSkate v0.3.7 by Dj-Shortcut\n")
+        self.log(b"Loaded plugin ShortcutSkate v0.3.8 by Dj-Shortcut\n")
 
         def emit(finished):
             LOG.rename(LOGS / "oxide_rotated.txt")
             self.log(b"other plugin compiled\n")
             time.sleep(1)
             self.check(not finished.is_set(), "rotated stale load verdict was accepted")
-            self.log(b"Loaded plugin ShortcutSkate v0.3.7 by Dj-Shortcut\n")
+            self.log(b"Loaded plugin ShortcutSkate v0.3.8 by Dj-Shortcut\n")
 
         result = self.with_verdict(self.install, emit)
         self.check(result.returncode == 0, "new log after rotation did not supply the load verdict")
@@ -561,12 +736,12 @@ class Scenario:
         self.seed_prior()
 
         def emit(finished):
-            self.log(b"Loaded plugin ShortcutSkate v0.3.7 by Dj-Shortcut\n", LOGS / "oxide_copied.txt")
+            self.log(b"Loaded plugin ShortcutSkate v0.3.8 by Dj-Shortcut\n", LOGS / "oxide_copied.txt")
             self.log(b"ShortcutSkateHelper failed to compile: unrelated fixture\n")
-            self.log(b"04:20 [Info] [OtherPlugin] diagnostic: Loaded plugin ShortcutSkate v0.3.7 by Dj-Shortcut\n")
+            self.log(b"04:20 [Info] [OtherPlugin] diagnostic: Loaded plugin ShortcutSkate v0.3.8 by Dj-Shortcut\n")
             time.sleep(1.5)
             self.check(not finished.is_set(), "copied historical log or unrelated plugin supplied a verdict")
-            self.log(b"Loaded plugin ShortcutSkate v0.3.7 by Dj-Shortcut\n")
+            self.log(b"Loaded plugin ShortcutSkate v0.3.8 by Dj-Shortcut\n")
 
         result = self.with_verdict(self.install, emit)
         self.check(result.returncode == 0, "correct verdict was not accepted after ignoring other records")
@@ -574,7 +749,7 @@ class Scenario:
 
     def long_tail_failure(self):
         before = self.seed_prior()
-        tail = b"Loaded plugin ShortcutSkate v0.3.7 by Dj-Shortcut\n" + (b"unrelated log line\n" * 65000) + b"Error while compiling ShortcutSkate: final fixture failure\n"
+        tail = b"Loaded plugin ShortcutSkate v0.3.8 by Dj-Shortcut\n" + (b"unrelated log line\n" * 65000) + b"Error while compiling ShortcutSkate: final fixture failure\n"
         self.check(len(tail) > 1048576, "long-tail fixture did not cross the previous first-chunk boundary")
         result = self.with_verdict(self.install, lambda _: self.log(tail))
         self.check(result.returncode == 1 and "final fixture failure" in result.stderr, "success before a later already-appended failure was accepted")
@@ -606,7 +781,7 @@ class Scenario:
 
     def verdict_timeout(self):
         before = self.seed_prior()
-        self.log(b"Loaded plugin ShortcutSkate v0.3.7 by Dj-Shortcut\n")
+        self.log(b"Loaded plugin ShortcutSkate v0.3.8 by Dj-Shortcut\n")
         started = time.monotonic()
         result = self.run(["bash", str(self.installer)], timeout=170)
         self.check(result.returncode == 1 and "within 90 seconds" in result.stderr, "missing fresh verdict did not time out")
@@ -807,12 +982,22 @@ class Scenario:
             LOGS.mkdir()
             self.group("reviewed_delivery", self.delivery)
             self.group("missing_owner", self.missing_owner)
+            self.group("deferred_missing_owner", lambda: self.missing_owner(("--defer-reload",)))
             self.group("admission_guards", self.guards)
+            self.group("deferred_admission_guards", lambda: self.guards(("--defer-reload",)))
             self.create_identity()
+            self.group("incompatible_options", self.incompatible_options)
+            self.group("check_only", self.check_only)
             self.group("protected_active_refusal", self.protected_active_refusal)
+            self.group("deferred_protected_active_refusal", lambda: self.protected_active_refusal(("--defer-reload",)))
             self.group("fresh_install", self.fresh)
             self.group("prior_source_replacement", self.replacement)
+            self.group("deferred_fresh_without_logs", lambda: self.deferred_install(fresh=True, missing_logs=True))
+            self.group("deferred_prior_source_replacement", self.deferred_install)
+            self.group("deferred_replacement_without_logs", lambda: self.deferred_install(missing_logs=True))
+            self.group("deferred_download_failure", self.deferred_download_failure)
             self.group("backup_rename_failure", self.backup_failure)
+            self.group("deferred_backup_rename_failure", lambda: self.backup_failure(("--defer-reload",)))
             self.group("compile_failure_restore", self.compile_failure)
             self.group("fresh_compile_failure", lambda: self.compile_failure(fresh=True))
             self.group("stale_partial_wrong_version", self.stale_and_partial)
@@ -828,6 +1013,9 @@ class Scenario:
             self.group("sigterm_during_backup", lambda: self.interrupted_replacement(signal.SIGTERM, 143))
             self.group("sigint_during_backup", lambda: self.interrupted_replacement(signal.SIGINT, 130))
             self.group("documented_delivery_and_failure", self.documented_entrypoint)
+            self.group("documented_replacement_and_restart", self.documented_replacement)
+            self.group("documented_restart_failure", lambda: self.documented_replacement(restart_failure=True))
+            self.group("documented_install_failure", self.documented_install_failure)
             self.group("unchanged_inputs", self.unchanged_inputs)
         finally:
             self.cleanup()

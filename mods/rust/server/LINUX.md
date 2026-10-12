@@ -38,16 +38,15 @@ After a real install, record actual server startup, matching framework, listener
 
 ## Update the skate plugin
 
-The [12 October owner report](https://github.com/Dj-Shortcut/mw2-rust-skate-rewrite/issues/337#issuecomment-6117276716)
-describes corrections on loaded 0.3.5 and an unresolved 0.3.6 loading failure. The
-pinned updater below selects reviewed 0.3.7 movement-policy source from
-[PR #382](https://github.com/Dj-Shortcut/mw2-rust-skate-rewrite/pull/382), as requested in
-[the installer handover](https://github.com/Dj-Shortcut/mw2-rust-skate-rewrite/issues/337#issuecomment-6124387924).
-It waits for a fresh selected-version load verdict and restores the captured previous
-source on a guarded failure. If 0.3.5 is installed before the update, that is the source
-restored; its reload still needs verification. The cause of the reported 0.3.6 failure
-and native 0.3.7 loading/movement remain unverified. No live configuration is changed
-by Codex.
+The [owner's 12 October session](https://github.com/Dj-Shortcut/mw2-rust-skate-rewrite/issues/337#issuecomment-6125730635)
+identified an Oxide `Newline in constant` compile error in the 0.3.6/0.3.7
+separator literals and reported disabled automatic plugin reload. The pinned
+0.3.8 source uses numeric char values for those exclusions and separates trusted
+fly authority from the horizontal speed grant ([PR #387](https://github.com/Dj-Shortcut/mw2-rust-skate-rewrite/pull/387)).
+The explicit deferred-reload command below installs verified source with a backup,
+then restarts the existing service. It does not claim native loading without a verdict or roll back while waiting
+for a watcher that is disabled. Loading,
+placement and movement remain owner verification; Codex changed no live server.
 
 ### Private-server alternative
 
@@ -89,114 +88,94 @@ does not prove successful loading; preserve the actual console verdict and check
 
 ### Existing pinned installer
 
-`add-skate.sh` installs reviewed ShortcutSkate **0.3.7** from the owner-merged
-[PR #382](https://github.com/Dj-Shortcut/mw2-rust-skate-rewrite/pull/382), commit
-`6a17ac3d2c9a721464304f8455c457449bb2c19a`, with source SHA-256
-`54268cb81a504c45209c48afbf4d8545de51a412598258a5826b46066dfae15d`.
-It targets the existing `/srv/rust/server/oxide/plugins` installation created by
-`bootstrap-ubuntu.sh`, with its `rust` user/group. It needs Bash, Python 3, curl and
-sha256sum; installation uses the GNU/Linux file tools plus runuser and setsid
-from util-linux. The plugins folder must be writable by the nonroot rust
-account, and an existing source must be readable by that account. Oxide's
-`oxide/logs` directory and regular `oxide_*.txt` files must also be readable.
+`add-skate.sh` selects ShortcutSkate **0.3.8**, commit
+`9eeddc7814a28c10cd8dfe1be8c3763144e5afdf`, source SHA-256
+`bb72d7e4ccbbead77341101196dad4c996d9fb9ebd097f9fc0edd177d242784f`.
+It targets the existing `/srv/rust/server/oxide/plugins` installation and its
+nonroot `rust` user/group. It needs Bash, Python 3, curl, sha256sum, GNU file tools,
+runuser and setsid. The plugins folder must be writable by `rust`; any prior
+source must be a regular nonsymlink file readable by that account.
 
-From this checkout, verify the pinned download without root or a server:
+Preview the pinned public bytes without root or a server:
 
 ```sh
 bash mods/rust/server/add-skate.sh --check
 ```
 
-This mode downloads into a temporary file, checks its SHA-256 and removes it.
-It does not access the server's plugins folder. For an owner-controlled update, run
-the following one-liner as root on the existing Linux host, with the server running
-and no other plugin update running:
-
-For an existing ShortcutSkate installation, first back up
-`oxide/config/ShortcutSkate.json` under the server root. To adopt the current
-stock horizontal speed limit, edit its existing `MaximumHorizontalSpeed` field to
-`25` before replacing the plugin source. Retain `Version: 1` and every other field,
-including permissions, park gestures and the diagnostic timing values.
-`MaximumAirtime`, `AutomaticEligiblePlayers` and `AutomaticRearmSeconds` control
-diagnostics only in 0.3.7. Existing files keep their saved values: the installer does
-not update configuration, and new defaults apply only when creating a config.
-Leaving the old `14` m/s cap still rejects a measured `16.5` m/s rider; deliberately
-lower custom speed caps remain enforced.
+For the existing server without automatic reload, run the following **as root**
+in its Linux shell. This installs source and **restarts `rust-server`**, briefly
+disconnecting players. Use it only for that existing service, with no concurrent
+plugin update. Keep the prior source backup until native loading and riding pass.
+The immutable installer and its hash are verified before execution:
 
 ```sh
-(set -eu; skate_update_dir=$(mktemp -d /tmp/ShortcutSkate-update.XXXXXX); trap 'rm -rf -- "$skate_update_dir"' EXIT; curl -fsSL --connect-timeout 15 --max-time 60 https://raw.githubusercontent.com/Dj-Shortcut/mw2-rust-skate-rewrite/4cf4c313d6da3b874c1c1201b8030efb4a428a78/mods/rust/server/add-skate.sh -o "$skate_update_dir/add-skate.sh"; printf '%s  %s\n' 87ddd9a92e3701dc91794300de3faf0ae3005290929ce2abf51d516f78ac3202 "$skate_update_dir/add-skate.sh" | sha256sum -c -; bash "$skate_update_dir/add-skate.sh")
+(set -eu; skate_update_dir=$(mktemp -d /tmp/ShortcutSkate-update.XXXXXX); trap 'rm -rf -- "$skate_update_dir"' EXIT; curl -fsSL --connect-timeout 15 --max-time 60 https://raw.githubusercontent.com/Dj-Shortcut/mw2-rust-skate-rewrite/eda2572fcc75baff1a349dad0a5ea7bf0839ac0c/mods/rust/server/add-skate.sh -o "$skate_update_dir/add-skate.sh"; printf '%s  %s\n' 69586270871f1b58eaa35d644c2fc3212d674ee00904e617a653115b8a7cc954 "$skate_update_dir/add-skate.sh" | sha256sum -c -; bash "$skate_update_dir/add-skate.sh" --defer-reload; systemctl restart rust-server)
 ```
 
-The installer itself is downloaded from an immutable reviewed commit and checked
-before execution. A failed or incomplete download stops the command; it does
-not execute whatever happens to be on `main`.
+`--defer-reload` deliberately returns **source-installed/native-unverified**
+without reading Oxide logs or waiting for automatic reload. It preserves the prior
+source as `ShortcutSkate.cs.bak` and atomically installs the checked replacement.
+A successful service command only confirms that systemd accepted/completed that
+operation, not plugin loading. If the restart command fails, the new source and
+backup remain for inspection; this command does not automatically restore them.
 
-The installer waits up to 90 seconds for a newly observed
-`Loaded plugin ShortcutSkate v0.3.7` line in `oxide/logs/oxide_*.txt` and prints
-its path and text. If automatic plugin reload is disabled, run
-`oxide.reload ShortcutSkate` in the authenticated server console or
-administrator's Rust F1 console during that wait. Check
-`skate.status` in the player's F1 console for the configured limits; a playerless
-server console requires `skate.status <SteamID64>` for a connected player.
-These are game-console commands. The updater observes logs and replaces source;
-it does not send console commands. A log verdict establishes only that Oxide
-reported loading the selected version; placement and riding remain owner checks.
+After startup, check the private [load diagnostic](#plugin-load-diagnostic) for a
+fresh `Loaded plugin ShortcutSkate v0.3.8` and readiness/patch errors. Confirm
+`oxide.plugins` and `skate.status` in the authenticated game/server console, then
+placement and riding. Do not infer native success from `source installed` or
+`systemctl restart`. If corrected source fails to load, stop this service, verify
+that the active source still matches the 0.3.8 hash above and the backup is the
+intended prior source, restore that captured backup as `rust`, then restart and
+check the prior version's actual load verdict. Changed files require inspection
+before overwriting them. Keep raw logs, credentials and account details private.
 
+Back up `oxide/config/ShortcutSkate.json` before an owner-selected config change.
+Saved `MaximumHorizontalSpeed` values remain: an old `14` cap still rejects a
+`16.5` m/s rider. Set the existing field to `25` to adopt the stock cap, retaining
+`Version: 1` and every other field. The installer does not migrate configuration.
+Diagnostic airtime/rearm settings do not withdraw the fresh horizontal grant.
+Server admins already have the trusted fly privilege; `AllowEveryone` and ordinary
+use grants do not give other players `shortcutskate.fly`. See the
+[permission contract](../plugins/SKATE.md).
+
+With automatic reload or a separate administrator console, plain invocation
+instead waits up to **90 seconds** for a new matching 0.3.8 load line, and performs
+guarded restoration on compiler failure, timeout, observation error or caught
+cancellation. Run `oxide.reload ShortcutSkate` in that console during the wait if
+needed. These are game-console commands; the script sends no RCON command.
 Only complete lines appended after the post-replacement observation cut count.
-Existing historical lines, unfinished baseline lines and other versions are
-ignored. A newly discovered log inode is baselined at its first observed end,
-so copied historical content cannot confirm loading. A genuine message written
-before the observation cut, or before that new inode is first observed, can be
-missed conservatively. On log truncation, unreadable/irregular logs, an oversized
-line or more than 8 MiB of new tail in a poll, verification fails safely. Each
-captured tail is fully scanned before accepting success; a target-plugin compile
-failure in that tail takes precedence.
+Stale, partial and wrong-version lines are ignored. Newly discovered log inodes
+are baselined at first-observed EOF; copied content cannot confirm a load, and an
+early genuine verdict can conservatively be missed. Log truncation, unreadable
+or irregular logs, oversized lines/tails and compiler failures refuse success.
+The log directory is required for this monitored mode, not deferred mode.
 
-The source is downloaded and verified in a private temporary directory under
-`/tmp`. Root opens those verified bytes, then a separate session runs all plugin
-file writes as the nonroot `rust` account. A hidden source in the plugins folder
-receives mode 0644 before a same-directory rename replaces `ShortcutSkate.cs`.
-An existing regular source is saved as `ShortcutSkate.cs.bak` before replacement;
-a `rust:rust`-owned source retains its bytes, owner, group, mode and modification time.
-An existing backup is overwritten at that stage, even if the final replacement
-fails. Download, checksum, privilege-drop or backup failure leaves the active
-source untouched. The installer does not grant the service account access to
-root-only files. On INT/TERM the caller signals and waits for its tracked worker
-before returning cancellation. Until a matching fresh load verdict is accepted,
-a compile failure, timeout, observation error or catchable cancellation restores
-the backup through another same-directory rename as `rust`. A fresh installation
-without a prior source instead removes the unconfirmed new source. Rollback
-requires the active source and saved backup to retain their captured identities
-and hashes; changed files are refused and the outcome is printed. These guards
-are not a lock against a simultaneous external update; do not run two updaters.
-The backup remains available. Verify that Oxide reloads the restored version.
-Catchable exits clean staging; SIGKILL/power loss can leave it behind. The script
-does not restart the server or change its configuration/world.
+In both modes, root downloads/checks source in private temporary storage; the
+tracked worker performs all plugin writes as `rust`. A same-directory rename
+publishes mode0644 source after saving the existing source bytes. A prior
+`rust:rust`-owned source retains its owner, group, mode and modification time;
+nonroot copying does not guarantee a different prior owner/group is preserved. An old `.bak` is overwritten at that stage;
+retain any separately needed backup before updating. Download, checksum,
+privilege-drop or backup failures leave active source untouched. Root-only source
+access is refused. Until the monitored mode confirms loading or deferred mode
+explicitly settles the verified source, failures/cancellation restore the prior
+source, or remove a fresh unconfirmed install. Restoration requires captured
+active/backup identities and hashes; changed files are refused. INT/TERM stops
+and waits for the tracked worker; catchable exits clean staging. SIGKILL/power
+loss can leave staging. These are guards, not a concurrent-update lock.
 
-On failure, the updater prints the observed diagnostic, log location, recent new
-compiler-related lines and restoration/refusal result, then exits nonzero.
-Keep raw operational logs private. After a successful observed verdict,
-run `oxide.plugins` in the server console. Keep the backup
-until the owner has checked placement and riding. Source installation alone
-does not prove plugin loading, park placement or movement without corrections.
-The owner-approved `skate_server_plugin_install` scenario exercises the actual
-installer in a disposable Ubuntu 24.04 CI container, including fresh installation,
-previous-source backup and refusal/cleanup after real file-operation failures.
-It uses synthetic Oxide verdict lines to exercise successful observation,
-compile failure, the real 90-second timeout, restoration, log rotation, stale
-and partial messages, copied logs, exact plugin/version matching, long tails,
-changed-file refusal and cancellation while waiting. These fixtures do not run
-Oxide or prove its actual logging/reload behavior. It also verifies that
-root-only source bytes/metadata remain unchanged when the
-unprivileged backup operation is refused. INT/TERM cases hold a real Linux file
-lease during backup, cancel the caller, and check worker exit before lease
-release plus unchanged source and clean staging afterward.
-It uses genuine pinned public downloads and starts no Rust/Oxide process. No live
-server, Rust client or Shadow PC is used. The unchanged pinned 0.3.7 source
-compiled locally as net48/C#7.3 against genuine cached server references with
-zero errors/warnings. The owner's actual 0.3.6 compiler verdict and installed
-assembly identities remain needed to diagnose the reported failure. The new source
-has not been compiled or loaded on the owner's server by Codex. Native
-compilation/loading, movement acceptance and park placement are still open.
+The existing owner-approved `skate_server_plugin_install` scenario exercises the
+actual script with immutable public downloads and real GNU/Linux file operations.
+Synthetic log records cover the monitored verdict, failure/timeout, copied/stale
+content, changed-file guards and cancellation including a real blocked file lease.
+Deferred fixtures cover source/backup/cleanup without a log directory and execute
+the exact documented one-liner using a private service-command stand-in. They
+check its ordering and explicit failure, not real systemd or Rust startup.
+No Rust/Oxide process, live server, Rust client or Shadow PC is started by these
+checks. The selected source compiles as net48/C#7.3 against genuine cached server
+references with zero errors/warnings and passes the approved movement/gesture
+scenarios. Native 0.3.8 compilation/loading, permission/patch behavior, placement
+and correction-free riding remain unverified.
 
 ## Native installation evidence
 
