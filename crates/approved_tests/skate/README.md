@@ -30,7 +30,28 @@ a real kernel-lease-blocked backup,
 including caller status, worker exit before lease release and unchanged source
 afterward. Power loss/SIGKILL are not tested.
 
+## Server movement policy
+
+The owner approved `skate_server_movement_policy` by name on 12 October 2026. It executes
+the actual plugin's pure helpers: every segment's coordinate/path validation, total XZ
+distance, cap/tick bounds, deterministic accumulation, atomic refusals, all fresh filter
+guards and player eligibility. Existing compiled Bounds/Rearm helpers reproduce the
+two-second airtime refusal and unsupported/repeated-reset starvation; the fresh policy
+accepts the same in-cap paths independently of that diagnostic history.
+
+```sh
+dotnet build mods/rust/plugins/ShortcutSkate.csproj -p:RustManagedPath=/absolute/path/to/managed
+dotnet run --project crates/approved_tests/skate/SkateServerMovementPolicyScenarios.csproj -p:ActualPluginPath=/absolute/path/to/ShortcutSkate.dll -- EXPECTED_SHA256
+```
+
+The optional argument pins the actual DLL hash; its path/hash are always printed.
+Warmed helper loops measure allocation on the executing .NET runtime. Guard fixtures
+exercise production boolean policy, rather than constructing fake native players.
+No Rust/Oxide process, client, Shadow or live server starts. Real cache data, authority
+flags, Harmony invocation, native noclip and correction-free gameplay remain unverified.
+
 ## Recorded gestures
+
 
 The three scenarios requested by the owner through [issue #337](https://github.com/Dj-Shortcut/mw2-rust-rust-rewrite/issues/337#issuecomment-6098063930) replay the exact recorded stick positions and timestamps. Each position is held until the next timestamp; long holds are subdivided at the module's maximum step without interpolating new positions.
 
@@ -48,6 +69,24 @@ dotnet run --project crates/approved_tests/skate/SkateGestureScenarios.csproj
 An alternate built DLL can be supplied with `-p:SkateLibraryPath=/absolute/path/to/SkateMotion.dll`. Outputs stay in ignored `context/`.
 
 These scenarios check gesture recognition and its compositional/legacy outputs. They do not start the Rust client or server and do not establish controller feel, animation or a landed native trick.
+
+## Late flips and body varials
+
+The owner approved `skate_late_flips_and_body_varials` by name on 12 October 2026.
+The actual-DLL scenario checks second airborne held flips/shoves without another pop,
+existing side AirFlick/old constructors, complete left-stick circles and incomplete,
+interrupted, reversed, stale or discontinuous paths. It covers mirrored input, one body
+event per flight, support rearming, body/deck angle independence, catching/stance/score,
+cached names, bail/reset and atomic invalid input/state refusals.
+
+```sh
+dotnet run --project crates/approved_tests/skate/SkateLateFlipsBodyVarialsScenarios.csproj -p:SkateLibraryPath=/absolute/path/to/SkateMotion.dll -- EXPECTED_SHA256
+```
+
+The optional argument pins the loaded DLL hash; path/hash are always printed. Run the
+three existing recorded gesture scenarios separately. No Rust client/server or Shadow
+starts; native input bindings, animation/contact, IL2CPP cost and controller feel remain
+unverified. See the [API](../../../mods/rust/shared/README.md#late-flips-and-rider-only-body-varials).
 
 ## Ride physics
 
@@ -140,5 +179,6 @@ does not establish hand/surface contact, native rendering, adapter integration o
 See the [API and integration limits](../../../mods/rust/shared/README.md#rider-secondary-motion-api).
 
 ## Direct park placement requests
+
 
 The existing `skate_park_anchor_yaw_and_snap` also exercises the server's direct-placement request helper: aim versus explicit anchors, invariant numeric parsing, finite coordinate/yaw bounds, yaw normalization and atomic refusal outputs across cultures. It invokes the actual public helper by its exact reflected signature and requires that helper in `ShortcutSkate.dll`. The shared `SkateMotion.dll` contains geometry helpers only, so its layout run omits the server-request extension. These scalar checks do not execute native aim rays, building hooks, placement or gameplay.

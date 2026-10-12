@@ -1,0 +1,22 @@
+<Project>
+  <PropertyGroup>
+    <BaseIntermediateOutputPath>../../../context/skate-approved-late-body/obj/</BaseIntermediateOutputPath>
+    <OutputPath>../../../context/skate-approved-late-body/bin/</OutputPath>
+  </PropertyGroup>
+  <Import Project="Sdk.props" Sdk="Microsoft.NET.Sdk" />
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>7.3</LangVersion>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <SkateLibraryPath Condition="'$(SkateLibraryPath)' == ''">../../../context/rust-skate-build/bin/net48/SkateMotion.dll</SkateLibraryPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="SkateLateFlipsBodyVarialsScenarios.cs" />
+    <Reference Include="SkateMotion"><HintPath>$(SkateLibraryPath)</HintPath></Reference>
+  </ItemGroup>
+  <Target Name="RequireSharedLibrary" BeforeTargets="PrepareForBuild">
+    <Error Condition="!Exists('$(SkateLibraryPath)')" Text="Build mods/rust/shared/SkateMotion.csproj against genuine RustManagedPath references first, or provide SkateLibraryPath." />
+  </Target>
+  <Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk" />
+</Project>
