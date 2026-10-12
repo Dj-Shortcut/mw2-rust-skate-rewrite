@@ -133,9 +133,14 @@ square foundation within two minutes (0.3.5), or `skate.place <name>` (0.3.6 or 
 typist (injected keys) is not tried for the picker: it never reached this client's console. `Y` in
 the menu does not mount the board. The send check (`send` step) shows whether sending reaches the
 server: a chat line that appears on the screen. In the two send sessions so far the packet path was
-not found: the loaded `Facepunch.Network` interop has no `Network.Net` type by that name, so the
-plugin writes a listing of that library's types next to its log for the next session to read.
-Unverified in game as of this commit.
+not found: the loaded `Facepunch.Network` interop has no `Network.Net` type by that name. Since
+then the plugin looks for the path by its shape when the names are gone (the enum with a
+`ConsoleCommand` member; the write type with a method taking it, one taking a string and one
+taking a struct built from a connection; the client type with a parameterless method returning
+that write and a connection of its own; a static field or property holding the client), logs the
+names the build gives them, and writes a listing of the library's types (`console-net.txt` next
+to the plugin) when even that fails. Offline the shape search finds a renamed mirror of the path
+past two decoys; in game it has not run yet. Unverified in game as of this commit.
 
 ### Keys
 
