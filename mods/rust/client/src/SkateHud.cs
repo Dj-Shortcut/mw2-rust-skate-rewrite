@@ -27,7 +27,7 @@ public static class SkateHud
     // What the display shows. The ride fills it every frame; the pose check shows made-up ones.
     public struct Shown
     {
-        public bool Riding, Switch, Pad, Hints;
+        public bool Riding, Switch, Fakie, Pad, Hints;
         public float Speed, Cap, Window;
         public long Score, Base, LivePoints;
         public int Count;
@@ -260,7 +260,8 @@ public static class SkateHud
     {
         var t = SkateRide.Trick;
         var s = new Shown();
-        s.Riding = SkateRide.On; s.Switch = t.Switch; s.Pad = SkateKeys.Pad; s.Hints = now - MountedAt < 9f && !Scenarios.Active;
+        // Switch with the tail leading is fakie, as the scorer names the tricks.
+        s.Riding = SkateRide.On; s.Switch = t.Switch; s.Fakie = t.Switch && SkateRide.TailFirst != SkateRide.DeckReversed; s.Pad = SkateKeys.Pad; s.Hints = now - MountedAt < 9f && !Scenarios.Active;
         s.Speed = Math.Abs(SkateRide.HorizontalSpeed); s.Cap = SkateRide.Cap;
         s.Score = t.TotalPoints; s.Base = t.ComboBasePoints; s.Count = t.ComboCount;
         s.Window = (float)(t.RollingSeconds / SkateTricks.ComboRollingTimeout);
@@ -363,7 +364,7 @@ public static class SkateHud
     {
         float x = 40f * k, y = h - 300f * k;
         var kmh = (v.Speed * 3.6f).ToString("F0");
-        Text(x, y, 400f * k, kmh + "<size=" + (int)(20 * k) + "> km/h</size>" + (v.Switch ? "<size=" + (int)(20 * k) + ">   " + AmberTag + "SWITCH" + End + "</size>" : ""), (int)(44 * k), Ink, 0, 1f);
+        Text(x, y, 400f * k, kmh + "<size=" + (int)(20 * k) + "> km/h</size>" + (v.Switch ? "<size=" + (int)(20 * k) + ">   " + AmberTag + (v.Fakie ? "FAKIE" : "SWITCH") + End + "</size>" : ""), (int)(44 * k), Ink, 0, 1f);
         float track = 210f * k, part = SkateRide.Clamp(v.Speed / SkateRide.MaxSpeed, 0f, 1f);
         Box(x, y + 62f * k, track, 6f * k, Fade(Dark, 0.62f));
         Box(x, y + 62f * k, track * part, 6f * k, v.Speed > SkateRide.MaxPush + 0.2f ? Accent : Amber);

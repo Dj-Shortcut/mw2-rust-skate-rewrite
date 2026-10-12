@@ -66,7 +66,7 @@ game; see [The controller](#the-controller).
 | Right stick | The board: see below. Kept part of the way back or forward for 0.2 s: manual or nose manual. | Flicked to a side or a forward diagonal: a flip; after a pop, a whole composition (held back then flicked, or rolled) is a late flip or late shove on top of what is under way, when the jump still lasts long enough. Pulled back: set for the pop after the landing. |
 | `LT`, `RT` | Held going down a transition and let go through its bottom: a pump (speed, by how long it was held and how steep the descent, once a pass; nothing on the flat or let go on the slope itself). | Held: grab; with the right stick held, another grab. |
 | Right stick click | View from behind or the game's first person | |
-| Left stick, right after landing a trick | Revert: the board turns round under the rider, who rolls on switch; it joins the combo. | |
+| Left stick, right after landing a trick | Revert: the rider and the board pivot a half turn together on the ground and roll on the same way, the other end of the deck leading (fakie after a regular landing, regular again after a fakie one); it joins the combo. | |
 | Right stick back or forward, on an edge | Along the edge: 5-0 or nosegrind instead of the 50-50. Across it on the tail, held back: bluntslide instead of the tailslide; on the nose, held forward: nosebluntslide. Let go, the slide goes back to the plain one. | |
 | Coming down on an edge square to it, or slowly along it | A stall: the board stops on the edge. Square: a board stall, with the right stick back a tail stall, forward a nose stall, with `LB` or `RB` held a frontside or backside handplant; slowly along it a 50-50 stall. A pop leaves it; after 2.5 s the board rolls off. Out of a stall the rider goes back the way he came, tail first; out of a handplant he comes round and rolls back nose first. | |
 | In a grind or a stall | The deck sits on the edge the way that grind does: a 5-0 on the back truck with the nose up, a nosegrind the other way round, a smith with the nose dipped past the edge, a feeble over it, a crooked on its edge, a bluntslide stands the deck up steeply on the tail (a nosebluntslide on the nose); a tail stall hangs the tail over the coping. The rider stands over the low end with the arms out. | |
@@ -90,7 +90,7 @@ first they are the other way round.
 An edge is taken when the rider comes down on it from an ollie: the way of travel within 60° of
 the edge, at least 1 m/s along it, the feet from 0.15 m below its top to 0.5 m above, the edge
 within 0.45 m to the side and 0.3 m ahead; the board's own angle is free. When an edge is near but
-not taken, the log says why (`GRIND edge near, not taken (...)`). A trick popped riding switch is named Switch (a nollie then is a fakie ollie). A grind is named by
+not taken, the log says why (`GRIND edge near, not taken (...)`). A trick popped after a half turn is named by which end of the deck leads: Fakie when the tail does (after a plain 180, or a revert), Switch when the nose does (a 180 and a half shove, which turns the deck round under the feet; a body varial too); a nollie keeps its name (Fakie Nollie, Switch Nollie). The speed meter says FAKIE or SWITCH to match. A grind is named by
 how the board meets the edge: along it a 50-50 (or a 5-0 / nosegrind with the stick), across it a
 boardslide, lipslide, noseslide or tailslide by which part of the board is on the edge (a bluntslide
 or nosebluntslide with the stick held back or forward), at an angle a crooked, smith or feeble grind; frontside when the edge is on the side the rider's chest faces.
@@ -261,7 +261,7 @@ file it runs `skate`. Runtime steps share one rig; the last scenario step select
 | `skate` | The mod as the owner plays it. |
 | `ride` | Scripted: ride out, brake, turn round, ride back, get off. |
 | `pose` | Scripted: rider and board in each state, standing still, from fixed cameras, then the score display in nine made-up states; `K` steps on. |
-| `trick` | Scripted: ollie, kickflip, heelflip, both spins, a grab, two presses that come too late, a manual, shove-its, varial and 360 flips, an impossible, a revert, a fakie ollie, a no comply, a boneless and a body varial; every name is logged as the scorer gives it, for the screen check of the names. |
+| `trick` | Scripted: ollie, kickflip, heelflip, both spins, a grab, two presses that come too late, a manual, shove-its, varial and 360 flips, an impossible, a revert, a fakie nollie, a no comply, a boneless and a body varial; every name is logged as the scorer gives it, for the screen check of the names. |
 | `pad` | Scripted: the ride with a controller, played into the plugin without one. |
 | `status` | Scripted: a short ride, then the server's own view of the rider typed into the F1 console (`skate.status`, its speed and fly checks, its plugins), the console left open. |
 | `park` | Scripted: the authored park models one at a time 6 m ahead of the rider, 20 s each, seen from behind the rider, then a ride up the bank; nothing is placed on the server. |

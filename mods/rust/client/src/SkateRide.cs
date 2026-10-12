@@ -95,6 +95,9 @@ public static class SkateRide
     private static Vector3 revertDir;
     private static float revertSign = 1f;
     private static float revertEndAt = -99f;
+    // The revert's turn so far: the rider and the board pivot together on the ground, the way of
+    // travel unchanged, and at the end the half turn is the stance's (the scorer's Switch) instead.
+    private static float revertTurned, revertStep;
     private static bool fastFakie;
     private static bool landedTrick;
     private static Rigidbody body;
@@ -145,7 +148,7 @@ public static class SkateRide
     // A body varial turns the rider's stance and nothing else: the deck keeps its own yaw.
     public static float BodyYaw { get { return -(float)BodyDeg * spinSide; } }
     public static float SlideYaw { get { return Mode == RideMode.Ground ? PowerslideDegrees * Powerslide * PowerslideSide : 0f; } }
-    public static float NoseYaw { get { return Mode == RideMode.Grind ? SkateGrind.Heading + grindNose : Yaw + (Trick.Switch ? 180f : 0f) + SpinYaw + BodyYaw + SlideYaw + airNoseOffset; } }
+    public static float NoseYaw { get { return Mode == RideMode.Grind ? SkateGrind.Heading + grindNose : Yaw + (Trick.Switch ? 180f : 0f) + SpinYaw + BodyYaw + SlideYaw + revertTurned + airNoseOffset; } }
     public static float DeckYaw { get { return Mode == RideMode.Grind ? SkateGrind.Heading + GrindDeck : NoseYaw - BodyYaw - (float)ShoveDeg * spinSide + (DeckReversed ? 180f : 0f) + airDeckOffset; } }
     private static float HorizontalFactor { get { return Mode == RideMode.Ground ? Flat(Tangent).magnitude : 1f; } }
     public static float HorizontalSpeed { get { return Speed * HorizontalFactor; } }
@@ -207,7 +210,7 @@ public static class SkateRide
         if (mountAt - putBackAt > CapForget) ForgetServer();
         VSpeed = 0f; AirTime = 0f; flipLeft = shoveLeft = pendShove = bodyLeft = 0f; pendFlip = 0; SpinDeg = FlipDeg = ShoveDeg = BodyDeg = 0; LateTrick = false; Jumped = TrickAir = Braking = Manual = NoseManual = spinning = DeckReversed = false; PushPhase = 0f; stuck = 0; heldSteps = 0; Held = false;
         Grab = SkateGrabKind.None; spinSide = 1f; wantKind = SkatePopKind.Ollie; wantFlip = 0; wantShove = 0f; wantScale = 1f;
-        PumpHeld = RevertLeft = 0f; landedTrick = fastFakie = false; steppedAt = -99f; StepUps = 0; Pump = default(SkatePumpState); SlopeDegrees = 0f; ContactNormal = Vector3.up; GrindKind = SkateGrindKind.None; GrindFrontside = GrindAlong = false; GrindDeck = 0f; Stalling = false; Stalls = 0; PlantedUntil = -99f; PushMongo = PushLead = false; handDownAt = -99f;
+        PumpHeld = RevertLeft = revertTurned = 0f; landedTrick = fastFakie = false; steppedAt = -99f; StepUps = 0; Pump = default(SkatePumpState); SlopeDegrees = 0f; ContactNormal = Vector3.up; GrindKind = SkateGrindKind.None; GrindFrontside = GrindAlong = false; GrindDeck = 0f; Stalling = false; Stalls = 0; PlantedUntil = -99f; PushMongo = PushLead = false; handDownAt = -99f;
         Trick = new SkateTrickState(false); TrickName = ""; ComboPoints = 0; TrickAt = BankedAt = LandAt = jumpWanted = -99f; OffReason = "";
         SkateHud.Clear();
         Normal = ViewNormal = Vector3.up; Position = b.position; Tangent = Dir(yaw);
@@ -235,7 +238,7 @@ public static class SkateRide
     {
         // A pump's pass lives on the ground: leaving it (air, grind, bail) forgets the charge, so a
         // crouch let go in the air cannot be paid out on the next ground step.
-        if (m != RideMode.Ground && Mode == RideMode.Ground) { Pump = default(SkatePumpState); PumpHeld = 0f; RevertLeft = 0f; }
+        if (m != RideMode.Ground && Mode == RideMode.Ground) { Pump = default(SkatePumpState); PumpHeld = 0f; RevertLeft = revertTurned = 0f; }
         Mode = m; ModeAt = Time.realtimeSinceStartup;
     }
 
@@ -436,7 +439,8 @@ public static class SkateRide
         velocity.y -= Clamp(Clearance * 8f, 0f, 3f);
         StepOver(dir, dt);
         // In a slide the rider leans back from the way he goes, into the turn that started it.
-        var leanWant = Powerslide > 0.01f ? -PowerslideSide * 18f * Powerslide : Clamp(Delta(before, Yaw) / dt * 0.12f, -25f, 25f);
+        var leanWant = Powerslide > 0.01f ? -PowerslideSide * 18f * Powerslide : Clamp((Delta(before, Yaw) + revertStep) / dt * 0.12f, -25f, 25f);
+        revertStep = 0f;
         Lean += (leanWant - Lean) * 0.2f;
         TrickTick(false, false, 0, 0, 0, 0, dt);
     }
@@ -476,13 +480,16 @@ public static class SkateRide
             Out.Say("SKATE revert begins");
         }
         var step = Math.Min(Math.Abs(RevertLeft), RevertRate * dt) * Math.Sign(RevertLeft);
-        Yaw += step; RevertLeft -= step;
+        revertTurned += step; RevertLeft -= step; revertStep = step;
         if (Math.Abs(RevertLeft) > 0.001f) return;
-        // Round: the board points the other way and the rider rolls on as before, the other end leading.
-        RevertLeft = 0f; Speed = -Speed; revertEndAt = now; fastFakie = HorizontalSpeed < -MaxReverse;
+        // Round: the rider and the board point the other way and roll on as before, the other end
+        // leading. The half turn goes to the stance from here on, so the pose does not move at the
+        // handover: the turn made so far comes off as the scorer's Switch comes on. The heading and
+        // the speed stay as they were: the way of travel never changed.
+        RevertLeft = 0f; revertEndAt = now; fastFakie = false;
         SkateTrickResult r; string error;
-        if (SkateTricks.TryAdd(Trick, "Revert", RevertPoints, true, out r, out error)) Take(r);
-        else Out.Say("SKATE revert refused: " + error);
+        if (SkateTricks.TryAdd(Trick, "Revert", RevertPoints, true, out r, out error)) { Take(r); revertTurned = 0f; }
+        else { Out.Say("SKATE revert refused: " + error); Yaw += revertTurned; Speed = -Speed; revertTurned = 0f; }
     }
 
     // The crouch is held with a trigger; the shared pump judges the pass: charged going down a
@@ -712,9 +719,13 @@ public static class SkateRide
     {
         SkateTrickResult r; string error;
         var rolling = !airborne && !grinding;
+        // Which end of the deck leads, physically: the scorer latches it at the first airborne step
+        // and names the flight Fakie (switch, the tail leading) or Switch (switch, the nose leading).
+        // The pop end stays the rider's: an ollie pops the end under the back foot, whichever end
+        // of the deck that is after a shove.
         var input = new SkateTrickInput(spinAxis, flipAxis, shoveAxis, airborne ? Grab : SkateGrabKind.None, airborne, grinding, impact, Manual && rolling, NoseManual && !Manual && rolling,
             Math.Abs(Speed), airborne ? popKind : SkatePopKind.None, grinding ? GrindKind : SkateGrindKind.None, grinding && GrindFrontside,
-            airborne && LateTrick && (flipAxis != 0f || shoveAxis != 0f), airborne ? bodyAxis : 0f);
+            airborne && LateTrick && (flipAxis != 0f || shoveAxis != 0f), airborne ? bodyAxis : 0f, TailFirst != DeckReversed);
         if (!SkateTricks.TryStep(Trick, input, dt, BailImpact, out r, out error))
         {
             Out.Say("SKATE trick step refused: " + error);
