@@ -247,7 +247,11 @@ public static class SkateParks
                 if (b.Prefab != part.Prefab || taken.Contains(b.Id) || matched.Contains(i)) continue;
                 var d = Vector3.Distance(b.Position, want);
                 if (d > bestDistance) continue;
-                if (Math.Abs(Delta(wantYaw, b.Yaw)) > AngleTolerance || Math.Abs(Delta((float)part.Pitch, b.Pitch)) > AngleTolerance) continue;
+                // A wall is matched by its line, whichever quarter it is turned to: the native wall lies
+                // along its own z, which the server's layout may turn it by 90 degrees for (#337).
+                var yawOff = Math.Abs(Delta(wantYaw, b.Yaw));
+                if (part.Prefab != FloorPrefab) { yawOff %= 90f; yawOff = Math.Min(yawOff, 90f - yawOff); }
+                if (yawOff > AngleTolerance || Math.Abs(Delta((float)part.Pitch, b.Pitch)) > AngleTolerance) continue;
                 best = i; bestDistance = d;
             }
             if (best < 0) return false;
@@ -325,7 +329,9 @@ public static class SkateParks
         if (root == null) return;
         Colliders += colliders;
         p.Root = root;
-        if (kind == Kind.Bank || kind == Kind.Kicker || kind == Kind.QuarterPipe) Colliders += Entry(root, kind == Kind.QuarterPipe ? -1.2f : 0f);
+        if (kind == Kind.Bank || kind == Kind.Kicker || kind == Kind.QuarterPipe) Colliders += Entry(root, kind == Kind.QuarterPipe ? -1.2f : 0f, -1f);
+        // A funbox is entered from both ends.
+        if (kind == Kind.Funbox) { Colliders += Entry(root, -FunboxEnd, -1f); Colliders += Entry(root, FunboxEnd, 1f); }
         // The native tiles and walls under the model are not drawn; the foundation stays.
         foreach (var m in matched)
         {
@@ -506,11 +512,12 @@ public static class SkateParks
 
     // The server rests a piece so that its lowest tile corner clears the ground, which leaves the
     // entry (the first tile's top, where the piece is drawn from) a tile's thickness above it: an
-    // edge the board stops at. A short wedge from the ground up to the entry takes it away. Returns
+    // edge the board stops at (a funbox at both its ends). A short wedge from the ground up to the entry takes it away. Returns
     // the colliders added (0 when the entry is on the ground or the ground is not found).
     public const float EntrySlope = 8f, EntryMost = 0.6f;
     public static float LastEntryDrop = -1f;
-    private static int Entry(GameObject root, float entryForward)
+    public const float FunboxEnd = 4.4f;
+    private static int Entry(GameObject root, float entryForward, float outward)
     {
         var t = root.transform;
         var at = t.position + t.rotation * new Vector3(0f, 0f, entryForward);
@@ -523,7 +530,10 @@ public static class SkateParks
         if (drop < Lift + 0.03f || drop > EntryMost) return 0;
         var length = Math.Min(drop / (float)Math.Tan(EntrySlope * Degrees), 3f);
         // A little below the ground at its start, so no lip is left there either.
-        var profile = new List<Vector2> { new Vector2(entryForward - length, -drop - 0.03f), new Vector2(entryForward, 0f) };
+        // Points in rising forward order, so the strip faces up either way.
+        var profile = outward < 0f
+            ? new List<Vector2> { new Vector2(entryForward - length, -drop - 0.03f), new Vector2(entryForward, 0f) }
+            : new List<Vector2> { new Vector2(entryForward, 0f), new Vector2(entryForward + length, -drop - 0.03f) };
         var surface = SurfaceMesh(profile, (float)HalfLength);
         var wedge = new GameObject("COLLISION__entry"); wedge.transform.SetParent(t, false);
         wedge.AddComponent<MeshCollider>().sharedMesh = surface; wedge.layer = 0;
