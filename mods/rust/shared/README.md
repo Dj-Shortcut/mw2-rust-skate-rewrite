@@ -85,6 +85,60 @@ The convention is regular heel-left: back-to-forward-left gives kickflip, right 
 
 The three exact owner-recorded timestamp sequences are permanent scenarios in [approved_tests/skate](../../../crates/approved_tests/skate/README.md): airborne pullback gives Ollie, grounded diagonal gives Ollie+Kickflip, and grounded roll/recoil gives Ollie without a manual. They test recognition and the composition contract; native controller feel remains a client verification step.
 
+### Late flips and rider-only body varials
+
+The additive flick input is `SkateFlickInput(x,y,airborne,mirrored,leftX,leftY,poppedInAir)`.
+The original constructor supplies zero left-stick axes and `false` pop context. The adapter
+sets `poppedInAir` after the current flight's real pop and clears it on support/bail; the
+reader cannot infer whether a requested ground pop actually launched. While airborne with
+that context, a subsequent held right-stick composition emits flip/shove targets with
+`Kind=None`, `Pop=0`, `Strength=0` and `Composition.Late=true`. Existing lateral AirFlicks
+also expose `Late`; their recognition and event bits are unchanged. A first pullback in an
+already-airborne recorded gesture remains an Ollie with the original constructor. Neutral
+rearms the right-stick reader; each emitted composition is applied once.
+
+The left stick reads independently. A complete net 360-degree circle at radius at least
+`HeldZone` within `BodyCircleSeconds` emits `BodyVarial` (bit 64) and signed
+`BodyVarialDegrees=180`, mirrored to -180. Clockwise is positive using `atan2(leftX,leftY)`.
+Adjacent angle changes greater than 90 degrees, reversal, center/radius interruption or
+timeout discard partial progress. A completed circle latches until support, preventing
+repeated body-varial events during one flight. Right-stick composition is separate and
+can occur on the same frame. A partial circle or a held direction emits nothing.
+
+The additive scorer input appends `late,bodySpin` after `grindKind,grindFrontside`.
+`bodySpin` is a separate axis in [-1,1]; it integrates at `RotationRate`, capped at +/-180
+degrees per flight. Drive it toward the emitted body-varial target, then supply zero.
+Keep the original pop kind; a late target has no additional pop. Mark the board-only
+flip/shove axes `late=true` while applying the late target. Old scorer constructors
+supply `false,0`. `State.BodySpin` accumulates the rider-only angle and `result.BodySpin`
+retains its snapped landing angle; `RiderSpin=BoardSpin+BodySpin`. Deck world yaw remains
+`BoardSpin+BoardShove`, and its roll remains `BoardFlip`. The rider support frame follows
+`RiderSpin`. Commit both separately on landing; body rotation must not turn the board.
+
+Body catching uses the same 25-degree half-turn tolerance and impact/bail rules. An odd
+body half-turn toggles riding stance in addition to the original rider/board half-turns;
+two odd turns cancel that parity. A completed body half-turn adds 100 base points. Late
+has no score bonus. Support/bail clears the new histories. Cached names include
+`Late Kickflip`, `Late Pop Shove-it`, `Body Varial`, `Body Varial Kickflip` and combined
+late/body variants, with existing stance/pop/grab prefixes. Late metadata labels the
+final accumulated board composition, rather than naming each sequential flip separately;
+zero completed board rotations never become `Late Ollie`.
+
+Existing public methods/constructors remain; the added state/input/result fields change
+struct layout, so rebuild adapters with the shared DLL. Three extra name tables and
+fallback variants are created at static initialization; subsequent stepping/naming uses
+cached strings. Native IL2CPP startup/memory cost, left-stick conflicts with steering,
+input timing, body/deck application, catching and visuals remain unverified. These APIs
+read and score authored input; they do not change the client adapter.
+
+The approved `skate_late_flips_and_body_varials` scenario passes 3,703 checks on the
+actual genuine-reference net48 DLL, including late no-boost targets, signed circles,
+simultaneous events, interruption/timeout/latch, separate body/board angles, stance,
+catch/bail/reset, old constructors, cached names and atomic invalid requests/state.
+Warmed modified-name landings and left-stick steps allocate zero measured bytes on
+Mac net8. The three original recorded flick scenarios also pass. Native acceptance
+and performance remain unverified.
+
 The integrated genuine-reference net48 DLL passes those three scenarios, 238,534 private gesture assertions and 205,900 private trick assertions across 6,300 compositions. Checks cover mirrored/nollie chart paths, ordinary pullbacks through 40 degrees remaining plain flips, settled diagonals, stale setup, snapped landing tolerance/impact, 540/720 generic grabs, rider-only stance parity, manual changes and atomic refusals. Warm gesture success/rejection and trick landing/rejection loops allocate zero measured bytes on Mac net8. These checks do not prove native input, catching or server acceptance.
 
 ## Rider joint API

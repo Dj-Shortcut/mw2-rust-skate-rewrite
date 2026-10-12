@@ -44,6 +44,24 @@ An alternate built DLL can be supplied with `-p:SkateLibraryPath=/absolute/path/
 
 These scenarios check gesture recognition and its compositional/legacy outputs. They do not start the Rust client or server and do not establish controller feel, animation or a landed native trick.
 
+## Late flips and body varials
+
+The owner approved `skate_late_flips_and_body_varials` by name on 12 October 2026.
+The actual-DLL scenario checks second airborne held flips/shoves without another pop,
+existing side AirFlick/old constructors, complete left-stick circles and incomplete,
+interrupted, reversed, stale or discontinuous paths. It covers mirrored input, one body
+event per flight, support rearming, body/deck angle independence, catching/stance/score,
+cached names, bail/reset and atomic invalid input/state refusals.
+
+```sh
+dotnet run --project crates/approved_tests/skate/SkateLateFlipsBodyVarialsScenarios.csproj -p:SkateLibraryPath=/absolute/path/to/SkateMotion.dll -- EXPECTED_SHA256
+```
+
+The optional argument pins the loaded DLL hash; path/hash are always printed. Run the
+three existing recorded gesture scenarios separately. No Rust client/server or Shadow
+starts; native input bindings, animation/contact, IL2CPP cost and controller feel remain
+unverified. See the [API](../../../mods/rust/shared/README.md#late-flips-and-rider-only-body-varials).
+
 ## Ride physics
 
 The owner approved three scenarios by name on 11 October 2026 for [Task 5](https://github.com/Dj-Shortcut/mw2-rust-skate-rewrite/issues/337#issuecomment-6106747983):
@@ -129,5 +147,6 @@ does not establish hand/surface contact, native rendering, adapter integration o
 See the [API and integration limits](../../../mods/rust/shared/README.md#rider-secondary-motion-api).
 
 ## Direct park placement requests
+
 
 The existing `skate_park_anchor_yaw_and_snap` also exercises the server's direct-placement request helper: aim versus explicit anchors, invariant numeric parsing, finite coordinate/yaw bounds, yaw normalization and atomic refusal outputs across cultures. It invokes the actual public helper by its exact reflected signature and requires that helper in `ShortcutSkate.dll`. The shared `SkateMotion.dll` contains geometry helpers only, so its layout run omits the server-request extension. These scalar checks do not execute native aim rays, building hooks, placement or gameplay.
