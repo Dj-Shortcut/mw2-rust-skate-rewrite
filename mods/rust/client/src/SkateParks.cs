@@ -531,17 +531,19 @@ public static class SkateParks
     // entry (the first tile's top, where the piece is drawn from) a tile's thickness above it: an
     // edge the board stops at (a funbox at both its ends). A short wedge from the ground up to the entry takes it away. Returns
     // the colliders added (0 when the entry is on the ground or the ground is not found).
-    public const float EntrySlope = 8f, EntryMost = 0.6f;
+    public const float EntrySlope = 8f, EntryMost = 0.6f, EntryLook = 0.4f;
     public static float LastEntryDrop = -1f;
     public const float FunboxEnd = 4.4f;
     private static int Entry(GameObject root, float entryForward, float outward)
     {
         var t = root.transform;
         var at = t.position + t.rotation * new Vector3(0f, 0f, entryForward);
-        var mask = SkateRide.GroundMask;
-        if (constructionLayer >= 0) mask &= ~(1 << constructionLayer);
+        // The ground is looked for a little before the entry, clear of the piece's own tiles, and may
+        // be a building's floor: seen live, the owner's park stands on his foundations, and a ray that
+        // left construction out found no ground, so no wedge was made and the board stopped at the lip.
+        var before = at - t.rotation * new Vector3(0f, 0f, outward < 0f ? EntryLook : -EntryLook);
         RaycastHit hit;
-        if (!Physics.Raycast(at + Vector3.up * 0.3f, Vector3.down, out hit, 0.3f + EntryMost, mask, QueryTriggerInteraction.Ignore)) return 0;
+        if (!Physics.Raycast(before + Vector3.up * 0.3f, Vector3.down, out hit, 0.3f + EntryMost, SkateRide.GroundMask, QueryTriggerInteraction.Ignore)) return 0;
         var drop = at.y - hit.point.y;
         LastEntryDrop = drop;
         if (drop < Lift + 0.03f || drop > EntryMost) return 0;
