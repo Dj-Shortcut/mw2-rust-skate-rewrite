@@ -215,7 +215,7 @@ public static class SkateParks
                 var anchorYaw = b.Yaw - (float)layout[0].Yaw;
                 matched.Clear();
                 if (!Match(kind, layout, blocks, cells, taken, b, anchorYaw, matched)) continue;
-                if ((kind == Kind.LedgeLow || kind == Kind.LedgeHigh || kind == Kind.LongLedge) && !OverFoundation(b, blocks, cells, kind == Kind.LedgeHigh)) continue;
+                if ((kind == Kind.LedgeLow || kind == Kind.LedgeHigh || kind == Kind.LongLedge) && !OverFoundation(b, blocks, cells, kind == Kind.LedgeHigh) && !OverGround(b, kind == Kind.LedgeHigh)) continue;
                 var ids = new int[matched.Count];
                 for (var m = 0; m < matched.Count; m++) { ids[m] = blocks[matched[m]].Id; taken.Add(ids[m]); }
                 var p = new Placed { Kind = kind, Ids = ids };
@@ -275,6 +275,24 @@ public static class SkateParks
         return false;
     }
 
+    // Or a floor tile standing free that high above the ground, as the server's own placement
+    // (`skate.place`, 0.3.8) leaves a ledge: its anchor rests on the ground and the tile is 0.4 or
+    // 0.8 above that, with nothing under it. A building's floor stands on walls, a storey up.
+    public static float LedgeGroundGap = -1f;
+    private static bool OverGround(Block floor, bool high)
+    {
+        if (Math.Abs(floor.Pitch) > AngleTolerance) return false;
+        var mask = SkateRide.GroundMask;
+        if (constructionLayer >= 0) mask &= ~(1 << constructionLayer);
+        RaycastHit hit;
+        var from = floor.Position + Vector3.up * (floor.Bottom - 0.02f);
+        if (!Physics.Raycast(from, Vector3.down, out hit, 1.2f, mask, QueryTriggerInteraction.Ignore)) return false;
+        var gap = hit.distance + 0.02f;
+        if (gap < 0.25f || gap > 1.0f) return false;
+        LedgeGroundGap = gap;
+        return high ? gap >= 0.62f : gap < 0.62f;
+    }
+
     private static void Place(Placed p, Kind kind, List<Block> blocks, List<int> matched, float anchorYaw)
     {
         var first = blocks[matched[0]];
@@ -307,6 +325,7 @@ public static class SkateParks
         if (root == null) return;
         Colliders += colliders;
         p.Root = root;
+        if (kind == Kind.Bank || kind == Kind.Kicker || kind == Kind.QuarterPipe) Colliders += Entry(root, kind == Kind.QuarterPipe ? -1.2f : 0f);
         // The native tiles and walls under the model are not drawn; the foundation stays.
         foreach (var m in matched)
         {
@@ -483,6 +502,36 @@ public static class SkateParks
             proxy.AddComponent<MeshCollider>().sharedMesh = surface; proxy.layer = 0; colliders++;
         }
         return root;
+    }
+
+    // The server rests a piece so that its lowest tile corner clears the ground, which leaves the
+    // entry (the first tile's top, where the piece is drawn from) a tile's thickness above it: an
+    // edge the board stops at. A short wedge from the ground up to the entry takes it away. Returns
+    // the colliders added (0 when the entry is on the ground or the ground is not found).
+    public const float EntrySlope = 8f, EntryMost = 0.6f;
+    public static float LastEntryDrop = -1f;
+    private static int Entry(GameObject root, float entryForward)
+    {
+        var t = root.transform;
+        var at = t.position + t.rotation * new Vector3(0f, 0f, entryForward);
+        var mask = SkateRide.GroundMask;
+        if (constructionLayer >= 0) mask &= ~(1 << constructionLayer);
+        RaycastHit hit;
+        if (!Physics.Raycast(at + Vector3.up * 0.3f, Vector3.down, out hit, 0.3f + EntryMost, mask, QueryTriggerInteraction.Ignore)) return 0;
+        var drop = at.y - hit.point.y;
+        LastEntryDrop = drop;
+        if (drop < Lift + 0.03f || drop > EntryMost) return 0;
+        var length = Math.Min(drop / (float)Math.Tan(EntrySlope * Degrees), 3f);
+        // A little below the ground at its start, so no lip is left there either.
+        var profile = new List<Vector2> { new Vector2(entryForward - length, -drop - 0.03f), new Vector2(entryForward, 0f) };
+        var surface = SurfaceMesh(profile, (float)HalfLength);
+        var wedge = new GameObject("COLLISION__entry"); wedge.transform.SetParent(t, false);
+        wedge.AddComponent<MeshCollider>().sharedMesh = surface; wedge.layer = 0;
+        if (plain == null) plain = MaterialFor(new SkateModelMaterial());
+        var look = new GameObject("VISUAL__entry"); look.transform.SetParent(t, false);
+        look.AddComponent<MeshFilter>().sharedMesh = surface;
+        look.AddComponent<MeshRenderer>().sharedMaterial = plain;
+        return 1;
     }
 
     // The riding surface alone, for the collider: a strip across the width along the profile.
