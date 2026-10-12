@@ -72,8 +72,10 @@ public static class SkateCamera
             var allowed = len;
             if (len > 0.01f && Physics.SphereCast(focus, 0.2f, dir / len, out hit, len, SkateRide.GroundMask, QueryTriggerInteraction.Ignore))
                 allowed = Math.Max(0.6f, hit.m_Distance - 0.05f);
-            var t = Time.realtimeSinceStartup; var outSeconds = SkateRide.Clamp(t - shownAt, 0f, 0.1f); shownAt = t;
-            if (shownLen < 0f || allowed <= shownLen || outSeconds >= 0.1f) shownLen = allowed;
+            // A slow frame eases at the capped step; only a real pause (half a second without a
+            // frame, a new ride) puts the camera straight where it may be.
+            var t = Time.realtimeSinceStartup; var gap = t - shownAt; var outSeconds = SkateRide.Clamp(gap, 0f, 0.1f); shownAt = t;
+            if (shownLen < 0f || allowed <= shownLen || gap > 0.5f) shownLen = allowed;
             else shownLen += (allowed - shownLen) * (1f - (float)Math.Exp(-outSeconds * OutRate));
             if (len > 0.01f) want = focus + dir / len * shownLen;
             cam.transform.position = want;

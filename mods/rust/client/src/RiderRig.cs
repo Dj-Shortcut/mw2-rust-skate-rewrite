@@ -527,8 +527,21 @@ public static class RiderRig
             if (!contact)
             {
                 var airborne = mode == RideMode.Air;
-                var pinned = airborne && grab != SkateGrabKind.None;
-                var options = new SkateRiderMotionOptions(airborne, pinned, pinned);
+                // The hand on the board is pinned to it, both only in a two-handed grab; the free
+                // hand keeps its secondary motion. Which hand grips is read from the pose: the one
+                // nearer the deck.
+                bool pinL = false, pinR = false;
+                if (airborne && grab != SkateGrabKind.None)
+                {
+                    if (grab == SkateGrabKind.Double) pinL = pinR = true;
+                    else
+                    {
+                        var deck = (V(pose.LeftAnkle) + V(pose.RightAnkle)) * 0.5f;
+                        var nearLeft = (V(pose.LeftHand) - deck).sqrMagnitude <= (V(pose.RightHand) - deck).sqrMagnitude;
+                        pinL = nearLeft; pinR = !nearLeft;
+                    }
+                }
+                var options = new SkateRiderMotionOptions(airborne, pinL, pinR);
                 SkateRiderPose shown; SkateRiderMotionState next; string motionError;
                 if (SkateRiderMotion.TryStep(motion, Rig, pose, SkateRide.Clamp(frameSeconds, (float)SkateRiderMotion.MinimumDelta, (float)SkateRiderMotion.MaximumDelta), options, out shown, out next, out motionError))
                 { pose = shown; motion = next; }
@@ -545,7 +558,8 @@ public static class RiderRig
                 var mid = (la + ra) * 0.5f;
                 var lifted = SkateRide.Clamp(Vector3.Dot(mid - plane, upV) / 0.15f, 0f, 1f);
                 var grip = Vector3.Lerp(upV, (pel - mid).normalized, lifted).normalized;
-                SkateBoard.HeldNose = (la - ra).normalized * (SkateRide.TailFirst ? -1f : 1f);
+                // The left ankle is toward the nose for a regular rider, the right one for a goofy one.
+                SkateBoard.HeldNose = (la - ra).normalized * (SkateRide.TailFirst ? -1f : 1f) * SkateRide.StanceSign;
                 SkateBoard.HeldUp = grip;
                 SkateBoard.HeldAt = mid - grip * (AnkleHeight + DeckTop);
             }

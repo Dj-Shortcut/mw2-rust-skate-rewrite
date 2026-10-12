@@ -357,6 +357,7 @@ public static class SkateParks
     private static GameObject Build(Kind kind, Vector3 origin, Quaternion yawRot, bool solid, out int colliders)
     {
         colliders = 0;
+        if (kind == Kind.QuarterPipe || kind == Kind.Halfpipe) return Transition(kind, origin, yawRot, solid, out colliders);
         var loaded = Model(kind);
         if (loaded == null || loaded.Model == null) return null;
         var root = new GameObject("skate_park_" + fileStems[(int)kind]);
@@ -393,6 +394,159 @@ public static class SkateParks
             }
         }
         return root;
+    }
+
+    // The quarterpipe and the halfpipe follow the server's own blocks: a 15 degree tile and a 35
+    // degree tile up from the flat (a halfpipe has that on both ends of its 6 m flat, with a 3 m
+    // deck on top). The authored models are circular and shorter, so they would leave the tiles
+    // standing out of them; these are made here instead, on the tiles' tops, with the bends
+    // rounded (radius Bend) so the board rolls through them, and the coping edge left sharp.
+    public const double Bend = 3.0;
+    private const int BendSteps = 8;
+
+    // The riding profile, (forward, height) points in the piece's frame. The quarterpipe starts at
+    // its entry (the first tile's low edge); the halfpipe's frame is the middle of its flat.
+    public static List<Vector2> TransitionProfile(Kind kind)
+    {
+        double run1 = 2 * HalfLength * Math.Cos(15 * Degrees), rise1 = 2 * HalfLength * Math.Sin(15 * Degrees);
+        double run2 = 2 * HalfLength * Math.Cos(35 * Degrees), rise2 = 2 * HalfLength * Math.Sin(35 * Degrees);
+        var corners = new List<Vector2>(); var radii = new List<double>();
+        if (kind == Kind.QuarterPipe)
+        {
+            corners.Add(new Vector2(0f, -1.2f)); radii.Add(0);
+            corners.Add(new Vector2(0f, 0f)); radii.Add(Bend);
+            corners.Add(new Vector2((float)run1, (float)rise1)); radii.Add(Bend);
+            corners.Add(new Vector2((float)(run1 + run2), (float)(rise1 + rise2))); radii.Add(0);
+            // Points are (forward, height); the first is a run-in on the ground.
+            corners[0] = new Vector2(-1.2f, 0f);
+        }
+        else
+        {
+            double half = 2 * HalfLength, deck = 2 * HalfLength, top = rise1 + rise2;
+            foreach (var side in new[] { -1, 1 })
+            {
+                var pts = new[] {
+                    new Vector2((float)(side * (half + run1 + run2 + deck)), (float)top),
+                    new Vector2((float)(side * (half + run1 + run2)), (float)top),
+                    new Vector2((float)(side * (half + run1)), (float)rise1),
+                    new Vector2((float)(side * half), 0f) };
+                var rs = new[] { 0.0, 0.0, Bend, Bend };
+                if (side < 0) for (var i = 0; i < 4; i++) { corners.Add(pts[i]); radii.Add(rs[i]); }
+                else for (var i = 3; i >= 0; i--) { corners.Add(pts[i]); radii.Add(rs[i]); }
+            }
+        }
+        // Plain arithmetic on the coordinates: the engine's vector operators are not counted on.
+        var outPts = new List<Vector2>();
+        for (var i = 0; i < corners.Count; i++)
+        {
+            if (i == 0 || i == corners.Count - 1 || radii[i] <= 0) { outPts.Add(corners[i]); continue; }
+            double ax = corners[i - 1].x, ay = corners[i - 1].y, bx = corners[i].x, by = corners[i].y, cx = corners[i + 1].x, cy = corners[i + 1].y;
+            double l1 = Math.Sqrt((bx - ax) * (bx - ax) + (by - ay) * (by - ay)), l2 = Math.Sqrt((cx - bx) * (cx - bx) + (cy - by) * (cy - by));
+            double d1x = (bx - ax) / l1, d1y = (by - ay) / l1, d2x = (cx - bx) / l2, d2y = (cy - by) / l2;
+            var turn = Math.Acos(Math.Max(-1.0, Math.Min(1.0, d1x * d2x + d1y * d2y)));
+            if (turn < 0.001) { outPts.Add(corners[i]); continue; }
+            var t = Math.Min(radii[i] * Math.Tan(turn / 2), Math.Min(l1, l2) * 0.45);
+            var r = t / Math.Tan(turn / 2);
+            double sx = bx - d1x * t, sy = by - d1y * t;
+            // The centre is on the inside of the bend: to the left of the way when it bends up.
+            var cross = d1x * d2y - d1y * d2x; var sign = cross > 0 ? 1.0 : -1.0;
+            double ox = sx - d1y * r * sign, oy = sy + d1x * r * sign;
+            double fx = sx - ox, fy = sy - oy;
+            for (var k = 0; k <= BendSteps; k++)
+            {
+                var ang = turn * k / BendSteps * sign;
+                double cs = Math.Cos(ang), sn = Math.Sin(ang);
+                outPts.Add(new Vector2((float)(ox + fx * cs - fy * sn), (float)(oy + fx * sn + fy * cs)));
+            }
+        }
+        return outPts;
+    }
+
+    private static GameObject Transition(Kind kind, Vector3 origin, Quaternion yawRot, bool solid, out int colliders)
+    {
+        colliders = 0;
+        if (plain == null) plain = MaterialFor(new SkateModelMaterial());
+        var material = plain;
+        try { var loaded = Model(kind); if (loaded != null && loaded.Materials != null && loaded.Materials.Length > 0 && loaded.Materials[0] != null) material = loaded.Materials[0]; }
+        catch (Exception) { }
+        var profile = TransitionProfile(kind);
+        var halfWidth = (float)(kind == Kind.QuarterPipe ? HalfLength : 2 * HalfLength);
+        var root = new GameObject("skate_park_" + fileStems[(int)kind]);
+        root.transform.position = origin; root.transform.rotation = yawRot;
+        var surface = SurfaceMesh(profile, halfWidth);
+        var visual = new GameObject("VISUAL__transition"); visual.transform.SetParent(root.transform, false);
+        visual.AddComponent<MeshFilter>().sharedMesh = SolidMesh(profile, halfWidth);
+        visual.AddComponent<MeshRenderer>().sharedMaterial = material;
+        if (solid)
+        {
+            var proxy = new GameObject("COLLISION__transition"); proxy.transform.SetParent(root.transform, false);
+            proxy.AddComponent<MeshCollider>().sharedMesh = surface; proxy.layer = 0; colliders++;
+        }
+        return root;
+    }
+
+    // The riding surface alone, for the collider: a strip across the width along the profile.
+    private static Mesh SurfaceMesh(List<Vector2> profile, float halfWidth)
+    {
+        var n = profile.Count; var verts = new Vector3[n * 2]; var tris = new int[(n - 1) * 6];
+        for (var i = 0; i < n; i++) { verts[i * 2] = new Vector3(-halfWidth, profile[i].y, profile[i].x); verts[i * 2 + 1] = new Vector3(halfWidth, profile[i].y, profile[i].x); }
+        for (var i = 0; i < n - 1; i++)
+        {
+            int a = i * 2, b = a + 1, c = a + 2, d = a + 3, t = i * 6;
+            tris[t] = a; tris[t + 1] = c; tris[t + 2] = b; tris[t + 3] = b; tris[t + 4] = c; tris[t + 5] = d;
+        }
+        var mesh = new Mesh(); mesh.name = "transition surface";
+        mesh.vertices = verts; mesh.triangles = tris; mesh.RecalculateNormals(); mesh.RecalculateBounds();
+        return mesh;
+    }
+
+    // The drawn piece: the surface, the two sides down to the ground and the ends down to it, each
+    // face with vertices of its own so its edges stay sharp.
+    private static Mesh SolidMesh(List<Vector2> profile, float halfWidth)
+    {
+        var verts = new List<Vector3>(); var tris = new List<int>(); var uv = new List<Vector2>();
+        var n = profile.Count;
+        // The surface.
+        var along = 0f;
+        for (var i = 0; i < n; i++)
+        {
+            if (i > 0) along += (float)Math.Sqrt((profile[i].x - profile[i - 1].x) * (profile[i].x - profile[i - 1].x) + (profile[i].y - profile[i - 1].y) * (profile[i].y - profile[i - 1].y));
+            verts.Add(new Vector3(-halfWidth, profile[i].y, profile[i].x)); uv.Add(new Vector2(0f, along / 2f));
+            verts.Add(new Vector3(halfWidth, profile[i].y, profile[i].x)); uv.Add(new Vector2(halfWidth, along / 2f));
+        }
+        for (var i = 0; i < n - 1; i++) { int a = i * 2; tris.Add(a); tris.Add(a + 2); tris.Add(a + 1); tris.Add(a + 1); tris.Add(a + 2); tris.Add(a + 3); }
+        // The sides: each surface point down to the ground.
+        foreach (var side in new[] { -1f, 1f })
+        {
+            var start = verts.Count;
+            for (var i = 0; i < n; i++)
+            {
+                verts.Add(new Vector3(side * halfWidth, profile[i].y, profile[i].x)); uv.Add(new Vector2(profile[i].x / 2f, profile[i].y / 2f));
+                verts.Add(new Vector3(side * halfWidth, 0f, profile[i].x)); uv.Add(new Vector2(profile[i].x / 2f, 0f));
+            }
+            for (var i = 0; i < n - 1; i++)
+            {
+                int a = start + i * 2;
+                if (side < 0) { tris.Add(a); tris.Add(a + 1); tris.Add(a + 2); tris.Add(a + 2); tris.Add(a + 1); tris.Add(a + 3); }
+                else { tris.Add(a); tris.Add(a + 2); tris.Add(a + 1); tris.Add(a + 2); tris.Add(a + 3); tris.Add(a + 1); }
+            }
+        }
+        // The ends: from the first and the last point down to the ground, where they stand up.
+        foreach (var end in new[] { 0, n - 1 })
+        {
+            var p = profile[end]; if (p.y < 0.01f) continue;
+            var start = verts.Count; var facing = end == 0 ? -1f : 1f;
+            verts.Add(new Vector3(-halfWidth, p.y, p.x)); verts.Add(new Vector3(halfWidth, p.y, p.x));
+            verts.Add(new Vector3(-halfWidth, 0f, p.x)); verts.Add(new Vector3(halfWidth, 0f, p.x));
+            uv.Add(new Vector2(0f, p.y)); uv.Add(new Vector2(halfWidth, p.y)); uv.Add(new Vector2(0f, 0f)); uv.Add(new Vector2(halfWidth, 0f));
+            if (facing > 0) { tris.Add(start); tris.Add(start + 1); tris.Add(start + 2); tris.Add(start + 1); tris.Add(start + 3); tris.Add(start + 2); }
+            else { tris.Add(start); tris.Add(start + 2); tris.Add(start + 1); tris.Add(start + 1); tris.Add(start + 2); tris.Add(start + 3); }
+        }
+        var cols = new Color[verts.Count]; for (var i = 0; i < cols.Length; i++) cols[i] = Color.white;
+        var mesh = new Mesh(); mesh.name = "transition";
+        mesh.vertices = verts.ToArray(); mesh.uv = uv.ToArray(); mesh.colors = cols; mesh.triangles = tris.ToArray();
+        mesh.RecalculateNormals(); mesh.RecalculateBounds();
+        return mesh;
     }
 
     private static void Remove(Placed p)

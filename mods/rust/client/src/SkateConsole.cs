@@ -208,19 +208,28 @@ public static class SkateConsole
         {
             // The game's own assemblies only: the engine, the runtime and the loader are skipped.
             string name; try { name = assembly.GetName().Name; } catch (Exception) { continue; }
-            if (name.StartsWith("System") || name.StartsWith("mscorlib") || name.StartsWith("netstandard") || name.StartsWith("Microsoft") || name.StartsWith("Il2Cpp") || name.StartsWith("BepInEx") || name.StartsWith("Unity") || name.StartsWith("Mono") || name.StartsWith("0Harmony") || name.StartsWith("ShortcutSkate")) continue;
+            if (name.StartsWith("System") || name.StartsWith("mscorlib") || name.StartsWith("netstandard") || name.StartsWith("Microsoft") || name.StartsWith("Il2Cpp") || name.StartsWith("BepInEx") || name.StartsWith("Unity") || name.StartsWith("Mono") || name.StartsWith("0Harmony") || name.StartsWith("ShortcutSkate") || name.StartsWith("AsmResolver") || name.StartsWith("Cpp2IL") || name.StartsWith("LibCpp2IL") || name.StartsWith("Iced")) continue;
+            // The loader's own libraries (BepInEx\core) are not the game's.
+            string loc = ""; try { loc = (assembly.Location ?? "").Replace('\\', '/'); } catch (Exception) { }
+            if (loc.Contains("/BepInEx/core/")) continue;
             Type[] types; try { types = assembly.GetTypes(); } catch (System.Reflection.ReflectionTypeLoadException e) { types = e.Types; } catch (Exception) { continue; }
             foreach (var t in types) if (t != null) all.Add(t);
         }
+        // An obfuscated build can carry more than one enum with that member: each is tried.
+        var candidates = new System.Collections.Generic.List<Type>();
         foreach (var t in all)
         {
             if (!t.IsEnum) continue;
             enums++;
-            try { if (Enum.IsDefined(t, "ConsoleCommand")) { messageType = t; break; } } catch (Exception) { }
+            try { if (Enum.IsDefined(t, "ConsoleCommand")) candidates.Add(t); } catch (Exception) { }
         }
-        if (messageType == null) return "no enum with a ConsoleCommand member among " + enums + " enums";
+        if (candidates.Count == 0) return "no enum with a ConsoleCommand member among " + enums + " enums";
         var flags = System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance;
         Type writeType = null; System.Reflection.MethodInfo foundPacketId = null, foundString = null, foundSend = null; Type foundSendInfo = null;
+        var tried = new System.Text.StringBuilder();
+        foreach (var cand in candidates)
+        {
+        messageType = cand;
         foreach (var w in all)
         {
             if (!w.IsClass || w.IsAbstract) continue;
@@ -229,21 +238,36 @@ public static class SkateConsole
             foreach (var m in methods)
             {
                 var ps = m.GetParameters();
-                if (ps.Length == 1 && ps[0].ParameterType == messageType && pid == null) pid = m;
+                // The packet id is written as the enum, or (a build that took the enum out of the
+                // signature) as its underlying integer.
+                if (ps.Length == 1 && (Bare(ps[0].ParameterType) == messageType || Bare(ps[0].ParameterType) == Enum.GetUnderlyingType(messageType)) && m.ReturnType == typeof(void) && pid == null) pid = m;
                 if (ps.Length >= 1 && ps.Length <= 2 && ps[0].ParameterType == typeof(string) && (ps.Length == 1 || ps[1].ParameterType == typeof(bool)) && m.ReturnType == typeof(void) && (str == null || ps.Length < extra + 1)) { str = m; extra = ps.Length - 1; }
-                if (ps.Length == 1 && ps[0].ParameterType.IsValueType && !ps[0].ParameterType.IsPrimitive && !ps[0].ParameterType.IsEnum && snd == null)
+                var st = ps.Length == 1 ? Bare(ps[0].ParameterType) : null;
+                if (st != null && st.IsValueType && !st.IsPrimitive && !st.IsEnum && snd == null)
                 {
                     // The struct is built from a single reference: the connection.
-                    foreach (var c in ps[0].ParameterType.GetConstructors())
+                    foreach (var c in st.GetConstructors())
                     {
                         var cps = c.GetParameters();
-                        if (cps.Length == 1 && cps[0].ParameterType.IsClass && !cps[0].ParameterType.IsGenericType && cps[0].ParameterType != typeof(string)) { snd = m; info = ps[0].ParameterType; break; }
+                        if (cps.Length == 1 && cps[0].ParameterType.IsClass && !cps[0].ParameterType.IsGenericType && cps[0].ParameterType != typeof(string)) { snd = m; info = st; break; }
                     }
                 }
             }
             if (pid != null && str != null && snd != null) { writeType = w; foundPacketId = pid; foundString = str; foundSend = snd; foundSendInfo = info; writeStringExtra = extra; break; }
         }
-        if (writeType == null) return "no write type with a method taking " + messageType.FullName + ", one taking a string and one taking a connection-built struct";
+        if (writeType != null && Bare(foundPacketId.GetParameters()[0].ParameterType) != messageType)
+        {
+            // Written as a plain integer: which of the write's integer methods writes the packet
+            // id cannot be told from its signature, and the wrong one would send a broken packet.
+            // Nothing is sent; the log names them for the next build.
+            var bytes = new System.Text.StringBuilder();
+            foreach (var m in writeType.GetMethods(flags)) { var ps = m.GetParameters(); if (ps.Length == 1 && ps[0].ParameterType == foundPacketId.GetParameters()[0].ParameterType && m.ReturnType == typeof(void)) bytes.Append(bytes.Length > 0 ? "," : "").Append(m.Name); }
+            return "a write type " + writeType.FullName + " (string " + foundString.Name + ", send " + foundSend.Name + "(" + foundSendInfo.FullName + ")) takes the packet id only as " + foundPacketId.GetParameters()[0].ParameterType.Name + ": " + bytes + "; not sent (which one is the packet id is not known)";
+        }
+        if (writeType != null) break;
+        tried.Append(tried.Length > 0 ? " | " : "").Append(messageType.Assembly.GetName().Name).Append(':').Append(messageType.FullName).Append(' ').Append(Taking(all, messageType));
+        }
+        if (writeType == null) return "no write type with a method taking the packet enum, one taking a string and one taking a connection-built struct; " + candidates.Count + " enums with ConsoleCommand: " + tried;
         Type clientType = null; System.Reflection.MethodInfo foundStart = null; System.Reflection.MemberInfo connectionMember = null;
         foreach (var k in all)
         {
@@ -279,6 +303,7 @@ public static class SkateConsole
         if (conn == null) { sendPrepared = false; return "the client at " + where + " has no connection yet"; }
         netClient = clientValue; connection = conn; startWrite = foundStart; packetId = foundPacketId; writeString = foundString; sendWrite = foundSend; sendInfoType = foundSendInfo;
         consoleCommandId = Enum.Parse(messageType, "ConsoleCommand");
+        if (Bare(packetId.GetParameters()[0].ParameterType) != messageType) consoleCommandId = Convert.ChangeType(consoleCommandId, Bare(packetId.GetParameters()[0].ParameterType));
         sendFailed = false; SendState = "ready";
         Out.Say("CONSOLE the console path by shape: client " + where + " (" + clientType.FullName + "), write " + writeType.FullName + "." + foundStart.Name + "(), packet " + foundPacketId.Name + "(" + messageType.FullName + "), string " + foundString.Name + ", send " + foundSend.Name + "(" + foundSendInfo.FullName + "), connection " + connectionMember.Name);
         return "";
@@ -372,6 +397,33 @@ public static class SkateConsole
             return "listing in " + path + ", " + sb.Length + " chars";
         }
         catch (Exception e) { return "no listing: " + e.GetType().Name + ": " + e.Message; }
+    }
+
+    // A parameter passed by reference (`in`, `ref`) is matched by the type it refers to.
+    private static Type Bare(Type t) { return t != null && t.IsByRef ? t.GetElementType() : t; }
+
+    // Where the packet enum is used at all: every method, in any game assembly, with a parameter or a
+    // return of that type (at most a dozen), for the log when the write type is not found.
+    private static string Taking(System.Collections.Generic.List<Type> all, Type messageType)
+    {
+        var sb = new System.Text.StringBuilder("methods using " + messageType.Name + ":"); var n = 0;
+        var flags = System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.DeclaredOnly;
+        foreach (var t in all)
+        {
+            System.Reflection.MethodInfo[] ms; try { ms = t.GetMethods(flags); } catch (Exception) { continue; }
+            foreach (var m in ms)
+            {
+                System.Reflection.ParameterInfo[] ps; try { ps = m.GetParameters(); } catch (Exception) { continue; }
+                var uses = m.ReturnType == messageType;
+                foreach (var pi in ps) if (Bare(pi.ParameterType) == messageType) uses = true;
+                if (!uses) continue;
+                sb.Append(n == 0 ? " " : "; ").Append(t.FullName).Append('.').Append(m.Name).Append('(');
+                for (var i = 0; i < ps.Length; i++) sb.Append(i > 0 ? "," : "").Append(ps[i].ParameterType.Name);
+                sb.Append(")->").Append(m.ReturnType.Name);
+                if (++n >= 12) return sb.ToString();
+            }
+        }
+        return n == 0 ? sb.Append(" none").ToString() : sb.ToString();
     }
 
     // The loaded assemblies whose names mention the network, for the log when a type is missing.

@@ -549,6 +549,39 @@ fn looks_binary(bytes: &[u8]) -> bool {
     bytes.iter().take(8000).any(|b| *b == 0)
 }
 
+fn skate_park_body(text: &str) -> Res<&str> {
+    const BEGIN: &str = "    // BEGIN SHARED SKATE PARK\n";
+    const END: &str = "    // END SHARED SKATE PARK\n";
+    if text.matches(BEGIN).count() != 1 || text.matches(END).count() != 1 {
+        return Err("shared SkatePark block requires exactly one ordered marker pair".to_string());
+    }
+    let (_, after) = text
+        .split_once(BEGIN)
+        .ok_or("missing shared SkatePark begin marker")?;
+    let (body, _) = after
+        .split_once(END)
+        .ok_or("missing shared SkatePark end marker")?;
+    if body.trim().is_empty() {
+        return Err("shared SkatePark block is empty".to_string());
+    }
+    Ok(body)
+}
+
+fn check_skate_park_embed(root: &Path) -> Res<()> {
+    let shared = std::fs::read_to_string(root.join("mods/rust/shared/SkatePark.cs"))
+        .map_err(|error| format!("canonical SkatePark source is unreadable: {error}"))?;
+    let plugin = std::fs::read_to_string(root.join("mods/rust/plugins/ShortcutSkate.cs"))
+        .map_err(|error| format!("embedded SkatePark source is unreadable: {error}"))?;
+    let shared = shared.replace("\r\n", "\n");
+    let plugin = plugin.replace("\r\n", "\n");
+    if skate_park_body(&shared)? != skate_park_body(&plugin)? {
+        return Err(
+            "embedded SkatePark source differs from the canonical shared block".to_string(),
+        );
+    }
+    Ok(())
+}
+
 pub fn run_cli(root: &Path) -> Res<()> {
     let mut leaks = Vec::new();
     let mut offsets = Vec::new();
@@ -640,6 +673,7 @@ pub fn run_cli(root: &Path) -> Res<()> {
             tests.len()
         ));
     }
+    check_skate_park_embed(root)?;
     println!(
         "publish-check: clean — nothing but the product is tracked, no test outside \
          crates/approved_tests, and no retail offsets in the {scanned} text file(s) read"

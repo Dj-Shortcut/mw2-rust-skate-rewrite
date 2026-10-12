@@ -405,8 +405,12 @@ namespace Shortcut.RustMod
         }
     }
 
-    public enum SkateParkKind { Bank, Kicker, QuarterPipe, LedgeLow, LedgeHigh, LongLedge, Funbox, Halfpipe }
-    public enum SkateParkMaterial { Stone, Metal, Wood }
+        public static bool CanExemptFly(bool trusted, double dt, double vertical)
+        {
+            return trusted && SkateSessionBounds.Finite(dt) && dt > 0 && dt <= SkateSessionBounds.MaximumBatchSeconds &&
+                SkateSessionBounds.Finite(vertical) && vertical >= 0 && vertical <= MaximumFlyVerticalSpeed * dt;
+        }
+    }
 
     public enum SkateParkSelectionAction { Next, Cancel, PlacementFailed, PlacementSucceeded }
 
@@ -510,8 +514,12 @@ namespace Shortcut.RustMod
             return string.Join(", ", names);
         }
         private static bool DisplayGestureName(string name)
-        { return ValidGestureName(name) && name.IndexOf(',') < 0 && name.IndexOf('\u2028') < 0 && name.IndexOf('\u2029') < 0; }
+        { return ValidGestureName(name) && name.IndexOf(',') < 0 && name.IndexOf((char)0x2028) < 0 && name.IndexOf((char)0x2029) < 0; }
     }
+
+    // BEGIN SHARED SKATE PARK
+    public enum SkateParkKind { Bank, Kicker, QuarterPipe, LedgeLow, LedgeHigh, LongLedge, Funbox, Halfpipe }
+    public enum SkateParkMaterial { Stone, Metal, Wood }
 
     public struct SkateParkPart
     {
@@ -523,6 +531,14 @@ namespace Shortcut.RustMod
     public struct SkateParkTransform
     {
         public double X, Y, Z, Yaw, Pitch;
+    }
+
+    public struct SkateParkBlock
+    {
+        public readonly string Prefab;
+        public readonly double X, Y, Z, Yaw, Pitch;
+        public SkateParkBlock(string prefab, double x, double y, double z, double yaw, double pitch)
+        { Prefab = prefab; X = x; Y = y; Z = z; Yaw = yaw; Pitch = pitch; }
     }
 
     public static class SkateParkLayout
@@ -654,7 +670,7 @@ namespace Shortcut.RustMod
             transform = new SkateParkTransform();
             SkateParkPart part;
             if (!TryPart(kind, index, out part) || !Coordinate(anchorX) || !Coordinate(anchorY) || !Coordinate(anchorZ) ||
-                !SkateSessionBounds.Finite(anchorYaw) || Math.Abs(anchorYaw) > 1000000) return false;
+                !Finite(anchorYaw) || Math.Abs(anchorYaw) > 1000000) return false;
             double yaw = anchorYaw % 360;
             if (yaw < 0) yaw += 360;
             double sin = Math.Sin(yaw * Degrees), cos = Math.Cos(yaw * Degrees);
@@ -688,9 +704,149 @@ namespace Shortcut.RustMod
             anchorY = baseline;
             return true;
         }
+        public static bool TryAnchor(SkateParkKind kind, int index, double partX, double partY,
+            double partZ, double partYaw, out double anchorX, out double anchorY,
+            out double anchorZ, out double anchorYaw)
+        {
+            anchorX = anchorY = anchorZ = anchorYaw = 0;
+            SkateParkPart part;
+            if (!TryPart(kind, index, out part) || !Coordinate(partX) || !Coordinate(partY) ||
+                !Coordinate(partZ) || !Angle(partYaw)) return false;
+            double yaw = Normalize(partYaw - part.Yaw);
+            double sin = Math.Sin(yaw * Degrees), cos = Math.Cos(yaw * Degrees);
+            double x = partX - part.Right * cos - part.Forward * sin;
+            double y = partY - part.Height;
+            double z = partZ + part.Right * sin - part.Forward * cos;
+            if (!Coordinate(x) || !Coordinate(y) || !Coordinate(z)) return false;
+            anchorX = x; anchorY = y; anchorZ = z; anchorYaw = yaw;
+            return true;
+        }
+
+        public static bool TryMatch(SkateParkKind kind, IReadOnlyList<SkateParkBlock> blocks,
+            double tolerance, out double anchorX, out double anchorY, out double anchorZ, out double anchorYaw)
+        {
+            anchorX = anchorY = anchorZ = anchorYaw = 0;
+            int count = PartCount(kind);
+            if (count == 0 || count > 36 || blocks == null || blocks.Count != count || !Finite(tolerance) ||
+                tolerance < 0 || tolerance > 0.1) return false;
+            SkateParkBlock first = blocks[0];
+            for (int i = 0; i < count; i++)
+            {
+                SkateParkBlock block = blocks[i];
+                if (!Valid(block)) return false;
+                if (Before(block, first)) first = block;
+            }
+            bool found = false;
+            double foundX = 0, foundY = 0, foundZ = 0, foundYaw = 0;
+            for (int index = 0; index < count; index++)
+            {
+                SkateParkPart part;
+                if (!TryPart(kind, index, out part) || !string.Equals(first.Prefab, part.Prefab, StringComparison.Ordinal) ||
+                    !CloseAngle(first.Pitch, part.Pitch, tolerance)) continue;
+                double x, y, z, yaw;
+                if (!TryAnchor(kind, index, first.X, first.Y, first.Z, first.Yaw, out x, out y, out z, out yaw) ||
+                    !Match(kind, blocks, tolerance, x, y, z, yaw)) continue;
+                if (found && (!ClosePosition(x, y, z, foundX, foundY, foundZ, tolerance) ||
+                    !CloseAngle(yaw, foundYaw, tolerance))) return false;
+                if (!found) { found = true; foundX = x; foundY = y; foundZ = z; foundYaw = yaw; }
+            }
+            if (!found) return false;
+            anchorX = foundX; anchorY = foundY; anchorZ = foundZ; anchorYaw = foundYaw;
+            return true;
+        }
+
+        public static bool VisualOrigin(SkateParkKind kind, out double right, out double forward,
+            out double height, out double yaw)
+        {
+            right = forward = height = yaw = 0;
+            SkateParkPart first;
+            if (!TryPart(kind, 0, out first)) return false;
+            switch (kind)
+            {
+                case SkateParkKind.Bank: case SkateParkKind.Kicker: case SkateParkKind.QuarterPipe:
+                    forward = -HalfLength * Math.Cos(first.Pitch * Degrees); break;
+                case SkateParkKind.Halfpipe: right = forward = HalfLength; break;
+            }
+            return true;
+        }
+
+        private static bool Match(SkateParkKind kind, IReadOnlyList<SkateParkBlock> blocks,
+            double tolerance, double anchorX, double anchorY, double anchorZ, double anchorYaw)
+        {
+            int count = PartCount(kind);
+            ulong used = 0;
+            for (int index = 0; index < count; index++)
+            {
+                SkateParkPart part;
+                SkateParkTransform expected;
+                if (!TryPart(kind, index, out part) ||
+                    !TryTransform(kind, index, anchorX, anchorY, anchorZ, anchorYaw, out expected)) return false;
+                int match = -1;
+                for (int observed = 0; observed < count; observed++)
+                {
+                    SkateParkBlock block = blocks[observed];
+                    if (!string.Equals(part.Prefab, block.Prefab, StringComparison.Ordinal) ||
+                        !ClosePosition(block.X, block.Y, block.Z, expected.X, expected.Y, expected.Z, tolerance) ||
+                        !CloseAngle(block.Yaw, expected.Yaw, tolerance) ||
+                        !CloseAngle(block.Pitch, expected.Pitch, tolerance)) continue;
+                    if (match >= 0) return false;
+                    match = observed;
+                }
+                if (match < 0 || (used & (1UL << match)) != 0) return false;
+                used |= 1UL << match;
+            }
+            return used == (1UL << count) - 1;
+        }
+
+        private static bool Valid(SkateParkBlock block)
+        { return block.Prefab != null && Coordinate(block.X) && Coordinate(block.Y) && Coordinate(block.Z) &&
+            Angle(block.Yaw) && Angle(block.Pitch); }
+
+        private static bool Before(SkateParkBlock a, SkateParkBlock b)
+        {
+            int prefab = string.Compare(a.Prefab, b.Prefab, StringComparison.Ordinal);
+            if (prefab != 0) return prefab < 0;
+            if (a.X != b.X) return a.X < b.X;
+            if (a.Y != b.Y) return a.Y < b.Y;
+            if (a.Z != b.Z) return a.Z < b.Z;
+            double yawA = Normalize(a.Yaw), yawB = Normalize(b.Yaw);
+            if (yawA != yawB) return yawA < yawB;
+            return Normalize(a.Pitch) < Normalize(b.Pitch);
+        }
+
+        private static bool ClosePosition(double x, double y, double z, double otherX, double otherY,
+            double otherZ, double tolerance)
+        {
+            double dx = x - otherX, dy = y - otherY, dz = z - otherZ;
+            return dx * dx + dy * dy + dz * dz <= tolerance * tolerance;
+        }
+
+        private static bool CloseAngle(double a, double b, double tolerance)
+        {
+            double delta = (a - b) % 360;
+            if (delta < -180) delta += 360;
+            else if (delta > 180) delta -= 360;
+            return Math.Abs(delta) <= tolerance;
+        }
+
+        private static double Normalize(double angle)
+        {
+            double value = angle % 360;
+            if (value < 0) value += 360;
+            return value >= 360 || value == 0 ? 0 : value;
+        }
+
+        private static bool Angle(double value)
+        { return Finite(value) && Math.Abs(value) <= 1000000; }
+
+        private static bool Finite(double value)
+        { return !double.IsNaN(value) && !double.IsInfinity(value); }
+
         private static bool Coordinate(double value)
-        { return SkateSessionBounds.Finite(value) && Math.Abs(value) <= 100000; }
+        { return Finite(value) && Math.Abs(value) <= 100000; }
     }
+
+    // END SHARED SKATE PARK
 
     public struct SkatePracticePart
     {

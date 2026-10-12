@@ -2,7 +2,7 @@
 // against the player, and the rider's feet, hands and head. A step larger than a frame could
 // carry at any speed is a snap the player sees, and it is logged with what was going on, so a
 // session's log names its own visual bugs ("SKATE snap ..."), which `zz last` counts. At most a
-// handful a second and a few hundred a session, so the log stays readable.
+// few hundred a ride, so the log stays readable.
 using System;
 using Shortcut.RustMod;
 using UnityEngine;
@@ -18,7 +18,9 @@ public static class SkateWatch
     private static RideMode mode;
     private static string trick = "";
 
-    public static void Reset() { had = false; }
+    // A new ride: the frames before it are not compared, and its snaps are said afresh (Snaps keeps
+    // counting over the session, for the summary).
+    public static void Reset() { had = false; Said = 0; }
 
     // Called once a frame after the board and the rider are placed. Skipped across a pause and
     // when the ride is off or bailed, where big steps are the point.
@@ -67,7 +69,7 @@ public static class SkateWatch
                     Said++;
                     Out.Say("SKATE snap" + line + " | " + mode + (mode != SkateRide.Mode ? " -> " + SkateRide.Mode : "") + " speed " + SkateRide.Speed.ToString("F1")
                         + (SkateRide.Mode == RideMode.Grind ? " " + SkateRide.GrindKind : "") + (SkateRide.PushPhase > 0f ? " push " + SkateRide.PushPhase.ToString("F2") : "")
-                        + (SkateRide.Handplant ? " handplant" : "") + (SkateRide.Grabbing ? " grab" : "") + " last=" + trick + (Said == MostSaid ? " (no more said this session)" : ""));
+                        + (SkateRide.Handplant ? " handplant" : "") + (SkateRide.Grabbing ? " grab" : "") + " last=" + trick + (Said == MostSaid ? " (no more said this ride)" : ""));
                 }
             }
         }

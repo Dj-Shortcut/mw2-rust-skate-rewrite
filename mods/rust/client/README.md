@@ -58,7 +58,7 @@ game; see [The controller](#the-controller).
 | --- | --- | --- |
 | `Y` | Get on; again gets off. | |
 | Left stick | Steer, by how far it is pushed. Far and straight forward or back: push or brake. | Held still more than half way to a side (for at least 0.06 s): the rider turns that way for as long as it is held. One full circle round the rim, after a pop, within a second: a body varial, the rider turns a half round and the board does not; the landing is switch. A stick travelling round the rim (faster than 180° a second) is never read as a held side, so the circle asks for no turn however easy its pace. |
-| `A` | Push with the back foot: it comes down about 0.19 m beside the board on the toe side, the leg nearly straight, and sweeps back while the body dips a little; the foot stays where it came down while the board rolls on. Rolling tail first, the push drives on backward (a fakie push). | |
+| `A` | Push with the back foot (pushing takes the board to 11 m/s; slopes take it on to 25 m/s, 90 km/h, over the ground, the limit the server plugin 0.3.7 is configured for): it comes down about 0.19 m beside the board on the toe side, the leg nearly straight, and sweeps back while the body dips a little; the foot stays where it came down while the board rolls on. Rolling tail first, the push drives on backward (a fakie push). | |
 | `X` | Push with the front foot (mongo). | |
 | `A` tapped while the right stick is held back, then the flick | No comply: the front foot steps down and the board pops off the back foot, a little lower than an ollie ("No Comply 180" with the left stick). | |
 | `LT` + `A`, `LT` + `X` or `RT` + `X`, `RT` + `A` | Foot plants: boneless, fastplant, beanplant (the front foot planted for a moment, a little higher than an ollie). | |
@@ -246,11 +246,14 @@ Over each assembly the matching model from the ramp pack is drawn (its `Visual` 
 surface; the model sits 2 cm above the native tiles. The native tiles' renderers are switched
 off under it. The server keeps its own blocks: they are its collision and what unmodded clients
 see; nothing is sent. A demolished piece takes its model with it. The bank, kicker, ledges and
-funbox models match the native assemblies; the quarterpipe and halfpipe models are circular
-(2.5 m) and shorter than the native 15°/35° facets, so they are placed by their entry (the
-quarterpipe) and their flat (the halfpipe) and do not yet cover the native tiles. Without the
-`.glb` files next to the plugin the pieces are found and nothing is drawn; the log says which
-file is missing. Unverified in game.
+funbox models match the native assemblies. The quarterpipe and the halfpipe are not drawn from
+their authored models (circular, 2.5 m, shorter than the native tiles, which stood out of them):
+they are made in the client on the tiles' own tops, a 15° and a 35° face from the flat (a
+halfpipe both ways from its 6 m flat, with its 3 m decks), the two bends rounded with a 3 m radius
+so the board rolls through them, the coping edge left sharp, nowhere under a tile and at most
+about 10 cm above one; the riding surface is their collider, and their colour is the authored
+model's when it is there. Without the `.glb` files next to the plugin the other pieces are found
+and not drawn; the log says which file is missing. Unverified in game.
 
 ### Steps
 
