@@ -22,19 +22,38 @@ public static class SkateInbox
     // The log file this route would show up in; set by the tests.
     public static string LogPath;
 
+    private static string Log() { return LogPath ?? Path.Combine(BepInEx.Paths.BepInExRootPath, "LogOutput.log"); }
+
+    // Called when the plugin loads, so a marker sent while connecting or waking up is kept: only
+    // what was written before the plugin loaded is skipped.
+    public static void Start()
+    {
+        try
+        {
+            var path = Log();
+            if (!File.Exists(path)) { readTo = 0; Report("waiting for " + Path.GetFileName(path)); return; }
+            using (var f = Open(path)) readTo = f.Length;
+            Report("watching " + Path.GetFileName(path) + " from byte " + readTo);
+        }
+        catch (Exception e) { Report("start threw " + e.GetType().Name + ": " + e.Message); }
+    }
+
     public static void Frame(float now)
     {
         if (now < nextAt) return;
         nextAt = now + EverySeconds;
         try
         {
-            var path = LogPath ?? Path.Combine(BepInEx.Paths.BepInExRootPath, "LogOutput.log");
-            if (!File.Exists(path)) { State = "no " + Path.GetFileName(path); return; }
-            using (var f = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+            var path = Log();
+            if (!File.Exists(path)) { Report("no " + Path.GetFileName(path)); return; }
+            using (var f = Open(path))
             {
-                // Only what is written after the session starts counts.
-                if (readTo < 0 || readTo > f.Length) { readTo = f.Length; State = "watching"; return; }
+                // Without Start, only what is written from the first frame on counts.
+                if (readTo < 0) { readTo = f.Length; Report("watching " + Path.GetFileName(path) + " from byte " + readTo); return; }
+                // A log started over holds only new lines.
+                if (readTo > f.Length) { readTo = 0; partial = ""; Report("log started over"); }
                 if (f.Length == readTo) return;
+                Report("reading");
                 f.Seek(readTo, SeekOrigin.Begin);
                 var buffer = new byte[Math.Min(f.Length - readTo, 1 << 20)];
                 var n = f.Read(buffer, 0, buffer.Length);
@@ -54,7 +73,17 @@ public static class SkateInbox
                 }
             }
         }
-        catch (Exception e) { State = "reading threw " + e.GetType().Name + ": " + e.Message; }
+        catch (Exception e) { Report("reading threw " + e.GetType().Name + ": " + e.Message); }
+    }
+
+    private static FileStream Open(string path) { return new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete); }
+
+    // Each change of state is logged once, so a broken reader is told apart from a quiet route.
+    private static void Report(string state)
+    {
+        if (state == State) return;
+        State = state;
+        Out.Say("INBOX state: " + state);
     }
 
     public static void Reset() { Seen = 0; Last = State = partial = ""; readTo = -1; nextAt = 0f; }

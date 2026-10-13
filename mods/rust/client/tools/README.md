@@ -147,7 +147,7 @@ Set by the scripts for one another; `sv name value` sets one by hand.
 | `$psteps` | `session` | Steps for the plugin. |
 | `$pplug`, `$prt` | `session` | Folder with the plugin, folder with the changed runtime. |
 | `$pdone` | `session` | Seconds after which a session in a world is ended. |
-| `$plimit`, `$pquiet`, `$pdirect` | `play` | End the session that many seconds after its start; turn the sound down; start the client directly with `+connect` instead of through the Steam shortcut. |
+| `$plimit`, `$pquiet`, `$pdirect`, `$plisten` | `play` | End the session that many seconds after its start; turn the sound down; start the client directly with `+connect` instead of through the Steam shortcut; with `1`, keep `UnityLogListening` on (the inbox probe needs it; `sv plisten 0` turns it off again). |
 | `$pgentest` | `interop` | Generate into a folder of its own instead of the one sessions use. |
 | `$psteam`, `$pshortcut` | `session` | Start through the Steam shortcut of that name. |
 | `$pconnect` | `session` | Join the server in `server.txt` at start (direct start only). |
