@@ -68,8 +68,8 @@ public static class SkateWatch
                 {
                     Said++;
                     Out.Say("SKATE snap" + line + " | " + mode + (mode != SkateRide.Mode ? " -> " + SkateRide.Mode : "") + " speed " + SkateRide.Speed.ToString("F1")
-                        + (SkateRide.Mode == RideMode.Grind ? " " + SkateRide.GrindKind : "") + (SkateRide.PushPhase > 0f ? " push " + SkateRide.PushPhase.ToString("F2") : "")
-                        + (SkateRide.Handplant ? " handplant" : "") + (SkateRide.Grabbing ? " grab" : "") + " last=" + trick + (Said == MostSaid ? " (no more said this ride)" : ""));
+                        + (SkateRide.Mode == RideMode.Grind ? " " + SkateRide.GrindKind : "") + (SkateRide.PushPhase > 0f ? " push " + SkateRide.PushPhase.ToString("F2") + (SkateRide.PushLead ? " lead foot" : "") : "")
+                        + (SkateRide.TailFirst ? " tail first" : "") + (SkateRide.Handplant ? " handplant" : "") + (SkateRide.Grabbing ? " grab" : "") + " last=" + trick + (Said == MostSaid ? " (no more said this ride)" : ""));
                 }
             }
         }

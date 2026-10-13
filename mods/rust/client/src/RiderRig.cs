@@ -32,7 +32,7 @@ public static class RiderRig
     public static string MissAt = "", Error = "", MotionError = "";
     private static SkateRiderMotionState motion;
     private static RideMode motionMode = RideMode.Ground;
-    public static int Applied, Refusals;
+    public static int Applied, Refusals, WithoutPush;
     // The module's last pose as computed, and as shown after the secondary motion; for the checks.
     public static SkateRiderPose Posed, Shown; public static Vector3 PosedPlane;
     private static Transform[] spine = new Transform[0];
@@ -515,8 +515,20 @@ public static class RiderRig
             SkateRiderPose pose; string error;
             if (!SkateRider.TryCreate(Rig, input, out pose, out error))
             {
-                if (Refusals++ == 0 || error != Error) Say("pose refused: " + error);
-                Error = error; return;
+                // A push the legs cannot reach (the module plants the leading foot 0.6 m ahead of the
+                // deck's middle, at their limit): the frame is shown without the push rather than
+                // not at all, so the rider never stands still for a frame while the board rolls on.
+                var pushed = mode == RideMode.Ground && SkateRide.PushPhase > 0f;
+                var withoutPush = pushed ? new SkateRiderInput(input.BoardPosition, input.BoardForward, input.BoardUp, input.Stance, input.Switch,
+                    speed, lean, Crouch, false, false, 0, SkateRide.FlipDeg, grab, false, SkateKeys.LookYaw % 360f, SkatePose.FootLift - AnkleHeight,
+                    DeckTop, 0, false, plant, 0, handplant, SkateRide.Clamp(SkateBoard.PitchDegrees, -40f, 40f) * Math.PI / 180.0, 0, chestLead) : input;
+                if (!pushed || !SkateRider.TryCreate(Rig, withoutPush, out pose, out error))
+                {
+                    if (Refusals++ == 0 || error != Error) Say("pose refused: " + error);
+                    Error = error; return;
+                }
+                if (WithoutPush++ == 0 || error != Error) Say("pose shown without the push: " + error);
+                Error = error;
             }
             Posed = pose; PosedPlane = plane;
             // Secondary motion: the pelvis springs and the shoulders and hands lag a little behind
