@@ -33,6 +33,8 @@ public static class RiderRig
     private static SkateRiderMotionState motion;
     private static RideMode motionMode = RideMode.Ground;
     public static int Applied, Refusals;
+    // The module's last pose as computed, and as shown after the secondary motion; for the checks.
+    public static SkateRiderPose Posed, Shown; public static Vector3 PosedPlane;
     private static Transform[] spine = new Transform[0];
     private static Vector3 lSole, rSole;
     private static bool failed;
@@ -516,6 +518,7 @@ public static class RiderRig
                 if (Refusals++ == 0 || error != Error) Say("pose refused: " + error);
                 Error = error; return;
             }
+            Posed = pose; PosedPlane = plane;
             // Secondary motion: the pelvis springs and the shoulders and hands lag a little behind
             // the pose, so the body is not rigid. In the air the legs' own spring carries the pop, so
             // the module's pelvis spring is off there, and a grabbing hand is pinned to its target so
@@ -570,6 +573,7 @@ public static class RiderRig
             var trailingIsLeft = SkateRide.Goofy != SkateRide.TailFirst;
             var pushLeft = SkateRide.PushLead ? !trailingIsLeft : trailingIsLeft;
             pinLeft = footDown && pushLeft; pinRight = footDown && !pushLeft;
+            Shown = pose;
             Ease(pose, plane, toToes, upV, new Vector3((float)fx, (float)fy, (float)fz), now, frameSeconds);
             Shape(upV);
             Apply(upV, legsOnly);

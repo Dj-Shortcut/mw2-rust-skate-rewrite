@@ -273,27 +273,70 @@ public static class Scenarios
         if (stage > TourRest) { tourIndex++; tourStage = 0; tourAt = game; SkateKeys.Brake = false; stillSince = -1f; }
     }
 
-    // The feet, watched from the side as the owner sees them: back and forth on the runway, each
-    // run a few pushes, an ollie, a revert on landing and a stop; FeetRuns runs, then done. The
-    // camera follows from the rider's front, so screenshots show where each foot is.
-    public const float FeetCycle = 8f; public const int FeetRuns = 8;
-    private static int feetRun = -1; private static bool feetPopped, feetReverted; private static float feetSpinUntil;
+    // The feet, watched as the owner sees them: back and forth on the runway, each run a few pushes,
+    // an ollie, a revert on landing and a stop; FeetRuns runs, then done. The camera follows from
+    // the rider's front on even runs and from behind the board on odd ones, so screenshots show
+    // where each foot is. What matters is also logged in FEET lines, in the board's own frame:
+    // along the nose (+ toward the nose), to the toe side (+ the side the chest faces) and up from
+    // the deck, in metres: each push stroke where the foot came down and left, the feet through a
+    // revert, and the feet rolling. The origin is the deck top under the ankles (0.05 m toward the
+    // heels of the centre line); a foot on the ground is about 0.1 m below it, at the ankle.
+    public const float FeetCycle = 8f; public const int FeetRuns = 24;
+    private static int feetRun = -1, feetStrokes; private static bool feetPopped, feetReverted, feetWasDown, feetRolledLogged, feetWasRevert;
+    private static float feetSpinUntil, feetLow; private static string feetDown = "";
+    private static Vector3 FeetLocal(Vector3 world, Vector3 at, Vector3 nose, Vector3 toe, Vector3 up)
+    {
+        var d = world - at;
+        return new Vector3(Vector3.Dot(d, nose), Vector3.Dot(d, toe), Vector3.Dot(d, up));
+    }
+    private static string FeetLine(out float lowest, out string lowFoot)
+    {
+        lowest = 9f; lowFoot = "";
+        if (RiderRig.LFoot == null || RiderRig.RFoot == null || SkateRig.LocalT == null) return "no rig";
+        var up = SkateRide.ViewNormal; if (up.sqrMagnitude < 0.5f) up = Vector3.up;
+        var nose = SkateRide.Dir(SkateRide.NoseYaw); nose = (nose - up * Vector3.Dot(nose, up)).normalized;
+        var toe = Vector3.Cross(up, nose) * SkateRide.StanceSign;
+        // Relative to the plane the module last posed on (the deck top under the ankles, shifted
+        // toward the heels by RiderRig.HeelShift), as the bones were set in that same frame: the
+        // player has moved on since, by a frame's travel.
+        var at = RiderRig.PosedPlane;
+        var l = FeetLocal(RiderRig.LFoot.position, at, nose, toe, up); var r = FeetLocal(RiderRig.RFoot.position, at, nose, toe, up);
+        var lt = RiderRig.LToe != null ? FeetLocal(RiderRig.LToe.position, at, nose, toe, up) : l; var rt = RiderRig.RToe != null ? FeetLocal(RiderRig.RToe.position, at, nose, toe, up) : r;
+        if (l.z < r.z) { lowest = l.z; lowFoot = "left"; } else { lowest = r.z; lowFoot = "right"; }
+        var pl = FeetLocal(new Vector3((float)RiderRig.Posed.LeftAnkle.X, (float)RiderRig.Posed.LeftAnkle.Y, (float)RiderRig.Posed.LeftAnkle.Z), at, nose, toe, up);
+        var pr = FeetLocal(new Vector3((float)RiderRig.Posed.RightAnkle.X, (float)RiderRig.Posed.RightAnkle.Y, (float)RiderRig.Posed.RightAnkle.Z), at, nose, toe, up);
+        return "L " + Out.V(l) + " toes " + Out.V(lt - l) + " | R " + Out.V(r) + " toes " + Out.V(rt - r) + " | posed L " + Out.V(pl) + " R " + Out.V(pr)
+            + " | switch=" + SkateRide.Trick.Switch + " tailFirst=" + SkateRide.TailFirst + " speed=" + SkateRide.Speed.ToString("F1") + " nose=" + SkateRide.NoseYaw.ToString("F0") + " yaw=" + SkateRide.Yaw.ToString("F0");
+    }
+    private static void FeetWatch(float game)
+    {
+        if (!SkateRide.On) return;
+        float low; string foot;
+        var down = SkateRide.Mode == RideMode.Ground && SkateRide.PushPhase > (float)SkateRider.PushDown && SkateRide.PushPhase < (float)SkateRider.PushUp;
+        if (down && !feetWasDown) { feetStrokes++; feetLow = 9f; feetDown = FeetLine(out low, out foot); feetLow = low; Say("FEET stroke " + feetStrokes + " down, " + (SkateRide.PushLead ? "lead" : "back") + " foot" + (SkateRide.PushMongo ? " (mongo)" : "") + ": " + feetDown); }
+        else if (down) { FeetLine(out low, out foot); feetLow = Math.Min(feetLow, low); }
+        else if (feetWasDown) Say("FEET stroke " + feetStrokes + " up, lowest " + feetLow.ToString("F2") + ": " + FeetLine(out low, out foot));
+        feetWasDown = down;
+        var revert = SkateRide.RevertLeft != 0f;
+        if (revert && !feetWasRevert) Say("FEET revert begins: " + FeetLine(out low, out foot));
+        else if (!revert && feetWasRevert) { Say("FEET revert over: " + FeetLine(out low, out foot)); feetRolledLogged = false; }
+        feetWasRevert = revert;
+        if (!feetRolledLogged && !down && !revert && SkateRide.Mode == RideMode.Ground && SkateRide.PushPhase == 0f && Math.Abs(SkateRide.Speed) > 2f)
+        { feetRolledLogged = true; Say("FEET rolling: " + FeetLine(out low, out foot)); }
+    }
     private static void Feet(float game)
     {
         var run = (int)(game / FeetCycle); var t = game - run * FeetCycle;
         if (run >= FeetRuns) { SkateCamera.Fixed = SkateCamera.Chase = false; Finish(); return; }
         if (run != feetRun)
         {
-            feetRun = run; feetPopped = feetReverted = false;
+            feetRun = run; feetPopped = feetReverted = false; feetRolledLogged = false;
             if (!SkateRide.On) SkateRig.MountNow(yaw0);
-            SkateCamera.Fixed = true; SkateCamera.Chase = true; SkateCamera.FixedHeight = 1.3f; SkateCamera.FixedDistance = 3.2f;
-            Say("feet run " + run + ": push");
+            var behind = run % 2 == 1;
+            SkateCamera.Fixed = true; SkateCamera.Chase = true; SkateCamera.Bearing = behind ? 180f : 90f; SkateCamera.FixedHeight = behind ? 1.0f : 0.9f; SkateCamera.FixedDistance = behind ? 3.0f : 2.6f;
+            Say("feet run " + run + ": push, camera " + (behind ? "behind" : "from the rider's front") + " | " + SkateRide.StanceName + " switch=" + SkateRide.Trick.Switch);
         }
-        // The camera on whichever side of the way of travel is clear (seen live: a long ledge beside
-        // the runway hid the rider from one side).
-        RaycastHit side;
-        var blocked = Physics.Raycast(SkateRide.Position + Vector3.up * 0.6f, SkateRide.Dir(SkateRide.Yaw + 90f), out side, SkateCamera.FixedDistance + 0.5f, SkateRide.GroundMask, QueryTriggerInteraction.Ignore);
-        SkateCamera.Bearing = blocked ? 270f : 90f;
+        FeetWatch(game);
         var way = yaw0 + (run % 2) * 180f;
         SkateKeys.LookYaw = way; SkateKeys.Spin = game < feetSpinUntil ? 1f : 0f;
         SkateKeys.Push = t < 3f && Math.Abs(SkateRide.Speed) < 5f;
