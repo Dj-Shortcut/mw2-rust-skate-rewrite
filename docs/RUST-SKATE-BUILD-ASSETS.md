@@ -1,7 +1,7 @@
 # Rust park building assets
 
 The owner chose an own build picker and hotbar items; Claude owns the client.
-ShortcutSkate source **0.3.11** handles eight types via native square foundations.
+ShortcutSkate source **0.3.12** handles eight types via native square foundations.
 The stock six belt slots cannot hold all eight: use an owned item, move/equip it
 natively and wait for actual active-item/planner state. Report missing items or
 full inventory. Native acceptance is open; commands are admin setup/fallback.
@@ -41,7 +41,11 @@ is saved before destruction, and an intact veto can restore payment eligibility.
 
 Inventory/JSON have no atomic crash commit; interrupted preparing/claimed states refuse automatic minting.
 Item-owned marker data is non-pooled. Retries rebind same-owner admins, retain
-UID/kind/world and block new issue on failure. Reload needs private recovery.
+UID/kind/world and block new issue on failure. A pending delivery must be detached
+before another transfer attempt; an unverified container/world association stays
+untouched and tracked. Non-null world references refuse even if their Unity
+objects compare as destroyed. Completed owner-inventory/live-drop receipts remain valid.
+Reload needs private recovery. Existing updater pins still select 0.3.11.
 Older0.3.9 refuses nonzero provenance: retain matching park-data/source backups.
 
 Approved `skate_park_build_items` checks the actual compiled pure catalogue,
