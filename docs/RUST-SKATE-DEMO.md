@@ -13,7 +13,9 @@
 
 These boxes remain open until their stated evidence exists. Compiler checks, headless fixtures, source screenshots and upstream test assertions cannot complete native acceptance. Before taking implementation, build, validation or integration work, read the current claims and merge/install instructions in [#337](https://github.com/Dj-Shortcut/mw2-rust-skate-rewrite/issues/337), #408 and the relevant open issue/PR, following [AUTONOMY](AUTONOMY.md).
 
-The half-wall kicker attachment, one-cell mini quarterpipe, three-cell L quarterpipe and modular mega-halfpipe remain in #408 after the coherent baseline. This milestone does not add a mapping, network protocol, undo feature or deadline.
+The half-wall kicker attachment, one-cell mini quarterpipe, three-cell L quarterpipe and modular mega-halfpipe remain in #408 after the coherent baseline. Preserve the calibrated mapping. A new lower-level transport and undo feature are outside this baseline; no deadline is set.
+
+The held-item application identity protocol is part of this demo: first demonstrate the native receipt route, then implement the version/session/sequence/UID/kind, explicit-clear and expiry contract in [the inbox gate](RUST-SKATE-INBOX.md). Picker choice or arbitrary log text cannot establish identity; native placement/payment checks remain authoritative.
 
 ## Placement and input requirements
 
