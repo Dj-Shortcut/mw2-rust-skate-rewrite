@@ -7,7 +7,7 @@ The client keeps the park preview cleared when identity is unknown.
 
 ## Bounded sender contract
 
-The separate planned `ShortcutSkateProbe.cs` Oxide plugin supplies
+The separate [ShortcutSkateProbe.cs](../mods/rust/plugins/ShortcutSkateProbe.cs) Oxide plugin supplies
 `skate.probe <sequence>`. A connected in-game server administrator invokes it
 from the Rust console. Server console/RCON without a player, disconnected
 callers and ordinary players are refused. There is no target-player argument.
@@ -28,7 +28,16 @@ Client receiver/build/native work remains Claude-owned, server source Codex-owne
 
 On the authorized Rust/Oxide test server, compile/load the separate source
 with the matching genuine server references. Record the source hash and actual
-Rust/Oxide versions. Start the current client with Unity log listening enabled
+Rust/Oxide versions. The isolated source project uses C#7.3/net48 and refuses
+an absent genuine-reference folder; private outputs stay in `context/`:
+
+```sh
+dotnet build mods/rust/plugins/ShortcutSkateProbe.csproj -p:RustManagedPath=/absolute/path/to/RustDedicated_Data/Managed
+```
+
+Copy only the reviewed diagnostic source to `oxide/plugins/`, observe Oxide's
+compile/load result and registered command, preserving the existing park source.
+Start the current client with Unity log listening enabled
 (`sv plisten 1; zz play`) as documented in the [client tools](../mods/rust/client/tools/README.md).
 Confirm the inbox reports watching/reading, then issue `skate.probe 1` from
 the connected administrator's in-game console. Record the corresponding new
@@ -42,10 +51,12 @@ Unload with `oxide.unload ShortcutSkateProbe`, remove that source from
 
 ## Evidence and next gate
 
-This document records the agreed diagnostic design; the sender is not implemented
-in this initial documentation commit. No native compilation, installation or
-received-message result is claimed. Claude reports the main client inbox reading
-in a live session, but no server probe has yet been sent or received.
+The full sender compiles as C#7.3 against genuine Steam server managed references
+and official Oxide2.0.7830 with zero warnings/errors. The unchanged source parser
+passes 75 boundary/security vectors across three cultures. Native permission
+dispatch, loading on the owner's installed server and received echo remain open;
+the compile and parser checks do not exercise them. Claude reports the main
+client inbox reading in a live session, but no server probe receipt yet.
 
 An echo receipt proves only this route for that recorded build. The inbox acts
 on nothing. It is not an authenticated item-identity receiver or release evidence.
