@@ -89,14 +89,14 @@ does not prove successful loading; preserve the actual console verdict and check
 ### Existing pinned installer
 
 `add-skate.sh` selects ShortcutSkate **0.3.11**, commit
-`fa0ffa78448cbfdd8a572d8cf029e41d5514d899`, source SHA-256
-`8e7525b090468dd10a7cdab27e53ed5bfac693e6fb75d0d2bbeb7669bf68078c`.
+`6ba9e3810beb37bb0abc2c83bcfdcadbd9806511`, source SHA-256
+`01ad2489016da05b60a99bcd18c24a6f8826c33e7eec7e198d37400f0385094d`.
 It targets the existing `/srv/rust/server/oxide/plugins` installation and its
 nonroot `rust` user/group. It needs Bash, Python 3, curl, sha256sum, GNU file tools,
 runuser and setsid. The plugins folder must be writable by `rust`; any prior
 source must be a regular nonsymlink file readable by that account.
 
-The selected source is the building-item backend in [PR #398](https://github.com/Dj-Shortcut/mw2-rust-skate-rewrite/pull/398); merge that source PR before this delivery PR. The source now uses native square-foundation input; its actual hooks/inventory and both requested building frontends remain unverified. Current0.3.10 relies on the failed client-command route and should not be installed.
+The selected source is the building-item backend review correction in [PR #401](https://github.com/Dj-Shortcut/mw2-rust-skate-rewrite/pull/401), following merged #398; merge #401 before this delivery follow-up. The source now uses native square-foundation input; its actual hooks/inventory, retained-marker serialization and same-owner reconnect delivery remain unverified. Claude reports an offline own-picker/hotbar implementation; native frontend acceptance remains open. Current0.3.10 relies on the failed client-command route and should not be installed.
 Keep a private backup of `oxide/data/ShortcutSkate.Parks.json` with its matching world/source before upgrading. Older 0.3.9 rejects nonzero build-item provenance; source-only downgrade is not park-data rollback. Never remove paid provenance to force a downgrade.
 
 Preview the pinned public bytes without root or a server:
@@ -112,7 +112,7 @@ plugin update. Keep the prior source backup until native loading and riding pass
 The immutable installer and its hash are verified before execution:
 
 ```sh
-(set -eu; skate_update_dir=$(mktemp -d /tmp/ShortcutSkate-update.XXXXXX); trap 'rm -rf -- "$skate_update_dir"' EXIT; curl -fsSL --connect-timeout 15 --max-time 60 https://raw.githubusercontent.com/Dj-Shortcut/mw2-rust-skate-rewrite/199bc61e82e5629ae769c8eacb1db8ce65a305e3/mods/rust/server/add-skate.sh -o "$skate_update_dir/add-skate.sh"; printf '%s  %s\n' 221c2df74093f4ff8dc91d1cb4306eea0c834ed98ed04f0dcf20f6965f5f80a3 "$skate_update_dir/add-skate.sh" | sha256sum -c -; bash "$skate_update_dir/add-skate.sh" --defer-reload; systemctl restart rust-server)
+(set -eu; skate_update_dir=$(mktemp -d /tmp/ShortcutSkate-update.XXXXXX); trap 'rm -rf -- "$skate_update_dir"' EXIT; curl -fsSL --connect-timeout 15 --max-time 60 https://raw.githubusercontent.com/Dj-Shortcut/mw2-rust-skate-rewrite/41034058afa73c9d6456bf06f4dc94e792eb558d/mods/rust/server/add-skate.sh -o "$skate_update_dir/add-skate.sh"; printf '%s  %s\n' 06604633ab5c65232613b893558e90033ddbbae7e3b712ee648bb04971c7fd41 "$skate_update_dir/add-skate.sh" | sha256sum -c -; bash "$skate_update_dir/add-skate.sh" --defer-reload; systemctl restart rust-server)
 ```
 
 `--defer-reload` deliberately returns **source-installed/native-unverified**
@@ -175,9 +175,13 @@ Deferred fixtures cover source/backup/cleanup without a log directory and execut
 the exact documented one-liner using a private service-command stand-in. They
 check its ordering and explicit failure, not real systemd or Rust startup.
 No Rust/Oxide process, live server, Rust client or Shadow PC is started by these
-checks. The selected source compiles as net48/C#7.3 against genuine cached server
-references with zero errors/warnings and passes the approved movement/gesture
-scenarios. Claude reported the owner’s 0.3.8 native load/readiness and visible long-ledge
+checks. The earlier #398 source had a genuine cached-reference net48/C#7.3 build
+and approved movement/gesture evidence. The selected #401 correction has full
+C#7.3 syntax and genuine API/source review, plus 10,694 actual-shared-DLL helper
+checks on Linux .NET10 with official net48 references. The complete native
+reference closure is unavailable here; no new full-plugin compilation or
+serialization/reconnect-inventory result is claimed. Claude reported the owner’s
+0.3.8 native load/readiness and visible long-ledge
 after a local manifest patch; 0.3.11 full-halfpipe, permissions, restart and riding
 remain owner acceptance.
 
