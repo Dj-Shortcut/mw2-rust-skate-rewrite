@@ -1,10 +1,10 @@
 # Rust park building assets
 
-The owner requested both a building-plan menu and individual hotbar items.
-ShortcutSkate source **0.3.11** handles eight marked items through native square-
-foundation placement. Claude owns the client picker, ghost and input; adding
-stock radial entries or accepting an alternative picker remains unresolved.
-Neither frontend has native acceptance. Commands are admin setup/fallback tools.
+The owner chose an own build picker and hotbar items; Claude owns the client.
+ShortcutSkate source **0.3.11** handles eight types via native square foundations.
+The stock six belt slots cannot hold all eight: use an owned item, move/equip it
+natively and wait for actual active-item/planner state. Report missing items or
+full inventory. Native acceptance is open; commands are admin setup/fallback.
 An eligible administrator can request `skate.items all` or `bank`, `kicker`,
 `quarterpipe`, `ledge-low`, `ledge-high`, `long-ledge`, `funbox`, `halfpipe`.
 Hold the matching item, select the stock square foundation and use native aim,
