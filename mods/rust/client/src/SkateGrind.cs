@@ -21,7 +21,29 @@ public static class SkateGrind
     private static readonly double[] heights = new double[Rows * Cols];
     private static SkateEdge edge;
     private static double cooldown;
+    // A scan that threw: a missing native member is for good (Unavailable, said once, never tried
+    // again); anything else waits a moment that doubles with each failure in a row and is tried
+    // again, and after MostFailures in a row grinding is off until the next mount (Reset).
+    public const int MostFailures = 5;
+    public const float FirstRetry = 0.5f, LongestRetry = 10f;
+    public static bool Unavailable;
+    public static int Failures;
     private static bool failed;
+    private static float retryAt = -99f;
+    private static void Fail(Exception e, string where)
+    {
+        var name = e.GetType().Name;
+        if (e is MissingMemberException || e is TypeLoadException || e is EntryPointNotFoundException || e is NotSupportedException)
+        {
+            if (!Unavailable) Out.Say("GRIND " + where + " threw " + name + ": " + e.Message + " - the native call is missing; grinding stays off");
+            Unavailable = true; return;
+        }
+        Failures++;
+        if (Failures >= MostFailures) { failed = true; Out.Say("GRIND " + where + " threw " + name + ": " + e.Message + " - " + Failures + " in a row, grinding off until getting on again"); return; }
+        var wait = Math.Min(LongestRetry, FirstRetry * (float)Math.Pow(2, Failures - 1));
+        retryAt = Time.realtimeSinceStartup + wait;
+        Out.Say("GRIND " + where + " threw " + name + ": " + e.Message + " - tried again in " + wait.ToString("F1") + " s");
+    }
     private static float nearSaidAt = -99f;
     // An edge met too square or too slowly for a grind is a stall: the board stops on it.
     public static bool StallCandidate, StallSquare;
@@ -29,12 +51,16 @@ public static class SkateGrind
     public static float NearAt = -99f;
     private static SkateEdge stallEdge;
 
-    public static void Reset() { cooldown = 0; edge = default(SkateEdge); Speed = 0f; Last = ""; }
+    public static void Reset() { cooldown = 0; edge = default(SkateEdge); Speed = 0f; Last = ""; failed = false; Failures = 0; retryAt = -99f; StallCandidate = false; }
 
     private static float YawOf(double x, double z) { return (float)(Math.Atan2(x, z) * 180.0 / Math.PI); }
 
+    // A failure to throw from the scan, for the offline checks.
+    public static Func<Exception> FaultForChecks;
+
     private static SkateHeightGrid Sample(Vector3 pos, float yaw)
     {
+        if (FaultForChecks != null) { var fault = FaultForChecks(); if (fault != null) throw fault; }
         var rad = yaw * Math.PI / 180.0;
         double fx = Math.Sin(rad), fz = Math.Cos(rad), rx = fz, rz = -fx;
         double ox = pos.x - fx * ((Rows - 1) * 0.5 * RowStep) - rx * ((Cols - 1) * 0.5 * ColStep);
@@ -78,12 +104,13 @@ public static class SkateGrind
     public static bool TryCapture(Vector3 pos, Vector3 velocity, float noseYaw, float dt)
     {
         StallCandidate = false;
-        if (!Enabled || failed || cooldown > 0) return false;
+        if (!Enabled || Unavailable || failed || cooldown > 0 || Time.realtimeSinceStartup < retryAt) return false;
         try
         {
             double vx = velocity.x, vz = velocity.z;
             if (vx * vx + vz * vz < AlongSpeed * AlongSpeed) return false;
             var grid = Sample(pos, YawOf(vx, vz));
+            Failures = 0;
             SkateEdge found; string error;
             if (!SkateEdges.TryFind(grid, new SkateVector(vx, 0, vz), out found, out error)) { Last = "find refused: " + error; return false; }
             if (!found.Found) return false;
@@ -110,7 +137,7 @@ public static class SkateGrind
             Out.Say("GRIND " + Last);
             return true;
         }
-        catch (Exception e) { failed = true; Out.Say("GRIND scan threw " + e.GetType().Name + ": " + e.Message); return false; }
+        catch (Exception e) { Fail(e, "scan"); return false; }
     }
 
     // The board stops on the edge last met too square or too slowly; HoldStall keeps it there.
@@ -143,6 +170,6 @@ public static class SkateGrind
             if (off > 0.8f || Math.Abs(pos.y - (float)edge.TopHeight) > 0.6f) { Last = "left the edge: off=" + off.ToString("F2"); ended = true; }
             return true;
         }
-        catch (Exception e) { failed = true; Out.Say("GRIND step threw " + e.GetType().Name + ": " + e.Message); return false; }
+        catch (Exception e) { Fail(e, "step"); return false; }
     }
 }
