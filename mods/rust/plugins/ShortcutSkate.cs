@@ -2825,8 +2825,10 @@ namespace Oxide.Plugins
             if (item == null) return null;
             try
             {
-                if (item.instanceData == null) item.instanceData = Facepunch.Pool.Get<ProtoBuf.Item.InstanceData>();
-                item.instanceData.dataInt = SkateParkBuildItems.Marker(kind);
+                ProtoBuf.Item.InstanceData data = item.instanceData ?? Facepunch.Pool.Get<ProtoBuf.Item.InstanceData>();
+                data.ShouldPool = false;
+                data.dataInt = SkateParkBuildItems.Marker(kind);
+                item.instanceData = data;
                 item.name = name;
                 item.MarkDirty();
                 SkateParkKind observed;
@@ -2920,7 +2922,12 @@ namespace Oxide.Plugins
             {
                 foreach (ParkItemDelivery delivery in parkItemDeliveries.ToArray())
                 {
-                    if (!ReferenceEquals(delivery.Player, player)) continue;
+                    if (player.userID != delivery.Owner) continue;
+                    Vector3 position = player.transform.position + Vector3.up;
+                    if (player.inventory == null || !Coordinate(position))
+                    { arg.ReplyWith("The earlier build-item delivery cannot be retried from the current inventory or position; no new items were issued."); return; }
+                    delivery.Player = player;
+                    delivery.Position = position;
                     if (!DeliverParkItem(delivery))
                     { arg.ReplyWith("An earlier build-item delivery is still unverified; no new items were issued."); return; }
                     parkItemDeliveries.Remove(delivery);
