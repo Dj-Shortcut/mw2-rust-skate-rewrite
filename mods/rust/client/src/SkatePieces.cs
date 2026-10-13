@@ -18,6 +18,7 @@ public static class SkatePieces
     public const float ShownSeconds = 6f, PlaceSeconds = 120f, AimReach = 40f, TurnStep = 15f, ClearGround = 0.04f;
 
     public static bool Open;
+    private static float stanceSince = -1f;
     public static int Chosen;
     public static float Turn;
     public static string Asked = "", Said = "", Status = "";
@@ -39,14 +40,14 @@ public static class SkatePieces
         var want = SkatePad.Shared && !SkateRide.On && (SkatePad.Buttons & MenuButton) != 0;
         var padOpen = Open && !keyboardOpen;
         if (want != padOpen) { if (want) { Open = true; keyboardOpen = false; Out.Say("PIECES menu open"); } else if (!keyboardOpen) Close(); }
-        if (!Open || keyboardOpen) return padDown;
+        if (!Open || keyboardOpen) { stanceSince = -1f; return padDown; }
         if ((padDown & SkatePad.DpadDown) != 0 || (padDown & SkatePad.DpadRight) != 0) Chosen = (Chosen + 1) % Names.Length;
         if ((padDown & SkatePad.DpadUp) != 0 || (padDown & SkatePad.DpadLeft) != 0) Chosen = (Chosen + Names.Length - 1) % Names.Length;
         if ((padDown & SkatePad.LeftBumper) != 0) Turn -= TurnStep;
         if ((padDown & SkatePad.RightBumper) != 0) Turn += TurnStep;
         if ((padDown & SkatePad.A) != 0) Place(now);
         if ((padDown & SkatePad.B) != 0) Close();
-        if ((padDown & SkatePad.Y) != 0) SkateRide.ToggleStance();
+        SkateRide.StanceHold(ref stanceSince, (SkatePad.Buttons & SkatePad.Y) != 0, now);
         return padDown & ~(SkatePad.DpadUp | SkatePad.DpadDown | SkatePad.DpadLeft | SkatePad.DpadRight | SkatePad.A | SkatePad.B | SkatePad.X | SkatePad.Y | SkatePad.LeftBumper | SkatePad.RightBumper);
     }
 
@@ -205,7 +206,7 @@ public static class SkatePieces
         {
             var s = "PARK PIECE   ";
             for (var i = 0; i < Names.Length; i++) s += (i == Chosen ? "[" + Names[i].ToUpper() + "]" : Names[i]) + (i + 1 < Names.Length ? "   " : "");
-            s += keyboardOpen ? "      P: next   O: take it   Backspace: close" : "      D-pad: choose   A: take it   B: close   Y: stance (" + SkateRide.StanceName + ")";
+            s += keyboardOpen ? "      P: next   O: take it   Backspace: close" : "      D-pad: choose   A: take it   B: close   hold Y: stance (" + SkateRide.StanceName + ")";
             if (Status.Length > 0) s += "   " + Status;
             return s;
         }

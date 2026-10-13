@@ -282,7 +282,7 @@ public static class SkateHud
         if (onFoot)
         {
             var hint = !SkateRig.Ready ? "Skate mod " + SkatePlugin.Version + " loaded"
-                : (SkatePad.Shared ? "Skate mod: press Y on the controller, or K, or jump twice to get on the board" : "Skate mod: press K or jump twice to get on the board") + "   (stance " + SkateRide.StanceName + ": J" + (SkatePad.Shared ? " or Back+Y" : "") + " switches)";
+                : (SkatePad.Shared ? "Skate mod: press Y on the controller, or K, or jump twice to get on the board" : "Skate mod: press K or jump twice to get on the board") + "   (stance " + SkateRide.StanceName + ": hold J" + (SkatePad.Shared ? " or Back+Y" : "") + " to switch)";
             Text(40f * k, 110f * k, w - 80f * k, hint, (int)(19 * k), Ink, 0, 1f);
         }
 

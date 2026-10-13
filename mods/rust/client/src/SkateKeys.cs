@@ -50,6 +50,7 @@ public static class SkateKeys
     public static float Spin;
     public static SkateGrabKind Grab;
     private static bool wasPush, wasBrake, wasLeft, wasRight, wasJump, wasCrouch, wasToggle, wasCamera, wasStance, wasBody;
+    private static float stanceSince = -1f;
     private static float wasSpin;
     private static bool popKeys = true, crouchKeys = true, cameraKey = true, manualKey = true, taps = true, cursorKnown = true, failed;
 
@@ -83,8 +84,9 @@ public static class SkateKeys
             }
             SkatePieces.Keys(Down(kb.pKey), Down(kb.qKey), Down(kb.eKey), Down(kb.oKey), Down(kb.backspaceKey));
             var stanceKey = Down(kb.jKey);
-            if (stanceKey && !wasStance) SkateRide.ToggleStance();
-            wasStance = stanceKey;
+            // Held through chat or the console: not a hold until it has been let go once.
+            if (!stanceKey) wasStance = false;
+            SkateRide.StanceHold(ref stanceSince, stanceKey && !wasStance, now);
             bool push = Down(kb.wKey), brake = Down(kb.sKey), left = Down(kb.aKey), right = Down(kb.dKey);
             bool jump = Down(kb.spaceKey), toggle = Down(kb.kKey), crouch = false, camera = false, manual = false, noComply = false, boneless = false, body = false;
             if (popKeys)

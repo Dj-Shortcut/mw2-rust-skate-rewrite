@@ -214,6 +214,16 @@ public static class SkateRide
         try { var path = StancePath(); Goofy = path != null && System.IO.File.Exists(path) && System.IO.File.ReadAllText(path).Trim().ToLowerInvariant() == "goofy"; }
         catch (Exception e) { Goofy = false; Out.Say("STANCE could not be read: " + e.GetType().Name + ": " + e.Message); }
     }
+    // A tap never changes the stance: J (the game's clan key too) or Y in the controller's menu has
+    // to be held this long. A stance changed by a stray press was the rider pushing with the wrong foot.
+    public const float StanceHoldSeconds = 1f;
+    // Called each frame with whether the key is held; switches once per hold, after StanceHoldSeconds.
+    public static void StanceHold(ref float since, bool held, float now)
+    {
+        if (!held) { since = -1f; return; }
+        if (since < 0f) { since = now; SkatePieces.Said = "Stance: " + StanceName + " - hold to switch"; SkatePieces.SaidAt = now; return; }
+        if (since > 0f && now - since >= StanceHoldSeconds) { ToggleStance(); since = 0f; }
+    }
     // Only off the board: the feet are placed on getting on.
     public static bool ToggleStance()
     {
