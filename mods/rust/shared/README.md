@@ -148,11 +148,13 @@ The convention is regular heel-left: back-to-forward-left gives kickflip, right 
 
 The three exact owner-recorded timestamp sequences are permanent scenarios in [approved_tests/skate](../../../crates/approved_tests/skate/README.md): airborne pullback gives Ollie, grounded diagonal gives Ollie+Kickflip, and grounded roll/recoil gives Ollie without a manual. They test recognition and the composition contract; native controller feel remains a client verification step.
 
-The planned return-stroke correction in #406 rearms a spent right-stick composition
-only inside a 0.15-radius centre zone. The ordinary 0.25 dead zone and existing flick
-reach/direction thresholds stay unchanged. A new neutral-then-flick action remains
-available in the same flight; left-stick body circles remain independent. This
-contract is proposed pending implementation and source verification.
+After a right-stick composition, radius at or below `SkateFlick.RearmZone` (0.15)
+rearms the reader. Entering only the ordinary 0.25 dead zone does not rearm it;
+sideways return motion outside the centre zone cannot start another composition.
+Existing flick reach/direction thresholds stay unchanged. A new centred-then-flick
+action remains available in the same flight; left-stick body circles remain
+independent. A genuine centre crossing followed by recoil can still be read as a
+new gesture; this radius gate does not infer intent or verify native stick feel.
 
 ### Late flips and rider-only body varials
 
@@ -163,8 +165,8 @@ reader cannot infer whether a requested ground pop actually launched. While airb
 that context, a subsequent held right-stick composition emits flip/shove targets with
 `Kind=None`, `Pop=0`, `Strength=0` and `Composition.Late=true`. Existing lateral AirFlicks
 also expose `Late`; their recognition and event bits are unchanged. A first pullback in an
-already-airborne recorded gesture remains an Ollie with the original constructor. Neutral
-rearms the right-stick reader; each emitted composition is applied once.
+already-airborne recorded gesture remains an Ollie with the original constructor. The
+centre zone rearms the right-stick reader; each emitted composition is applied once.
 
 The left stick reads independently. A complete net 360-degree circle at radius at least
 `HeldZone` within `BodyCircleSeconds` emits `BodyVarial` (bit 64) and signed

@@ -111,6 +111,7 @@ namespace Shortcut.RustMod
     {
         public const double MaximumStep = 0.1;
         public const double DeadZone = 0.25;
+        public const double RearmZone = 0.15;
         public const double HeldZone = 0.7;
         public const double HeldSpreadDegrees = 40;
         public const double SetSeconds = 0.03;
@@ -241,7 +242,7 @@ namespace Shortcut.RustMod
                 }
                 if (state.Phase == Rest) state.SetSeconds = 0;
             }
-            else if (state.Phase == Spent && far <= DeadZone)
+            else if (state.Phase == Spent && far <= RearmZone)
             { state.Phase = Rest; state.SetSeconds = 0; state.SideLead = 0; state.SetupSide = 0; state.SweepDegrees = 0; state.ShallowSide = 0; state.RimValid = false; }
 
             double bodyVarial = StepBody(ref state, input, dt);
