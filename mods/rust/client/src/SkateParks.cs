@@ -149,6 +149,16 @@ public static class SkateParks
         catch (Exception e) { Error = e.GetType().Name + ": " + e.Message; Say("scan threw " + Error); nextScan = now + 15f; }
     }
 
+    // The pieces found, for the tour check: kind, model origin and yaw.
+    public static int PieceCount { get { return placed.Count; } }
+    public static bool Piece(int i, out Kind kind, out Vector3 origin, out float yaw)
+    {
+        kind = Kind.Bank; origin = Vector3.zero; yaw = 0f;
+        if (i < 0 || i >= placed.Count) return false;
+        kind = placed[i].Kind; origin = placed[i].Origin; yaw = placed[i].Yaw;
+        return true;
+    }
+
     public static string Line()
     {
         return "blocks=" + Blocks + " assemblies=" + Assemblies + " drawn=" + Drawn + " colliders=" + Colliders + " hidden=" + HiddenRenderers +
@@ -164,6 +174,8 @@ public static class SkateParks
         var local = SkateRig.LocalT;
         if (local == null) return;
         Scans++;
+        if (!SkateGestures.Done) SkateGestures.Report();
+        if (!SkateHeld.Reported) SkateHeld.Report(SkateRig.Local);
         if (constructionLayer == -2) { try { constructionLayer = LayerMask.NameToLayer("Construction"); } catch (Exception) { constructionLayer = -1; } }
         var mask = constructionLayer >= 0 ? 1 << constructionLayer : ~0;
         var colliders = Physics.OverlapSphere(local.position, Reach, mask, QueryTriggerInteraction.Ignore);
@@ -215,7 +227,7 @@ public static class SkateParks
                 var anchorYaw = b.Yaw - (float)layout[0].Yaw;
                 matched.Clear();
                 if (!Match(kind, layout, blocks, cells, taken, b, anchorYaw, matched)) continue;
-                if ((kind == Kind.LedgeLow || kind == Kind.LedgeHigh || kind == Kind.LongLedge) && !OverFoundation(b, blocks, cells, kind == Kind.LedgeHigh)) continue;
+                if ((kind == Kind.LedgeLow || kind == Kind.LedgeHigh || kind == Kind.LongLedge) && !OverFoundation(b, blocks, cells, kind == Kind.LedgeHigh) && !OverGround(b, kind == Kind.LedgeHigh)) continue;
                 var ids = new int[matched.Count];
                 for (var m = 0; m < matched.Count; m++) { ids[m] = blocks[matched[m]].Id; taken.Add(ids[m]); }
                 var p = new Placed { Kind = kind, Ids = ids };
@@ -247,7 +259,11 @@ public static class SkateParks
                 if (b.Prefab != part.Prefab || taken.Contains(b.Id) || matched.Contains(i)) continue;
                 var d = Vector3.Distance(b.Position, want);
                 if (d > bestDistance) continue;
-                if (Math.Abs(Delta(wantYaw, b.Yaw)) > AngleTolerance || Math.Abs(Delta((float)part.Pitch, b.Pitch)) > AngleTolerance) continue;
+                // A wall is matched by its line, whichever quarter it is turned to: the native wall lies
+                // along its own z, which the server's layout may turn it by 90 degrees for (#337).
+                var yawOff = Math.Abs(Delta(wantYaw, b.Yaw));
+                if (part.Prefab != FloorPrefab) { yawOff %= 90f; yawOff = Math.Min(yawOff, 90f - yawOff); }
+                if (yawOff > AngleTolerance || Math.Abs(Delta((float)part.Pitch, b.Pitch)) > AngleTolerance) continue;
                 best = i; bestDistance = d;
             }
             if (best < 0) return false;
@@ -256,7 +272,9 @@ public static class SkateParks
         return true;
     }
 
-    // A ledge is a floor tile 0.4 or 0.8 above a foundation and nothing else: an ordinary floor never
+    // A ledge is a floor tile 0.4 or 0.8 above a foundation and nothing else (pivot to pivot that is
+    // 0.4 or 0.8 plus the tile's thickness, about 0.6 or 1.0 in the game: seen live, a long ledge on
+    // the owner's platform was taken for a high ledge at 0.62): an ordinary floor never
     // sits that close above a foundation (half walls put one 1.5 above). The gap is pivot to pivot.
     public static float LedgeGap = -1f;
     private static bool OverFoundation(Block floor, List<Block> blocks, Dictionary<long, List<int>> cells, bool high)
@@ -270,9 +288,31 @@ public static class SkateParks
             var gap = floor.Position.y - b.Position.y;
             if (gap < 0.15f || gap > 1.3f) continue;
             LedgeGap = gap;
-            return high ? gap >= 0.62f : gap < 0.62f;
+            return high ? gap >= LedgeSplit : gap < LedgeSplit;
         }
         return false;
+    }
+
+    // Or a floor tile standing free that high above the ground, as the server's own placement
+    // (`skate.place`, 0.3.8) leaves a ledge: its anchor rests on the ground and the tile is 0.4 or
+    // 0.8 above that, with nothing under it. A building's floor stands on walls, a storey up.
+    public static float LedgeGroundGap = -1f;
+    // Measured from the tile's pivot, which is its top in the game (the tile's own bounds are not
+    // always readable on the client): 0.4 plus the tile's thickness for a low ledge, 0.8 plus it for
+    // a high one. Seen live: a long ledge's tiles 0.6 up were taken for high ledges when measured from
+    // a bottom the client could not read.
+    public const float LedgeSplit = 0.8f;
+    private static bool OverGround(Block floor, bool high)
+    {
+        if (Math.Abs(floor.Pitch) > AngleTolerance) return false;
+        var mask = SkateRide.GroundMask;
+        if (constructionLayer >= 0) mask &= ~(1 << constructionLayer);
+        RaycastHit hit;
+        if (!Physics.Raycast(floor.Position, Vector3.down, out hit, 1.5f, mask, QueryTriggerInteraction.Ignore)) return false;
+        var gap = hit.distance;
+        if (gap < 0.3f || gap > 1.3f) return false;
+        LedgeGroundGap = gap;
+        return high ? gap >= LedgeSplit : gap < LedgeSplit;
     }
 
     private static void Place(Placed p, Kind kind, List<Block> blocks, List<int> matched, float anchorYaw)
@@ -307,6 +347,9 @@ public static class SkateParks
         if (root == null) return;
         Colliders += colliders;
         p.Root = root;
+        if (kind == Kind.Bank || kind == Kind.Kicker || kind == Kind.QuarterPipe) Colliders += Entry(root, kind == Kind.QuarterPipe ? -1.2f : 0f, -1f);
+        // A funbox is entered from both ends.
+        if (kind == Kind.Funbox) { Colliders += Entry(root, -FunboxEnd, -1f); Colliders += Entry(root, FunboxEnd, 1f); }
         // The native tiles and walls under the model are not drawn; the foundation stays.
         foreach (var m in matched)
         {
@@ -338,6 +381,24 @@ public static class SkateParks
         Colliders += colliders;
         return "drawn at " + Out.V1(origin) + " yaw " + yaw.ToString("F0") + " with " + colliders + " colliders";
     }
+    // Where a kind's model stands for a server anchor (the native square foundation's origin, its Y
+    // the support plane, and its yaw: Codex's 0.3.11 frame), for the ghost of a held park item: the
+    // same model origins as Place uses for the tiles the server will put there. The tiles' height
+    // above the support plane is the server's to choose; a floor tile's thickness is the guess.
+    public static Vector3 ModelOriginForAnchor(Kind kind, Vector3 anchor, float yaw)
+    {
+        var rot = Quaternion.Euler(0f, yaw, 0f);
+        var lift = -FloorBottom + 0.025f;
+        switch (kind)
+        {
+            case Kind.Bank: return anchor + rot * new Vector3(0f, lift, -(float)(HalfLength * Math.Cos(12 * Degrees)));
+            case Kind.Kicker: return anchor + rot * new Vector3(0f, lift, -(float)(HalfLength * Math.Cos(25 * Degrees)));
+            case Kind.QuarterPipe: return anchor + rot * new Vector3(0f, lift, -(float)(HalfLength * Math.Cos(15 * Degrees)));
+            case Kind.Halfpipe: return anchor + rot * new Vector3((float)HalfLength, lift, (float)HalfLength);
+            default: return anchor;
+        }
+    }
+
     // The preview moved to another place, as the aim moves.
     public static void PreviewMove(Vector3 origin, float yaw)
     {
@@ -401,7 +462,7 @@ public static class SkateParks
     // deck on top). The authored models are circular and shorter, so they would leave the tiles
     // standing out of them; these are made here instead, on the tiles' tops, with the bends
     // rounded (radius Bend) so the board rolls through them, and the coping edge left sharp.
-    public const double Bend = 3.0;
+    public const double Bend = 3.0, VertBend = 1.6, VertAngle = 82, VertLength = 0.9;
     private const int BendSteps = 8;
 
     // The riding profile, (forward, height) points in the piece's frame. The quarterpipe starts at
@@ -416,7 +477,11 @@ public static class SkateParks
             corners.Add(new Vector2(0f, -1.2f)); radii.Add(0);
             corners.Add(new Vector2(0f, 0f)); radii.Add(Bend);
             corners.Add(new Vector2((float)run1, (float)rise1)); radii.Add(Bend);
-            corners.Add(new Vector2((float)(run1 + run2), (float)(rise1 + rise2))); radii.Add(0);
+            // Past the top tile the wall goes on up to near vertical, so the board leaves it upward
+            // and comes back down into it, as from a real quarterpipe: seen live, a run up the
+            // 35 degree top tile launched the board 12 m on over the deck.
+            corners.Add(new Vector2((float)(run1 + run2), (float)(rise1 + rise2))); radii.Add(VertBend);
+            corners.Add(new Vector2((float)(run1 + run2 + VertLength * Math.Cos(VertAngle * Degrees)), (float)(rise1 + rise2 + VertLength * Math.Sin(VertAngle * Degrees)))); radii.Add(0);
             // Points are (forward, height); the first is a run-in on the ground.
             corners[0] = new Vector2(-1.2f, 0f);
         }
@@ -452,9 +517,11 @@ public static class SkateParks
             var cross = d1x * d2y - d1y * d2x; var sign = cross > 0 ? 1.0 : -1.0;
             double ox = sx - d1y * r * sign, oy = sy + d1x * r * sign;
             double fx = sx - ox, fy = sy - oy;
-            for (var k = 0; k <= BendSteps; k++)
+            // A step at most every 4 degrees, so the board meets no kink in a sharp bend either.
+            var steps = Math.Max(BendSteps, (int)Math.Ceiling(turn * 180.0 / Math.PI / 4.0));
+            for (var k = 0; k <= steps; k++)
             {
-                var ang = turn * k / BendSteps * sign;
+                var ang = turn * k / steps * sign;
                 double cs = Math.Cos(ang), sn = Math.Sin(ang);
                 outPts.Add(new Vector2((float)(ox + fx * cs - fy * sn), (float)(oy + fx * sn + fy * cs)));
             }
@@ -483,6 +550,42 @@ public static class SkateParks
             proxy.AddComponent<MeshCollider>().sharedMesh = surface; proxy.layer = 0; colliders++;
         }
         return root;
+    }
+
+    // The server rests a piece so that its lowest tile corner clears the ground, which leaves the
+    // entry (the first tile's top, where the piece is drawn from) a tile's thickness above it: an
+    // edge the board stops at (a funbox at both its ends). A short wedge from the ground up to the entry takes it away. Returns
+    // the colliders added (0 when the entry is on the ground or the ground is not found).
+    public const float EntrySlope = 8f, EntryMost = 0.6f, EntryLook = 0.4f;
+    public static float LastEntryDrop = -1f;
+    public const float FunboxEnd = 4.4f;
+    private static int Entry(GameObject root, float entryForward, float outward)
+    {
+        var t = root.transform;
+        var at = t.position + t.rotation * new Vector3(0f, 0f, entryForward);
+        // The ground is looked for a little before the entry, clear of the piece's own tiles, and may
+        // be a building's floor: seen live, the owner's park stands on his foundations, and a ray that
+        // left construction out found no ground, so no wedge was made and the board stopped at the lip.
+        var before = at - t.rotation * new Vector3(0f, 0f, outward < 0f ? EntryLook : -EntryLook);
+        RaycastHit hit;
+        if (!Physics.Raycast(before + Vector3.up * 0.3f, Vector3.down, out hit, 0.3f + EntryMost, SkateRide.GroundMask, QueryTriggerInteraction.Ignore)) return 0;
+        var drop = at.y - hit.point.y;
+        LastEntryDrop = drop;
+        if (drop < Lift + 0.03f || drop > EntryMost) return 0;
+        var length = Math.Min(drop / (float)Math.Tan(EntrySlope * Degrees), 3f);
+        // A little below the ground at its start, so no lip is left there either.
+        // Points in rising forward order, so the strip faces up either way.
+        var profile = outward < 0f
+            ? new List<Vector2> { new Vector2(entryForward - length, -drop - 0.03f), new Vector2(entryForward, 0f) }
+            : new List<Vector2> { new Vector2(entryForward, 0f), new Vector2(entryForward + length, -drop - 0.03f) };
+        var surface = SurfaceMesh(profile, (float)HalfLength);
+        var wedge = new GameObject("COLLISION__entry"); wedge.transform.SetParent(t, false);
+        wedge.AddComponent<MeshCollider>().sharedMesh = surface; wedge.layer = 0;
+        if (plain == null) plain = MaterialFor(new SkateModelMaterial());
+        var look = new GameObject("VISUAL__entry"); look.transform.SetParent(t, false);
+        look.AddComponent<MeshFilter>().sharedMesh = surface;
+        look.AddComponent<MeshRenderer>().sharedMaterial = plain;
+        return 1;
     }
 
     // The riding surface alone, for the collider: a strip across the width along the profile.

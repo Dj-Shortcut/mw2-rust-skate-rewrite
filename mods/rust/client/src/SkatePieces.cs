@@ -1,8 +1,11 @@
-// The park picker: a piece chosen on the controller or the keyboard, its authored model drawn
-// where the player aims as a ghost preview (no colliders), turned in steps, and placed with one
-// press: the client sends `skate.place <piece> x y z yaw` to the server as a console packet
-// (SkateConsole.Send), and the server builds the piece there. Where sending is not available
-// nothing reaches the server from here; the screen then shows the line to type in F1 instead.
+// The park picker and the park items (owner's choice, 2026-10-13: "own build picker and hotbar
+// items"). The server (Codex's ShortcutSkate 0.3.11) gives eight park items, building plans marked
+// with their kind; one is placed with the game's own building controls as a square foundation
+// (left click, R turns it) and the server builds the piece in its place. Nothing here sends a
+// command: the client cannot (the console packet path is not found in this build and typed keys
+// never reach the console). The picker only chooses a piece and puts that item in the player's
+// hand through the game's own belt; while a park item is held, its piece is drawn as a ghost where
+// the player aims.
 using System;
 using System.Globalization;
 using Shortcut.RustMod;
@@ -40,7 +43,7 @@ public static class SkatePieces
         if ((padDown & SkatePad.LeftBumper) != 0) Turn -= TurnStep;
         if ((padDown & SkatePad.RightBumper) != 0) Turn += TurnStep;
         if ((padDown & SkatePad.A) != 0) Place(now);
-        if ((padDown & SkatePad.B) != 0) Ask("cancel", now);
+        if ((padDown & SkatePad.B) != 0) Close();
         if ((padDown & SkatePad.Y) != 0) SkateRide.ToggleStance();
         return padDown & ~(SkatePad.DpadUp | SkatePad.DpadDown | SkatePad.DpadLeft | SkatePad.DpadRight | SkatePad.A | SkatePad.B | SkatePad.X | SkatePad.Y | SkatePad.LeftBumper | SkatePad.RightBumper);
     }
@@ -74,7 +77,7 @@ public static class SkatePieces
     // Each frame while the picker is open: the aim point under the camera's view, the preview there.
     public static void Frame(float now)
     {
-        if (!Open) { if (previewKind >= 0) { SkateParks.PreviewClear(); previewKind = -1; } return; }
+        if (!Open) { HeldFrame(now); return; }
         AimOk = false;
         try
         {
@@ -102,29 +105,72 @@ public static class SkatePieces
         }
     }
 
-    // The chosen piece where the preview stands: sent to the server to build it there. Without a
-    // way to send, nothing reaches the server from here, and the line to type is shown instead.
-    // The console typist (SendInput) is not tried: it does not reach this client's console.
+    // While a park item is held (and not on the board): its piece as a ghost where the player aims,
+    // facing the way the player looks, as the native foundation is placed. Read a few times a second.
+    public static int HeldKind = -1;
+    private static float nextHeldRead;
+    private static void HeldFrame(float now)
+    {
+        if (now >= nextHeldRead)
+        {
+            nextHeldRead = now + 0.25f;
+            var was = HeldKind;
+            var read = !SkateRide.On && SkateRig.Local != null && SkateHeld.Read(SkateRig.Local);
+            HeldKind = read ? SkateHeld.HeldKind() : -1;
+            // No ghost unless the held item itself is read as a park item: a building plan in the
+            // hand says nothing about which item it is.
+            if (HeldKind != was) Out.Say("PIECES held: " + (HeldKind < 0 ? "no park item" : SkateHeld.ItemNames[HeldKind]) + " (item " + SkateHeld.Shortname + " '" + SkateHeld.Name + "' marker " + SkateHeld.Marker.ToString("X") + ")");
+        }
+        if (HeldKind < 0) { if (previewKind >= 0) { SkateParks.PreviewClear(); previewKind = -1; } return; }
+        AimOk = false;
+        try
+        {
+            var cam = Camera.main;
+            if (cam == null) return;
+            RaycastHit hit;
+            if (!Physics.Raycast(cam.transform.position, cam.transform.forward, out hit, AimReach, SkateRide.GroundMask, QueryTriggerInteraction.Ignore) || hit.normal.y < 0.5f) return;
+            AimOk = true; Aim = hit.point; Yaw = cam.transform.eulerAngles.y;
+        }
+        catch (Exception) { return; }
+        var origin = SkateParks.ModelOriginForAnchor((SkateParks.Kind)HeldKind, Aim, Yaw);
+        if (HeldKind != previewKind) { SkateParks.PreviewAt((SkateParks.Kind)HeldKind, origin, Yaw, false); previewKind = HeldKind; previewAt = origin; previewYaw = Yaw; }
+        else if (Vector3.Distance(previewAt, origin) > 0.01f || Math.Abs(previewYaw - Yaw) > 0.01f) { SkateParks.PreviewMove(origin, Yaw); previewAt = origin; previewYaw = Yaw; }
+        Said = SkateHeld.ItemNames[HeldKind] + ": place it like a square foundation (left click, R turns it)"; SaidAt = now;
+    }
+
+    // The piece last taken with the picker; -1 before any.
+    public static int Picked = -1;
+
+    // The chosen piece's park item put in the player's hand, the way a number key would; the
+    // player then places it with the building controls. Without one in the belt, the screen says so.
     public static void Place(float now)
     {
-        var name = Names[Chosen];
         SaidAt = now;
-        if (!SkateConsole.CanSend) { Said = Manual(name); return; }
-        if (!AimOk) { Said = "Aim at the ground first"; return; }
-        var ci = CultureInfo.InvariantCulture;
-        // Untouched, the server places the piece where the player looks and lifts it clear of the
-        // ground itself; turned, the preview's own anchor goes along, lifted by a floor tile's
-        // thickness and a little slack, which the server takes exactly as given.
-        var lift = -SkateParks.FloorBottom + ClearGround;
-        var line = Turn == 0f ? "skate.place " + name
-            : "skate.place " + name + " " + Aim.x.ToString("F2", ci) + " " + (Aim.y + lift).ToString("F2", ci) + " " + Aim.z.ToString("F2", ci) + " " + Yaw.ToString("F0", ci);
-        if (SkateConsole.Send(line))
+        var player = SkateRig.Local;
+        if (player == null) { Said = "No player yet"; return; }
+        Picked = Chosen;
+        var slot = SkateHeld.FindInBelt(player, Chosen);
+        Out.Say("PIECES take " + SkateHeld.ItemNames[Chosen] + ": belt" + (SkateHeld.Belt == "" ? " empty" : SkateHeld.Belt) + " -> slot " + slot);
+        // Shown in the open menu too: seen live, the keyboard picker stays open and hid the answer.
+        // Where the belt cannot be read at all (seen live), the player picks the item's number key.
+        if (slot < 0 && SkateHeld.Belt == "belt not readable")
         {
-            Placed++; Asked = "";
-            Said = "Asked the server for a " + name + " at " + Out.V1(Aim) + " (yaw " + Yaw.ToString("F0") + "); the server answers in F1 (skate.place needs ShortcutSkate 0.3.6 or later)";
+            Close();
+            Said = "Press the number key of your " + SkateHeld.ItemNames[Chosen] + ", then place it like a square foundation (left click, R turns it)";
             return;
         }
-        Said = "Not sent: " + SkateConsole.SendState;
+        if (slot < 0) { Said = Status = "No " + SkateHeld.ItemNames[Chosen] + " in your belt (an admin gives the park items: skate.items all)"; return; }
+        string how;
+        if (SkateHeld.SelectSlot(player, slot, out how))
+        {
+            Placed++; Close();
+            Said = "Holding the " + SkateHeld.ItemNames[Chosen] + ": place it like a square foundation (left click, R turns it)";
+            Out.Say("PIECES selected by " + how);
+            return;
+        }
+        Out.Say("PIECES could not select: " + how);
+        Close();
+        Said = Status = "Press " + (slot + 1) + " to hold the " + SkateHeld.ItemNames[Chosen] + ", then place it like a square foundation";
     }
 
     // The piece asked for by name alone, the way a server with ShortcutSkate 0.3.5 takes it: the
@@ -155,8 +201,7 @@ public static class SkatePieces
         {
             var s = "PARK PIECE   ";
             for (var i = 0; i < Names.Length; i++) s += (i == Chosen ? "[" + Names[i].ToUpper() + "]" : Names[i]) + (i + 1 < Names.Length ? "   " : "");
-            s += keyboardOpen ? "      P: next   Q/E: turn   O: place where you aim   Backspace: close" : "      D-pad: choose   LB/RB: turn   A: place where you aim   B: cancel   Y: stance (" + SkateRide.StanceName + ")";
-            if (!AimOk) s += "   (aim at the ground)";
+            s += keyboardOpen ? "      P: next   O: take it   Backspace: close" : "      D-pad: choose   A: take it   B: close   Y: stance (" + SkateRide.StanceName + ")";
             if (Status.Length > 0) s += "   " + Status;
             return s;
         }
@@ -165,5 +210,5 @@ public static class SkatePieces
         return "";
     }
 
-    public static void Reset() { Close(); Asked = Said = Status = ""; SaidAt = AskedAt = -99f; Chosen = 0; Sent = Placed = 0; Turn = 0f; AimOk = false; }
+    public static void Reset() { Close(); Picked = -1; HeldKind = -1; Asked = Said = Status = ""; SaidAt = AskedAt = -99f; Chosen = 0; Sent = Placed = 0; Turn = 0f; AimOk = false; }
 }

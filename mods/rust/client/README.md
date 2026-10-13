@@ -120,32 +120,18 @@ with a stock-wheel gesture ("I need wood" by default; the owner's build does not
 so `skate.piece <name>` in F1 is the working route there) and place a square foundation within
 two minutes; thumbs up cancels. Gesture names and the piece order are configurable.
 
-The picker: on foot, holding `Back` (the view button) shows the eight pieces; the D-pad chooses,
-`LB`/`RB` turn the piece in 15° steps, `A` places it where the view meets the ground and `B`
-cancels. On the keyboard `P` opens the picker and steps to the next piece, `Q`/`E` turn it, `O`
-places it and `Backspace` closes it. While the picker is open the chosen piece's authored model
-is drawn where the view meets the ground, turned as asked, as a ghost preview: drawn without
-colliders, so that a preview following the aim never stands in the player's way. Placing sends
-`skate.place <name>` to the server (the server finds the place from the player's own view and
-lifts the piece clear of the ground) or, when the piece was turned, `skate.place <name> x y z yaw`
-with the preview's anchor lifted by a floor tile's thickness (read from the last floor seen, a
-guess of 0.1 m before that) plus 4 cm, which the server takes exactly as given. The command goes
-as a console packet on the client's own connection (`SkateConsole.Send`); the server builds the
-piece there, from ShortcutSkate 0.3.6 (Codex; 0.3.5, which the owner's server runs, answers
-nothing to `skate.place`). Where sending is not available nothing reaches the server from the
-plugin, and the screen says so, with both lines to type in F1 instead: `skate.piece <name>` and a
-square foundation within two minutes (0.3.5), or `skate.place <name>` (0.3.6 or later). The console
-typist (injected keys) is not tried for the picker: it never reached this client's console. `Y` in
-the menu does not mount the board. The send check (`send` step) shows whether sending reaches the
-server: a chat line that appears on the screen. In the two send sessions so far the packet path was
-not found: the loaded `Facepunch.Network` interop has no `Network.Net` type by that name. Since
-then the plugin looks for the path by its shape when the names are gone (the enum with a
-`ConsoleCommand` member; the write type with a method taking it, one taking a string and one
-taking a struct built from a connection; the client type with a parameterless method returning
-that write and a connection of its own; a static field or property holding the client), logs the
-names the build gives them, and writes a listing of the library's types (`console-net.txt` next
-to the plugin) when even that fails. Offline the shape search finds a renamed mirror of the path
-past two decoys; in game it has not run yet. Unverified in game as of this commit.
+**Park items and the picker** (owner's choice, 2026-10-13: own build picker and hotbar items).
+The server (Codex's ShortcutSkate 0.3.11) gives eight park items, building plans marked with their
+kind ("Skate Bank" … "Skate Halfpipe"); one is placed with the game's own building controls as a
+square foundation (left click, R turns it) and the server builds the piece in its place. The
+client sends nothing for this: it cannot (no console packet path in this build; typed keys never
+reach the console). While a park item is held, its piece is drawn as a ghost where the player aims,
+facing the view. The picker (on foot: hold `Back` on the controller, D-pad chooses, `A` takes, `B`
+closes; on the keyboard `P` opens and steps, `O` takes, `Backspace` closes) puts the chosen piece's
+item in the player's hand through the game's own belt (`SelectSlot`, found by shape and logged as a
+`HELD` line); without one in the belt it says so, and where the belt cannot be selected it names the
+number key to press. Not yet seen in game: the item marker read on the client, the belt selection,
+the ghost against the native foundation ghost, and the server building the piece.
 
 ### Keys
 
@@ -271,6 +257,7 @@ file it runs `skate`. Runtime steps share one rig; the last scenario step select
 | `park` | Scripted: the authored park models one at a time 6 m ahead of the rider, 20 s each, seen from behind the rider, then a ride up the bank; nothing is placed on the server. |
 | `send` | Scripted: a chat line and `skate.status` sent to the server as console packets on the client's own connection (the way the game's console sends them), not typed; the chat line shows on the screen when it arrives. |
 | `place` | Scripted: `skate.place bank` sent to the server the same way, where the player looks; then the server's blocks and the model drawn over them are waited for (20 s) and reported. Needs ShortcutSkate 0.3.6 or later and open ground in view; says so when nothing came. |
+| `tour` | Scripted: rides to each server park piece the client found near the player and across it (ledges from beside them, with an ollie), and logs a `TOUR` line per piece: rise, air, grinds, bails, put-backs. |
 | `mute` | Turns the whole client down until nothing can be heard. |
 | `nogrind` | No grinding. |
 

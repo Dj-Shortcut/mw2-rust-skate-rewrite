@@ -181,6 +181,22 @@ public static class SkateRide
     // about a standstill does not turn the rider's chest back and forth.
     public static bool TailFirst { get { return Trick.Switch != rollingBack; } }
     private static bool rollingBack;
+    // What stands in the way, for the log: a ray just over the ground and one at the knee, ahead.
+    // A lip stops only the low one; a wall both.
+    private static string HeldAhead(Vector3 pos)
+    {
+        var ahead = Dir(Yaw) * (Speed < 0f ? -1f : 1f);
+        var line = "";
+        foreach (var h in new[] { 0.08f, 0.5f })
+        {
+            RaycastHit hit;
+            if (Physics.Raycast(pos + Vector3.up * h, ahead, out hit, 1.5f, GroundMask, QueryTriggerInteraction.Ignore))
+                line += " | " + h.ToString("F2") + " m up: hit at " + hit.distance.ToString("F2") + " m, normal y " + hit.normal.y.ToString("F2");
+            else line += " | " + h.ToString("F2") + " m up: clear";
+        }
+        return line;
+    }
+
     public static void SenseRollingBack() { if (Speed < -0.5f) rollingBack = true; else if (Speed > -0.1f) rollingBack = false; }
     // The rider's stance: regular (left foot forward, chest to the right of the nose) or goofy, the
     // mirror image. Read from the stance file at start, switched on foot with J or Back+Y, and kept.
@@ -344,7 +360,7 @@ public static class SkateRide
         Held = heldSteps >= HeldSteps;
         if (Held)
         {
-            if (heldSteps == HeldSteps) Out.Say("SKATE held back: rode " + rode.ToString("F1") + " m/s, got " + got.ToString("F1") + (Mode == RideMode.Grind ? " on the grind" : ""));
+            if (heldSteps == HeldSteps) Out.Say("SKATE held back: rode " + rode.ToString("F1") + " m/s, got " + got.ToString("F1") + (Mode == RideMode.Grind ? " on the grind" : "") + " at " + Out.V3(pos) + HeldAhead(pos));
             if (Mode != RideMode.Grind) { var sign = Speed < 0f ? -1f : 1f; Speed = sign * Math.Min(rode, got + HeldLeft); }
             return;
         }
