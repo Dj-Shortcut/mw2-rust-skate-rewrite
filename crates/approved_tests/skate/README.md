@@ -144,6 +144,30 @@ The legacy `ActualPluginPath` remains a fallback when `SkateParkLibraryPath` is 
 
 These checks use the layout helpers in the selected DLL, with independent expected positions and seams. Matching tolerance is relative to the deterministic observed-part-derived anchor, rather than an ideal common-anchor fit; the opposing ±0.004/±0.009 m quarter fixtures distinguish acceptance and refusal at tolerance 0.01. Matching does not prove registered park identity or infer the kind of a single floor. The scenarios do not verify native floor dimensions/colliders, building privilege, stability, save/load callbacks, demolition or gameplay, and they do not start the Rust client or server.
 
+## Park build items
+
+The owner approved `skate_park_build_items` by name on 12 October 2026. It checks
+the eight independently specified names/tags, reserved marker gaps, exact stock
+carrier/skin/quantity identity, atomic invalid outputs, verified single debit,
+complete paid-group recovery eligibility, historical/free/interrupted/claimed
+refusals, determinism and warmed allocation. It invokes the actual helper in each
+separately selected compiled shared and plugin DLL; it does not copy the helper.
+
+```sh
+dotnet build crates/approved_tests/skate/SkateParkBuildItemScenarios.csproj -p:ActualLibraryPath=/absolute/path/to/SkateMotion.dll
+dotnet context/skate-approved-park-build-items/bin/SkateMotion/net8.0/SkateParkBuildItemScenarios.dll EXPECTED_SHA256
+dotnet build crates/approved_tests/skate/SkateParkBuildItemScenarios.csproj -p:ActualLibraryPath=/absolute/path/to/ShortcutSkate.dll
+dotnet context/skate-approved-park-build-items/bin/ShortcutSkate/net8.0/SkateParkBuildItemScenarios.dll EXPECTED_SHA256
+```
+
+Build both actual libraries against genuine references as above. Each runner
+prints its loaded DLL path/hash; the optional argument pins that exact hash.
+Outputs/intermediates are isolated by DLL filename. Execute the emitted runner
+directly after each build. `SkateLibraryPath` remains
+an alias. Outputs stay in ignored `context/`. No native inventory/UID mutation,
+save/claim atomicity, refund delivery, hammer or client UI is exercised; no Rust
+client/server, Oxide or Shadow starts. See [integration limits](../../../docs/RUST-SKATE-BUILD-ASSETS.md).
+
 ## Park gesture selection
 
 The owner approved `skate_park_gesture_selection` by name on 11 October 2026. It exercises the actual plugin's pure selection policy: halfpipe-first cycling, a configured order, cancellation, inclusive two-minute expiry, renewal, failed-placement retention, successful consumption and silent refusal for non-admins. Invalid states, clocks, orders and gesture-name catalog matches are checked atomically. It distinguishes an unknown gesture from invalid names, unavailable catalogs and ambiguous aliases, preserves the original lookup overload, and checks one-line catalog names with English/convar fallback, native ordering and case-insensitive deduplication.

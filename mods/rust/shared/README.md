@@ -51,6 +51,12 @@ This verifies geometric consistency, not park registration, ownership, grade or 
 
 `VisualOrigin(kind, out right, out forward, out height, out yaw)` returns the nominal local authored-asset pivot offset: bank/kicker/quarter use the first floor's low edge, halfpipe uses the flat centre (1.5,1.5), and ledges/funbox use the layout baseline. Rotate right/forward by the anchor yaw before translating the visual node. All returned heights and local yaws are zero. This relation does not determine native floor-top thickness: the adapter adds the measured surface offset in the correctly rotated local normal. An origin mapping does not make different asset and native collider profiles coincide.
 
+## Park build-item API
+
+`SkateParkBuildItems` provides the eight exact English names and authored metadata tags for stock `building.planner` items with skin 0 and amount 1. `Name`, `Marker`, `TryKind` and `TryIdentity` share stable `SkateParkKind` order; `Tagged` reserves the complete marker range, including unrecognized tags that must not become ordinary building plans. Invalid lookup outputs are atomic. The plugin embeds the identical marked helper.
+
+`VerifiedDebit(before, after, sameItem)` accepts only the original identity changing 1→0. The native adapter must verify its full UID/definition/metadata/name/skin fingerprint and execute actual item consumption. `Recoverable(state, members, kind)` accepts only a complete `Paid` group; `None`, `Preparing`, `RecoveryClaimed` and partial groups refuse. These predicates do not implement inventory, persistence or exactly-once delivery. The [building-asset contract](../../../docs/RUST-SKATE-BUILD-ASSETS.md) records native/client acceptance and crash/recovery limits.
+
 ## Board mesh API
 
 `SkateBoardMesh.Create()` returns fresh arrays: `Positions` and `Normals` are xyz floats, `Triangles` are zero-based indices, `Colours` are rgba floats per vertex. Readonly fields protect references; each caller can edit its own array elements. Create once and cache the mesh; generation allocates.

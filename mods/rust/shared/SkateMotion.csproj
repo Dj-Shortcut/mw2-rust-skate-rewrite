@@ -33,6 +33,7 @@
     <Compile Include="SkateRailBinding.cs" />
     <Compile Include="SkatePose.cs" />
     <Compile Include="SkatePark.cs" />
+    <Compile Include="SkateParkBuildItems.cs" />
     <Reference Include="$(RustManagedPath)/mscorlib.dll"><Private>false</Private></Reference>
   </ItemGroup>
   <Target Name="RequireRealFrameworkReferences" BeforeTargets="PrepareForBuild">
