@@ -31,9 +31,8 @@ public static class SkateGestures
             }
             if (type == null) { Out.Say("GESTURES no GestureCollection type in the loaded assemblies"); return; }
             var instance = Get(null, type, "Instance") ?? Get(null, type, "instance");
-            // Seen live: the type is there and Instance stays null in a world. The loaded objects
-            // of the type are the next place; failing that, the type's static members are named
-            // once, for the next attempt.
+            // Instance can stay null in a world; then a loaded object of the type is used, and failing
+            // that its static members are named once.
             if (instance == null) instance = Loaded(type);
             if (instance == null)
             {

@@ -54,6 +54,7 @@ public static class SkateRide
     public static string TrickName = "", LastAir = "", OffReason = "";
     public static long TrickPoints, Banked, ComboPoints;
     public static float TrickAt = -99f, BankedAt = -99f;
+    public static int ResetsAll;
     public static int Steps, Resets, Pops, Lands, Bails, Pushes, GrindStarts, GrindEnds, Refused, Pumps, Reverts;
     public static float PumpHeld, RevertLeft;
     // The shared ride physics: the slope along the actual travel, the pump's pass, and the normal of
@@ -344,7 +345,7 @@ public static class SkateRide
             // The server put the player back. That is logged and nothing more: the board never
             // slows itself down for the server. A server that refuses skate speed has to allow it
             // (the ShortcutSkate plugin, or its own speed checks turned off by the admin).
-            Resets++;
+            Resets++; ResetsAll++;
             Out.Say("SKATE put back #" + Resets + ", " + (now - mountAt).ToString("F2") + " s after getting on: moved " + Out.V3(pos - lastPos) + " in a step at speed " + lastSpeed.ToString("F1"));
             return;
         }

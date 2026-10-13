@@ -1,9 +1,7 @@
-// What the player holds, for the park items (Codex's ShortcutSkate 0.3.11: a building plan marked
-// with instanceData.dataInt 0x534B5001..08 and named "Skate Bank" and so on). The client's own code
-// is renamed in this build, so the item is looked for by its shape: a member of the local player
-// that gives an object with an `info` (the item definition, `shortname`) and an `instanceData` with
-// a `dataInt`. Until that is seen live, the members that might lead there are written to the log
-// once (HELD lines), so the next build can go straight to them.
+// What the player holds, for the park items: a building plan marked with instanceData.dataInt
+// 0x534B5001..08 and named "Skate Bank" and so on. The client's types are renamed, so the item is
+// looked for by its shape; when it cannot be read, nothing is assumed about it (no ghost). The HELD
+// log lines name the members that could lead to it.
 using System;
 using System.Reflection;
 
@@ -39,9 +37,8 @@ public static class SkateHeld
             }
             if (item == null)
             {
-                // Seen live: no type is named Item. The item type is the one that holds
-                // an ItemDefinition (a Unity asset type, whose name the build keeps); named here with
-                // its members, and the player members that lead to it, for the next build.
+                // Without a type named Item, the item type is one that holds an ItemDefinition (an
+                // asset type, whose name is kept); those types and the player's members are logged.
                 var shapes = 0;
                 foreach (var a in AppDomain.CurrentDomain.GetAssemblies())
                 {
@@ -140,7 +137,7 @@ public static class SkateHeld
     // Makes that belt slot the active one through the game's own belt, the way a number key does,
     // so the game itself tells the server. Looked for by shape: a member of the player whose type has
     // a SelectSlot(int); the route taken is logged once.
-    private static bool selectLooked; private static MethodInfo selectSlot; private static string selectOwner = "";
+    private static bool selectLooked; private static MethodInfo selectSlot; private static MemberInfo selectMember; private static string selectOwner = "";
     public static bool SelectSlot(object player, int slot, out string how)
     {
         how = "";
@@ -156,21 +153,22 @@ public static class SkateHeld
                     foreach (var f in at.GetFields(flags | BindingFlags.DeclaredOnly))
                     {
                         var m = f.FieldType.GetMethod("SelectSlot", flags, null, new[] { typeof(int) }, null);
-                        if (m != null) { selectSlot = m; selectOwner = "field " + f.Name; break; }
+                        if (m != null) { selectSlot = m; selectMember = f; selectOwner = "field " + f.Name; break; }
                     }
                     if (selectSlot != null) break;
                     foreach (var p in at.GetProperties(flags | BindingFlags.DeclaredOnly))
                     {
                         if (p.GetIndexParameters().Length != 0) continue;
                         var m = p.PropertyType.GetMethod("SelectSlot", flags, null, new[] { typeof(int) }, null);
-                        if (m != null) { selectSlot = m; selectOwner = "property " + p.Name; break; }
+                        if (m != null) { selectSlot = m; selectMember = p; selectOwner = "property " + p.Name; break; }
                     }
                 }
                 Out.Say("HELD belt select route: " + (selectSlot == null ? "none found (no member with SelectSlot(int))" : selectOwner + "." + selectSlot.Name));
             }
             if (selectSlot == null) { how = "no belt select in this build"; return false; }
-            var name = selectOwner.Substring(selectOwner.IndexOf(' ') + 1);
-            owner = Get(player, name);
+            // The member found, as declared: an inherited private one is not found again by name.
+            var field = selectMember as FieldInfo;
+            owner = field != null ? field.GetValue(player) : ((PropertyInfo)selectMember).GetValue(player, null);
             if (owner == null) { how = selectOwner + " is empty"; return false; }
             selectSlot.Invoke(owner, new object[] { slot });
             how = selectOwner + ".SelectSlot(" + slot + ")";
