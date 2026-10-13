@@ -58,7 +58,7 @@ game; see [The controller](#the-controller).
 | --- | --- | --- |
 | `Y` | Get on; again gets off. | |
 | Left stick | Steer, by how far it is pushed. Far and straight forward or back: push or brake. | Held still more than half way to a side (for at least 0.06 s): the rider turns that way for as long as it is held. One full circle round the rim, after a pop, within a second: a body varial, the rider turns a half round and the board does not; the landing is switch. A stick travelling round the rim (faster than 180° a second) is never read as a held side, so the circle asks for no turn however easy its pace. |
-| `A` | Push with the back foot (pushing takes the board to 11 m/s; slopes take it on to 25 m/s, 90 km/h, over the ground, the limit the server plugin 0.3.7 is configured for): it comes down about 0.19 m beside the board on the toe side, the leg nearly straight, and sweeps back while the body dips a little; the foot stays where it came down while the board rolls on. Rolling tail first, the push drives on backward (a fakie push). | |
+| `A` | Push with the back foot (pushing takes the board to 11 m/s; slopes take it on to 25 m/s, 90 km/h, over the ground, the limit the server plugin 0.3.7 is configured for): it comes down about 0.19 m beside the board on the toe side, the leg nearly straight, and sweeps back while the body dips a little; the foot stays where it came down while the board rolls on. Rolling tail first (a rollback, after a revert or a 180), the back foot is at the leading end and pushes from there, a fakie push, and the push drives on the way the board rolls. | |
 | `X` | Push with the front foot (mongo). | |
 | `A` tapped while the right stick is held back, then the flick | No comply: the front foot steps down and the board pops off the back foot, a little lower than an ollie ("No Comply 180" with the left stick). | |
 | `LT` + `A`, `LT` + `X` or `RT` + `X`, `RT` + `A` | Foot plants: boneless, fastplant, beanplant (the front foot planted for a moment, a little higher than an ollie). | |
@@ -144,7 +144,7 @@ line carrying `SKATE-PROBE` as an `INBOX` line. It acts on nothing; it shows whe
 | Key | On the ground | In the air |
 | --- | --- | --- |
 | `K`, or `Space` twice quickly | Get on. `K` again gets off; stepped off while rolling, the board rolls on by itself and comes to rest ahead, where it lies for a while. | |
-| `W` | Push with the back foot; rolling tail first in the same stance, a fakie push with the foot at the tail, which leads (the front foot would have to cross the standing leg); after a 180 the stance is turned round and the trailing foot pushes on its own toe side | Tap: kickflip |
+| `W` | Push with the back foot, whichever end leads: rolling tail first (a rollback, after a revert or a 180) it is at the leading end and pushes from there, a fakie push | Tap: kickflip |
 | `S` | Brake; with `A` or `D` held at more than walking pace, a powerslide: the board swings across the way of travel and scrubs speed until the keys are let go (to the left: frontside, the chest to the front; to the right: backside) | Tap: heelflip |
 | `A` / `D` | Carve | Held: the rider turns to the left / right |
 | Mouse | The board turns toward the view | |

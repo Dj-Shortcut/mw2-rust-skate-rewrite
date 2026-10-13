@@ -96,11 +96,11 @@ public static class SkateRide
     // The push with the front foot (mongo), as the push began.
     public static int Powerslides;
     public static bool PushMongo;
-    // Which foot a push uses: the trailing foot as a rule (the back foot, or the front one in a
-    // mongo push); rolling tail first in the same stance, the tail foot leads and pushes, as a
-    // skater pushing fakie does: the trailing foot would have to cross the standing leg to reach
-    // the toe side. After a 180 the stance itself is turned round (NoseYaw), and the trailing foot
-    // pushes on its own toe side. PushLead: the foot that leads in the way of travel pushes.
+    // Which foot a push uses: the rider's back foot (the right one for a regular rider), or the
+    // front one in a mongo push, whichever end of the board leads. Rolling tail first, after a
+    // rollback, a revert or a 180 alike, the back foot is the one at the leading end, and it pushes
+    // from there, as a skater pushing fakie does; the front foot pushing there would be a mongo push
+    // the rider never asked for. PushLead: the foot that leads in the way of travel pushes.
     public static bool PushLead;
     // The deck's angle to the edge, taken when the grind begins and kept through it.
     public static float GrindDeck;
@@ -482,7 +482,7 @@ public static class SkateRide
         LimitSpeed(Cap, Cap);
         if (pushing || PushPhase > 0f)
         {
-            if (PushPhase <= 0f) { Pushes++; PushMongo = SkateKeys.Mongo; PushLead = PushMongo != fakiePush; strokeBack = fakiePush; }
+            if (PushPhase <= 0f) { Pushes++; PushMongo = SkateKeys.Mongo; PushLead = PushMongo != TailFirst; strokeBack = fakiePush; }
             // While the foot is on the ground it stays where it came down and the board rolls on
             // past it: the stroke runs by the distance the board moves, not by the clock (a board
             // that cannot move gets the slow clock), so the foot never slides along the ground.
