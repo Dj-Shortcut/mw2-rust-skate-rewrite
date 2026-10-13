@@ -39,7 +39,7 @@ public static class SkateHeld
             }
             if (item == null)
             {
-                // Seen live (Rust 25878151): no type is named Item. The item type is the one that holds
+                // Seen live: no type is named Item. The item type is the one that holds
                 // an ItemDefinition (a Unity asset type, whose name the build keeps); named here with
                 // its members, and the player members that lead to it, for the next build.
                 var shapes = 0;

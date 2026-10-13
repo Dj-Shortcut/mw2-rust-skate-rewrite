@@ -117,10 +117,8 @@ public static class SkatePieces
             var was = HeldKind;
             var read = !SkateRide.On && SkateRig.Local != null && SkateHeld.Read(SkateRig.Local);
             HeldKind = read ? SkateHeld.HeldKind() : -1;
-            // Seen live (Rust 25878151): the held item cannot be read on this client (its types are
-            // renamed). Then the piece last taken with the picker is the one held, for as long as a
-            // building plan is in the hand (its view model is named after the planner).
-            if (!read && !SkateRide.On && Picked >= 0) HeldKind = PlannerInHand() ? Picked : -1;
+            // No ghost unless the held item itself is read as a park item: a building plan in the
+            // hand says nothing about which item it is.
             if (HeldKind != was) Out.Say("PIECES held: " + (HeldKind < 0 ? "no park item" : SkateHeld.ItemNames[HeldKind]) + " (item " + SkateHeld.Shortname + " '" + SkateHeld.Name + "' marker " + SkateHeld.Marker.ToString("X") + ")");
         }
         if (HeldKind < 0) { if (previewKind >= 0) { SkateParks.PreviewClear(); previewKind = -1; } return; }
@@ -142,21 +140,6 @@ public static class SkatePieces
 
     // The piece last taken with the picker; -1 before any.
     public static int Picked = -1;
-    private static bool PlannerInHand()
-    {
-        try
-        {
-            var models = UnityEngine.Object.FindObjectsOfType<BaseViewModel>();
-            for (var i = 0; i < models.Length; i++)
-            {
-                var m = models[i];
-                if (m == null || !m.gameObject.activeInHierarchy) continue;
-                if (m.gameObject.name.IndexOf("planner", StringComparison.OrdinalIgnoreCase) >= 0) return true;
-            }
-        }
-        catch (Exception) { }
-        return false;
-    }
 
     // The chosen piece's park item put in the player's hand, the way a number key would; the
     // player then places it with the building controls. Without one in the belt, the screen says so.
