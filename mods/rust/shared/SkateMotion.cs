@@ -93,7 +93,7 @@ namespace Shortcut.RustMod
     public static class SkateMotion
     {
         public const double MaximumStep = 0.05;
-        public const double MaximumGroundSpeed = 14;
+        public const double MaximumGroundSpeed = 25;
         public const double PushAcceleration = 7;
         public const double BrakeDeceleration = 18;
         public const double RollingDeceleration = 0.4;
