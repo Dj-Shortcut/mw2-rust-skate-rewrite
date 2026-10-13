@@ -23,6 +23,14 @@ de volledige mod heeft eerst een [server/client-haalbaarheidsgate](docs/RUST-MW2
 Servervoorbereiding en verificatiegrenzen: [Windows](mods/rust/server/README.md)
 en [Linux](mods/rust/server/LINUX.md).
 
+Ontwerp- en onderzoeksreferenties voor de huidige skate-mod:
+[ReSkate](https://github.com/Dingo-Shenanigans/ReSkate) (GPL-3.0) voor
+plaatsingsbeheer, besturing en runtimecompatibiliteit;
+[REA — Reverse Engineer Anything](https://github.com/morluto/rea) (MIT) voor
+statische inspectie van managed code. Deze projecten zijn bestudeerd; hun code
+en assets worden niet meegeleverd. Zie [NOTICE](NOTICE) voor credits en
+[de eerste demo-acceptatie](docs/RUST-SKATE-DEMO.md) voor de toepassing en grenzen.
+
 Onderstaande rewritebroncode, controles en handleidingen blijven bewaard als
 historisch werk. De rewrite-roadmap en bijbehorende automatische loop zijn
 gepauzeerd; ze vormen geen mod-opleverplan of actuele releaseclaim.
