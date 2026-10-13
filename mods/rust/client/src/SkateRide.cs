@@ -19,6 +19,11 @@ public static class SkateRide
     // board keeps its line while it slides and swings back when the brake or the turn is let go.
     public const float PowerslideFrom = 2.5f, PowerslideDegrees = 85f, PowerslideDecel = 9f, PowerslideIn = 12f, PowerslideOut = 7f;
     public static float Powerslide, PowerslideSide;
+    // Steering with the stick has weight, as in the skate. games: the turn builds over a moment as the
+    // rider leans into it and eases out when let go, rather than the heading jumping with the stick;
+    // and a board barely rolling turns only a little (a stopped board is turned by a kickturn, not a carve).
+    public const float SteerIn = 7f, SteerOut = 10f, SteerStill = 0.35f, SteerFull = 2f;
+    public static float SteerRate;
     public const float AirGravity = 16f, OlliePop = 6f, MaxFall = 30f, BailImpact = 12f, BailSeconds = 1.3f, BailDecel = 10f, PushPeriod = 0.8f, SeaLevel = -1.1f, LowestCap = 2f, LagStep = 0.1f, RaiseWait = 3f, CapForget = 30f, ManualPace = 1f, ManualHold = 0.3f, HopGrace = 0.3f;
     // Pumping: the shared SkateRidePhysics judges it (a crouch held down a transition, let go
     // through its bottom); PumpCharge only shapes the rider's crouch. Landing: the fall becomes
@@ -246,7 +251,7 @@ public static class SkateRide
         var v = b.linearVelocity; velocity = v; var rise = v.y; v.y = 0f;
         Speed = Vector3.Dot(v, Dir(yaw));
         SkateKeys.EndStep();
-        hasLast = false; Steps = 0; Resets = 0; Top = 0f; Lean = 0f; Powerslide = 0f; PowerslideSide = 1f; lastPull = mountAt = Time.realtimeSinceStartup;
+        hasLast = false; Steps = 0; Resets = 0; Top = 0f; Lean = 0f; SteerRate = 0f; Powerslide = 0f; PowerslideSide = 1f; lastPull = mountAt = Time.realtimeSinceStartup;
         // A cap from a ride a while ago says nothing about this one.
         if (mountAt - putBackAt > CapForget) ForgetServer();
         VSpeed = 0f; AirTime = 0f; flipLeft = shoveLeft = pendShove = bodyLeft = 0f; pendFlip = 0; SpinDeg = FlipDeg = ShoveDeg = BodyDeg = 0; LateTrick = false; Jumped = TrickAir = Braking = Manual = NoseManual = spinning = DeckReversed = false; PushPhase = 0f; stuck = 0; heldSteps = 0; Held = false;
@@ -422,8 +427,15 @@ public static class SkateRide
         Powerslide += ((wantSlide ? 1f : 0f) - Powerslide) * Clamp(dt * (wantSlide ? PowerslideIn : PowerslideOut), 0f, 1f);
         if (Powerslide < 0.01f && !wantSlide) Powerslide = 0f;
         // A stick steers by how far it is pushed; keys and the mouse turn the board toward where the rider looks.
-        if (RevertLeft != 0f || Powerslide > 0.3f) { }
-        else if (SkateKeys.Analog) Yaw += Clamp(SkateKeys.Steer, -1f, 1f) * maxTurn;
+        if (RevertLeft != 0f || Powerslide > 0.3f) SteerRate = 0f;
+        else if (SkateKeys.Analog)
+        {
+            var rolling = Clamp(SteerStill + (1f - SteerStill) * Math.Abs(Speed) / SteerFull, SteerStill, 1f);
+            var want = Clamp(SkateKeys.Steer, -1f, 1f) * TurnRate / (1f + Math.Abs(Speed) / 8f) * rolling;
+            var easing = Math.Abs(want) > Math.Abs(SteerRate) && want * SteerRate >= 0f ? SteerIn : SteerOut;
+            SteerRate += (want - SteerRate) * (1f - (float)Math.Exp(-easing * dt));
+            Yaw += SteerRate * dt;
+        }
         else Yaw += Clamp(Delta(Yaw, SkateKeys.LookYaw + ((SkateKeys.Left ? -1f : 0f) + (SkateKeys.Right ? 1f : 0f)) * 40f), -maxTurn, maxTurn);
         if (now - jumpWanted >= 0.12f) Revert(dt);
         var dir = RevertLeft != 0f ? revertDir * revertSign : Dir(Yaw);
@@ -484,7 +496,7 @@ public static class SkateRide
         // In a slide the rider leans back from the way he goes, into the turn that started it.
         var leanWant = Powerslide > 0.01f ? -PowerslideSide * 18f * Powerslide : Clamp((Delta(before, Yaw) + revertStep) / dt * 0.12f, -25f, 25f);
         revertStep = 0f;
-        Lean += (leanWant - Lean) * 0.2f;
+        Lean += (leanWant - Lean) * (1f - (float)Math.Exp(-12f * dt));
         TrickTick(false, false, 0, 0, 0, 0, dt);
     }
 
@@ -636,7 +648,7 @@ public static class SkateRide
         VSpeed -= AirGravity * dt; if (VSpeed < -MaxFall) VSpeed = -MaxFall;
         if (pos.y - takeOffY > AirPeak) AirPeak = pos.y - takeOffY;
         var dir = Dir(Yaw);
-        Tangent = dir; Lean += (0f - Lean) * 0.2f;
+        Tangent = dir; SteerRate = 0f; Lean += (0f - Lean) * (1f - (float)Math.Exp(-12f * dt));
 
         // A rotation is only started when the arc lasts long enough to finish it: an unfinished one is a bail.
         var left = (float)(TimeToGround() - 0.03);
