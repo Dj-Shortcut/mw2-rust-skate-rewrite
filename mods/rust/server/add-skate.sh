@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
-COMMIT=c6b4d48de1521300010fb8e3636ea69e07d89e80
-SHA256=f7b9f56326c1727f136af70fefff03e161601c5c7d17c675727daa80793e394e
-VERSION=0.3.9
+COMMIT=fa0ffa78448cbfdd8a572d8cf029e41d5514d899
+SHA256=8e7525b090468dd10a7cdab27e53ed5bfac693e6fb75d0d2bbeb7669bf68078c
+VERSION=0.3.11
 DIR=/srv/rust/server/oxide/plugins
 CHECK_ONLY=false
 DEFER_RELOAD=false

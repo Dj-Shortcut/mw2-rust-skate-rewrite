@@ -10,8 +10,8 @@ temporary cleanup after real file-operation failures, including refusal to
 read a root-only prior source through the unprivileged worker. It requires container
 root and refuses an existing Rust installation or `rust` identity.
 
-The reviewed delivery pins ShortcutSkate **0.3.9**; the fixture supplies matching
-new monitored load records and ignores an older 0.3.8 record. Its prior-source
+The reviewed delivery pins ShortcutSkate **0.3.11**; the fixture supplies matching
+new monitored load records and ignores an older 0.3.10 record. Its prior-source
 fixture and exact backup/rollback checks remain unchanged. Deferred mode checks
 backup/source/cleanup without logs. The exact checksum-verified one-liner in
 [LINUX.md](../../../mods/rust/server/LINUX.md) installs deferred source then invokes
