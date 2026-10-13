@@ -286,9 +286,14 @@ public static class Scenarios
         {
             feetRun = run; feetPopped = feetReverted = false;
             if (!SkateRide.On) SkateRig.MountNow(yaw0);
-            SkateCamera.Fixed = true; SkateCamera.Chase = true; SkateCamera.Bearing = 90f; SkateCamera.FixedHeight = 1.15f; SkateCamera.FixedDistance = 3.2f;
+            SkateCamera.Fixed = true; SkateCamera.Chase = true; SkateCamera.FixedHeight = 1.3f; SkateCamera.FixedDistance = 3.2f;
             Say("feet run " + run + ": push");
         }
+        // The camera on whichever side of the way of travel is clear (seen live: a long ledge beside
+        // the runway hid the rider from one side).
+        RaycastHit side;
+        var blocked = Physics.Raycast(SkateRide.Position + Vector3.up * 0.6f, SkateRide.Dir(SkateRide.Yaw + 90f), out side, SkateCamera.FixedDistance + 0.5f, SkateRide.GroundMask, QueryTriggerInteraction.Ignore);
+        SkateCamera.Bearing = blocked ? 270f : 90f;
         var way = yaw0 + (run % 2) * 180f;
         SkateKeys.LookYaw = way; SkateKeys.Spin = game < feetSpinUntil ? 1f : 0f;
         SkateKeys.Push = t < 3f && Math.Abs(SkateRide.Speed) < 5f;
