@@ -72,6 +72,7 @@ public static class Scenarios
         else if (Name == "place") Place(s, now);
         else if (Name == "pad") Pad(game, now);
         else if (Name == "tour") Tour(game);
+        else if (Name == "feet") Feet(game);
         else Trick(game);
     }
 
@@ -270,6 +271,38 @@ public static class Scenarios
         }
         SkateKeys.Push = false; SkateKeys.Brake = true; SkateKeys.Jump = false;
         if (stage > TourRest) { tourIndex++; tourStage = 0; tourAt = game; SkateKeys.Brake = false; stillSince = -1f; }
+    }
+
+    // The feet, watched from the side as the owner sees them: back and forth on the runway, each
+    // run a few pushes, an ollie, a revert on landing and a stop; FeetRuns runs, then done. The
+    // camera follows from the rider's front, so screenshots show where each foot is.
+    public const float FeetCycle = 8f; public const int FeetRuns = 8;
+    private static int feetRun = -1; private static bool feetPopped, feetReverted; private static float feetSpinUntil;
+    private static void Feet(float game)
+    {
+        var run = (int)(game / FeetCycle); var t = game - run * FeetCycle;
+        if (run >= FeetRuns) { SkateCamera.Fixed = SkateCamera.Chase = false; Finish(); return; }
+        if (run != feetRun)
+        {
+            feetRun = run; feetPopped = feetReverted = false;
+            if (!SkateRide.On) SkateRig.MountNow(yaw0);
+            SkateCamera.Fixed = true; SkateCamera.Chase = true; SkateCamera.Bearing = 90f; SkateCamera.FixedHeight = 1.15f; SkateCamera.FixedDistance = 3.2f;
+            Say("feet run " + run + ": push");
+        }
+        var way = yaw0 + (run % 2) * 180f;
+        SkateKeys.LookYaw = way; SkateKeys.Spin = game < feetSpinUntil ? 1f : 0f;
+        SkateKeys.Push = t < 3f && Math.Abs(SkateRide.Speed) < 5f;
+        SkateKeys.Brake = t > 5.2f && t < 7f;
+        if (!feetPopped && t >= 3f && SkateRide.Mode == RideMode.Ground)
+        {
+            feetPopped = true; SkateKeys.JumpPressed = true; SkateKeys.PopKind = SkatePopKind.Ollie; SkateKeys.PopScale = 1f;
+            Say("feet run " + run + ": ollie");
+        }
+        if (feetPopped && !feetReverted && SkateRide.Mode == RideMode.Ground && Time.realtimeSinceStartup - SkateRide.LandAt < 0.3f && SkateRide.LandAt > 0f && t > 3.2f)
+        {
+            feetReverted = true; SkateKeys.SpinPressed = true; SkateKeys.Spin = 1f; feetSpinUntil = game + 0.15f;
+            Say("feet run " + run + ": revert asked, speed " + SkateRide.Speed.ToString("F1"));
+        }
     }
 
     private static void Ride(float s)
