@@ -125,7 +125,7 @@ public static class Scenarios
     // is logged per piece. The pieces are those SkateParks found near the player.
     public const float TourRun = 8f, TourOut = 8f, TourReach = 0.7f, TourApproach = 25f, TourAcross = 5f, TourRest = 2f;
     private static int tourIndex = -1, tourStage, tourHeld, tourResets, tourBails, tourGrinds;
-    private static float tourAt, tourStartY, tourRise, tourAir, tourTop;
+    private static float tourAt, tourStartY, tourRise, tourAir, tourTop, tourBack;
     private static bool tourPopped;
     private static string tourGrindKinds = "";
     private static float TourSpeed(SkateParks.Kind k)
@@ -164,14 +164,24 @@ public static class Scenarios
         return (float)(Math.Atan2(want.x, want.z) * 180.0 / Math.PI);
     }
 
-    // Held against something on the way for a second: turn well off for a moment and push on.
-    private static float heldSince = -1f, turnOffUntil = -1f;
+    // Held against something on the way for a second, or not getting anywhere for two (seen live:
+    // 25 s parked by a quarterpipe without ever counting as held): turn well off for a moment and
+    // push on, a different way each time.
+    private static float heldSince = -1f, turnOffUntil = -1f, stillSince = -1f, turnBy = 110f;
+    private static Vector3 stillAt;
     private static float Unstick(float yaw, float game)
     {
-        if (game < turnOffUntil) { SkateKeys.Push = SkateRide.Speed < 3f; return yaw + 110f; }
-        if (!SkateRide.Held) { heldSince = -1f; return yaw; }
-        if (heldSince < 0f) heldSince = game;
-        if (game - heldSince > 1f) { turnOffUntil = game + 1.5f; heldSince = -1f; Say("tour: held on the way at " + Out.V1(SkateRide.Position) + ", turning off"); }
+        if (game < turnOffUntil) { SkateKeys.Push = Math.Abs(SkateRide.Speed) < 3f; return yaw + turnBy; }
+        var pos = SkateRide.On ? SkateRide.Position : SkateRig.LocalT.position;
+        if (stillSince < 0f || (pos - stillAt).sqrMagnitude > 0.25f) { stillSince = game; stillAt = pos; }
+        var still = game - stillSince > 2f;
+        if (!SkateRide.Held) heldSince = -1f;
+        else if (heldSince < 0f) heldSince = game;
+        if (still || (heldSince >= 0f && game - heldSince > 1f))
+        {
+            turnOffUntil = game + 1.5f; heldSince = -1f; stillSince = -1f; turnBy = turnBy > 0f ? -110f : 110f;
+            Say("tour: " + (still ? "not moving" : "held") + " on the way at " + Out.V1(pos) + ", mode " + SkateRide.Mode + ", speed " + SkateRide.Speed.ToString("F1") + ", turning off " + (turnBy > 0f ? "right" : "left"));
+        }
         return yaw;
     }
 
@@ -221,7 +231,7 @@ public static class Scenarios
             if (flat.magnitude < TourReach || stage > TourApproach)
             {
                 Say("tour " + kind + " #" + tourIndex + ": " + (flat.magnitude < TourReach ? "at the start" : "start not reached, " + flat.magnitude.ToString("F1") + " m off") + " after " + stage.ToString("F1") + " s, at " + Out.V1(pos));
-                tourStage = 1; tourAt = game; tourPopped = false; tourStartY = pos.y; tourRise = 0f; tourAir = 0f; tourTop = 0f; tourHeld = SkateRide.Held ? 1 : 0; tourResets = SkateRide.ResetsAll; tourBails = SkateRide.Bails; tourGrinds = SkateRide.GrindStarts; tourGrindKinds = "";
+                tourStage = 1; tourAt = game; tourPopped = false; tourStartY = pos.y; tourRise = 0f; tourAir = 0f; tourTop = 0f; tourBack = 0f; tourHeld = SkateRide.Held ? 1 : 0; tourResets = SkateRide.ResetsAll; tourBails = SkateRide.Bails; tourGrinds = SkateRide.GrindStarts; tourGrindKinds = "";
             }
             return;
         }
@@ -232,9 +242,13 @@ public static class Scenarios
             var centre = IsLedge(kind) ? origin + SkateRide.Dir(heading - 90f) * TourBeside : origin;
             var off = Vector3.Dot(pos - centre, side);
             SkateKeys.LookYaw = heading - Math.Max(-20f, Math.Min(20f, off * 30f));
-            SkateKeys.Push = SkateRide.Speed < TourSpeed(kind);
+            // Up a transition, no more pushing once on it: what comes back down is the roll back, fakie,
+            // with nothing added (#409).
+            var transition = kind == SkateParks.Kind.QuarterPipe || kind == SkateParks.Kind.Halfpipe;
+            SkateKeys.Push = SkateRide.Speed < TourSpeed(kind) && !(transition && (tourRise > 0.3f || SkateRide.Speed < 0f));
             tourRise = Math.Max(tourRise, pos.y - tourStartY);
             tourTop = Math.Max(tourTop, SkateRide.Speed);
+            if (SkateRide.Mode == RideMode.Ground) tourBack = Math.Min(tourBack, SkateRide.Speed);
             if (SkateRide.Mode == RideMode.Air) tourAir += Time.deltaTime;
             if (SkateRide.Held) tourHeld++;
             if (SkateRide.Mode == RideMode.Grind && !tourGrindKinds.Contains(SkateRide.GrindKind.ToString())) tourGrindKinds += SkateRide.GrindKind + " ";
@@ -248,14 +262,14 @@ public static class Scenarios
             if (IsLedge(kind) && toLedge < 0.6f) SkateKeys.LookYaw = heading + 8f;
             if (stage > TourAcross)
             {
-                Say("TOUR " + kind + " #" + tourIndex + ": rose " + tourRise.ToString("F2") + " m, air " + tourAir.ToString("F2") + " s, top " + tourTop.ToString("F1") + " m/s, held " + (tourHeld > 0 ? "yes" : "no")
+                Say("TOUR " + kind + " #" + tourIndex + ": rose " + tourRise.ToString("F2") + " m, air " + tourAir.ToString("F2") + " s, top " + tourTop.ToString("F1") + " m/s, back " + (-tourBack).ToString("F1") + " m/s, held " + (tourHeld > 0 ? "yes" : "no")
                     + ", grinds " + (SkateRide.GrindStarts - tourGrinds) + (tourGrindKinds != "" ? " (" + tourGrindKinds.Trim() + ")" : "") + ", bails " + (SkateRide.Bails - tourBails) + ", put backs " + (SkateRide.ResetsAll - tourResets) + ", end " + Out.V1(pos) + " " + SkateRide.Mode);
                 tourStage = 2; tourAt = game; SkateKeys.Jump = false;
             }
             return;
         }
         SkateKeys.Push = false; SkateKeys.Brake = true; SkateKeys.Jump = false;
-        if (stage > TourRest) { tourIndex++; tourStage = 0; tourAt = game; SkateKeys.Brake = false; }
+        if (stage > TourRest) { tourIndex++; tourStage = 0; tourAt = game; SkateKeys.Brake = false; stillSince = -1f; }
     }
 
     private static void Ride(float s)
