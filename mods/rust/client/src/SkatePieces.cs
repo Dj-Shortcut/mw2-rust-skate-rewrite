@@ -115,7 +115,12 @@ public static class SkatePieces
         {
             nextHeldRead = now + 0.25f;
             var was = HeldKind;
-            HeldKind = SkateRide.On || SkateRig.Local == null || !SkateHeld.Read(SkateRig.Local) ? -1 : SkateHeld.HeldKind();
+            var read = !SkateRide.On && SkateRig.Local != null && SkateHeld.Read(SkateRig.Local);
+            HeldKind = read ? SkateHeld.HeldKind() : -1;
+            // Seen live (Rust 25878151): the held item cannot be read on this client (its types are
+            // renamed). Then the piece last taken with the picker is the one held, for as long as a
+            // building plan is in the hand (its view model is named after the planner).
+            if (!read && !SkateRide.On && Picked >= 0) HeldKind = PlannerInHand() ? Picked : -1;
             if (HeldKind != was) Out.Say("PIECES held: " + (HeldKind < 0 ? "no park item" : SkateHeld.ItemNames[HeldKind]) + " (item " + SkateHeld.Shortname + " '" + SkateHeld.Name + "' marker " + SkateHeld.Marker.ToString("X") + ")");
         }
         if (HeldKind < 0) { if (previewKind >= 0) { SkateParks.PreviewClear(); previewKind = -1; } return; }
@@ -135,6 +140,24 @@ public static class SkatePieces
         Said = SkateHeld.ItemNames[HeldKind] + ": place it like a square foundation (left click, R turns it)"; SaidAt = now;
     }
 
+    // The piece last taken with the picker; -1 before any.
+    public static int Picked = -1;
+    private static bool PlannerInHand()
+    {
+        try
+        {
+            var models = UnityEngine.Object.FindObjectsOfType<BaseViewModel>();
+            for (var i = 0; i < models.Length; i++)
+            {
+                var m = models[i];
+                if (m == null || !m.gameObject.activeInHierarchy) continue;
+                if (m.gameObject.name.IndexOf("planner", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            }
+        }
+        catch (Exception) { }
+        return false;
+    }
+
     // The chosen piece's park item put in the player's hand, the way a number key would; the
     // player then places it with the building controls. Without one in the belt, the screen says so.
     public static void Place(float now)
@@ -142,9 +165,17 @@ public static class SkatePieces
         SaidAt = now;
         var player = SkateRig.Local;
         if (player == null) { Said = "No player yet"; return; }
+        Picked = Chosen;
         var slot = SkateHeld.FindInBelt(player, Chosen);
         Out.Say("PIECES take " + SkateHeld.ItemNames[Chosen] + ": belt" + (SkateHeld.Belt == "" ? " empty" : SkateHeld.Belt) + " -> slot " + slot);
         // Shown in the open menu too: seen live, the keyboard picker stays open and hid the answer.
+        // Where the belt cannot be read at all (seen live), the player picks the item's number key.
+        if (slot < 0 && SkateHeld.Belt == "belt not readable")
+        {
+            Close();
+            Said = "Press the number key of your " + SkateHeld.ItemNames[Chosen] + ", then place it like a square foundation (left click, R turns it)";
+            return;
+        }
         if (slot < 0) { Said = Status = "No " + SkateHeld.ItemNames[Chosen] + " in your belt (an admin gives the park items: skate.items all)"; return; }
         string how;
         if (SkateHeld.SelectSlot(player, slot, out how))
@@ -196,5 +227,5 @@ public static class SkatePieces
         return "";
     }
 
-    public static void Reset() { Close(); Asked = Said = Status = ""; SaidAt = AskedAt = -99f; Chosen = 0; Sent = Placed = 0; Turn = 0f; AimOk = false; }
+    public static void Reset() { Close(); Picked = -1; HeldKind = -1; Asked = Said = Status = ""; SaidAt = AskedAt = -99f; Chosen = 0; Sent = Placed = 0; Turn = 0f; AimOk = false; }
 }
