@@ -144,7 +144,8 @@ public static class SkatePieces
         if (player == null) { Said = "No player yet"; return; }
         var slot = SkateHeld.FindInBelt(player, Chosen);
         Out.Say("PIECES take " + SkateHeld.ItemNames[Chosen] + ": belt" + (SkateHeld.Belt == "" ? " empty" : SkateHeld.Belt) + " -> slot " + slot);
-        if (slot < 0) { Said = "No " + SkateHeld.ItemNames[Chosen] + " in your belt (an admin gives the park items: skate.items all)"; return; }
+        // Shown in the open menu too: seen live, the keyboard picker stays open and hid the answer.
+        if (slot < 0) { Said = Status = "No " + SkateHeld.ItemNames[Chosen] + " in your belt (an admin gives the park items: skate.items all)"; return; }
         string how;
         if (SkateHeld.SelectSlot(player, slot, out how))
         {
@@ -155,7 +156,7 @@ public static class SkatePieces
         }
         Out.Say("PIECES could not select: " + how);
         Close();
-        Said = "Press " + (slot + 1) + " to hold the " + SkateHeld.ItemNames[Chosen] + ", then place it like a square foundation";
+        Said = Status = "Press " + (slot + 1) + " to hold the " + SkateHeld.ItemNames[Chosen] + ", then place it like a square foundation";
     }
 
     // The piece asked for by name alone, the way a server with ShortcutSkate 0.3.5 takes it: the

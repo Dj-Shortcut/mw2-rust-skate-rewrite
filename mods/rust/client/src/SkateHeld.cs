@@ -37,7 +37,36 @@ public static class SkateHeld
                 foreach (var ty in types) if (ty != null && ty.Name == "Item" && ty.GetProperty("info") != null) { item = ty; break; }
                 if (item != null) break;
             }
-            if (item == null) { Out.Say("HELD no Item type with an info member"); return; }
+            if (item == null)
+            {
+                // Seen live (Rust 25878151): no type is named Item. The item type is the one that holds
+                // an ItemDefinition (a Unity asset type, whose name the build keeps); named here with
+                // its members, and the player members that lead to it, for the next build.
+                var shapes = 0;
+                foreach (var a in AppDomain.CurrentDomain.GetAssemblies())
+                {
+                    Type[] types;
+                    try { types = a.GetTypes(); } catch (ReflectionTypeLoadException e) { types = e.Types; } catch (Exception) { continue; }
+                    foreach (var ty in types)
+                    {
+                        if (ty == null || shapes >= 12) continue;
+                        PropertyInfo def = null;
+                        try { foreach (var pr in ty.GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)) if (pr.PropertyType.Name == "ItemDefinition") { def = pr; break; } } catch (Exception) { continue; }
+                        if (def == null) continue;
+                        shapes++;
+                        var ms = "";
+                        try { foreach (var pr in ty.GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)) ms += " " + pr.Name + ":" + pr.PropertyType.Name; } catch (Exception) { }
+                        Out.Say("HELD holds an ItemDefinition: " + ty.FullName + " (" + a.GetName().Name + ") members:" + (ms.Length > 900 ? ms.Substring(0, 900) + "…" : ms));
+                    }
+                }
+                if (shapes == 0) Out.Say("HELD no type holds an ItemDefinition");
+                var pm = "";
+                for (var at = t; at != null && at != typeof(object); at = at.BaseType)
+                    foreach (var pr in at.GetProperties(flags | BindingFlags.DeclaredOnly))
+                        if (pr.GetIndexParameters().Length == 0 && pr.PropertyType.Assembly == t.Assembly) pm += " " + pr.Name + ":" + pr.PropertyType.Name;
+                Out.Say("HELD player properties of game types:" + (pm.Length > 1500 ? pm.Substring(0, 1500) + "…" : pm));
+                return;
+            }
             var members = "";
             foreach (var p in item.GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)) members += " " + p.Name + ":" + p.PropertyType.Name;
             Out.Say("HELD Item members:" + members);
