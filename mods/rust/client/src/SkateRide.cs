@@ -24,9 +24,9 @@ public static class SkateRide
     // through its bottom); PumpCharge only shapes the rider's crouch. Landing: the fall becomes
     // roll on a slope by LandRoll (the shared landing rule); a revert within RevertWindow of a
     // landed trick turns the board round at RevertRate and keeps the combo.
-    public const float PumpCharge = 0.4f, LandRoll = 0.8f, RevertWindow = 0.35f, RevertRate = 600f;
+    public const float PumpCharge = 0.4f, LandRoll = 0.8f, RevertWindow = 0.6f, RevertRate = 600f;
     public const long RevertPoints = 50;
-    public const float RevertStick = 0.85f;
+    public const float RevertStick = 0.85f, RevertSweep = 180f;
     private static float spinAtLand;
     private static Vector3 landRoll; private static bool hasLandRoll;
     private const float RayLift = 0.6f, FeetProbe = 0.3f, AirProbe = 3f;
@@ -516,11 +516,14 @@ public static class SkateRide
     {
         if (RevertLeft == 0f)
         {
-            // A stick that was already steering through the landing is a carve, not a revert: the turn
-            // must be asked for afresh, from the middle, and hard.
-            if (!landedTrick || now - LandAt > RevertWindow || !SkateKeys.SpinPressed || SkateKeys.Spin == 0f || Math.Abs(Speed) < 1f) return;
-            if (spinAtLand != 0f || (SkateKeys.Analog && Math.Abs(SkateKeys.Steer) < RevertStick)) return;
-            landedTrick = false; RevertLeft = 180f * (SkateKeys.Spin > 0f ? 1f : -1f); Reverts++; revertSign = Math.Sign(Speed); revertDir = Dir(Yaw) * revertSign;
+            // With the controller a revert is the left stick swept half round its rim, as in the
+            // skate. games: a hard steer after a landing is a carve (the owner's ride had a dozen
+            // reverts he never asked for). On the keys the turn must be asked for afresh.
+            if (!landedTrick || now - LandAt > RevertWindow || Math.Abs(Speed) < 1f) return;
+            float way;
+            if (SkateKeys.Analog) { if (Math.Abs(SkatePad.LeftSweep) < RevertSweep) return; way = Math.Sign(SkatePad.LeftSweep); SkatePad.LeftSweep = 0f; }
+            else { if (!SkateKeys.SpinPressed || SkateKeys.Spin == 0f || spinAtLand != 0f) return; way = SkateKeys.Spin > 0f ? 1f : -1f; }
+            landedTrick = false; RevertLeft = 180f * way; Reverts++; revertSign = Math.Sign(Speed); revertDir = Dir(Yaw) * revertSign;
             Out.Say("SKATE revert begins");
         }
         var step = Math.Min(Math.Abs(RevertLeft), RevertRate * dt) * Math.Sign(RevertLeft);

@@ -110,9 +110,24 @@ public static class SkatePad
     }
 
     // The controller's state from the moment `us` of the reader's clock on.
+    // The left stick swept round its rim, in degrees (clockwise, as seen on the stick, positive),
+    // within SweepMicros of reaching the rim: half a circle asks for a revert, as in the skate. games.
+    public static float LeftSweep;
+    public const float SweepRim = 0.7f; public const long SweepMicros = 600000;
+    private static float leftAngle; private static bool leftOnRim; private static long sweepFromUs;
+    private static void Sweep(long us, float lx, float ly)
+    {
+        if (lx * lx + ly * ly < SweepRim * SweepRim) { leftOnRim = false; LeftSweep = 0f; return; }
+        var angle = (float)(Math.Atan2(lx, ly) * 180.0 / Math.PI);
+        if (!leftOnRim || us - sweepFromUs > SweepMicros) { leftOnRim = true; LeftSweep = 0f; sweepFromUs = us; leftAngle = angle; return; }
+        var d = angle - leftAngle; while (d > 180f) d -= 360f; while (d < -180f) d += 360f;
+        LeftSweep += d; leftAngle = angle;
+    }
+
     private static void State(long us, int buttons, float lt, float rt, float lx, float ly, float rx, float ry, float now, bool edges)
     {
         Advance(us);
+        Sweep(us, lx, ly);
         if (edges) pressed |= buttons & ~Buttons;
         SkatePadLog.Stick(us, rx, ry);
         SkatePadLog.Buttons(buttons, lt, rt, lx, ly, rx, ry, now, edges);
