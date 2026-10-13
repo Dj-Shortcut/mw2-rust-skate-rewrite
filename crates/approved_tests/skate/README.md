@@ -10,8 +10,8 @@ temporary cleanup after real file-operation failures, including refusal to
 read a root-only prior source through the unprivileged worker. It requires container
 root and refuses an existing Rust installation or `rust` identity.
 
-The reviewed delivery pins ShortcutSkate **0.3.8**; the fixture supplies matching
-new monitored load records and ignores an older 0.3.7 record. Its prior-source
+The reviewed delivery pins ShortcutSkate **0.3.11**; the fixture supplies matching
+new monitored load records and ignores an older 0.3.10 record. Its prior-source
 fixture and exact backup/rollback checks remain unchanged. Deferred mode checks
 backup/source/cleanup without logs. The exact checksum-verified one-liner in
 [LINUX.md](../../../mods/rust/server/LINUX.md) installs deferred source then invokes
@@ -126,7 +126,7 @@ The runner uses the actual compiled shared DLL, prints its path/SHA-256 and comp
 
 The owner approved two layout scenarios by name for [Task 4](https://github.com/Dj-Shortcut/mw2-rust-skate-rewrite/issues/337#issuecomment-6099499139):
 
-- `skate_park_piece_layouts`: the eight pieces' block positions, orientations, native materials and adjoining nominal square-floor edges, including the complete halfpipe's flat, transitions, decks and railings, plus nominal authored-asset pivot offsets.
+- `skate_park_piece_layouts`: the eight pieces' block positions, orientations, native materials and adjoining nominal square-floor edges, including the complete halfpipe's flat, transitions, decks and railings, plus nominal authored-asset pivot offsets. Native halfpipe walls use thin local X and three-metre local Z; checks cover all twenty wall footprints, joined rail ends and their placement under rotated anchors.
 - `skate_park_anchor_yaw_and_snap`: translated and rotated layouts preserve the supplied native snapped anchor, including anchors away from the world origin. Inverse and complete known-kind matching cover unordered/wrapped observations, relative noise, ambiguous single-floor kinds, invalid values/counts/prefabs, reflection and atomic finite bounds. The foundation extension supplies abstract construction bounds and independently checks every tilted floor corner above the support, without changing the authored ledge/deck heights.
 
 Build the actual shared library and server plugin using genuine dedicated-server references, then execute the same engine-free scenarios separately against each actual DLL on .NET 8:
@@ -143,6 +143,30 @@ dotnet context/skate-approved-park/bin/ShortcutSkate/net8.0/SkateParkLayoutScena
 The legacy `ActualPluginPath` remains a fallback when `SkateParkLibraryPath` is omitted. Reference only one DLL in each run. Intermediate/output directories under ignored `context/` are separated by the selected DLL's filename. Execute the emitted runner directly: SDK `dotnet run` can choose its default target despite the library property passed to its build. The runner prints its loaded DLL path and SHA-256 and accepts that expected hash as an optional argument.
 
 These checks use the layout helpers in the selected DLL, with independent expected positions and seams. Matching tolerance is relative to the deterministic observed-part-derived anchor, rather than an ideal common-anchor fit; the opposing ±0.004/±0.009 m quarter fixtures distinguish acceptance and refusal at tolerance 0.01. Matching does not prove registered park identity or infer the kind of a single floor. The scenarios do not verify native floor dimensions/colliders, building privilege, stability, save/load callbacks, demolition or gameplay, and they do not start the Rust client or server.
+
+## Park build items
+
+The owner approved `skate_park_build_items` by name on 12 October 2026. It checks
+the eight independently specified names/tags, reserved marker gaps, exact stock
+carrier/skin/quantity identity, atomic invalid outputs, verified single debit,
+complete paid-group recovery eligibility, historical/free/interrupted/claimed
+refusals, determinism and warmed allocation. It invokes the actual helper in each
+separately selected compiled shared and plugin DLL; it does not copy the helper.
+
+```sh
+dotnet build crates/approved_tests/skate/SkateParkBuildItemScenarios.csproj -p:ActualLibraryPath=/absolute/path/to/SkateMotion.dll
+dotnet context/skate-approved-park-build-items/bin/SkateMotion/net8.0/SkateParkBuildItemScenarios.dll EXPECTED_SHA256
+dotnet build crates/approved_tests/skate/SkateParkBuildItemScenarios.csproj -p:ActualLibraryPath=/absolute/path/to/ShortcutSkate.dll
+dotnet context/skate-approved-park-build-items/bin/ShortcutSkate/net8.0/SkateParkBuildItemScenarios.dll EXPECTED_SHA256
+```
+
+Build both actual libraries against genuine references as above. Each runner
+prints its loaded DLL path/hash; the optional argument pins that exact hash.
+Outputs/intermediates are isolated by DLL filename. Execute the emitted runner
+directly after each build. `SkateLibraryPath` remains
+an alias. Outputs stay in ignored `context/`. No native inventory/UID mutation,
+save/claim atomicity, refund delivery, hammer or client UI is exercised; no Rust
+client/server, Oxide or Shadow starts. See [integration limits](../../../docs/RUST-SKATE-BUILD-ASSETS.md).
 
 ## Park gesture selection
 

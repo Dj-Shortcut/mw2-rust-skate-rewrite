@@ -154,6 +154,7 @@ namespace Shortcut.RustMod
     {
         public const double MinimumMeasurement = 0.01;
         public const double MaximumMeasurement = 5;
+        private const double PoseSpeed = 14;
         private const double ReachMargin = 0.000001;
         // A leg is never asked to be quite straight: a skeleton whose hips sit a little off the
         // module's would then fall short of the ankle, and a foot on the ground would drag.
@@ -199,7 +200,7 @@ namespace Shortcut.RustMod
             var grip = namedGrab ? Grip(input.GrabKind, backIsLeft, input.Stance == SkateStance.Regular) : default(GrabGrip);
             bool grabLeft = namedGrab ? grip.Left : backIsLeft;
             double armLength = rig.UpperArmLength + rig.ForearmLength;
-            double speed = input.Speed / SkateMotion.MaximumGroundSpeed;
+            double speed = Math.Min(1, input.Speed / PoseSpeed);
             double lean = input.LeanDegrees * Math.PI / 180;
             double turn = pushing ? PushTurn(input.PushPhase) : 0;
             double swing = pushing ? Math.Sin(2 * Math.PI * input.PushPhase) : 0;

@@ -18,7 +18,7 @@ Client packets cannot supply rail geometry, contacts, poses or authority.
 Capture only inside a genuine descending airborne sweep, using its matching ID,
 near-horizontal normal, safe impact/flip, 0.12m lateral and 0.01m height tolerance.
 Velocity and final facing must align within 25degrees of either rail direction;
-along speed must be at least 1.5m/s and is bounded by 14m/s. Tuning is provisional.
+along speed must be at least 1.5m/s and is bounded by the shared 25m/s ceiling. Tuning is provisional.
 Sweep to the seated pose and verify clearance; obstruction denies capture.
 Store the exact captured ID/revision/geometry and signed distance/speed.
 Every grinding step requires genuine matching support. Missing support or
