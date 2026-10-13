@@ -148,6 +148,12 @@ The convention is regular heel-left: back-to-forward-left gives kickflip, right 
 
 The three exact owner-recorded timestamp sequences are permanent scenarios in [approved_tests/skate](../../../crates/approved_tests/skate/README.md): airborne pullback gives Ollie, grounded diagonal gives Ollie+Kickflip, and grounded roll/recoil gives Ollie without a manual. They test recognition and the composition contract; native controller feel remains a client verification step.
 
+The planned return-stroke correction in #406 rearms a spent right-stick composition
+only inside a 0.15-radius centre zone. The ordinary 0.25 dead zone and existing flick
+reach/direction thresholds stay unchanged. A new neutral-then-flick action remains
+available in the same flight; left-stick body circles remain independent. This
+contract is proposed pending implementation and source verification.
+
 ### Late flips and rider-only body varials
 
 The additive flick input is `SkateFlickInput(x,y,airborne,mirrored,leftX,leftY,poppedInAir)`.
