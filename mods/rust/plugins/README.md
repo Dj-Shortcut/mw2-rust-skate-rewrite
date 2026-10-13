@@ -1,6 +1,8 @@
 # ShortcutLoadouts for Rust PC / Oxide
 
 The separate skateboard movement component is documented in [SKATE.md](SKATE.md).
+The bounded admin-only client echo diagnostic is planned in
+[RUST-SKATE-INBOX.md](../../../docs/RUST-SKATE-INBOX.md).
 
 Source for [issue #266](https://github.com/Dj-Shortcut/mw2-rust-rust-rewrite/issues/266), in the same repository as the parked rewrite.
 Development code with genuine-reference compilation, source review and native Oxide compile/load/config checks; **player behavior and a playable mod remain unverified**.
