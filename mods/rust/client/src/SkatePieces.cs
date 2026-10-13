@@ -29,6 +29,8 @@ public static class SkatePieces
     public static float Yaw;
     private static bool keyboardOpen, wasP, wasQ, wasE, wasO, wasBack;
     private static int previewKind = -1;
+    // The kind whose ghost is drawn now; -1 for none.
+    public static int GhostKind { get { return previewKind; } }
     private static float previewYaw = 9999f; private static Vector3 previewAt;
 
     // Takes the controller's presses while the menu is open; returns the ones the ride may use.
@@ -121,22 +123,24 @@ public static class SkatePieces
             // hand says nothing about which item it is.
             if (HeldKind != was) Out.Say("PIECES held: " + (HeldKind < 0 ? "no park item" : SkateHeld.ItemNames[HeldKind]) + " (item " + SkateHeld.Shortname + " '" + SkateHeld.Name + "' marker " + SkateHeld.Marker.ToString("X") + ")");
         }
-        if (HeldKind < 0) { if (previewKind >= 0) { SkateParks.PreviewClear(); previewKind = -1; } return; }
+        if (HeldKind < 0) { HeldClear(); return; }
         AimOk = false;
         try
         {
             var cam = Camera.main;
-            if (cam == null) return;
             RaycastHit hit;
-            if (!Physics.Raycast(cam.transform.position, cam.transform.forward, out hit, AimReach, SkateRide.GroundMask, QueryTriggerInteraction.Ignore) || hit.normal.y < 0.5f) return;
+            // No ground in reach (sky, a steep wall, too far): no ghost left at an old spot.
+            if (cam == null || !Physics.Raycast(cam.transform.position, cam.transform.forward, out hit, AimReach, SkateRide.GroundMask, QueryTriggerInteraction.Ignore) || hit.normal.y < 0.5f) { HeldClear(); return; }
             AimOk = true; Aim = hit.point; Yaw = cam.transform.eulerAngles.y;
         }
-        catch (Exception) { return; }
+        catch (Exception) { HeldClear(); return; }
         var origin = SkateParks.ModelOriginForAnchor((SkateParks.Kind)HeldKind, Aim, Yaw);
         if (HeldKind != previewKind) { SkateParks.PreviewAt((SkateParks.Kind)HeldKind, origin, Yaw, false); previewKind = HeldKind; previewAt = origin; previewYaw = Yaw; }
         else if (Vector3.Distance(previewAt, origin) > 0.01f || Math.Abs(previewYaw - Yaw) > 0.01f) { SkateParks.PreviewMove(origin, Yaw); previewAt = origin; previewYaw = Yaw; }
         Said = SkateHeld.ItemNames[HeldKind] + ": place it like a square foundation (left click, R turns it)"; SaidAt = now;
     }
+
+    private static void HeldClear() { if (previewKind >= 0) { SkateParks.PreviewClear(); previewKind = -1; } }
 
     // The piece last taken with the picker; -1 before any.
     public static int Picked = -1;
@@ -151,8 +155,8 @@ public static class SkatePieces
         Picked = Chosen;
         var slot = SkateHeld.FindInBelt(player, Chosen);
         Out.Say("PIECES take " + SkateHeld.ItemNames[Chosen] + ": belt" + (SkateHeld.Belt == "" ? " empty" : SkateHeld.Belt) + " -> slot " + slot);
-        // Shown in the open menu too: seen live, the keyboard picker stays open and hid the answer.
-        // Where the belt cannot be read at all (seen live), the player picks the item's number key.
+        // Shown in the open menu too, which the keyboard picker leaves open.
+        // Where the belt cannot be read at all, the player picks the item's number key.
         if (slot < 0 && SkateHeld.Belt == "belt not readable")
         {
             Close();

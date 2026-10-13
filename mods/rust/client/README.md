@@ -130,8 +130,14 @@ facing the view. The picker (on foot: hold `Back` on the controller, D-pad choos
 closes; on the keyboard `P` opens and steps, `O` takes, `Backspace` closes) puts the chosen piece's
 item in the player's hand through the game's own belt (`SelectSlot`, found by shape and logged as a
 `HELD` line); without one in the belt it says so, and where the belt cannot be selected it names the
-number key to press. Not yet seen in game: the item marker read on the client, the belt selection,
-the ghost against the native foundation ghost, and the server building the piece.
+number key to press. Seen in game: the client has no readable held item, so no ghost is drawn
+(an unidentified building plan is never shown as a park piece). Not yet seen in game: the belt
+selection, the ghost against the native foundation ghost, and the server building the piece.
+
+A server line can reach the client without a hook only as text: `SkateInbox` reads the BepInEx log
+(`LogOutput.log`, written with `UnityLogListening` on: `sv plisten 1` before `zz play`) and logs every
+line carrying `SKATE-PROBE` as an `INBOX` line. It acts on nothing; it shows whether a server
+`echo` to this client arrives at all.
 
 ### Keys
 

@@ -199,7 +199,7 @@ public static class Scenarios
             if (flat.magnitude < TourReach || stage > TourApproach)
             {
                 Say("tour " + kind + " #" + tourIndex + ": " + (flat.magnitude < TourReach ? "at the start" : "start not reached, " + flat.magnitude.ToString("F1") + " m off") + " after " + stage.ToString("F1") + " s, at " + Out.V1(pos));
-                tourStage = 1; tourAt = game; tourPopped = false; tourStartY = pos.y; tourRise = 0f; tourAir = 0f; tourTop = 0f; tourHeld = SkateRide.Held ? 1 : 0; tourResets = SkateRide.Resets; tourBails = SkateRide.Bails; tourGrinds = SkateRide.GrindStarts; tourGrindKinds = "";
+                tourStage = 1; tourAt = game; tourPopped = false; tourStartY = pos.y; tourRise = 0f; tourAir = 0f; tourTop = 0f; tourHeld = SkateRide.Held ? 1 : 0; tourResets = SkateRide.ResetsAll; tourBails = SkateRide.Bails; tourGrinds = SkateRide.GrindStarts; tourGrindKinds = "";
             }
             return;
         }
@@ -227,7 +227,7 @@ public static class Scenarios
             if (stage > TourAcross)
             {
                 Say("TOUR " + kind + " #" + tourIndex + ": rose " + tourRise.ToString("F2") + " m, air " + tourAir.ToString("F2") + " s, top " + tourTop.ToString("F1") + " m/s, held " + (tourHeld > 0 ? "yes" : "no")
-                    + ", grinds " + (SkateRide.GrindStarts - tourGrinds) + (tourGrindKinds != "" ? " (" + tourGrindKinds.Trim() + ")" : "") + ", bails " + (SkateRide.Bails - tourBails) + ", put backs " + (SkateRide.Resets - tourResets) + ", end " + Out.V1(pos) + " " + SkateRide.Mode);
+                    + ", grinds " + (SkateRide.GrindStarts - tourGrinds) + (tourGrindKinds != "" ? " (" + tourGrindKinds.Trim() + ")" : "") + ", bails " + (SkateRide.Bails - tourBails) + ", put backs " + (SkateRide.ResetsAll - tourResets) + ", end " + Out.V1(pos) + " " + SkateRide.Mode);
                 tourStage = 2; tourAt = game; SkateKeys.Jump = false;
             }
             return;
