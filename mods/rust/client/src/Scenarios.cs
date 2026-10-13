@@ -446,7 +446,7 @@ public static class Scenarios
         new View("moving, pushing off", 115f, "move", 0f), new View("moving, turning round", 115f, "turn", 0f),
         new View("finish", 90f, "end", 0f) };
     private static float stepAt, nearAt, hudAt;
-    private static bool keyWas;
+    private static bool keyWas, poseFeetSaid;
 
     // The score display in each of its states, with made-up numbers. What fades is shown again
     // every few seconds, so that it is there whenever the view is looked at.
@@ -489,8 +489,15 @@ public static class Scenarios
         if (state == "bail") SkateRide.ModeAt = now - views[phase - 1].Value * SkateRide.BailSeconds;
         if (now >= nearAt) { nearAt = now + 1f; RiderRig.Near(); }
         Lamp(true);
+        // Half a second into a held view, once the pose has eased in: where the feet are, in the
+        // board's frame (see FeetLine), so a view can be read against the module's numbers.
+        if (!poseFeetSaid && phase > 0 && now - stepAt > 0.5f && !moving && state != "hud" && state != "first")
+        {
+            poseFeetSaid = true; float low; string foot;
+            Say("FEET view " + phase + " " + state + " " + views[phase - 1].Value.ToString("F2") + ": " + FeetLine(out low, out foot));
+        }
         if (!advance) return;
-        stepAt = now;
+        stepAt = now; poseFeetSaid = false;
         var v = views[phase];
         var still = v.State != "move" && v.State != "turn" && v.State != "end";
         Enter(phase + 1, v.Label + (still ? "   (K: next)" : ""));
