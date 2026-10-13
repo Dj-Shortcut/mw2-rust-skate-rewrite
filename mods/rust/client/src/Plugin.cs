@@ -24,6 +24,7 @@ public class SkatePlugin : BasePlugin
         }
         catch (Exception e) { Out.Err("steps.txt could not be read; using skate: " + e.GetType().Name + ": " + e.Message); }
         Out.Say("PLUGIN " + Version + " steps=" + steps);
+        SkateInbox.Start();
         foreach (var s in steps.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries))
         {
             try { Out.Say("STEP " + s + ": " + Run(s.Trim())); }
