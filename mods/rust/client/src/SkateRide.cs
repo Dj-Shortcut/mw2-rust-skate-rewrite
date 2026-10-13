@@ -13,7 +13,7 @@ public enum RideMode { Off, Ground, Air, Grind, Bail }
 public static class SkateRide
 {
     // Ground speed remains tangent speed across changing slopes; server feedback and caps are X/Z.
-    public const float PushAccel = 7f, MaxPush = 11f, BrakeDecel = 12f, RollDecel = 0.45f, MaxSpeed = 25f, TurnRate = 150f, SlopeGain = 1.6f;
+    public const float PushAccel = 7f, PushSteady = 0.4f, PushKick = 2.7f, MaxPush = 11f, BrakeDecel = 12f, RollDecel = 0.45f, MaxSpeed = 25f, TurnRate = 150f, SlopeGain = 1.6f;
     // A powerslide: the brake with a turn held while rolling faster than PowerslideFrom swings the
     // board across the way of travel (PowerslideDegrees) and scrubs speed at PowerslideDecel; the
     // board keeps its line while it slides and swings back when the brake or the turn is let go.
@@ -24,6 +24,7 @@ public static class SkateRide
     // and a board barely rolling turns only a little (a stopped board is turned by a kickturn, not a carve).
     public const float SteerIn = 7f, SteerOut = 10f, SteerStill = 0.35f, SteerFull = 2f;
     public static float SteerRate;
+    private static bool strokeBack;
     public const float AirGravity = 16f, OlliePop = 6f, MaxFall = 30f, BailImpact = 12f, BailSeconds = 1.3f, BailDecel = 10f, PushPeriod = 0.8f, SeaLevel = -1.1f, LowestCap = 2f, LagStep = 0.1f, RaiseWait = 3f, CapForget = 30f, ManualPace = 1f, ManualHold = 0.3f, HopGrace = 0.3f;
     // Pumping: the shared SkateRidePhysics judges it (a crouch held down a transition, let go
     // through its bottom); PumpCharge only shapes the rider's crouch. Landing: the fall becomes
@@ -469,8 +470,10 @@ public static class SkateRide
         // Rolling tail first, a push drives the board on the way it rolls (a fakie push), not to a stop.
         var fakiePush = Speed < -0.3f;
         var pushing = SkateKeys.Push && !SkateKeys.Brake && !Manual && !NoseManual && (fakiePush ? Speed > -pushLimit : Speed < pushLimit);
-        if (pushing && fakiePush) Speed = Math.Max(-pushLimit, Speed - PushAccel * dt);
-        else if (pushing) Speed = Math.Min(pushLimit, Speed + PushAccel * dt);
+        // Part of a push's speed comes as soon as it is asked for; the rest, the kick, comes while the
+        // foot is on the ground driving the board on (below), so the surge is seen with the stroke.
+        if (pushing && fakiePush) Speed = Math.Max(-pushLimit, Speed - PushAccel * PushSteady * dt);
+        else if (pushing) Speed = Math.Min(pushLimit, Speed + PushAccel * PushSteady * dt);
         if (Powerslide > 0.01f) Speed = Toward(Speed, 0f, (BrakeDecel * (1f - Powerslide) + PowerslideDecel * Powerslide) * dt);
         else if (SkateKeys.Brake) Speed = Toward(Speed, 0f, BrakeDecel * dt);
         Speed = Toward(Speed, 0f, RollDecel * dt);
@@ -479,13 +482,24 @@ public static class SkateRide
         LimitSpeed(Cap, Cap);
         if (pushing || PushPhase > 0f)
         {
-            if (PushPhase <= 0f) { Pushes++; PushMongo = SkateKeys.Mongo; PushLead = PushMongo != fakiePush; }
+            if (PushPhase <= 0f) { Pushes++; PushMongo = SkateKeys.Mongo; PushLead = PushMongo != fakiePush; strokeBack = fakiePush; }
             // While the foot is on the ground it stays where it came down and the board rolls on
             // past it: the stroke runs by the distance the board moves, not by the clock (a board
             // that cannot move gets the slow clock), so the foot never slides along the ground.
             var stroke = (float)(SkateRider.PushPlant + SkateRider.PushSweep);
             var span = (float)(SkateRider.PushUp - SkateRider.PushDown);
             var down = PushPhase > (float)SkateRider.PushDown && PushPhase < (float)SkateRider.PushUp;
+            // The kick: what the stroke covers of the foot's time on the ground this step drives the
+            // board on; the stroke then runs by the board's new pace, so the foot stays put.
+            var from = PushPhase;
+            var guess = from + (down ? Math.Max(dt / (PushPeriod * 3f), Math.Abs(Speed) * dt / stroke * span) : dt / PushPeriod);
+            var driven = Math.Min(guess, (float)SkateRider.PushUp) - Math.Max(from, (float)SkateRider.PushDown);
+            if (driven > 0f && SkateKeys.Push && !SkateKeys.Brake && !Manual && !NoseManual)
+            {
+                var gain = PushKick * driven / span;
+                if (strokeBack) { if (Speed > -pushLimit) Speed = Math.Max(-pushLimit, Speed - gain); }
+                else if (Speed < pushLimit) Speed = Math.Min(pushLimit, Speed + gain);
+            }
             PushPhase += down ? Math.Max(dt / (PushPeriod * 3f), Math.Abs(Speed) * dt / stroke * span) : dt / PushPeriod;
             if (PushPhase >= 1f) PushPhase = 0f;
         }
