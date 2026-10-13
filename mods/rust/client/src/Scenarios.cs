@@ -507,12 +507,12 @@ public static class Scenarios
     // The ride with a controller, without one: its states are played into the plugin as the reader
     // outside the game would share them, and the keyboard is left to itself. The pace is walking
     // pace, which the server accepts without its skate plugin.
-    private const string OlliePath = "0:0,-100 250:0,-20 262:0,60 274:0,100 330:0,0", KickflipPath = "0:0,-100 250:-20,-30 262:-55,45 274:-70,70 330:0,0",
-        HeelflipPath = "0:0,-100 250:20,-30 262:55,45 274:70,70 330:0,0",
+    private const string OlliePath = "0:0,-100 250:0,-20 262:0,60 274:0,100 330:0,0", KickflipPath = "0:0,-100 250:20,-30 262:55,45 274:70,70 330:0,0",
+        HeelflipPath = "0:0,-100 250:-20,-30 262:-55,45 274:-70,70 330:0,0",
         // Held back and rolled a quarter round the rim to the left: the board turns half round under the feet.
-        ShovePath = "0:0,-100 250:0,-100 262:-38,-92 274:-71,-71 286:-92,-38 298:-100,0 340:-100,0 380:0,0",
+        ShovePath = "0:0,-100 250:0,-100 262:38,-92 274:71,-71 286:92,-38 298:100,0 340:100,0 380:0,0",
         // Held at the back right and flicked straight across to the front left: the same with a kickflip in it.
-        VarialPath = "0:71,-71 250:71,-71 262:20,-20 274:-45,45 286:-64,64 300:-64,64 340:0,0";
+        VarialPath = "0:-71,-71 250:-71,-71 262:-20,-20 274:45,45 286:64,64 300:64,64 340:0,0";
     private static readonly float[] padAt = { 1f, 2f, 4.5f, 5.5f, 6.5f, 8f, 10.5f, 13f, 15.5f, 16.9f, 17.6f, 17.75f, 18.15f, 20.5f, 23f, 25.4f, 25.5f, 25.95f, 28f, 28.15f, 28.55f, 30.5f, 32f, 33.5f, 35.5f, 36.5f };
     private static readonly string[] padDo = { "y", "push", "right", "left", "straight", "ollie", "kickflip", "heelflip", "manual", "release", "ollie", "grab", "release", "shove", "varial", "left", "ollie", "straight",
         "ollie", "nose grab", "release", "nose manual", "release", "brake", "y", "finish" };

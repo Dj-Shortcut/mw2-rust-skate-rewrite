@@ -133,7 +133,12 @@ public static class SkatePad
         var grabbing = air && (LeftTrigger > Pulled || RightTrigger > Pulled);
         // The left stick goes along for the body varial (a full circle in the air), and whether this
         // flight was popped: only then does a right-stick composition in the air count as a late flip.
-        var input = new SkateFlickInput(grabbing ? 0f : SkateRide.Clamp(RightX, -1f, 1f), grabbing ? 0f : SkateRide.Clamp(RightY, -1f, 1f), air, SkateRide.Goofy != (SkateRide.On && SkateRide.TailFirst),
+        // The flick module's sides are those of a rider whose heels are on the stick's left; in the
+        // skate. games a regular rider's kickflip goes up and to the right (varial kickflip down-left
+        // to up-right, 360 flip left, down, up-right, frontside shove-it to the left), so the stick
+        // is read mirrored for a regular rider going nose first, and as before otherwise.
+        var mirrored = SkateRide.Goofy == (SkateRide.On && SkateRide.TailFirst);
+        var input = new SkateFlickInput(grabbing ? 0f : SkateRide.Clamp(RightX, -1f, 1f), grabbing ? 0f : SkateRide.Clamp(RightY, -1f, 1f), air, mirrored,
             SkateRide.Clamp(LeftX, -1f, 1f), SkateRide.Clamp(LeftY, -1f, 1f), air && SkateRide.Jumped);
         while (seconds > 0.000001)
         {

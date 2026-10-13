@@ -72,20 +72,20 @@ game; see [The controller](#the-controller).
 | Coming down on an edge square to it, or slowly along it | A stall: the board stops on the edge. Square: a board stall, with the right stick back a tail stall, forward a nose stall, with `LB` or `RB` held a frontside or backside handplant (the board goes from where it rode to the feet as the body goes up, and back as it comes down); slowly along it a 50-50 stall. A pop leaves it; after 2.5 s the board rolls off. Out of a stall the rider goes back the way he came, tail first; out of a handplant he comes round and rolls back nose first. | |
 | In a grind or a stall | The deck sits on the edge the way that grind does: a 5-0 on the back truck with the nose up, a nosegrind the other way round, a smith with the nose dipped past the edge, a feeble over it, a crooked on its edge, a bluntslide stands the deck up steeply on the tail (a nosebluntslide on the nose); a tail stall hangs the tail over the coping. The rider stands over the low end with the arms out. | |
 
-The right stick pops the board, and how it moves says what the board does in the jump. The sides
-are those of a regular rider going nose first, whose heels are on the stick's left; riding tail
-first they are the other way round.
+The right stick pops the board, and how it moves says what the board does in the jump, laid out as
+in the skate. games: the sides below are those of a regular rider going nose first; riding tail
+first, or goofy, they are the other way round.
 
 | Right stick | Trick |
 | --- | --- |
 | Held back, flicked forward | Ollie, stronger the longer it was held, up to 0.3 s |
 | Held forward, flicked back | Nollie |
-| Held back, flicked to the forward left or right | Kickflip, heelflip |
-| Held back, rolled a quarter round the rim to the left or right | Pop shove-it, frontside pop shove-it |
+| Held back, flicked to the forward right or left | Kickflip, heelflip |
+| Held back, rolled a quarter round the rim to the right or left | Pop shove-it, frontside pop shove-it |
 | Held back, rolled half way round | 360 shove-it |
-| Held at the back right or back left, flicked straight across to the opposite front | Varial kickflip, varial heelflip |
-| From the right or left rolled round to the back, then flicked to the opposite front | 360 flip, laser flip |
-| Held back, rolled a little to the left or right, flicked straight forward | Hardflip, inward heelflip |
+| Held at the back left or back right, flicked straight across to the opposite front | Varial kickflip, varial heelflip |
+| From the left or right rolled round to the back, then flicked to the opposite front | 360 flip, laser flip |
+| Held back, rolled a little to the right or left, flicked straight forward | Hardflip, inward heelflip |
 | Held back, rolled half way round backside | Impossible |
 
 An edge is taken when the rider comes down on it from an ollie: the way of travel within 60° of
