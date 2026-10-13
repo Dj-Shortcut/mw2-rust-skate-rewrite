@@ -39,10 +39,10 @@ Only the eligible admin owner of a complete paid group recovers one item after
 all parts and metadata are removed. Partial/free groups return none; the claim
 is saved before destruction, and an intact veto can restore payment eligibility.
 
-Inventory/JSON have no atomic crash commit. Interrupted preparing/claimed states
-refuse automatic minting. Delivery retries use the same created UID only within
-this plugin instance; reload may need private operator recovery. Older0.3.9
-refuses nonzero provenance: retain matching private park-data/source backups.
+Inventory/JSON have no atomic crash commit; interrupted preparing/claimed states refuse automatic minting.
+Item-owned marker data is non-pooled. Retries rebind same-owner admins, retain
+UID/kind/world and block new issue on failure. Reload needs private recovery.
+Older0.3.9 refuses nonzero provenance: retain matching park-data/source backups.
 
 Approved `skate_park_build_items` checks the actual compiled pure catalogue,
 identity/debit/recovery predicates. Native construction/payment/cleanup, inventory,
