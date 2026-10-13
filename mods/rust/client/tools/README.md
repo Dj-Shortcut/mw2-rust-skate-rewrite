@@ -57,6 +57,7 @@ PC reliably from a distance.
 | `tour` | Build, then a muted session on the owner's server that rides to each park piece the server placed near the spawn and across it, and logs per piece what came of it (`TOUR` lines: rise, air, grinds, bails, put-backs); ends by itself. |
 | `status` | Build, then a session on the owner's server that rides until the server puts the rider back, steps off and types `skate.status`, the server's speed and fly checks and `oxide.plugins` into the F1 console, one every eight seconds; the console stays open so each answer can be read from the screen. |
 | `sticks` | Watches the controller from outside the game for `$pwatch` seconds and says what it saw in each slot. The same script is the reader that a session starts beside the client. |
+| `runs` | The last 20 session folders (the owner's launcher sessions too) with their right-stick movements: how many, how many on the board, how many did nothing there. `$prun = <folder>` then `zz runs` makes that folder the one `log`, `logall`, `file` and `flicks` read. |
 | `flicks` | The last session's right-stick movements, one row each: where the rider was, what came of it, and the shape of the movement. `$pshow` prints one of them point by point. |
 | `log`, `logall` | The plugin's log of the last session, without or with its once-a-second status lines. `$pinc` filters. |
 | `file` | Another file of the last session, by default the game's `Player.log`. |
