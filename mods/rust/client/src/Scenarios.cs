@@ -24,6 +24,28 @@ public static class Scenarios
         SkateKeys.Scripted = false; SkateKeys.Reset();
         SkateCamera.Fixed = false; SkateCamera.Chase = true; SkateRide.Frozen = false; SkateRide.Manual = SkateRide.NoseManual = false; SkateRide.ShoveDeg = 0; SkateBoard.ShowLift = 0f;
         SkateHud.Staged = false; SkateHud.Clear();
+        Lamp(false);
+    }
+
+    // A lamp over the rider for the fixed views, so that a check at night still shows the pose.
+    private static GameObject lamp;
+    public static bool LampLit { get { return lamp != null; } }
+    private static void Lamp(bool on)
+    {
+        try
+        {
+            if (!on) { if (lamp != null) UnityEngine.Object.Destroy(lamp); lamp = null; return; }
+            var at = SkateRig.LocalT;
+            if (at == null) return;
+            if (lamp == null)
+            {
+                lamp = new GameObject("skate check lamp");
+                var l = lamp.AddComponent<Light>(); l.type = LightType.Point; l.range = 14f; l.intensity = 2.5f; l.color = Color.white;
+                Say("lamp lit over the rider");
+            }
+            lamp.transform.position = at.position + Vector3.up * 3f;
+        }
+        catch (Exception e) { Say("lamp threw " + e.GetType().Name + ": " + e.Message); lamp = null; }
     }
 
     public static void Update(float now)
@@ -371,6 +393,7 @@ public static class Scenarios
         if (moving) SkateKeys.Push = SkateRide.Speed < 2.4f;
         if (state == "bail") SkateRide.ModeAt = now - views[phase - 1].Value * SkateRide.BailSeconds;
         if (now >= nearAt) { nearAt = now + 1f; RiderRig.Near(); }
+        Lamp(true);
         if (!advance) return;
         stepAt = now;
         var v = views[phase];
