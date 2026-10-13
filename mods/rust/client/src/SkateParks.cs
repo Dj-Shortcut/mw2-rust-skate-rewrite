@@ -381,6 +381,24 @@ public static class SkateParks
         Colliders += colliders;
         return "drawn at " + Out.V1(origin) + " yaw " + yaw.ToString("F0") + " with " + colliders + " colliders";
     }
+    // Where a kind's model stands for a server anchor (the native square foundation's origin, its Y
+    // the support plane, and its yaw: Codex's 0.3.11 frame), for the ghost of a held park item: the
+    // same model origins as Place uses for the tiles the server will put there. The tiles' height
+    // above the support plane is the server's to choose; a floor tile's thickness is the guess.
+    public static Vector3 ModelOriginForAnchor(Kind kind, Vector3 anchor, float yaw)
+    {
+        var rot = Quaternion.Euler(0f, yaw, 0f);
+        var lift = -FloorBottom + 0.025f;
+        switch (kind)
+        {
+            case Kind.Bank: return anchor + rot * new Vector3(0f, lift, -(float)(HalfLength * Math.Cos(12 * Degrees)));
+            case Kind.Kicker: return anchor + rot * new Vector3(0f, lift, -(float)(HalfLength * Math.Cos(25 * Degrees)));
+            case Kind.QuarterPipe: return anchor + rot * new Vector3(0f, lift, -(float)(HalfLength * Math.Cos(15 * Degrees)));
+            case Kind.Halfpipe: return anchor + rot * new Vector3((float)HalfLength, lift, (float)HalfLength);
+            default: return anchor;
+        }
+    }
+
     // The preview moved to another place, as the aim moves.
     public static void PreviewMove(Vector3 origin, float yaw)
     {
