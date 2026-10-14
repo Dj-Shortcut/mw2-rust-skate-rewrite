@@ -1,5 +1,11 @@
 # Project brief and current handoff
 
+**Historical handoff:** this document records the earlier standalone rewrite
+and its former Codex/Claude task split. That rewrite is parked. The human project
+owner decides current assignments and any resumption; the roles, branches and
+implementation instructions below are historical, not an active delegation.
+Follow [docs/AUTONOMY.md](docs/AUTONOMY.md) and the owner's latest direction.
+
 Build a standalone PC game in Rust and Bevy combining Rust-inspired survival,
 building and an island world, MW2-inspired FPS gunplay and original operators,
 and Skate 3-inspired skating and a park editor. The user explicitly clarified
@@ -35,7 +41,7 @@ been sent to Claude through an app connection.
 
 Read AGENT.md, CONTEXT.md, docs/INDEX.md and TODO.md before editing.
 
-## Codex and Claude coordination
+## Historical Codex and Claude coordination
 
 Claude's implementation task: [issue #6](https://github.com/Dj-Shortcut/mw2-rust-rust-rewrite/issues/6).
 
