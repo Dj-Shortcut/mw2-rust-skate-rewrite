@@ -27,7 +27,7 @@ mods/rust/shared/SkateMotion.cs 928eb7b91ad2644f96696384120aa509ab3bb727 048fb2b
 mods/rust/shared/SkateRails.cs
 mods/rust/shared/SkatePose.cs
 mods/rust/shared/SkateTricks.cs
-mods/rust/shared/SkateRider.cs 928eb7b91ad2644f96696384120aa509ab3bb727 1a4b20b0cd67ea642f8e1652751b44a98e8852e5227ee9325ba6ce2f814b60c5
+mods/rust/shared/SkateRider.cs
 mods/rust/shared/SkateEdges.cs
 mods/rust/shared/SkateAudio.cs
 mods/rust/shared/SkateFlick.cs
