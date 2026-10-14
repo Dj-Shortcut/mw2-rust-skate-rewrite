@@ -1,17 +1,17 @@
 # `docs/` — the one-page map
 Short files (each ≤50 lines) on what lives where and how to poke the live
 game. Keep them this short: nobody opens a long file twice.
-Full goal: [RUST-MW2-SKATE.md](RUST-MW2-SKATE.md); [loadout/damage component](RUST-SERVER-MOD.md); standalone rewrite paused.
+Active goal: [Rust skateboard mod](RUST-MW2-SKATE.md), skate feel/controls first; [first demo](RUST-SKATE-DEMO.md). MW2/loadout work is historical; standalone rewrite paused.
 Historical standalone goals and verified status: [../TODO.md](../TODO.md).
 The inherited run/import guides below document optional upstream modes.
 | file | about | when to read |
 |---|---|---|
 | [`AUTONOMY.md`](AUTONOMY.md) | standing authorization, task ownership and verification | continuing work or coordinating agents |
-| [`RUST-MW2-SKATE.md`](RUST-MW2-SKATE.md) / [client-loader gate](RUST-CLIENT-LOADER.md) | full existing-Rust MW2 gunplay/skate goal, exact client feasibility and complete acceptance | planning the finished mod and proving its client route |
-| [`RUST-SERVER-PLUGIN.md`](RUST-SERVER-PLUGIN.md) | implemented loadout/PvP source, configuration contract and real-server acceptance | installing or changing the Oxide plugin |
+| [Rust skate goal](RUST-MW2-SKATE.md) / [client-loader gate](RUST-CLIENT-LOADER.md) | active existing-Rust skate flow, exact client feasibility and complete acceptance | planning the finished mod and proving its client route |
+| [`RUST-SERVER-PLUGIN.md`](RUST-SERVER-PLUGIN.md) | historical loadout/PvP component, configuration contract and verification limits | inspecting the retained component; it is outside the active skate goal |
 | [`RUST-SERVER-HOSTING.md`](RUST-SERVER-HOSTING.md) / [`RUST-SERVER-LINUX.md`](RUST-SERVER-LINUX.md) | self-managed host capabilities, cost approval and real-host acceptance; guarded Linux installer, portable plan and real-host control gates | choosing an existing PC or a permitted rental; preparing a permitted Linux Rust/Oxide host |
 | [`RUST-INPUT-FRESHNESS.md`](RUST-INPUT-FRESHNESS.md) / [`RUST-NATIVE-INPUT.md`](RUST-NATIVE-INPUT.md) | bounded held observations, admission fences and actual protocol results; genuine held player input, swallowed-control refusal and native decoding evidence | connecting packet callbacks to fixed core ticks; binding callbacks to the shared rider session |
-| [`RUST-RIDER-CONTROLS.md`](RUST-RIDER-CONTROLS.md) | rider identity, input release, candidate and cleanup fences; source contract | coordinating gunplay/skate lifecycle |
+| [`RUST-RIDER-CONTROLS.md`](RUST-RIDER-CONTROLS.md) | rider identity, input release, candidate and cleanup fences; source contract | coordinating the rider lifecycle with existing Rust systems |
 | [`RUST-SKATE-CLIENT.md`](RUST-SKATE-CLIENT.md) / [building assets](RUST-SKATE-BUILD-ASSETS.md) / [demo goal](RUST-SKATE-DEMO.md) | reported client architecture, native gaps and first repeatable demo with ReSkate/REA lessons | integrating the client and assessing the next milestone |
 | [`RUST-SKATE-INBOX.md`](RUST-SKATE-INBOX.md) | admin-only echo diagnostic and received-message gate | proving a server-to-client route before implementing held-item identity |
 | [`RUST-SKATE-LIVE-RAILS.md`](RUST-SKATE-LIVE-RAILS.md) | live server rail registration, freshness fencing and real-scene results | binding rails to the skate world |

@@ -1,4 +1,4 @@
-# TODO — skaten in de bestaande Rust-pc-game
+# TODO — Rust skate-mod en historisch rewritewerk
 
 De eigenaar beslist welke agent welke taak uitvoert en kan werk opnieuw
 toewijzen. Namen bij eerdere resultaten zijn historische bronvermelding, geen
@@ -12,7 +12,7 @@ skate-mod: zo goed mogelijk maken, en zo dat zijn vrienden het kunnen proberen. 
 een client-mod op de eigen server zonder anti-cheat (zie de regels in
 [de client-README](mods/rust/client/README.md#rules)); de mod komt nooit op servers met EAC en is
 geen product voor derden. [#408](https://github.com/Dj-Shortcut/mw2-rust-skate-rewrite/issues/408)
-blijft het eerstvolgende doel; daarna weegt wat een vriend nodig heeft om mee te doen het zwaarst:
+blijft het eerstvolgende doel, met **skategevoel en bediening** voorop (het nieuwe skate. als primaire referentie, Skate 3 als tweede); daarna weegt wat een vriend nodig heeft om mee te doen het zwaarst:
 een installatie die iemand zonder de ontwikkeltools kan uitvoeren (loader, plugin, controller,
 verbinding met de server), begrijpelijke bediening en hints op het scherm, en spelen met twee
 clients op dezelfde server.
@@ -21,6 +21,8 @@ Geschrapt: MW2-gunplay ([#266](https://github.com/Dj-Shortcut/mw2-rust-rust-rewr
 [docs/RUST-MW2-SKATE.md](docs/RUST-MW2-SKATE.md) items 1–3, [docs/RUST-SERVER-MOD.md](docs/RUST-SERVER-MOD.md));
 geen nieuw werk daaraan, bestaande bron blijft staan. De zelfstandige rewrite blijft geparkeerd
 sinds 5 oktober 2026; geen nieuwe rewrite-implementatie of automatische rewrite-loop starten.
+
+- [ ] Eerst skategevoel en bediening samen in game bewijzen: doseerbaar pushen, carven en remmen/powerslides, bewuste flicktricks en continu momentum bij rampen/landen/natuurlijk fakie terugrollen. Gebruik echte controllerinput en een herhaalbare rit; vergelijk het waargenomen gevoel met skate. Broncorrecties en compiles zijn tussenstappen, geen afgeronde speeltest.
 
 - [x] Codex #411 bron 0.3.12: een niet-bevestigde bouwitemlevering vereist vóór GiveItem een item zonder container of wereldobject. Eerder bevestigde owner-inventory/live-drop-leveringen blijven geldig; vreemde/onzekere plaatsing blijft onaangeraakt en behoudt dezelfde UID voor herstel. Ook vóór fallback Drop wordt een niet-null wereldreferentie geweigerd, ongeacht Unity's destroyed-vergelijking. Reconnectbinding en betaling/refund blijven behouden. Echte net48/C#7.3-build zonder fouten/waarschuwingen en inspectie van het definitieve gecompileerde overdrachtspad; twee onafhankelijke bronreviews zonder blocker. Native overdracht/retry is nog niet uitgevoerd; bestaande updaterpins selecteren 0.3.11.
 

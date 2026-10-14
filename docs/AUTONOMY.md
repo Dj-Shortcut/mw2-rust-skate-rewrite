@@ -6,9 +6,12 @@ On 6 October the owner set the existing-Rust PC mod goal as MW2-inspired gunplay
 skateboarding ([RUST-MW2-SKATE.md](RUST-MW2-SKATE.md), issue #275). **On 14 October 2026
 he dropped the gunplay**: the goal is the skate mod alone, as good as possible, for the
 owner and his friends on his own server without anti-cheat (it will never run on EAC
-servers and is not a product for third parties). No new work on gunplay, loadouts or
-damage (#266, RUST-MW2-SKATE items 1–3, RUST-SERVER-MOD); that source stays as it is.
-Implementation, debugging and verification of the skate mod are authorized. Use open-source code and original authored content; retain licences.
+servers and is not a product for third parties). Skate feel and controls lead, with the
+new skate. as primary reference and Skate 3 secondary ([complete goal](RUST-MW2-SKATE.md),
+[first demo](RUST-SKATE-DEMO.md), issue #408). No new work on gunplay, operators, loadouts
+or damage (#266, RUST-SERVER-MOD); that source stays as it is. Implementation, debugging
+and verification of the skate mod are authorized. Preserve historical work; use open-source
+code and original authored content, retaining licences.
 Keep game/server files outside GitHub, player text English and historical rewrite work.
 
 Continue from `TODO.md` and open tasks without repeating content confirmations.
