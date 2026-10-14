@@ -461,14 +461,6 @@ public static class SkateRide
             if (PushPhase <= 0f)
             {
                 Pushes++; PushMongo = SkateKeys.Mongo; PushLead = PushMongo != fakiePush;
-                // Which foot the module will put down, and on which side of the board: the stance's
-                // trailing foot as a rule, the leading one for a mongo or a fakie push; always on
-                // the rider's toe side. Logged so a session says what it meant to show.
-                var trailingIsLeft = Goofy != TailFirst;
-                var pushLeft = PushLead ? !trailingIsLeft : trailingIsLeft;
-                var toeSide = (TailFirst ? -1f : 1f) * StanceSign;
-                Out.Say("PUSH " + (pushLeft ? "left" : "right") + " foot, " + (toeSide > 0f ? "right" : "left") + " of the board (" + StanceName
-                    + (TailFirst ? ", tail first" : "") + (PushMongo ? ", mongo" : "") + (PushLead ? ", leading foot" : "") + (RiderRig.Mirrored ? ", model mirrored" : "") + ")");
             }
             // While the foot is on the ground it stays where it came down and the board rolls on
             // past it: the stroke runs by the distance the board moves, not by the clock (a board
