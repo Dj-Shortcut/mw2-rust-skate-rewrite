@@ -104,6 +104,17 @@ crates/assets/data/minecraft/*-26.3.json.gz
 References consulted during development
 --------------------------------------------------------------------------------
 
+ReSkate — https://github.com/Dingo-Shenanigans/ReSkate
+  ReSkate contributors' GPL-3.0-licensed extension for the existing skate. game.
+  Consulted for park-editing lifecycle, controller input and runtime compatibility
+  patterns while designing the existing-Rust skate mod. No ReSkate source,
+  native integration data or game assets are copied, linked or bundled here.
+
+REA (Reverse Engineer Anything) — https://github.com/morluto/rea
+  morluto and contributors' MIT-licensed reverse-engineering toolkit.
+  Consulted for static managed-code inspection capabilities and evidence limits.
+  No REA source, package, binaries or analysis output are bundled here.
+
 Facepunch Rust.World — https://github.com/Facepunch/Rust.World
   Public MIT-licensed world editor SDK. Its version-9 protobuf declarations,
   serialized map envelope and terrain conversion informed rust_maps. The
