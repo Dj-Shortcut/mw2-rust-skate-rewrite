@@ -280,7 +280,12 @@ change with a Rust update:
   a capsule. Velocity written after the game's own fixed step moves the player; the walk component
   has to stay enabled.
 - The player model is a humanoid; its bones are taken from the Animator. A pose written after the
-  game's animation in `LateUpdate` is what gets drawn.
+  game's animation in `LateUpdate` is what gets drawn. At binding the rig measures limb handedness
+  from mesh bind poses and the renderer's transform determinant, independently of the current
+  animation. A mirrored mapping swaps the limb bones. Missing, degenerate or inaccessible bind
+  geometry retains the baseline humanoid mapping and reports that fallback during binding.
+  Per-push diagnostics are not written. Installed-client bind-pose availability and visual
+  regular/goofy correctness remain unverified.
 - The local player's full body is set to cast shadows only, and a second set of meshes whose names
   start with `leg-` is what first person shows. The view from behind swaps the two.
 - Only the main camera carries the game's image effects, so the view from behind moves it.

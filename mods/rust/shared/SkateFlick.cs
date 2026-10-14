@@ -111,6 +111,7 @@ namespace Shortcut.RustMod
     {
         public const double MaximumStep = 0.1;
         public const double DeadZone = 0.25;
+        public const double RearmZone = 0.15;
         public const double HeldZone = 0.7;
         public const double HeldSpreadDegrees = 40;
         public const double SetSeconds = 0.03;
@@ -134,7 +135,7 @@ namespace Shortcut.RustMod
         public const double MinimumPop = 0.6;
         public const double BodyCircleSeconds = 1;
 
-        private const int Rest = 0, Held = 1, Flicking = 2, Spent = 3, AirFlick = 4;
+        private const int Rest = 0, Held = 1, Flicking = 2, Spent = 3, AirFlick = 4, AirFlickTimedOut = 5;
         private const double MaximumTimer = 86400;
         private const double HalfSweepDegrees = 157.5;
         private const double QuarterSweepDegrees = 67.5;
@@ -230,7 +231,7 @@ namespace Shortcut.RustMod
             {
                 state.FlickSeconds = Time(state.FlickSeconds, dt);
                 if (!input.Airborne || far <= DeadZone) state.Phase = Rest;
-                else if (state.FlickSeconds > AirFlickSeconds) state.Phase = Degrees(Math.Abs(x), y) <= AirSpreadDegrees ? Spent : Rest;
+                else if (state.FlickSeconds > AirFlickSeconds) state.Phase = Degrees(Math.Abs(x), y) <= AirSpreadDegrees ? AirFlickTimedOut : Rest;
                 else if (far >= FireReach)
                 {
                     double angle = Degrees(Math.Abs(x), y);
@@ -241,7 +242,8 @@ namespace Shortcut.RustMod
                 }
                 if (state.Phase == Rest) state.SetSeconds = 0;
             }
-            else if (state.Phase == Spent && far <= DeadZone)
+            else if ((state.Phase == Spent && far <= RearmZone) ||
+                     (state.Phase == AirFlickTimedOut && far <= DeadZone))
             { state.Phase = Rest; state.SetSeconds = 0; state.SideLead = 0; state.SetupSide = 0; state.SweepDegrees = 0; state.ShallowSide = 0; state.RimValid = false; }
 
             double bodyVarial = StepBody(ref state, input, dt);
@@ -353,7 +355,7 @@ namespace Shortcut.RustMod
         private static bool Side(int value) { return value >= -1 && value <= 1; }
         private static bool Valid(SkateFlickState state)
         {
-            return state.Phase >= Rest && state.Phase <= AirFlick && Timer(state.SetSeconds) && Timer(state.HeldSeconds) &&
+            return state.Phase >= Rest && state.Phase <= AirFlickTimedOut && Timer(state.SetSeconds) && Timer(state.HeldSeconds) &&
                 Timer(state.FlickSeconds) && Timer(state.RimSeconds) && Timer(state.BandSeconds) && Timer(state.OutSeconds) &&
                 Finite(state.BestX) && Math.Abs(state.BestX) <= 1.0001 && Finite(state.BestY) && Math.Abs(state.BestY) <= 1.0001 &&
                 Finite(state.RimAngle) && Math.Abs(state.RimAngle) <= 180 && Finite(state.SweepDegrees) && Math.Abs(state.SweepDegrees) <= 360 &&

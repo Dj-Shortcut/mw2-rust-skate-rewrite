@@ -1,0 +1,30 @@
+<Project>
+  <PropertyGroup>
+    <BaseIntermediateOutputPath>../../../context/rust-skate-probe-build/obj/</BaseIntermediateOutputPath>
+    <OutputPath>../../../context/rust-skate-probe-build/bin/</OutputPath>
+  </PropertyGroup>
+  <Import Project="Sdk.props" Sdk="Microsoft.NET.Sdk" />
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>7.3</LangVersion>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
+    <NoStdLib>true</NoStdLib>
+    <DisableImplicitFrameworkReferences>true</DisableImplicitFrameworkReferences>
+    <AutomaticallyUseReferenceAssemblyPackages>false</AutomaticallyUseReferenceAssemblyPackages>
+    <BypassFrameworkInstallChecks>true</BypassFrameworkInstallChecks>
+    <FrameworkPathOverride>$(RustManagedPath)</FrameworkPathOverride>
+    <_TargetFrameworkDirectories>$(RustManagedPath)</_TargetFrameworkDirectories>
+    <_FullFrameworkReferenceAssemblyPaths>$(RustManagedPath)</_FullFrameworkReferenceAssemblyPaths>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="ShortcutSkateProbe.cs" />
+    <Reference Include="$(RustManagedPath)/*.dll" Exclude="$(RustManagedPath)/Newtonsoft.Json.dll"><Private>false</Private></Reference>
+  </ItemGroup>
+  <Target Name="RequireRealServerReferences" BeforeTargets="PrepareForBuild">
+    <Error Condition="!Exists('$(RustManagedPath)/Assembly-CSharp.dll') Or !Exists('$(RustManagedPath)/Oxide.Rust.dll') Or !Exists('$(RustManagedPath)/mscorlib.dll') Or !Exists('$(RustManagedPath)/UnityEngine.CoreModule.dll') Or !Exists('$(RustManagedPath)/Facepunch.System.dll')"
+           Text="Set RustManagedPath to the genuine RustDedicated managed DLL folder with its matching Oxide overlay." />
+  </Target>
+  <Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk" />
+</Project>

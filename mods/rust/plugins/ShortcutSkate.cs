@@ -969,7 +969,7 @@ namespace Shortcut.RustMod
 
 namespace Oxide.Plugins
 {
-    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.11")]
+    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.12")]
     [Description("Player-scoped skateboard movement bounds and saved park assemblies.")]
     public sealed class ShortcutSkate : RustPlugin
     {
@@ -2865,13 +2865,14 @@ namespace Oxide.Plugins
                 delivery.Player.userID != delivery.Owner || delivery.Player.inventory == null ||
                 (delivery.Data != null && (!ReferenceEquals(delivery.Data, parkData) || !SameParkWorld(delivery.Data)))) return false;
             Item item = delivery.Item;
+            if (item.parent != null || !ReferenceEquals(item.GetWorldEntity(), null)) return false;
             // Check actual ownership/world placement after callbacks, rather than trusting GiveItem's bool alone.
             delivery.Player.inventory.GiveItem(item);
             if (ParkDeliveryComplete(delivery)) return true;
             if (!ReferenceEquals(instance, this) || parkClosing || !SameParkDeliveryItem(delivery) ||
                 delivery.Player == null || !delivery.Player.IsConnected || !delivery.Player.IsAdmin || delivery.Player.userID != delivery.Owner ||
                 (delivery.Data != null && (!ReferenceEquals(delivery.Data, parkData) || !SameParkWorld(delivery.Data))) ||
-                item.parent != null || item.GetWorldEntity() != null || !Coordinate(delivery.Position)) return false;
+                item.parent != null || !ReferenceEquals(item.GetWorldEntity(), null) || !Coordinate(delivery.Position)) return false;
             item.Drop(delivery.Position, Vector3.zero, Quaternion.identity);
             return ParkDeliveryComplete(delivery);
         }
