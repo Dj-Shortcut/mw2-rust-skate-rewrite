@@ -1,7 +1,6 @@
 # `docs/` — the one-page map
 Short files (each ≤50 lines) on what lives where and how to poke the live
 game. Keep them this short: nobody opens a long file twice.
-
 Full goal: [RUST-MW2-SKATE.md](RUST-MW2-SKATE.md); [loadout/damage component](RUST-SERVER-MOD.md); standalone rewrite paused.
 Historical standalone goals and verified status: [../TODO.md](../TODO.md).
 The inherited run/import guides below document optional upstream modes.
@@ -13,7 +12,8 @@ The inherited run/import guides below document optional upstream modes.
 | [`RUST-SERVER-HOSTING.md`](RUST-SERVER-HOSTING.md) / [`RUST-SERVER-LINUX.md`](RUST-SERVER-LINUX.md) | self-managed host capabilities, cost approval and real-host acceptance; guarded Linux installer, portable plan and real-host control gates | choosing an existing PC or a permitted rental; preparing a permitted Linux Rust/Oxide host |
 | [`RUST-INPUT-FRESHNESS.md`](RUST-INPUT-FRESHNESS.md) / [`RUST-NATIVE-INPUT.md`](RUST-NATIVE-INPUT.md) | bounded held observations, admission fences and actual protocol results; genuine held player input, swallowed-control refusal and native decoding evidence | connecting packet callbacks to fixed core ticks; binding callbacks to the shared rider session |
 | [`RUST-RIDER-CONTROLS.md`](RUST-RIDER-CONTROLS.md) | rider identity, input release, candidate and cleanup fences; source contract | coordinating gunplay/skate lifecycle |
-| [`RUST-SKATE-CLIENT.md`](RUST-SKATE-CLIENT.md) / [building assets](RUST-SKATE-BUILD-ASSETS.md) | reported Rust PC body/input architecture, shared adapter contract and native gaps | integrating the real client skate mod |
+| [`RUST-SKATE-CLIENT.md`](RUST-SKATE-CLIENT.md) / [building assets](RUST-SKATE-BUILD-ASSETS.md) / [demo goal](RUST-SKATE-DEMO.md) | reported client architecture, native gaps and first repeatable demo with ReSkate/REA lessons | integrating the client and assessing the next milestone |
+| [`RUST-SKATE-INBOX.md`](RUST-SKATE-INBOX.md) | admin-only echo diagnostic and received-message gate | proving a server-to-client route before implementing held-item identity |
 | [`RUST-SKATE-LIVE-RAILS.md`](RUST-SKATE-LIVE-RAILS.md) | live server rail registration, freshness fencing and real-scene results | binding rails to the skate world |
 | [`RUST-SKATE-PROBES.md`](RUST-SKATE-PROBES.md) | owned parked penetration probes, native results and cleanup obligations | creating probes for the genuine collision adapter |
 | [`RUST-SKATE-NATIVE-MOTION.md`](RUST-SKATE-NATIVE-MOTION.md) / [`RUST-SKATE-WORLD.md`](RUST-SKATE-WORLD.md) | shared native collision backend and actual calculated skate flow; genuine server collision adapter design and native acceptance gaps | assessing core/scene evidence and remaining player-host gates; connecting skate motion to Rust terrain and obstacles |
