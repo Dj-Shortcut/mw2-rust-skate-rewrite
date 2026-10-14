@@ -504,14 +504,18 @@ public static class RiderRig
             if (mode == RideMode.Bail || !SkateRide.On) plantBlend = 0f;
             var handplant = PlantBlend;
             SkateBoard.Plant = plant;
+            // The ollie's front foot sliding up toward the nose: the module slides the foot that leads
+            // in the way of travel toward that end, which rolling tail first is the back foot toward
+            // the tail, the mirror of a fakie ollie. No slide there until the module slides the
+            // stance's front foot toward the stance's nose whichever end leads (asked in #337).
+            var noseSlide = mode == RideMode.Air && SkateRide.Jumped && !SkateRide.Grabbing && !SkateRide.TailFirst ? SkateRide.Clamp(1f - SkateRide.VSpeed / SkateRide.OlliePop, 0f, 1f) : 0f;
             var input = new SkateRiderInput(new SkateVector(plane.x, plane.y, plane.z), new SkateVector(fx, fy, fz), new SkateVector(ux, uy, uz), SkateRide.Goofy ? SkateStance.Goofy : SkateStance.Regular, SkateRide.TailFirst,
                 speed, lean, Crouch, mode == RideMode.Air, mode == RideMode.Ground && SkateRide.PushPhase > 0f, SkateRide.Clamp(SkateRide.PushPhase, 0f, 1f),
                 SkateRide.FlipDeg, grab, mode == RideMode.Bail, SkateKeys.LookYaw % 360f, SkatePose.FootLift - AnkleHeight,
                 DeckTop, mode == RideMode.Bail ? SkateRide.Clamp((now - SkateRide.ModeAt) / SkateRide.BailSeconds, 0f, 1f) : 0f,
                 SkateRide.PushLead, plant, grabHold >= 0f ? grabHold : grabSince < 0f ? 0f : now - grabSince, handplant,
                 SkateRide.Clamp(SkateBoard.PitchDegrees, -40f, 40f) * Math.PI / 180.0,
-                mode == RideMode.Air && SkateRide.Jumped && !SkateRide.Grabbing ? SkateRide.Clamp(1f - SkateRide.VSpeed / SkateRide.OlliePop, 0f, 1f) : 0f,
-                chestLead);
+                noseSlide, chestLead);
             SkateRiderPose pose; string error;
             if (!SkateRider.TryCreate(Rig, input, out pose, out error))
             {
