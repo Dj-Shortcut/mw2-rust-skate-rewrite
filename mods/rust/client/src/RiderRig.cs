@@ -26,6 +26,9 @@ public static class RiderRig
     public static bool Bound;
     public static Animator Anim;
     public static Transform Root, Pelvis, Neck, Head, LHip, LKnee, LFoot, LToe, RHip, RKnee, RFoot, RToe, LUpper, LFore, LHand, RUpper, RFore, RHand;
+    // The humanoid's Left bones stand on the model's right: the limb bones above are swapped at Bind.
+    public static bool Mirrored;
+    private static void Swap(ref Transform a, ref Transform b) { var t = a; a = b; b = t; }
     public static SkateRiderRig Rig;
     public static float Thigh, Shin, Foot, UpperArm, Forearm, Crouch = 0.18f;
     public static float Miss;
@@ -324,7 +327,7 @@ public static class RiderRig
         HeldRestore(false);
         var left = new System.Collections.Generic.List<HeldThing>(); HeldKeep(left);
         held = left.ToArray(); heldSet = 0; heldScanFailures = 0; nextHeld = nextWhole = 0f; wholeWait = HeldWhole; heldHolder = null; heldOff = false; heldSlow = 0;
-        Bound = false; body = new SkinnedMeshRenderer[0]; legSet = new SkinnedMeshRenderer[0]; skinSet = 0;
+        Bound = false; Mirrored = false; body = new SkinnedMeshRenderer[0]; legSet = new SkinnedMeshRenderer[0]; skinSet = 0;
     }
 
     private static void Show(bool wantThird, bool always)
@@ -373,6 +376,24 @@ public static class RiderRig
         if (Pelvis == null || Neck == null || Head == null || LHip == null || LKnee == null || LFoot == null || LToe == null || RHip == null || RKnee == null || RFoot == null || RToe == null
             || LUpper == null || LFore == null || LHand == null || RUpper == null || RFore == null || RHand == null)
         { Say("humanoid mapping incomplete"); return false; }
+
+        // Which leg stands on the model's right. On a mirrored model (a negative scale above the
+        // skeleton, or an avatar whose Left bones are on the visual right) the module's left foot
+        // would be shown by the leg on the right: a goofy rider would push with the right foot on
+        // the left of the board. Measured from the model itself, while the player stands: the feet
+        // point forward, the spine up, and the right hip is on the right of that.
+        var toes = (LToe.position - LFoot.position) + (RToe.position - RFoot.position);
+        var spineUp = Neck.position - Pelvis.position;
+        var visualRight = Vector3.Cross(spineUp, toes);
+        var hipsAcross = Vector3.Dot(RHip.position - LHip.position, visualRight.normalized);
+        Mirrored = visualRight.sqrMagnitude > 0.0001f && hipsAcross < 0f;
+        if (Mirrored)
+        {
+            Swap(ref LHip, ref RHip); Swap(ref LKnee, ref RKnee); Swap(ref LFoot, ref RFoot); Swap(ref LToe, ref RToe);
+            Swap(ref LUpper, ref RUpper); Swap(ref LFore, ref RFore); Swap(ref LHand, ref RHand);
+        }
+        Say("hips: the humanoid's right leg is on the model's " + (Mirrored ? "LEFT (bones swapped)" : "right") + ", across=" + hipsAcross.ToString("F3")
+            + " toes=" + Out.V(toes) + " scale=" + Out.V(Root.lossyScale));
 
         // The spine is every bone between the pelvis and the neck, whatever the avatar calls them.
         var chain = new System.Collections.Generic.List<Transform>();
