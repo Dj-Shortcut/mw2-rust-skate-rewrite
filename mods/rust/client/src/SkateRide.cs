@@ -458,7 +458,10 @@ public static class SkateRide
         LimitSpeed(Cap, fastFakie ? Cap : Math.Min(MaxReverse, Cap));
         if (pushing || PushPhase > 0f)
         {
-            if (PushPhase <= 0f) { Pushes++; PushMongo = SkateKeys.Mongo; PushLead = PushMongo != fakiePush; }
+            if (PushPhase <= 0f)
+            {
+                Pushes++; PushMongo = SkateKeys.Mongo; PushLead = PushMongo != fakiePush;
+            }
             // While the foot is on the ground it stays where it came down and the board rolls on
             // past it: the stroke runs by the distance the board moves, not by the clock (a board
             // that cannot move gets the slow clock), so the foot never slides along the ground.

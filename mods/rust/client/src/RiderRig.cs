@@ -26,6 +26,8 @@ public static class RiderRig
     public static bool Bound;
     public static Animator Anim;
     public static Transform Root, Pelvis, Neck, Head, LHip, LKnee, LFoot, LToe, RHip, RKnee, RFoot, RToe, LUpper, LFore, LHand, RUpper, RFore, RHand;
+    public static bool Mirrored;
+    private static void Swap(ref Transform a, ref Transform b) { var t = a; a = b; b = t; }
     public static SkateRiderRig Rig;
     public static float Thigh, Shin, Foot, UpperArm, Forearm, Crouch = 0.18f;
     public static float Miss;
@@ -324,7 +326,7 @@ public static class RiderRig
         HeldRestore(false);
         var left = new System.Collections.Generic.List<HeldThing>(); HeldKeep(left);
         held = left.ToArray(); heldSet = 0; heldScanFailures = 0; nextHeld = nextWhole = 0f; wholeWait = HeldWhole; heldHolder = null; heldOff = false; heldSlow = 0;
-        Bound = false; body = new SkinnedMeshRenderer[0]; legSet = new SkinnedMeshRenderer[0]; skinSet = 0;
+        Bound = false; Mirrored = false; body = new SkinnedMeshRenderer[0]; legSet = new SkinnedMeshRenderer[0]; skinSet = 0;
     }
 
     private static void Show(bool wantThird, bool always)
@@ -351,6 +353,42 @@ public static class RiderRig
     private static float Dist(Transform a, Transform b) { return Vector3.Distance(a.position, b.position); }
     private static Vector3 V(SkateVector v) { return new Vector3((float)v.X, (float)v.Y, (float)v.Z); }
 
+    private static bool BindHandedness()
+    {
+        var wanted = new[] { Pelvis, Neck, LHip, RHip, LFoot, LToe, RFoot, RToe };
+        var meshes = Root.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+        for (var m = 0; m < meshes.Length; m++)
+        {
+            var renderer = meshes[m];
+            if (renderer == null || renderer.sharedMesh == null) continue;
+            var bones = renderer.bones;
+            var bind = renderer.sharedMesh.bindposes;
+            if (bones == null || bind == null || bones.Length != bind.Length) continue;
+            var points = new Vector3[wanted.Length]; var found = 0;
+            for (var i = 0; i < bones.Length; i++)
+            {
+                for (var j = 0; j < wanted.Length; j++)
+                {
+                    if (bones[i] != wanted[j] || (found & (1 << j)) != 0) continue;
+                    points[j] = bind[i].inverse.MultiplyPoint3x4(Vector3.zero);
+                    found |= 1 << j;
+                }
+            }
+            if (found != (1 << wanted.Length) - 1) continue;
+            // Animated joint positions cannot establish an invariant mapping for an entire ride.
+            var toes = (points[5] - points[4]) + (points[7] - points[6]);
+            var spineUp = points[1] - points[0];
+            var hips = points[3] - points[2];
+            var handedness = Vector3.Dot(hips.normalized, Vector3.Cross(spineUp.normalized, toes.normalized));
+            var determinant = renderer.transform.localToWorldMatrix.determinant;
+            if (float.IsNaN(handedness) || float.IsInfinity(handedness) || Math.Abs(handedness) < 0.0001f
+                || float.IsNaN(determinant) || float.IsInfinity(determinant) || determinant == 0f) continue;
+            Mirrored = (handedness < 0f) != (determinant < 0f);
+            return true;
+        }
+        return false;
+    }
+
     public static bool Bind(Transform playerT)
     {
         Unbind(); nextScan = 0f; lookFailures = 0; lookRetryAt = 0f;
@@ -373,6 +411,17 @@ public static class RiderRig
         if (Pelvis == null || Neck == null || Head == null || LHip == null || LKnee == null || LFoot == null || LToe == null || RHip == null || RKnee == null || RFoot == null || RToe == null
             || LUpper == null || LFore == null || LHand == null || RUpper == null || RFore == null || RHand == null)
         { Say("humanoid mapping incomplete"); return false; }
+
+        try
+        {
+            if (!BindHandedness()) Say("no usable skeleton bind pose; humanoid limb mapping retained");
+        }
+        catch (Exception e) { Say("skeleton bind pose unavailable: " + e.GetType().Name + "; humanoid limb mapping retained"); }
+        if (Mirrored)
+        {
+            Swap(ref LHip, ref RHip); Swap(ref LKnee, ref RKnee); Swap(ref LFoot, ref RFoot); Swap(ref LToe, ref RToe);
+            Swap(ref LUpper, ref RUpper); Swap(ref LFore, ref RFore); Swap(ref LHand, ref RHand);
+        }
 
         // The spine is every bone between the pelvis and the neck, whatever the avatar calls them.
         var chain = new System.Collections.Generic.List<Transform>();
