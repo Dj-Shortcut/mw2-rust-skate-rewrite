@@ -2,10 +2,13 @@
 
 The standalone Rust/Bevy rewrite and its automatic loop remain parked since
 5 October 2026; do not resume paused issues without a new owner direction.
-On 6 October the owner clarified the full existing-Rust PC mod goal: MW2-inspired
-gunplay and skateboarding ([RUST-MW2-SKATE.md](RUST-MW2-SKATE.md), issue #275). Issue #266
-covers the loadout/damage component only. Implementation, debugging and verification
-are authorized. Use open-source code and original authored content; retain licences.
+On 6 October the owner set the existing-Rust PC mod goal as MW2-inspired gunplay and
+skateboarding ([RUST-MW2-SKATE.md](RUST-MW2-SKATE.md), issue #275). **On 14 October 2026
+he dropped the gunplay**: the goal is the skate mod alone, as good as possible, for the
+owner and his friends on his own server without anti-cheat (it will never run on EAC
+servers and is not a product for third parties). No new work on gunplay, loadouts or
+damage (#266, RUST-MW2-SKATE items 1–3, RUST-SERVER-MOD); that source stays as it is.
+Implementation, debugging and verification of the skate mod are authorized. Use open-source code and original authored content; retain licences.
 Keep game/server files outside GitHub, player text English and historical rewrite work.
 
 Continue from `TODO.md` and open tasks without repeating content confirmations.
