@@ -283,8 +283,10 @@ change with a Rust update:
   game's animation in `LateUpdate` is what gets drawn. At binding the rig measures limb handedness
   from mesh bind poses and the renderer's transform determinant, independently of the current
   animation. A mirrored mapping swaps the limb bones. Missing, degenerate or inaccessible bind
-  geometry retains the baseline humanoid mapping and reports that fallback during binding.
-  Per-push diagnostics are not written. Installed-client bind-pose availability and visual
+  geometry retains the baseline humanoid mapping and reports that fallback during binding; a
+  usable one logs `RIDER hips: …` once, with the verdict, the measured handedness and the
+  determinant, so a session's log says which leg draws the module's left foot. Per-push
+  diagnostics are not written. Installed-client bind-pose availability and visual
   regular/goofy correctness remain unverified.
 - The local player's full body is set to cast shadows only, and a second set of meshes whose names
   start with `leg-` is what first person shows. The view from behind swaps the two.

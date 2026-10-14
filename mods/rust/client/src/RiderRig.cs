@@ -384,6 +384,9 @@ public static class RiderRig
             if (float.IsNaN(handedness) || float.IsInfinity(handedness) || Math.Abs(handedness) < 0.0001f
                 || float.IsNaN(determinant) || float.IsInfinity(determinant) || determinant == 0f) continue;
             Mirrored = (handedness < 0f) != (determinant < 0f);
+            // Once per bind, so a session's log says which leg the module's left foot is drawn by.
+            Say("hips: the humanoid's right leg is on the model's " + (Mirrored ? "LEFT (limb bones swapped)" : "right")
+                + " handedness=" + handedness.ToString("F3") + " determinant=" + determinant.ToString("F3") + " mesh=" + renderer.name);
             return true;
         }
         return false;
