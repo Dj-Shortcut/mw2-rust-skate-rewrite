@@ -1,12 +1,21 @@
-# TODO — pc-survival met FPS en skaten
+# TODO — skaten in de bestaande Rust-pc-game
 
-## Actief: bestaande Rust-pc-game met MW2-gunplay en skateboarden
+## Actief: de skate-mod, zo goed mogelijk, voor de eigenaar en zijn vrienden
 
-De eigenaar parkeerde de zelfstandige rewrite op 5 oktober 2026.
-Op 6 oktober verduidelijkte hij dat klaar **MW2-geïnspireerde gunplay én skateboarden** betekent.
-[Volledige acceptatie](docs/RUST-MW2-SKATE.md) / [#275](https://github.com/Dj-Shortcut/mw2-rust-rust-rewrite/issues/275) bepalen dat doel.
-[Issue #266](https://github.com/Dj-Shortcut/mw2-rust-rust-rewrite/issues/266) en [het componentplan](docs/RUST-SERVER-MOD.md) behandelen alleen loadouts/schade.
-Geen nieuwe rewrite-implementatie of automatische rewrite-loop starten.
+**Richting van de eigenaar, 14 oktober 2026:** de MW2-gunplay wordt **geschrapt**. Alles gaat naar de
+skate-mod: zo goed mogelijk maken, en zo dat zijn vrienden het kunnen proberen. Het doel is dus
+een client-mod op de eigen server zonder anti-cheat (zie de regels in
+[de client-README](mods/rust/client/README.md#rules)); de mod komt nooit op servers met EAC en is
+geen product voor derden. [#408](https://github.com/Dj-Shortcut/mw2-rust-skate-rewrite/issues/408)
+blijft het eerstvolgende doel; daarna weegt wat een vriend nodig heeft om mee te doen het zwaarst:
+een installatie die iemand zonder de ontwikkeltools kan uitvoeren (loader, plugin, controller,
+verbinding met de server), begrijpelijke bediening en hints op het scherm, en spelen met twee
+clients op dezelfde server.
+
+Geschrapt: MW2-gunplay ([#266](https://github.com/Dj-Shortcut/mw2-rust-rust-rewrite/issues/266),
+[docs/RUST-MW2-SKATE.md](docs/RUST-MW2-SKATE.md) items 1–3, [docs/RUST-SERVER-MOD.md](docs/RUST-SERVER-MOD.md));
+geen nieuw werk daaraan, bestaande bron blijft staan. De zelfstandige rewrite blijft geparkeerd
+sinds 5 oktober 2026; geen nieuwe rewrite-implementatie of automatische rewrite-loop starten.
 
 - [x] Codex #411 bron 0.3.12: een niet-bevestigde bouwitemlevering vereist vóór GiveItem een item zonder container of wereldobject. Eerder bevestigde owner-inventory/live-drop-leveringen blijven geldig; vreemde/onzekere plaatsing blijft onaangeraakt en behoudt dezelfde UID voor herstel. Ook vóór fallback Drop wordt een niet-null wereldreferentie geweigerd, ongeacht Unity's destroyed-vergelijking. Reconnectbinding en betaling/refund blijven behouden. Echte net48/C#7.3-build zonder fouten/waarschuwingen en inspectie van het definitieve gecompileerde overdrachtspad; twee onafhankelijke bronreviews zonder blocker. Native overdracht/retry is nog niet uitgevoerd; bestaande updaterpins selecteren 0.3.11.
 
