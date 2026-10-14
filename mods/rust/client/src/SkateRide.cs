@@ -805,6 +805,9 @@ public static class SkateRide
         else if (!recovery) { Physics_(error); Bail(); return; }
         if (AirTime > 0.12f || impact > 1.5f) { Lands++; LandAt = now; LandImpact = impact; }
         landedTrick = TrickAir; spinAtLand = SkateKeys.Spin;
+        // A revert is a sweep made after the wheels are down: one from the air (a body varial's
+        // circle, with the stick still on the rim) must not turn the board round on landing.
+        SkatePad.LeftSweep = 0f;
         // As in Skate: a grab still held as the wheels touch down is a bail.
         var heldGrab = TrickAir && !recovery && (Grab != SkateGrabKind.None || SkateKeys.Grab != SkateGrabKind.None);
         Enter(RideMode.Ground);

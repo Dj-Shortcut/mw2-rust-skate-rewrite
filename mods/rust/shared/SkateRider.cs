@@ -432,8 +432,10 @@ namespace Shortcut.RustMod
             var look = Forward(input.LookYawDegrees % 360);
             var headForward = Unit(Project(look, up));
             if (headForward.LengthSquared < 0.5) headForward = forward;
-            var leftToe = Toe(leftAnkle, leftToeDir, up, rig.FootLength, backIsLeft ? heel : 0);
-            var rightToe = Toe(rightAnkle, rightToeDir, up, rig.FootLength, backIsLeft ? 0 : heel);
+            // The heel lifts on the foot that pushes: the leading one in a mongo push, else the back one.
+            var heelLeft = mongo ? !backIsLeft : backIsLeft;
+            var leftToe = Toe(leftAnkle, leftToeDir, up, rig.FootLength, heelLeft ? heel : 0);
+            var rightToe = Toe(rightAnkle, rightToeDir, up, rig.FootLength, heelLeft ? 0 : heel);
             pose = new SkateRiderPose(pelvis, leftHip, rightHip, leftKnee, rightKnee, leftAnkle, rightAnkle,
                 leftToe, rightToe,
                 chest, neck, head, leftShoulder, rightShoulder, leftElbow, rightElbow, leftHand, rightHand,

@@ -65,12 +65,8 @@ public static class SkateGrind
 
     private static float YawOf(double x, double z) { return (float)(Math.Atan2(x, z) * 180.0 / Math.PI); }
 
-    // A failure to throw from the scan, for the offline checks.
-    public static Func<Exception> FaultForChecks;
-
     private static SkateHeightGrid Sample(Vector3 pos, float yaw)
     {
-        if (FaultForChecks != null) { var fault = FaultForChecks(); if (fault != null) throw fault; }
         var rad = yaw * Math.PI / 180.0;
         double fx = Math.Sin(rad), fz = Math.Cos(rad), rx = fz, rz = -fx;
         double ox = pos.x - fx * ((Rows - 1) * 0.5 * RowStep) - rx * ((Cols - 1) * 0.5 * ColStep);
