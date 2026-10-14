@@ -305,7 +305,7 @@ public static class Scenarios
         if (l.z < r.z) { lowest = l.z; lowFoot = "left"; } else { lowest = r.z; lowFoot = "right"; }
         var pl = FeetLocal(new Vector3((float)RiderRig.Posed.LeftAnkle.X, (float)RiderRig.Posed.LeftAnkle.Y, (float)RiderRig.Posed.LeftAnkle.Z), at, nose, toe, up);
         var pr = FeetLocal(new Vector3((float)RiderRig.Posed.RightAnkle.X, (float)RiderRig.Posed.RightAnkle.Y, (float)RiderRig.Posed.RightAnkle.Z), at, nose, toe, up);
-        return "L " + Out.V(l) + " toes " + Out.V(lt - l) + " | R " + Out.V(r) + " toes " + Out.V(rt - r) + " | posed L " + Out.V(pl) + " R " + Out.V(pr)
+        return "L " + Out.V(l) + " toes " + Out.V(lt - l) + " | R " + Out.V(r) + " toes " + Out.V(rt - r) + " | posed L " + Out.V(pl) + " R " + Out.V(pr) + " | pelvis " + Out.V(FeetLocal(RiderRig.Pelvis != null ? RiderRig.Pelvis.position : at, at, nose, toe, up)) + " posed " + Out.V(FeetLocal(new Vector3((float)RiderRig.Posed.Pelvis.X, (float)RiderRig.Posed.Pelvis.Y, (float)RiderRig.Posed.Pelvis.Z), at, nose, toe, up)) + " knees L " + Out.V(FeetLocal(RiderRig.LKnee != null ? RiderRig.LKnee.position : at, at, nose, toe, up)) + " R " + Out.V(FeetLocal(RiderRig.RKnee != null ? RiderRig.RKnee.position : at, at, nose, toe, up)) + " miss " + RiderRig.Miss.ToString("F3") + " at " + RiderRig.MissAt
             + " | switch=" + SkateRide.Trick.Switch + " tailFirst=" + SkateRide.TailFirst + " speed=" + SkateRide.Speed.ToString("F1") + " nose=" + SkateRide.NoseYaw.ToString("F0") + " yaw=" + SkateRide.Yaw.ToString("F0");
     }
     private static void FeetWatch(float game)
