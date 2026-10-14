@@ -592,7 +592,10 @@ public static class RiderRig
                 }
                 var options = new SkateRiderMotionOptions(airborne, pinL, pinR);
                 SkateRiderPose shown; SkateRiderMotionState next; string motionError;
-                if (SkateRiderMotion.TryStep(motion, Rig, pose, SkateRide.Clamp(frameSeconds, (float)SkateRiderMotion.MinimumDelta, (float)SkateRiderMotion.MaximumDelta), options, out shown, out next, out motionError))
+                var motionDelta = float.IsNaN(frameSeconds) || float.IsInfinity(frameSeconds)
+                    ? (double)frameSeconds
+                    : Math.Min(SkateRiderMotion.MaximumDelta, Math.Max(SkateRiderMotion.MinimumDelta, (double)frameSeconds));
+                if (SkateRiderMotion.TryStep(motion, Rig, pose, motionDelta, options, out shown, out next, out motionError))
                 { pose = shown; motion = next; }
                 else { motion = default(SkateRiderMotionState); if (motionError != MotionError) { MotionError = motionError; Say("secondary motion refused: " + motionError); } }
             }
