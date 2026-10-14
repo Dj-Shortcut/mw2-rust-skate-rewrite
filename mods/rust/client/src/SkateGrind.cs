@@ -32,16 +32,21 @@ public static class SkateGrind
     private static float retryAt = -99f;
     private static void Fail(Exception e, string where)
     {
+        while (e is System.Reflection.TargetInvocationException && e.InnerException != null) e = e.InnerException;
         var name = e.GetType().Name;
-        if (e is MissingMemberException || e is TypeLoadException || e is EntryPointNotFoundException || e is NotSupportedException)
+        // Whatever threw, no edge found before it is trusted any more: the grind or stall in hand ends.
+        edge = stallEdge = default(SkateEdge); Target = default(Vector3); StallCandidate = StallSquare = false; NearAt = -99f;
+        if (e is MissingMemberException || e is TypeLoadException || e is TypeInitializationException || e is EntryPointNotFoundException ||
+            e is DllNotFoundException || e is InvalidProgramException || e is NotSupportedException || e is NotImplementedException)
         {
             if (!Unavailable) Out.Say("GRIND " + where + " threw " + name + ": " + e.Message + " - the native call is missing; grinding stays off");
-            Unavailable = true; return;
+            Unavailable = true; Last = "scanner unavailable"; return;
         }
         Failures++;
-        if (Failures >= MostFailures) { failed = true; Out.Say("GRIND " + where + " threw " + name + ": " + e.Message + " - " + Failures + " in a row, grinding off until getting on again"); return; }
+        if (Failures >= MostFailures) { failed = true; Last = "scanner off until getting on again"; Out.Say("GRIND " + where + " threw " + name + ": " + e.Message + " - " + Failures + " in a row, grinding off until getting on again"); return; }
         var wait = Math.Min(LongestRetry, FirstRetry * (float)Math.Pow(2, Failures - 1));
         retryAt = Time.realtimeSinceStartup + wait;
+        Last = "scanner retry in " + wait.ToString("F1") + " s";
         Out.Say("GRIND " + where + " threw " + name + ": " + e.Message + " - tried again in " + wait.ToString("F1") + " s");
     }
     private static float nearSaidAt = -99f;
@@ -51,7 +56,12 @@ public static class SkateGrind
     public static float NearAt = -99f;
     private static SkateEdge stallEdge;
 
-    public static void Reset() { cooldown = 0; edge = default(SkateEdge); Speed = 0f; Last = ""; failed = false; Failures = 0; retryAt = -99f; StallCandidate = false; }
+    public static void Reset()
+    {
+        cooldown = 0; edge = stallEdge = default(SkateEdge); Speed = Heading = 0f; Target = default(Vector3);
+        StallCandidate = StallSquare = false; NearAt = nearSaidAt = -99f;
+        failed = false; Failures = 0; retryAt = -99f; Last = Unavailable ? "scanner unavailable" : "";
+    }
 
     private static float YawOf(double x, double z) { return (float)(Math.Atan2(x, z) * 180.0 / Math.PI); }
 

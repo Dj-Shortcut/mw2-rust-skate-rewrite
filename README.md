@@ -1,27 +1,27 @@
-# PC survival / FPS / Skate
+# Rust PC skate mod
 
-## Current direction: an existing-Rust mod with MW2 gunplay and skating
+## Current direction: skating in the existing Rust PC game
 
-De eigenaar heeft de zelfstandige Rust/Bevy-rewrite op 5 oktober 2026
-**geparkeerd**. Het doel is een mod voor **Rust op Steam/pc** met
-**MW2-geïnspireerde gunplay én skateboarden**. De huidige plugin bevat alleen
-configureerbare wapenloadouts en kogel-schade tussen spelers, met permissies.
-Het [volledige opleverdoel](docs/RUST-MW2-SKATE.md) blijft daarmee onafgewerkt.
-Rust zelf levert de wereld, survival, bouwen en de bestaande TC-regels.
-De huidige component heeft een Rust-pc-server met Oxide nodig; een Xbox/Nitrado-console-
-server is een ander product. Alle spelerstekst blijft Engels.
+Op 14 oktober 2026 schrapte de eigenaar MW2 uit het actieve doel. We werken aan
+de skateboardmod voor **Rust op Steam/pc**, met het gevoel en de bediening van
+het nieuwe **skate.** als eerste prioriteit; Skate 3 is een tweede referentie.
+Rust levert de wereld, survival, bouwen en bestaande TC-regels. Alle spelerstekst
+blijft Engels. De zelfstandige Rust/Bevy-rewrite blijft geparkeerd sinds 5 oktober.
 
-**Status: servervoorbereiding en lokaal gecompileerde pluginbron zijn aanwezig;
-MW2-gunplay en skateboarden ontbreken, en een echte server-/speeldemo is niet geverifieerd.**
-De [pluginbron en begrensde controles](mods/rust/plugins/README.md) staan in deze repo.
-Eerst de volledige gunplay-/skateroute technisch bewijzen; serververificatie vereist
-een geschikte Windows- of Linux-host met bestuurbare toegang. Shadow Gaming mag geen server hosten. Een huurhost vereist eerst de keuze
-en het concrete kostenakkoord van de eigenaar. Zie [het modplan](docs/RUST-SERVER-MOD.md),
-[TODO.md](TODO.md) en [issue #266](https://github.com/Dj-Shortcut/mw2-rust-rust-rewrite/issues/266).
-De gewone serverplugin bewijst geen nieuwe clientanimaties of skateboardphysics;
-de volledige mod heeft eerst een [server/client-haalbaarheidsgate](docs/RUST-MW2-SKATE.md#serverclient-feasibility-gate).
-Servervoorbereiding en verificatiegrenzen: [Windows](mods/rust/server/README.md)
-en [Linux](mods/rust/server/LINUX.md).
+Client- en serverbron voor rijden, tricks, parkstukken, presentatie en geluid
+zijn aanwezig. **De volledige herhaalbare controllerdemo en productacceptatie
+blijven open.** Een compile of afzonderlijke rijproef bewijst die volledige flow niet.
+Het [opleverdoel](docs/RUST-MW2-SKATE.md), de [eerste skateparkdemo](docs/RUST-SKATE-DEMO.md)
+en [TODO.md](TODO.md) onderscheiden bron, verificatie en speelbaarheid.
+De [client](mods/rust/client/README.md) en [servercomponenten](mods/rust/plugins/README.md)
+hebben ieder hun eigen integratie- en verificatiegrenzen; een Oxide-plugin alleen
+bewijst geen clientanimaties of skateboardphysics.
+Servervoorbereiding: [Windows](mods/rust/server/README.md) en [Linux](mods/rust/server/LINUX.md).
+Shadow wordt als speelclient gebruikt. Hostingkeuze en kosten vereisen het akkoord
+van de eigenaar; de bestaande wereld, plugins en gegevens blijven beschermd.
+
+Eerdere MW2-gunplay-, operator- en loadoutplannen zijn historisch werk en geen
+actieve oplevercriteria. Hun bron en credits blijven bewaard.
 
 Ontwerp- en onderzoeksreferenties voor de huidige skate-mod:
 [ReSkate](https://github.com/Dingo-Shenanigans/ReSkate) (GPL-3.0) voor
