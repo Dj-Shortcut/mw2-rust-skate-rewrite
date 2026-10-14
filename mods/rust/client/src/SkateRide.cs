@@ -13,7 +13,7 @@ public enum RideMode { Off, Ground, Air, Grind, Bail }
 public static class SkateRide
 {
     // Ground speed remains tangent speed across changing slopes; server feedback and caps are X/Z.
-    public const float PushAccel = 7f, MaxPush = 11f, BrakeDecel = 12f, RollDecel = 0.45f, MaxSpeed = 25f, MaxReverse = 6f, TurnRate = 150f, SlopeGain = 1.6f;
+    public const float PushAccel = 7f, MaxPush = 11f, BrakeDecel = 12f, RollDecel = 0.45f, MaxSpeed = 25f, MaxReverse = MaxSpeed, TurnRate = 150f, SlopeGain = 1.6f;
     // A powerslide: the brake with a turn held while rolling faster than PowerslideFrom swings the
     // board across the way of travel (PowerslideDegrees) and scrubs speed at PowerslideDecel; the
     // board keeps its line while it slides and swings back when the brake or the turn is let go.
@@ -109,7 +109,6 @@ public static class SkateRide
     // The revert's turn so far: the rider and the board pivot together on the ground, the way of
     // travel unchanged, and at the end the half turn is the stance's (the scorer's Switch) instead.
     private static float revertTurned, revertStep;
-    private static bool fastFakie;
     private static bool landedTrick;
     private static Rigidbody body;
     private static Vector3 lastPos, lastDir, velocity;
@@ -242,7 +241,7 @@ public static class SkateRide
         if (mountAt - putBackAt > CapForget) ForgetServer();
         VSpeed = 0f; AirTime = 0f; flipLeft = shoveLeft = pendShove = bodyLeft = 0f; pendFlip = 0; SpinDeg = FlipDeg = ShoveDeg = BodyDeg = 0; LateTrick = false; Jumped = TrickAir = Braking = Manual = NoseManual = spinning = DeckReversed = false; PushPhase = 0f; stuck = 0; heldSteps = 0; Held = false;
         Grab = SkateGrabKind.None; spinSide = 1f; wantKind = SkatePopKind.Ollie; wantFlip = 0; wantShove = 0f; wantScale = 1f;
-        PumpHeld = RevertLeft = revertTurned = 0f; landedTrick = fastFakie = false; steppedAt = -99f; StepUps = 0; Pump = default(SkatePumpState); SlopeDegrees = 0f; ContactNormal = Vector3.up; GrindKind = SkateGrindKind.None; GrindFrontside = GrindAlong = false; GrindDeck = 0f; Stalling = false; Stalls = 0; PlantedUntil = -99f; PushMongo = PushLead = false; handDownAt = -99f; rollingBack = false;
+        PumpHeld = RevertLeft = revertTurned = 0f; landedTrick = false; steppedAt = -99f; StepUps = 0; Pump = default(SkatePumpState); SlopeDegrees = 0f; ContactNormal = Vector3.up; GrindKind = SkateGrindKind.None; GrindFrontside = GrindAlong = false; GrindDeck = 0f; Stalling = false; Stalls = 0; PlantedUntil = -99f; PushMongo = PushLead = false; handDownAt = -99f; rollingBack = false;
         Trick = new SkateTrickState(false); TrickName = ""; ComboPoints = 0; TrickAt = BankedAt = LandAt = jumpWanted = -99f; OffReason = "";
         SkateHud.Clear();
         Normal = ViewNormal = Vector3.up; Position = b.position; Tangent = Dir(yaw);
@@ -448,14 +447,12 @@ public static class SkateRide
         // Rolling tail first, a push drives the board on the way it rolls (a fakie push), not to a stop.
         var fakiePush = Speed < -0.3f;
         var pushing = SkateKeys.Push && !SkateKeys.Brake && !Manual && !NoseManual && (fakiePush ? Speed > -pushLimit : Speed < pushLimit);
-        if (pushing && fakiePush) { Speed = Math.Max(-pushLimit, Speed - PushAccel * dt); fastFakie = true; }
+        if (pushing && fakiePush) Speed = Math.Max(-pushLimit, Speed - PushAccel * dt);
         else if (pushing) Speed = Math.Min(pushLimit, Speed + PushAccel * dt);
         if (Powerslide > 0.01f) Speed = Toward(Speed, 0f, (BrakeDecel * (1f - Powerslide) + PowerslideDecel * Powerslide) * dt);
         else if (SkateKeys.Brake) Speed = Toward(Speed, 0f, BrakeDecel * dt);
         Speed = Toward(Speed, 0f, RollDecel * dt);
-        // Tail first is slow going, except out of a revert: that keeps the pace it had, until it drops.
-        if (HorizontalSpeed > -MaxReverse) fastFakie = false;
-        LimitSpeed(Cap, fastFakie ? Cap : Math.Min(MaxReverse, Cap));
+        LimitSpeed(Cap, Math.Min(MaxReverse, Cap));
         if (pushing || PushPhase > 0f)
         {
             if (PushPhase <= 0f)
@@ -523,7 +520,7 @@ public static class SkateRide
         // leading. The half turn goes to the stance from here on, so the pose does not move at the
         // handover: the turn made so far comes off as the scorer's Switch comes on. The heading and
         // the speed stay as they were: the way of travel never changed.
-        RevertLeft = 0f; revertEndAt = now; fastFakie = false;
+        RevertLeft = 0f; revertEndAt = now;
         SkateTrickResult r; string error;
         if (SkateTricks.TryAdd(Trick, "Revert", RevertPoints, true, out r, out error)) { Take(r); revertTurned = 0f; }
         else { Out.Say("SKATE revert refused: " + error); Yaw += revertTurned; Speed = -Speed; revertTurned = 0f; }
@@ -786,7 +783,7 @@ public static class SkateRide
             { Physics_(error); Speed = Flat(incoming).magnitude * (Speed < 0f ? -1f : 1f); Bail(); return; }
             Tangent = SurfaceTangent(normal, Dir(Yaw)); Normal = normal;
             Speed = Vector3.Dot(V(r.RollVelocity), Tangent);
-            LimitSpeed(Cap, fastFakie ? Cap : Math.Min(MaxReverse, Cap));
+            LimitSpeed(Cap, Math.Min(MaxReverse, Cap));
             landRoll = Tangent * Speed; hasLandRoll = true;
         }
         flipLeft = shoveLeft = 0f; spinning = false; TrickAir = Jumped = false; Grab = SkateGrabKind.None; AirTime = 0f;
