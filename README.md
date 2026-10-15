@@ -17,6 +17,8 @@ De [client](mods/rust/client/README.md) en [servercomponenten](mods/rust/plugins
 hebben ieder hun eigen integratie- en verificatiegrenzen; een Oxide-plugin alleen
 bewijst geen clientanimaties of skateboardphysics.
 Servervoorbereiding: [Windows](mods/rust/server/README.md) en [Linux](mods/rust/server/LINUX.md).
+Voor een vriend zonder ontwikkeltools: [FRIEND.md](mods/rust/client/FRIEND.md) (pakket en
+installer als bron aanwezig, nog op geen pc gemaakt of geïnstalleerd).
 Shadow wordt als speelclient gebruikt. Hostingkeuze en kosten vereisen het akkoord
 van de eigenaar; de bestaande wereld, plugins en gegevens blijven beschermd.
 

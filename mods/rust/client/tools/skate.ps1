@@ -12,7 +12,7 @@ line '  ----------'
 if (Test-Path "$L\version.txt") { line ('  ' + (Get-Content "$L\version.txt" -First 1)) }
 line ''
 if (Get-Process RustClient -ErrorAction SilentlyContinue) { line '  Rust is already running. Quit Rust first, then start this again.'; return }
-if (-not (Test-Path "$probe\play\ShortcutSkateClient.dll")) { line '  The skate plugin is not installed here. Ask Claude to run the install step again.'; return }
+if (-not (Test-Path "$probe\play\ShortcutSkateClient.dll")) { line '  The skate plugin is not installed here. Install it again (zz launcher, or the pack''s "Install Rust Skate").'; return }
 # A session that was cut off (window closed, PC stopped) can have left the loader in the Rust folder.
 . "$L\clean.ps1" | % { line "  $_" }
 $there = @('BepInEx','dotnet','winhttp.dll','doorstop_config.ini','.doorstop_version','changelog.txt' | ? { Test-Path -LiteralPath (Join-Path $rust $_) })
@@ -24,7 +24,7 @@ if ($there) {
 $pb = ((Get-Content 'C:\Program Files (x86)\Steam\steamapps\appmanifest_252490.acf' | Select-String '"buildid"').Line -split '"')[3]
 if (-not ((Test-Path "$probe\gen-$pb\out\Assembly-CSharp.dll") -and (Select-String -Path "$probe\gen-$pb\gen.log" -Pattern 'GEN DONE.* errors=0( |$)' -Quiet))) {
   line "  Rust has been updated (build $pb) and the mod has not been prepared for this version yet."
-  line '  Nothing was started and nothing was changed. Ask Claude to prepare the new version.'
+  line '  Nothing was started and nothing was changed. The owner prepares the new version (zz interop, zz launcher); a friend asks him for a new pack.'
   return
 }
 # After a start of the PC Steam is not running yet. Steam names the signed-in account in the
@@ -39,8 +39,10 @@ while ($account -eq 0 -and ((Get-Date) - $w0).TotalSeconds -lt 120) {
   if ($account -eq 0) { Start-Sleep 2 }
 }
 if ($account -eq 0) { line '  Steam is not signed in. Sign in to Steam, then start this again.'; return }
-line '  Starting Rust with the skate mod. In the main menu pick your own server under QUICK JOIN.'
-line '  On the server: Y on the controller, K, or two quick jumps gets you on the board.'
+line '  Starting Rust with the skate mod.'
+if (Test-Path "$probe\server.txt") { line ('  To join the server: in the main menu press F1 and type   connect ' + (Get-Content "$probe\server.txt" -First 1).Trim() + '   then Enter.') }
+else { line '  In the main menu pick the server under QUICK JOIN, or press F1 and type   connect <address>   then Enter.' }
+line '  On the server: Y on the controller, K, or two quick jumps gets you on the board; Y or K again gets you off.'
 line '  Keep this window open. When you quit Rust, the mod is removed from the Rust folder again.'
 line ''
 # A second, hidden helper takes the loader out after Rust closes even if this window is closed first.

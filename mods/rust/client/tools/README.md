@@ -67,6 +67,8 @@ PC reliably from a distance.
 | `survey` | Lists what the interop set of the installed build offers for given type names. |
 | `launcher` | Installs or updates the owner's launcher from the commit in [`release.txt`](release.txt). |
 | `launchertest` | Starts the installed launcher, kills it while Rust runs, closes Rust and reports whether the Rust folder was cleaned all the same. |
+| `pack` | Zips the installed launcher for a friend: the loader, the interop set of the installed build, the changed runtime, the released plugin with its models, the launcher's scripts and (unless `$pserver` is 0) `server.txt`, with `install.ps1` of the branch as its installer. Refuses without a launcher prepared for the installed build. [What the friend does](../FRIEND.md). Not yet run on the owner's PC. |
+| `install` | Not a `zz` script: the friend's installer, carried inside the pack and started there by `Install Rust Skate.cmd`. Checks Steam, Rust's default library, the matching Rust build, free space and the `RustClient` shortcut; copies the pack to `Downloads\claude-loader-probe` and writes the two desktop files. |
 | `ping` | Whether the private test server answers on its game port. |
 | `user` | Opens a PowerShell window without administrator rights, with `zz` loaded, for when the window at hand is an administrator's. |
 | `ref` | Points `zz` and `zg` at another branch: `$pto` holds its name without the dashes and slashes, which cannot be typed from a distance (`sv pto claudeloaderprobe`). |
@@ -155,6 +157,7 @@ Set by the scripts for one another; `sv name value` sets one by hand.
 | `$psticks` | `session` | Path of the controller reader to start; without it the reader is fetched from the branch. |
 | `$pwatch`, `$pserve` | `sticks` | Seconds to watch; or the name of the process to share the controller with until it has come and gone. |
 | `$pshow` | `flicks` | Number of the movement to print point by point instead of the table. |
+| `$pserver` | `pack` | With `0`, leave `server.txt` out of the friend's pack. |
 | `$plast`, `$pfile` | `log`, `file`, `more`, `last` | The last session's folder (`last` sets it to the newest one on the PC), the file being paged. |
 | `$pinc`, `$pname` | `log`, `file` | Filter expression, file name. |
 | `$pt`, `$pp`, `$pfind` | `survey` | Type names, member filter, type-name search. |
