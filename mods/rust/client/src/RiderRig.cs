@@ -27,8 +27,6 @@ public static class RiderRig
     public static Animator Anim;
     public static Transform Root, Pelvis, Neck, Head, LHip, LKnee, LFoot, LToe, RHip, RKnee, RFoot, RToe, LUpper, LFore, LHand, RUpper, RFore, RHand;
     public static bool Mirrored;
-    // F4 on foot or riding flips the limb mapping found at Bind, to see in the game which one is right.
-    public static bool LegsFlipped;
     private static float bindHandedness, bindDeterminant;
     private static void Swap(ref Transform a, ref Transform b) { var t = a; a = b; b = t; }
     public static SkateRiderRig Rig;
@@ -428,10 +426,8 @@ public static class RiderRig
         var toesNow = (LToe.position - LFoot.position) + (RToe.position - RFoot.position);
         var visualRight = Vector3.Cross(Neck.position - Pelvis.position, toesNow);
         var acrossNow = visualRight.sqrMagnitude > 0.0001f ? Vector3.Dot(RHip.position - LHip.position, visualRight.normalized) : 0f;
-        var found = Mirrored;
-        if (LegsFlipped) Mirrored = !Mirrored;
-        Say("limbs: bind pose handedness=" + bindHandedness.ToString("F3") + " determinant=" + bindDeterminant.ToString("F3") + " -> " + (found ? "mirrored" : "as is")
-            + ", standing right hip across=" + acrossNow.ToString("F3") + "; shown " + (Mirrored ? "SWAPPED" : "as is") + (LegsFlipped ? " (flipped with F4)" : ""));
+        Say("limbs: bind pose handedness=" + bindHandedness.ToString("F3") + " determinant=" + bindDeterminant.ToString("F3")
+            + ", standing right hip across=" + acrossNow.ToString("F3") + "; shown " + (Mirrored ? "SWAPPED" : "as is"));
         if (Mirrored)
         {
             Swap(ref LHip, ref RHip); Swap(ref LKnee, ref RKnee); Swap(ref LFoot, ref RFoot); Swap(ref LToe, ref RToe);

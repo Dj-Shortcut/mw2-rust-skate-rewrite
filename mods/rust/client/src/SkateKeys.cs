@@ -49,7 +49,7 @@ public static class SkateKeys
     // Held in the air: the rider's turn, +1 to his right as the stick or the keys say, and the grab.
     public static float Spin;
     public static SkateGrabKind Grab;
-    private static bool wasPush, wasBrake, wasLeft, wasRight, wasJump, wasCrouch, wasToggle, wasCamera, wasStance, wasBody, wasFlip;
+    private static bool wasPush, wasBrake, wasLeft, wasRight, wasJump, wasCrouch, wasToggle, wasCamera, wasStance, wasBody;
     private static float stanceSince = -1f;
     private static float wasSpin;
     private static bool keyboardSuspended;
@@ -82,14 +82,6 @@ public static class SkateKeys
                 return;
             }
             SkatePieces.Keys(Down(kb.pKey), Down(kb.qKey), Down(kb.eKey), Down(kb.oKey), Down(kb.backspaceKey));
-            // F4: the rider's legs mapped the other way round, to compare in the game (RiderRig.LegsFlipped).
-            var flipKey = Down(kb.f4Key);
-            if (flipKey && !wasFlip)
-            {
-                RiderRig.LegsFlipped = !RiderRig.LegsFlipped; RiderRig.Unbind();
-                SkatePieces.Said = "Legs: " + (RiderRig.LegsFlipped ? "flipped (F4)" : "as found (F4)"); SkatePieces.SaidAt = now;
-            }
-            wasFlip = flipKey;
             var stanceKey = Down(kb.f2Key);
             bool push = Down(kb.wKey), brake = Down(kb.sKey), left = Down(kb.aKey), right = Down(kb.dKey);
             bool jump = Down(kb.spaceKey), toggle = Down(kb.kKey), crouch = false, camera = false, manual = false, noComply = false, boneless = false, body = false;
