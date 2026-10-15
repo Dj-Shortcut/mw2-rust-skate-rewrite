@@ -979,8 +979,8 @@ namespace Oxide.Plugins
         private readonly Stopwatch clock = Stopwatch.StartNew();
         private readonly Dictionary<ulong, Session> sessions = new Dictionary<ulong, Session>();
         private readonly Dictionary<ulong, BasePlayer> optedOut = new Dictionary<ulong, BasePlayer>();
-        private readonly List<BaseEntity> practice = new List<BaseEntity>();
-        private bool practiceCleaning;
+        private readonly List<PracticeReceipt> practice = new List<PracticeReceipt>();
+        private bool practiceCleaning, practiceSpawning;
         private readonly SkateDiagnosticsStore diagnostics = new SkateDiagnosticsStore();
         private static readonly Func<object, bool> ConnectedIdentity = identity =>
         {
@@ -1175,6 +1175,46 @@ namespace Oxide.Plugins
                     value == 0 || text != value.ToString(CultureInfo.InvariantCulture))
                     throw new InvalidDataException("Park owner/member IDs must be canonical nonzero unsigned decimal strings.");
                 return value;
+            }
+        }
+
+        private sealed class PracticeReceipt
+        {
+            public readonly BaseEntity Entity;
+            public readonly ParkData World;
+            private PracticeLifetime lifetime;
+
+            public PracticeReceipt(BaseEntity entity, ParkData world)
+            {
+                Entity = entity;
+                World = new ParkData { WipeId = world.WipeId, SaveCreatedTicks = world.SaveCreatedTicks,
+                    Seed = world.Seed, Size = world.Size, Checksum = world.Checksum };
+            }
+
+            public PracticeLifetime Lifetime { get { return lifetime; } }
+            public bool Capture()
+            {
+                // Only validated post-Spawn creation may seal a lifetime; cleanup must never refresh it.
+                if (lifetime != null) return false;
+                lifetime = new PracticeLifetime(Entity);
+                return true;
+            }
+        }
+
+        private sealed class PracticeLifetime
+        {
+            public readonly object Network;
+            public readonly ulong Id, Owner;
+            public readonly uint Prefab;
+            public readonly int Frame;
+
+            public PracticeLifetime(BaseEntity entity)
+            {
+                Network = entity.net;
+                Id = ParkId(entity);
+                Owner = entity.OwnerID;
+                Prefab = entity.prefabID;
+                Frame = entity.creationFrame;
             }
         }
 
@@ -1927,7 +1967,7 @@ namespace Oxide.Plugins
             optedOut.Clear();
             diagnostics.Clear();
             ClearPractice();
-            if (practice.Count != 0) PrintError("Unload could not remove " + practice.Count + " practice parts; an entity kill hook or server error prevented cleanup.");
+            if (practice.Count != 0) PrintError("Unload has " + practice.Count + " unverified practice parts; private operator recovery may be required.");
             if (ReferenceEquals(instance, this)) instance = null;
         }
 
@@ -1937,14 +1977,22 @@ namespace Oxide.Plugins
             BasePlayer player = arg.Player();
             if (player == null || !player.IsAdmin) { arg.ReplyWith("Use this command as an in-game administrator."); return; }
             if (!ready || !Eligible(player)) { arg.ReplyWith("Practice is unavailable; stand alive on dry ground with skating ready."); return; }
-            if (practice.Count != 0) { arg.ReplyWith("Clear the existing practice area first with skate.practice.clear."); return; }
+            if (practiceSpawning || practiceCleaning || practice.Count != 0)
+            { arg.ReplyWith("Practice is busy or still tracked; clear the existing area before another spawn."); return; }
+            practiceSpawning = true;
             try
             {
+                ParkData world = NewParkData();
+                if (ParkIdentityChanges(null, world).Count != 0 || !SameParkWorld(world))
+                { arg.ReplyWith("Practice needs a verified current save/world identity."); return; }
+                ulong owner = player.userID;
                 string path = SkatePracticeLayout.FloorPrefab;
+                uint prefabId = StringPool.Get(path);
                 var prefab = GameManager.server.FindPrefab(path);
                 var construction = PrefabAttribute.server.Find<Construction>(StringPool.Get(path));
                 var stone = construction == null ? null : construction.GetGrade(BuildingGrade.Enum.Stone, 0);
-                if (prefab == null || prefab.GetComponent<BuildingBlock>() == null || construction == null ||
+                if (prefabId == 0 || StringPool.Get(prefabId) != path || prefab == null ||
+                    prefab.GetComponent<BuildingBlock>() == null || construction == null ||
                     stone == null || stone.gradeBase == null || stone.gradeBase.type != BuildingGrade.Enum.Stone)
                 { arg.ReplyWith("Practice floor prefab or stone construction data is unavailable in this server build."); return; }
                 Vector3 forward = player.eyes.BodyForward();
@@ -1975,24 +2023,45 @@ namespace Oxide.Plugins
                 { arg.ReplyWith("Practice space is occupied by a player or existing building."); return; }
                 for (int index = 0; index < SkatePracticeLayout.PartCount; index++)
                 {
+                    if (!ReferenceEquals(instance, this) || !ready || parkClosing || !SameParkWorld(world))
+                        throw new InvalidDataException("Practice creation lost its current plugin or save/world.");
                     SkatePracticePart part;
                     if (!SkatePracticeLayout.TryPart(index, out part)) throw new InvalidDataException("Invalid practice layout.");
                     Vector3 position = origin + right * part.Right + forward * part.Forward + Vector3.up * part.Height;
-                    BaseEntity entity = GameManager.server.CreateEntity(path, position, yaw * Quaternion.Euler(part.Pitch, 0, 0), true);
+                    Quaternion rotation = yaw * Quaternion.Euler(part.Pitch, 0, 0);
+                    BaseEntity entity = GameManager.server.CreateEntity(path, position, rotation, true);
                     if (entity == null) throw new InvalidDataException("Practice floor creation failed.");
-                    practice.Add(entity);
+                    var receipt = new PracticeReceipt(entity, world);
+                    practice.Add(receipt);
                     BuildingBlock block = entity as BuildingBlock;
                     if (block == null) throw new InvalidDataException("Practice floor is not a building part.");
                     block.enableSaving = false;
                     block.CullBushes = false;
                     block.grounded = true;
-                    block.OwnerID = player.userID;
+                    block.OwnerID = owner;
                     block.Spawn();
-                    if (block.IsDestroyed || block.blockDefinition == null) throw new InvalidDataException("Practice floor initialization failed.");
+                    if (block.IsDestroyed || block.net == null || ParkId(block) == 0 ||
+                        block.prefabID != prefabId || block.PrefabName != path || block.OwnerID != owner ||
+                        !ReferenceEquals(BaseNetworkable.serverEntities.Find(new NetworkableId(ParkId(block))), block) ||
+                        !ReferenceEquals(block.blockDefinition, construction) || block.GetParentEntity() != null ||
+                        !Coordinate(block.transform.position) || !((block.transform.position - position).sqrMagnitude <= 0.000625f) ||
+                        !(Quaternion.Angle(block.transform.rotation, rotation) <= 0.1f) ||
+                        !ReferenceEquals(instance, this) || !ready || parkClosing || !SameParkWorld(world))
+                        throw new InvalidDataException("Practice floor initialization or identity is unverified.");
+                    if (!receipt.Capture() || !PracticeMatches(receipt))
+                        throw new InvalidDataException("Practice floor lifetime is unverified.");
+                    block.EnableSaving(false);
+                    if (!PracticeUnsaved(receipt)) throw new InvalidDataException("Practice saving removal is unverified.");
                     block.SetGrade(BuildingGrade.Enum.Stone);
                     block.SetHealthToMax();
                     block.SendNetworkUpdateImmediate();
+                    if (!PracticeUnsaved(receipt) || !practice.Contains(receipt))
+                        throw new InvalidDataException("Practice floor lifetime changed during initialization.");
                 }
+                if (!ReferenceEquals(instance, this) || !ready || parkClosing || practice.Count != SkatePracticeLayout.PartCount)
+                    throw new InvalidDataException("Practice creation was interrupted.");
+                foreach (PracticeReceipt receipt in practice)
+                    if (!PracticeUnsaved(receipt)) throw new InvalidDataException("A practice part lost its validated lifetime before completion.");
                 arg.ReplyWith("Practice area spawned: two ramps, a bank, 0.4 m and 0.8 m ledges, and a long low ledge. Clear with skate.practice.clear.");
             }
             catch (Exception error)
@@ -2002,6 +2071,7 @@ namespace Oxide.Plugins
                 arg.ReplyWith(practice.Count == 0 ? "Practice could not be created; created parts were removed." :
                     "Practice creation failed and cleanup is incomplete; use skate.practice.clear.");
             }
+            finally { practiceSpawning = false; }
         }
 
         [ConsoleCommand("skate.practice.clear")]
@@ -2010,7 +2080,7 @@ namespace Oxide.Plugins
             BasePlayer player = arg.Player();
             if (player == null || !player.IsAdmin) { arg.ReplyWith("Use this command as an in-game administrator."); return; }
             ClearPractice();
-            arg.ReplyWith(practice.Count == 0 ? "Practice area cleared." : "Practice cleanup is incomplete; check the server log and retry.");
+            arg.ReplyWith(practice.Count == 0 ? "Practice area cleared." : "Practice cleanup is incomplete; unverified parts remain untouched. Check the server log.");
         }
 
         private void ClearPractice()
@@ -2021,18 +2091,57 @@ namespace Oxide.Plugins
             {
                 for (int i = practice.Count - 1; i >= 0; i--)
                 {
-                    BaseEntity entity = practice[i];
+                    PracticeReceipt receipt = practice[i];
                     try
                     {
-                        if (entity != null && !entity.IsDestroyed) entity.Kill();
-                        if (entity != null && !entity.IsDestroyed)
-                        { PrintError("Practice part removal was refused by the server; the part remains tracked."); continue; }
+                        if (!PracticeRemoved(receipt))
+                        {
+                            if (!PracticeMatches(receipt) || BaseEntity.saveList == null)
+                            { PrintError("Practice part identity is unverified; it remains tracked and untouched."); continue; }
+                            receipt.Entity.EnableSaving(false);
+                            if (!PracticeUnsaved(receipt))
+                            { PrintError("Practice part saving removal is unverified; it remains tracked."); continue; }
+                            receipt.Entity.Kill();
+                        }
+                        if (!PracticeRemoved(receipt))
+                        { PrintError("Practice part removal is unverified; it remains tracked."); continue; }
                         practice.RemoveAt(i);
                     }
                     catch (Exception error) { PrintError("Practice part cleanup failed. " + error.Message); }
                 }
             }
             finally { practiceCleaning = false; }
+        }
+
+        private static bool PracticeWorld(PracticeReceipt receipt)
+        {
+            return receipt != null && ParkIdentityChanges(null, receipt.World).Count == 0 && SameParkWorld(receipt.World);
+        }
+
+        private static bool PracticeMatches(PracticeReceipt receipt)
+        {
+            if (!PracticeWorld(receipt) || receipt.Lifetime == null) return false;
+            BaseEntity entity = receipt.Entity;
+            PracticeLifetime lifetime = receipt.Lifetime;
+            return entity != null && !entity.IsDestroyed && lifetime.Id != 0 &&
+                ReferenceEquals(entity.net, lifetime.Network) && ParkId(entity) == lifetime.Id &&
+                entity.creationFrame == lifetime.Frame && entity.prefabID == lifetime.Prefab && entity.OwnerID == lifetime.Owner &&
+                ReferenceEquals(BaseNetworkable.serverEntities.Find(new NetworkableId(lifetime.Id)), entity);
+        }
+
+        private static bool PracticeUnsaved(PracticeReceipt receipt)
+        {
+            return PracticeMatches(receipt) && !receipt.Entity.enableSaving &&
+                BaseEntity.saveList != null && !BaseEntity.saveList.Contains(receipt.Entity);
+        }
+
+        private static bool PracticeRemoved(PracticeReceipt receipt)
+        {
+            if (!PracticeWorld(receipt) || receipt.Lifetime == null || receipt.Lifetime.Id == 0) return false;
+            BaseEntity entity = receipt.Entity;
+            return ReferenceEquals(BaseNetworkable.serverEntities.Find(new NetworkableId(receipt.Lifetime.Id)), null) &&
+                (entity == null || entity.IsDestroyed) && (ParkId(entity) == 0 || ParkId(entity) == receipt.Lifetime.Id) &&
+                BaseEntity.saveList != null && !BaseEntity.saveList.Contains(entity);
         }
 
         private void ReadGroundedData()
