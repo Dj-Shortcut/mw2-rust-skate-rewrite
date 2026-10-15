@@ -73,7 +73,9 @@ way is unchanged: the mod is in the Rust folder only while the launcher's window
    before starting Rust normally.
 
 After a Rust update the launcher refuses to start and says so: ask the owner for a new pack.
-To remove everything: delete the two desktop files and the folder Downloads\claude-loader-probe.
+To remove everything: first run "Rust Skate - remove mod files" and read that the Rust folder is
+clean (it holds the only key to a loader left behind), then delete the two desktop files and the
+folder Downloads\claude-loader-probe.
 This pack was made from the owner's own installed game; keep it among the people it was made for.
 "@
 [IO.File]::WriteAllText("$stage\README.txt", $readme.Replace("`r`n", "`n").Replace("`n", "`r`n"), $enc)

@@ -70,8 +70,11 @@ repository.
    does not, or the PC went off while playing, run **Rust Skate - remove mod files** before
    starting Rust normally: a loader left in the Rust folder would be loaded by a normal start too.
 
-To remove everything: delete the two desktop files and the folder `Downloads\claude-loader-probe`.
-A new pack from the owner is installed over the old one the same way.
+To remove everything: first run **Rust Skate - remove mod files** and read that it found no
+loader files in the Rust folder (`clean.ps1` and its note in the staging folder are the only way a
+loader left behind by a cut-off session is taken out again), then delete the two desktop files and
+the folder `Downloads\claude-loader-probe`. A new pack from the owner is installed over the old one
+the same way; it must be unpacked into a folder of its own, not straight into `Downloads`.
 
 ## Status
 

@@ -23,19 +23,26 @@ $pb = ((gc $acf | sls '"buildid"').Line -split '"')[3]
 if ($pb -ne $pack['build']) { abort ("This pack was made for Rust build " + $pack['build'] + " and this PC has build $pb. Ask the owner for a pack made for your build."); return }
 if (Get-Process RustClient -ErrorAction SilentlyContinue) { abort 'Rust is running. Quit Rust first, then start this again.'; return }
 if (Test-Path "$probe\loader-in-rust-folder.txt") { abort 'An earlier session left the mod in the Rust folder. Run "Rust Skate - remove mod files" on the desktop first, then start this again.'; return }
-$need = @("claude-loader-probe\bep788\winhttp.dll", "claude-loader-probe\gen-$pb\out\Assembly-CSharp.dll", "claude-loader-probe\gen-$pb\gen.log", 'claude-loader-probe\rt\Il2CppInterop.Runtime.dll', 'claude-loader-probe\play\ShortcutSkateClient.dll', 'claude-loader-probe\launcher\skate.ps1', 'claude-loader-probe\launcher\session.ps1', 'claude-loader-probe\launcher\clean.ps1', 'claude-loader-probe\launcher\watch.ps1', 'claude-loader-probe\launcher\sticks.ps1', 'claude-loader-probe\launcher\version.txt')
+$need = @("claude-loader-probe\bep788\winhttp.dll", "claude-loader-probe\bep788\doorstop_config.ini", "claude-loader-probe\bep788\BepInEx\core\BepInEx.Core.dll", "claude-loader-probe\gen-$pb\out\Assembly-CSharp.dll", "claude-loader-probe\gen-$pb\gen.log", 'claude-loader-probe\rt\Il2CppInterop.Runtime.dll', 'claude-loader-probe\play\ShortcutSkateClient.dll', 'claude-loader-probe\launcher\skate.ps1', 'claude-loader-probe\launcher\session.ps1', 'claude-loader-probe\launcher\clean.ps1', 'claude-loader-probe\launcher\watch.ps1', 'claude-loader-probe\launcher\sticks.ps1', 'claude-loader-probe\launcher\version.txt')
 $missing = @($need | ? { -not (Test-Path -LiteralPath (Join-Path $here $_)) })
 if ($missing) { abort ('The pack is incomplete (missing ' + ($missing -join ', ') + '). Unpack the whole zip again.'); return }
 $free = [int]((Get-PSDrive C).Free / 1MB)
 $mb = [int]((ls $from -Recurse -File | measure Length -Sum).Sum / 1MB)
 if ($free -lt $mb + 1024) { abort "The pack needs about $mb MB on C: and only $free MB are free."; return }
+# A zip extracted straight into Downloads puts the pack's claude-loader-probe where the installed one
+# goes: copying it onto itself would first delete it.
+if ((Resolve-Path -LiteralPath $from).Path.TrimEnd('\') -ieq [IO.Path]::GetFullPath($probe).TrimEnd('\')) { abort 'The zip was unpacked straight into Downloads, on top of the install folder. Unpack it into a folder of its own (right-click, Extract All) and start this again.'; return }
 # Everything the launcher uses is replaced; anything else already in the staging folder is left alone.
+# A copy that fails stops the installer here, before the desktop files are written.
+$ErrorActionPreference = 'Stop'
 New-Item -ItemType Directory -Force $probe | Out-Null
 foreach ($d in 'bep788', "gen-$pb", 'rt', 'play', 'launcher') {
   Remove-Item -LiteralPath "$probe\$d" -Recurse -Force -ErrorAction SilentlyContinue
   Copy-Item -LiteralPath "$from\$d" -Destination "$probe\$d" -Recurse
 }
+# The server address follows the pack: a pack made without it takes an older one away too.
 if (Test-Path "$from\server.txt") { Copy-Item "$from\server.txt" "$probe\server.txt" -Force }
+else { Remove-Item -LiteralPath "$probe\server.txt" -Force -ErrorAction SilentlyContinue }
 $desk = [Environment]::GetFolderPath('Desktop')
 $start = "@echo off`r`ntitle Rust Skate`r`npowershell -NoProfile -ExecutionPolicy Bypass -File `"%USERPROFILE%\Downloads\claude-loader-probe\launcher\skate.ps1`"`r`necho.`r`npause`r`n"
 $clean = "@echo off`r`ntitle Rust Skate - remove mod files`r`npowershell -NoProfile -ExecutionPolicy Bypass -File `"%USERPROFILE%\Downloads\claude-loader-probe\launcher\clean.ps1`"`r`necho.`r`npause`r`n"
