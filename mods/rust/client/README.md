@@ -355,3 +355,12 @@ Only a client that Steam started gets the controller through Steam Input. `play`
 start through the owner's Steam shortcut for that reason; a client started directly (`$pdirect`,
 the scripted checks) rides with the controller through the plugin's own reader but walks with the
 keyboard only, which the owner saw as "the controls stop working when I step off".
+
+## A friend's PC
+
+The owner's direction of 14 October: his friends should be able to try the mod. `zz pack` on the
+owner's PC zips the installed launcher (loader, interop set, runtime, plugin, models, scripts,
+server address) with an installer; a friend unpacks it, makes the `RustClient` Steam shortcut and
+runs `Install Rust Skate.cmd`, and plays from the same two desktop files as the owner. Steps,
+limits and what has and has not been seen are in [FRIEND.md](FRIEND.md). Code present and dry-run
+on stand-in files only; no pack has been made on the owner's PC or installed on a second PC yet.
