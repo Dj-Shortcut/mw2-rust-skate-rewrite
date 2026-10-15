@@ -28,7 +28,9 @@ public class SkateRig : MonoBehaviour
     private static float offAt = -99f, lastFrame;
     private static bool wasOn;
     private float nextTick, nextLog, lateRetryAt, lastJumpTap = -1f, crouchSince = -1f;
-    private int standTicks, lateFailures;
+    private int standTicks, lyingTicks, lateFailures;
+    public const float LyingEye = 0.6f, LyingReach = 0.8f, DownSeconds = 0.5f;
+    private static float downSince = -1f;
     private bool tracking, lateAdded, hudFailed;
 
     private static void Say(string m) { Out.Say("SKATE " + m); }
@@ -75,6 +77,28 @@ public class SkateRig : MonoBehaviour
         catch (Exception e) { Say("tick threw: " + e.GetType().Name + ": " + e.Message); nextTick = now + 5f; }
     }
 
+    // The game's own first-person camera at the player and below a crouch: lying asleep, wounded
+    // or dead. The rider's chase and fixed cameras are always well away from the player.
+    [HideFromIl2Cpp]
+    public static bool Lying(Vector3 cp)
+    {
+        if (LocalT == null) return false;
+        var d = cp - LocalT.position;
+        return d.y < LyingEye && d.x * d.x + d.z * d.z < LyingReach * LyingReach;
+    }
+
+    [HideFromIl2Cpp]
+    private void LetGo(string why, string off, bool forgetServer)
+    {
+        Say(why + "; looking again");
+        SkateRide.Dismount(off); RiderRig.Unbind();
+        if (forgetServer) SkateRide.ForgetServer();
+        // The old driver is queued behind the old walk component, not the next one.
+        if (late != null) { UnityEngine.Object.Destroy(late); late = null; }
+        Local = null; LocalT = null; Walk = null; Body = null; AwakeAt = -1f; standTicks = lyingTicks = 0; tracking = lateAdded = false; lateFailures = 0;
+        downSince = -1f;
+    }
+
     public static void MountNow(float yaw)
     {
         if (Body == null) return;
@@ -93,13 +117,14 @@ public class SkateRig : MonoBehaviour
         if (cam == null) return;
         var cp = cam.transform.position;
         if (tracking && (Local == null || Body == null || Walk == null))
+            LetGo("the player or its movement object is gone", "the movement object is gone", Local == null);
+        // Wounded, dead or just respawned and asleep, the player keeps its object while the game
+        // rebuilds what hangs off it: the game's own camera lies at the player, low. Everything this
+        // life was bound to is let go and found again when the player stands up.
+        if (tracking && AwakeAt > 0f && !SkateRide.On)
         {
-            Say("the player or its movement object is gone; looking again");
-            SkateRide.Dismount("the movement object is gone"); RiderRig.Unbind();
-            if (Local == null) SkateRide.ForgetServer();
-            // The old driver is queued behind the old walk component, not the next one.
-            if (late != null) { UnityEngine.Object.Destroy(late); late = null; }
-            Local = null; LocalT = null; Walk = null; Body = null; AwakeAt = -1f; standTicks = 0; tracking = lateAdded = false; lateFailures = 0;
+            lyingTicks = Lying(cp) ? lyingTicks + 1 : 0;
+            if (lyingTicks >= 2) LetGo("the player is lying down", "the player is down", true);
         }
         if (Local == null)
         {
@@ -153,6 +178,14 @@ public class SkateRig : MonoBehaviour
         var now = Time.realtimeSinceStartup;
         var frame = SkateRide.Clamp(now - lastFrame, 0.001f, 0.1f); lastFrame = now;
         SkateCamera.Sample();
+        // Riding, the camera is the rider's own until the game puts its first-person view of a
+        // player going down there, low at the player: off the board then, and let go on the next tick.
+        if (SkateRide.On && Camera.main != null && Lying(Camera.main.transform.position))
+        {
+            if (downSince < 0f) downSince = now;
+            else if (now - downSince > DownSeconds) { downSince = -1f; SkateRide.Dismount("the player went down"); }
+        }
+        else downSince = -1f;
         SkateParks.Frame(now);
         SkatePieces.Frame(now);
         SkateInbox.Frame(now);
