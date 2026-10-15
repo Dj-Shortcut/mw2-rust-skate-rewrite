@@ -389,7 +389,9 @@ class Scenario:
             finished.set()
             worker.join(timeout=5)
         require(not worker.is_alive(), "owned verdict fixture thread survived")
-        require(not errors, "synthetic verdict fixture failed: " + str(errors))
+        require(not errors,
+            f"synthetic verdict fixture failed: {errors}; "
+            f"installer exit status: {result.returncode}; stderr tail: {result.stderr[-2048:]!r}")
         return result
 
     def no_staging(self):
