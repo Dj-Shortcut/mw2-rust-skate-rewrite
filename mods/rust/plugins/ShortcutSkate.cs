@@ -969,7 +969,7 @@ namespace Shortcut.RustMod
 
 namespace Oxide.Plugins
 {
-    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.14")]
+    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.15")]
     [Description("Player-scoped skateboard movement bounds and saved park assemblies.")]
     public sealed class ShortcutSkate : RustPlugin
     {
@@ -1002,7 +1002,7 @@ namespace Oxide.Plugins
         private readonly Dictionary<ulong, ParkSelection> parkSelections = new Dictionary<ulong, ParkSelection>();
         private object parkSelectionEpoch = new object();
         private readonly Dictionary<ulong, ParkGroup> parkMembers = new Dictionary<ulong, ParkGroup>();
-        private readonly List<BaseEntity> parkRollback = new List<BaseEntity>();
+        private readonly List<ParkRollbackReceipt> parkRollback = new List<ParkRollbackReceipt>();
         private bool parkRollbackCleaning;
         private readonly Dictionary<ulong, ParkNativeRequest> parkNativeRequests = new Dictionary<ulong, ParkNativeRequest>();
         private readonly List<ParkNativeRequest> parkNativeCleanup = new List<ParkNativeRequest>();
@@ -1232,6 +1232,48 @@ namespace Oxide.Plugins
             public Vector3 Position;
             public ulong Owner;
             public ParkData Data;
+        }
+
+        private sealed class ParkRollbackReceipt
+        {
+            public readonly BaseEntity Entity;
+            public readonly ParkData Data, World;
+            private ParkRollbackLifetime lifetime;
+
+            public ParkRollbackReceipt(BaseEntity entity, ParkData data)
+            {
+                Entity = entity;
+                Data = data;
+                World = new ParkData { WipeId = data.WipeId, SaveCreatedTicks = data.SaveCreatedTicks,
+                    Seed = data.Seed, Size = data.Size, Checksum = data.Checksum };
+            }
+
+            public ParkRollbackLifetime Lifetime { get { return lifetime; } }
+            public bool Capture()
+            {
+                // Only the caller's validated post-Spawn boundary may seal this receipt.
+                // A later cleanup attempt must never adopt a replacement lifetime.
+                if (lifetime != null) return false;
+                lifetime = new ParkRollbackLifetime(Entity);
+                return true;
+            }
+        }
+
+        private sealed class ParkRollbackLifetime
+        {
+            public readonly object Network;
+            public readonly ulong Id, Owner;
+            public readonly uint Prefab;
+            public readonly int Frame;
+
+            public ParkRollbackLifetime(BaseEntity entity)
+            {
+                Network = entity.net;
+                Id = ParkId(entity);
+                Owner = entity.OwnerID;
+                Prefab = entity.prefabID;
+                Frame = entity.creationFrame;
+            }
         }
 
         private sealed class ParkNativeRequest
@@ -3791,6 +3833,7 @@ namespace Oxide.Plugins
                     Z = transform.Z, Yaw = transform.Yaw, Pitch = transform.Pitch };
             }
             var created = new List<BuildingBlock>();
+            var rollbackReceipts = new List<ParkRollbackReceipt>();
             bool recorded = false, committed = false;
             parkBusy = true;
             try
@@ -3807,7 +3850,9 @@ namespace Oxide.Plugins
                     BaseEntity entity = GameManager.server.CreateEntity(definitions[i].Prefab,
                         ParkPosition(parts[i]), ParkRotation(parts[i]), true);
                     if (entity == null) throw new InvalidDataException("A park part could not be created: " + definitions[i].Prefab + ".");
-                    parkRollback.Add(entity);
+                    var receipt = new ParkRollbackReceipt(entity, request.Data);
+                    parkRollback.Add(receipt);
+                    rollbackReceipts.Add(receipt);
                     BuildingBlock block = entity as BuildingBlock;
                     if (block == null) throw new InvalidDataException("A park prefab is not a native building block: " + definitions[i].Prefab + ".");
                     created.Add(block);
@@ -3825,6 +3870,8 @@ namespace Oxide.Plugins
                     if (parts[i].Id == 0 || !ParkMatches(block, group, parts[i]) ||
                         !ReferenceEquals(block.blockDefinition, definitions[i].Construction))
                         throw new InvalidDataException("A new park part has an invalid native ID, prefab, owner or pose: " + definitions[i].Prefab + ".");
+                    if (!receipt.Capture() || !ParkRollbackMatches(receipt))
+                        throw new InvalidDataException("A new park part has an unverified rollback lifetime.");
                     block.skinID = 0;
                     block.SetGrade(definitions[i].Grade);
                     block.SetHealthToMax();
@@ -3872,6 +3919,8 @@ namespace Oxide.Plugins
                 foreach (ParkMember part in parts)
                 {
                     BuildingBlock block = created[part.Index];
+                    if (!ParkRollbackMatches(rollbackReceipts[part.Index]))
+                        throw new InvalidDataException("A park part's validated lifetime changed before save registration.");
                     block.EnableSaving(true);
                     if (!CurrentParkRequest(request) || !ParkMatches(block, group, part) ||
                         block.grade != definitions[part.Index].Grade || block.skinID != 0 ||
@@ -3899,12 +3948,12 @@ namespace Oxide.Plugins
                     }
                 }
                 SkateParkSelectionState consumed = new SkateParkSelectionState();
-                if (!CurrentParkRequest(request) || (request.Selection != null &&
+                if (!CurrentParkRequest(request) || rollbackReceipts.Any(receipt => !ParkRollbackMatches(receipt)) || (request.Selection != null &&
                     !SkateParkSelections.TryApply(request.Selection.State, SkateParkSelectionAction.PlacementSucceeded,
                         player.IsAdmin, parkReady, clock.Elapsed.TotalSeconds, null, out consumed)))
                     throw new InvalidDataException("The placement request expired or changed before completion.");
                 foreach (ParkMember part in parts) parkMembers.Add(part.Id, group);
-                foreach (BuildingBlock block in created) parkRollback.Remove(block);
+                foreach (ParkRollbackReceipt receipt in rollbackReceipts) parkRollback.Remove(receipt);
                 if (request.Selection != null)
                 {
                     request.Selection.State = consumed;
@@ -3983,6 +4032,33 @@ namespace Oxide.Plugins
                 item.name == SkateParkBuildItems.Name(request.ItemKind);
         }
 
+        private bool ParkRollbackWorld(ParkRollbackReceipt receipt)
+        {
+            return receipt != null && ReferenceEquals(receipt.Data, parkData) && SameParkWorld(receipt.World) &&
+                SameParkGeneration(receipt.Data, receipt.World) && receipt.Data.Checksum == receipt.World.Checksum;
+        }
+
+        private bool ParkRollbackMatches(ParkRollbackReceipt receipt)
+        {
+            if (!ParkRollbackWorld(receipt) || receipt.Lifetime == null) return false;
+            BaseEntity entity = receipt.Entity;
+            ParkRollbackLifetime lifetime = receipt.Lifetime;
+            return entity != null && !entity.IsDestroyed && lifetime.Id != 0 &&
+                ReferenceEquals(entity.net, lifetime.Network) && ParkId(entity) == lifetime.Id &&
+                entity.creationFrame == lifetime.Frame && entity.prefabID == lifetime.Prefab && entity.OwnerID == lifetime.Owner &&
+                ReferenceEquals(BaseNetworkable.serverEntities.Find(new NetworkableId(lifetime.Id)), entity);
+        }
+
+        private bool ParkRollbackRemoved(ParkRollbackReceipt receipt)
+        {
+            if (!ParkRollbackWorld(receipt) || receipt.Lifetime == null || receipt.Lifetime.Id == 0) return false;
+            BaseEntity entity = receipt.Entity;
+            // Absence is a receipt for the original ID, never permission to destroy its replacement.
+            return ReferenceEquals(BaseNetworkable.serverEntities.Find(new NetworkableId(receipt.Lifetime.Id)), null) &&
+                (entity == null || entity.IsDestroyed) && (ParkId(entity) == 0 || ParkId(entity) == receipt.Lifetime.Id) &&
+                BaseEntity.saveList != null && !BaseEntity.saveList.Contains(entity);
+        }
+
         private void CleanupParkRollback()
         {
             // Kill hooks can unload the plugin and reenter this queue before destruction completes.
@@ -3992,15 +4068,22 @@ namespace Oxide.Plugins
             {
                 for (int i = parkRollback.Count - 1; i >= 0; i--)
                 {
-                    BaseEntity entity = parkRollback[i];
+                    ParkRollbackReceipt receipt = parkRollback[i];
                     try
                     {
-                        if (entity != null && !entity.IsDestroyed)
+                        if (!ParkRollbackRemoved(receipt))
                         {
+                            // Unknown/partially spawned objects are retained; do not guess a lifetime.
+                            if (!ParkRollbackMatches(receipt) || BaseEntity.saveList == null)
+                            { PrintError("Unsaved park rollback identity is unverified; the part remains tracked and untouched."); continue; }
+                            BaseEntity entity = receipt.Entity;
                             entity.EnableSaving(false);
+                            if (!ParkRollbackMatches(receipt) || entity.enableSaving ||
+                                BaseEntity.saveList == null || BaseEntity.saveList.Contains(entity))
+                            { PrintError("Unsaved park rollback saving removal is unverified; the part remains tracked."); continue; }
                             entity.Kill();
                         }
-                        if (entity != null && !entity.IsDestroyed)
+                        if (!ParkRollbackRemoved(receipt))
                         { PrintError("Unsaved park rollback part removal was refused; it remains tracked."); continue; }
                         parkRollback.RemoveAt(i);
                     }
