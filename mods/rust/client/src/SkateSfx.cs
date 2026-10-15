@@ -25,7 +25,7 @@ public static class SkateSfx
         float[] samples; string error;
         if (!SkateAudio.TryCreate(sound, Rate, seed, out samples, out error)) throw new InvalidOperationException(sound + ": " + error);
         if (ownedCount == ownedClips.Length) throw new InvalidOperationException("audio clip capacity exceeded");
-        var clip = AudioClip.Create("skate_" + sound, samples.Length, 1, Rate, false);
+        var clip = Out.Keep(AudioClip.Create("skate_" + sound, samples.Length, 1, Rate, false));
         // Own the clip before upload so a failed setup can release it.
         ownedClips[ownedCount++] = clip;
         if (clip == null || !clip.SetData(samples, 0)) throw new InvalidOperationException(sound + ": clip upload failed");

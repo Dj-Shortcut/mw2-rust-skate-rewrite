@@ -82,6 +82,15 @@ public static class Out
         try { if (error) logger.LogError(m); else logger.LogMessage(m); }
         catch (Exception) { }
     }
+    // Textures, clips, meshes and materials made here are held only from managed code, which the
+    // engine does not see: the game's periodic unloading of unused assets frees them under us
+    // (the HUD then passes null textures and the board's one-shot sounds null clips).
+    public static T Keep<T>(T o) where T : UnityEngine.Object
+    {
+        try { if (o != null) o.hideFlags |= HideFlags.DontUnloadUnusedAsset; }
+        catch (Exception) { }
+        return o;
+    }
     public static string V(Vector3 v) { return v.x.ToString("F2") + "," + v.y.ToString("F2") + "," + v.z.ToString("F2"); }
     public static string V1(Vector3 v) { return v.x.ToString("F1") + "," + v.y.ToString("F1") + "," + v.z.ToString("F1"); }
     public static string V3(Vector3 v) { return v.x.ToString("F3") + "," + v.y.ToString("F3") + "," + v.z.ToString("F3"); }
