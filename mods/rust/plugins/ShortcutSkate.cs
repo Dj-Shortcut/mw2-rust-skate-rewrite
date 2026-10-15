@@ -969,7 +969,7 @@ namespace Shortcut.RustMod
 
 namespace Oxide.Plugins
 {
-    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.12")]
+    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.13")]
     [Description("Player-scoped skateboard movement bounds and saved park assemblies.")]
     public sealed class ShortcutSkate : RustPlugin
     {
@@ -1242,6 +1242,9 @@ namespace Oxide.Plugins
             public GameObject UnverifiedObject;
             public BaseEntity UnverifiedEntity;
             public ulong UnverifiedId;
+            public ParkNativeRequest ObservationOrigin;
+            public List<ParkNativeRequest> AdditionalObservations;
+            public bool Observed;
             public ulong CarrierId, CarrierOwner;
             public ulong ParentId, ParentOwner;
             public uint CarrierPrefab, ParentPrefab, ParentBone;
@@ -3164,18 +3167,34 @@ namespace Oxide.Plugins
 
         private void CaptureNativeParkCarrier(ParkNativeRequest pending, GameObject gameObject)
         {
-            pending.UnverifiedObject = gameObject;
+            BaseEntity observed = null;
+            ulong observedId = 0;
+            string observationFailure = null;
+            try
+            {
+                observed = gameObject == null ? null : gameObject.GetComponent<BaseEntity>();
+                observedId = ParkId(observed);
+            }
+            catch (Exception error) { observationFailure = "Native carrier observation failed: " + error.Message; }
+            bool added, primary;
+            ParkNativeRequest receipt = RecordNativeParkObservation(pending, gameObject, observed, observedId, out added, out primary);
+            if (!added) return;
+            if (!primary)
+            {
+                pending.Failure = "More than one native carrier observation was reported for the pending request.";
+                receipt.Failure = observationFailure;
+                QuarantineNativeParkCarrier(receipt);
+                return;
+            }
+            if (observationFailure != null)
+            {
+                pending.Failure = observationFailure;
+                QuarantineNativeParkCarrier(pending);
+                return;
+            }
             try
             {
                 BuildingBlock carrier = gameObject == null ? null : gameObject.GetComponent<BuildingBlock>();
-                pending.UnverifiedEntity = gameObject == null ? null : gameObject.GetComponent<BaseEntity>();
-                pending.UnverifiedId = ParkId(pending.UnverifiedEntity);
-                if (pending.Captured)
-                {
-                    if (!ReferenceEquals(pending.Carrier, carrier))
-                        pending.Failure = "More than one native carrier was reported for the pending request.";
-                    return;
-                }
                 ulong id = ParkId(carrier);
                 if (carrier == null || carrier.IsDestroyed || id == 0 || carrier.PrefabName != ParkFoundationPrefab ||
                     carrier.prefabID != StringPool.Get(ParkFoundationPrefab) || !ReferenceEquals(FindParkBlock(id), carrier))
@@ -3213,6 +3232,47 @@ namespace Oxide.Plugins
             }
         }
 
+        private static ParkNativeRequest RecordNativeParkObservation(ParkNativeRequest pending, GameObject gameObject,
+            BaseEntity entity, ulong id, out bool added, out bool primary)
+        {
+            primary = !pending.Observed;
+            if (!primary)
+            {
+                if (SameNativeParkObservation(pending, gameObject, entity, id))
+                { added = false; return pending; }
+                if (pending.AdditionalObservations != null)
+                    foreach (ParkNativeRequest previous in pending.AdditionalObservations)
+                        if (SameNativeParkObservation(previous, gameObject, entity, id))
+                        { added = false; return previous; }
+            }
+            ParkNativeRequest receipt = primary ? pending : new ParkNativeRequest
+                { Placement = pending.Placement, ObservationOrigin = pending };
+            receipt.Observed = true;
+            receipt.UnverifiedObject = gameObject;
+            receipt.UnverifiedEntity = entity;
+            receipt.UnverifiedId = id;
+            if (!primary)
+            {
+                if (pending.AdditionalObservations == null) pending.AdditionalObservations = new List<ParkNativeRequest>();
+                pending.AdditionalObservations.Add(receipt);
+            }
+            added = true;
+            return receipt;
+        }
+
+        private static bool SameNativeParkObservation(ParkNativeRequest receipt, GameObject gameObject, BaseEntity entity, ulong id)
+        {
+            return ReferenceEquals(receipt.UnverifiedObject, gameObject) &&
+                ReferenceEquals(receipt.UnverifiedEntity, entity) && receipt.UnverifiedId == id;
+        }
+
+        private static bool NativeParkCleanupReady(ParkNativeRequest pending)
+        {
+            // Extra receipts share the native callback's bookkeeping boundary, even after the
+            // primary carrier has been removed from the cleanup list.
+            return pending.CleanupReady || (!ReferenceEquals(pending.ObservationOrigin, null) && pending.ObservationOrigin.CleanupReady);
+        }
+
         private void QuarantineNativeParkCarrier(ParkNativeRequest pending)
         {
             BaseEntity observed = pending.UnverifiedEntity;
@@ -3245,7 +3305,7 @@ namespace Oxide.Plugins
         private bool RemoveNativeParkCarrier(ParkNativeRequest pending)
         {
             if (pending.Removed) return true;
-            if (!pending.CleanupReady || !ReferenceEquals(pending.Placement.Data, parkData) ||
+            if (!NativeParkCleanupReady(pending) || !ReferenceEquals(pending.Placement.Data, parkData) ||
                 !SameParkWorld(pending.Placement.Data)) return false;
             if (pending.Unverified)
             {
@@ -3283,7 +3343,7 @@ namespace Oxide.Plugins
             {
                 foreach (ParkNativeRequest pending in parkNativeCleanup.ToArray())
                 {
-                    if (!pending.CleanupReady) continue;
+                    if (!NativeParkCleanupReady(pending)) continue;
                     try
                     {
                         if (!RemoveNativeParkCarrier(pending))
@@ -3320,9 +3380,9 @@ namespace Oxide.Plugins
                 }
                 if (!RemoveNativeParkCarrier(pending))
                 { failure = "Native carrier cleanup is incomplete; no park assembly was created and the build item was retained."; return; }
-                if (!valid || !CurrentParkRequest(request))
+                if (!valid || pending.Failure != null || !CurrentParkRequest(request))
                 {
-                    failure = failure ?? (!pending.PaymentSuppressed ?
+                    failure = pending.Failure ?? failure ?? (!pending.PaymentSuppressed ?
                         "The original native material bill suppression was not witnessed; the build item was retained." :
                         "The administrator, build item, carrier saving state or world changed; the build item was retained.");
                     return;
@@ -3693,7 +3753,8 @@ namespace Oxide.Plugins
             ParkNativeRequest native = PendingNativeParkRequest(request == null ? null : request.Player,
                 request == null ? null : request.Planner);
             if (parkBusy || parkRefreshing || parkNativeCleaning || !CurrentParkRequest(request) ||
-                (parkNativeRequests.Count != 0 && (native == null || !ReferenceEquals(native.Placement, request) || !native.Removed))) return false;
+                (parkNativeRequests.Count != 0 && (native == null || !ReferenceEquals(native.Placement, request) ||
+                    !native.Removed || native.Failure != null))) return false;
             CleanupNativeParkCarriers();
             if (parkNativeCleanup.Count != 0)
             { failure = "Previous native carrier cleanup is incomplete; new park placement is disabled until removal is verified."; return false; }

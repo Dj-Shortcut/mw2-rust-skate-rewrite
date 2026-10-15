@@ -1,7 +1,7 @@
 # Rust park building assets
 
 The owner chose an own build picker and hotbar items; Claude owns the client.
-ShortcutSkate source **0.3.12** handles eight types via native square foundations.
+ShortcutSkate source **0.3.13** handles eight types via native square foundations.
 The stock six belt slots cannot hold all eight: use an owned item, move/equip it
 natively and wait for actual active-item/planner state. Report missing items or
 full inventory. Native acceptance is open; commands are admin setup/fallback.
@@ -20,8 +20,10 @@ CanBuild consumes that receipt once; changed identity refuses placement. Only
 its native material bill is suppressed. The spawned foundation is unsaved and
 removed next tick, with exact captured-identity/destruction checks, before the
 park transaction. A kill veto or uncertain cleanup refuses the park/item debit
-and blocks further park creation. Unknown identities stay untouched; carrier
-tracking is instance-local, so interrupted callbacks/unload may need private cleanup.
+and blocks further park creation. Each distinct object/entity/network-ID observation
+retains its own receipt; exact repeats preserve the first. Additional or unknown
+carriers stay untouched and block placement until every removal is proved.
+Tracking is instance-local, so interrupted callbacks/unload may need private cleanup.
 The temporary carrier can be visible. Only one marked transaction is admitted;
 no crafting recipe, material price or global building override is added.
 The final native foundation origin supplies X/Z/yaw and its Y is the support
