@@ -52,6 +52,7 @@ public static class SkateKeys
     private static bool wasPush, wasBrake, wasLeft, wasRight, wasJump, wasCrouch, wasToggle, wasCamera, wasStance, wasBody;
     private static float stanceSince = -1f;
     private static float wasSpin;
+    private static bool keyboardSuspended;
     private static bool popKeys = true, crouchKeys = true, cameraKey = true, manualKey = true, taps = true, cursorKnown = true, failed;
 
     public static void Reset()
@@ -59,6 +60,7 @@ public static class SkateKeys
         Push = Brake = Left = Right = Crouch = Jump = Manual = NoseManual = Analog = Charging = false; Steer = Charge = Spin = wasSpin = 0f; PopScale = 1f;
         Grab = SkateGrabKind.None; PopKind = SkatePopKind.Ollie; Mongo = HandplantFront = HandplantBack = false; aTappedAt = -99f;
         EndStep(); JumpTap = ToggleTap = CameraTap = CrouchTap = false;
+        keyboardSuspended = true; stanceSince = -1f;
     }
 
     public static void Poll()
@@ -76,17 +78,11 @@ public static class SkateKeys
             {
                 Push = Brake = Left = Right = Crouch = Jump = Manual = NoseManual = Charging = false; Steer = Charge = Spin = wasSpin = 0f; Grab = SkateGrabKind.None;
                 wasPush = wasBrake = wasLeft = wasRight = wasJump = wasCrouch = wasToggle = wasCamera = false; EndStep(); SkatePad.DropPops();
-                // F2 and X held through chat or the console are not a press when the cursor locks
-                // again: their latches follow the keys while input is suspended.
-                if (kb != null) { try { wasStance = Down(kb.f2Key); wasBody = Down(kb.xKey); } catch (Exception) { wasStance = wasBody = true; } }
-                else wasStance = wasBody = true;
+                keyboardSuspended = true; stanceSince = -1f;
                 return;
             }
             SkatePieces.Keys(Down(kb.pKey), Down(kb.qKey), Down(kb.eKey), Down(kb.oKey), Down(kb.backspaceKey));
             var stanceKey = Down(kb.f2Key);
-            // Held through chat or the console: not a hold until it has been let go once.
-            if (!stanceKey) wasStance = false;
-            SkateRide.StanceHold(ref stanceSince, stanceKey && !wasStance, now);
             bool push = Down(kb.wKey), brake = Down(kb.sKey), left = Down(kb.aKey), right = Down(kb.dKey);
             bool jump = Down(kb.spaceKey), toggle = Down(kb.kKey), crouch = false, camera = false, manual = false, noComply = false, boneless = false, body = false;
             if (popKeys)
@@ -109,6 +105,16 @@ public static class SkateKeys
                 try { manual = kb.leftShiftKey.isPressed; }
                 catch (Exception e) { manualKey = false; Out.Say("INPUT manual key unavailable: " + e.GetType().Name + ": " + e.Message); }
             }
+            // The first readable frame establishes held keys; it cannot distinguish a new press
+            // from one carried through chat, a missing keyboard or a ride reset.
+            if (keyboardSuspended)
+            {
+                wasPush = push; wasBrake = brake; wasLeft = left; wasRight = right;
+                wasJump = jump; wasCrouch = crouch; wasToggle = toggle; wasCamera = camera;
+                wasStance = stanceKey; wasBody = body;
+            }
+            if (!stanceKey) wasStance = false;
+            SkateRide.StanceHold(ref stanceSince, stanceKey && !wasStance, now);
             // Whose hands are on the ride: the controller's from the moment it is touched; the
             // keyboard's again when a riding key goes down while the controller has been at rest,
             // which Steam's layout cannot have sent.
@@ -182,6 +188,7 @@ public static class SkateKeys
                 Analog = Charging = false; Charge = 0f; NoseManual = false;
                 Steer = (left ? -1f : 0f) + (right ? 1f : 0f);
                 Spin = Steer;
+                if (keyboardSuspended) wasSpin = Spin;
                 if (push && !wasPush) LateFlip++;
                 if (brake && !wasBrake) LateFlip--;
                 // X tapped in the air: a body varial, the rider's half round without the board.
@@ -196,6 +203,7 @@ public static class SkateKeys
             if (Spin != 0f && Spin != wasSpin) SpinPressed = true;
             wasSpin = Spin;
             wasPush = push; wasBrake = brake; wasLeft = left; wasRight = right; wasJump = jump; wasCrouch = crouch; wasToggle = toggle; wasCamera = camera;
+            keyboardSuspended = false;
         }
         catch (Exception e) { failed = true; Reset(); Out.Say("INPUT key read threw " + e.GetType().Name + ": " + e.Message); }
     }
