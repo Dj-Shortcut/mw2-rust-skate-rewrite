@@ -13,7 +13,10 @@ public enum RideMode { Off, Ground, Air, Grind, Bail }
 public static class SkateRide
 {
     // Ground speed remains tangent speed across changing slopes; server feedback and caps are X/Z.
-    public const float PushAccel = 7f, PushSteady = 0.4f, PushKick = 2.7f, MaxPush = 11f, BrakeDecel = 12f, RollDecel = 0.45f, MaxSpeed = 25f, TurnRate = 150f, SlopeGain = 1.6f;
+    // RollDecel: what plain rolling loses, m/s each second. At 0.45 a board pushed to 20 km/h stood
+    // still on a flat floor within seconds (owner, 15 October: the skate. games coast far longer);
+    // 0.2 is about a real board on smooth concrete, 20 km/h rolling on for some 28 s.
+    public const float PushAccel = 7f, PushSteady = 0.4f, PushKick = 2.7f, MaxPush = 11f, BrakeDecel = 12f, RollDecel = 0.2f, MaxSpeed = 25f, TurnRate = 150f, SlopeGain = 1.6f;
     // A powerslide: the brake with a turn held while rolling faster than PowerslideFrom swings the
     // board across the way of travel (PowerslideDegrees) and scrubs speed at PowerslideDecel; the
     // board keeps its line while it slides and swings back when the brake or the turn is let go.
