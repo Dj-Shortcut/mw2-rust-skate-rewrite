@@ -34,7 +34,9 @@ public static class RiderRig
     public static string MissAt = "", Error = "", MotionError = "";
     private static SkateRiderMotionState motion;
     private static RideMode motionMode = RideMode.Ground;
-    public static int Applied, Refusals;
+    public static int Applied, Refusals, WithoutPush;
+    // The module's last pose as computed, and as shown after the secondary motion; for the checks.
+    public static SkateRiderPose Posed, Shown; public static Vector3 PosedPlane;
     private static Transform[] spine = new Transform[0];
     private static Vector3 lSole, rSole;
     private static bool failed;
@@ -551,20 +553,37 @@ public static class RiderRig
             if (mode == RideMode.Bail || !SkateRide.On) plantBlend = 0f;
             var handplant = PlantBlend;
             SkateBoard.Plant = plant;
+            // The ollie's front foot sliding up toward the nose: the module slides the foot that leads
+            // in the way of travel toward that end, which rolling tail first is the back foot toward
+            // the tail, the mirror of a fakie ollie. No slide there until the module slides the
+            // stance's front foot toward the stance's nose whichever end leads (asked in #337).
+            var noseSlide = mode == RideMode.Air && SkateRide.Jumped && !SkateRide.Grabbing && !SkateRide.TailFirst ? SkateRide.Clamp(1f - SkateRide.VSpeed / SkateRide.OlliePop, 0f, 1f) : 0f;
             var input = new SkateRiderInput(new SkateVector(plane.x, plane.y, plane.z), new SkateVector(fx, fy, fz), new SkateVector(ux, uy, uz), SkateRide.Goofy ? SkateStance.Goofy : SkateStance.Regular, SkateRide.TailFirst,
                 speed, lean, Crouch, mode == RideMode.Air, mode == RideMode.Ground && SkateRide.PushPhase > 0f, SkateRide.Clamp(SkateRide.PushPhase, 0f, 1f),
                 SkateRide.FlipDeg, grab, mode == RideMode.Bail, SkateKeys.LookYaw % 360f, SkatePose.FootLift - AnkleHeight,
                 DeckTop, mode == RideMode.Bail ? SkateRide.Clamp((now - SkateRide.ModeAt) / SkateRide.BailSeconds, 0f, 1f) : 0f,
                 SkateRide.PushLead, plant, grabHold >= 0f ? grabHold : grabSince < 0f ? 0f : now - grabSince, handplant,
                 SkateRide.Clamp(SkateBoard.PitchDegrees, -40f, 40f) * Math.PI / 180.0,
-                mode == RideMode.Air && SkateRide.Jumped && !SkateRide.Grabbing ? SkateRide.Clamp(1f - SkateRide.VSpeed / SkateRide.OlliePop, 0f, 1f) : 0f,
-                chestLead);
+                noseSlide, chestLead);
             SkateRiderPose pose; string error;
             if (!SkateRider.TryCreate(Rig, input, out pose, out error))
             {
-                if (Refusals++ == 0 || error != Error) Say("pose refused: " + error);
-                Error = error; return;
+                // A push the legs cannot reach (the module plants the leading foot 0.6 m ahead of the
+                // deck's middle, at their limit): the frame is shown without the push rather than
+                // not at all, so the rider never stands still for a frame while the board rolls on.
+                var pushed = mode == RideMode.Ground && SkateRide.PushPhase > 0f;
+                var withoutPush = pushed ? new SkateRiderInput(input.BoardPosition, input.BoardForward, input.BoardUp, input.Stance, input.Switch,
+                    speed, lean, Crouch, false, false, 0, SkateRide.FlipDeg, grab, false, SkateKeys.LookYaw % 360f, SkatePose.FootLift - AnkleHeight,
+                    DeckTop, 0, false, plant, 0, handplant, SkateRide.Clamp(SkateBoard.PitchDegrees, -40f, 40f) * Math.PI / 180.0, 0, chestLead) : input;
+                if (!pushed || !SkateRider.TryCreate(Rig, withoutPush, out pose, out error))
+                {
+                    if (Refusals++ == 0 || error != Error) Say("pose refused: " + error);
+                    Error = error; return;
+                }
+                if (WithoutPush++ == 0 || error != Error) Say("pose shown without the push: " + error);
+                Error = error;
             }
+            Posed = pose; PosedPlane = plane;
             // Secondary motion: the pelvis springs and the shoulders and hands lag a little behind
             // the pose, so the body is not rigid. In the air the legs' own spring carries the pop, so
             // the module's pelvis spring is off there, and a grabbing hand is pinned to its target so
@@ -622,6 +641,7 @@ public static class RiderRig
             var trailingIsLeft = SkateRide.Goofy != SkateRide.TailFirst;
             var pushLeft = SkateRide.PushLead ? !trailingIsLeft : trailingIsLeft;
             pinLeft = footDown && pushLeft; pinRight = footDown && !pushLeft;
+            Shown = pose;
             Ease(pose, plane, toToes, upV, new Vector3((float)fx, (float)fy, (float)fz), now, frameSeconds);
             Shape(upV);
             Apply(upV, legsOnly);

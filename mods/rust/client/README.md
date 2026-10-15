@@ -58,7 +58,7 @@ game; see [The controller](#the-controller).
 | --- | --- | --- |
 | `Y` | Get on; again gets off. | |
 | Left stick | Steer, by how far it is pushed. Far and straight forward or back: push or brake. | Held still more than half way to a side (for at least 0.06 s): the rider turns that way for as long as it is held. One full circle round the rim, after a pop, within a second: a body varial, the rider turns a half round and the board does not; the landing is switch. A stick travelling round the rim (faster than 180° a second) is never read as a held side, so the circle asks for no turn however easy its pace. |
-| `A` | Push with the back foot (pushing takes the board to 11 m/s; slopes take it on to 25 m/s, 90 km/h, over the ground, the limit the server plugin 0.3.7 is configured for): it comes down about 0.19 m beside the board on the toe side, the leg nearly straight, and sweeps back while the body dips a little; the foot stays where it came down while the board rolls on. Rolling tail first, the push drives on backward (a fakie push). | |
+| `A` | Push with the back foot (pushing takes the board to 11 m/s; slopes take it on to 25 m/s, 90 km/h, over the ground, the limit the server plugin 0.3.7 is configured for): it comes down about 0.19 m beside the board on the toe side, the leg nearly straight, and sweeps back while the body dips a little; the foot stays where it came down while the board rolls on. Rolling tail first (a rollback, after a revert or a 180), the back foot is at the leading end and pushes from there, a fakie push, and the push drives on the way the board rolls. | |
 | `X` | Push with the front foot (mongo). | |
 | `A` tapped while the right stick is held back, then the flick | No comply: the front foot steps down and the board pops off the back foot, a little lower than an ollie ("No Comply 180" with the left stick). | |
 | `LT` + `A`, `LT` + `X` or `RT` + `X`, `RT` + `A` | Foot plants: boneless, fastplant, beanplant (the front foot planted for a moment, a little higher than an ollie). | |
@@ -66,26 +66,26 @@ game; see [The controller](#the-controller).
 | Right stick | The board: see below. Kept part of the way back or forward for 0.2 s: manual or nose manual. | Flicked to a side or a forward diagonal: a flip; after a pop, a whole composition (held back then flicked, or rolled) is a late flip or late shove on top of what is under way, when the jump still lasts long enough. Pulled back: set for the pop after the landing. |
 | `LT`, `RT` | Held going down a transition and let go through its bottom: a pump (speed, by how long it was held and how steep the descent, once a pass; nothing on the flat or let go on the slope itself). | Held: grab; with the right stick held, another grab. |
 | Right stick click | View from behind or the game's first person | |
-| Left stick, right after landing a trick | Revert: the rider and the board pivot a half turn together on the ground and roll on the same way, the other end of the deck leading (fakie after a regular landing, regular again after a fakie one); it joins the combo. | |
+| Left stick swept half round its rim, within 0.6 s of landing a trick (as in the skate. games; a hard steer alone is a carve) | Revert: the rider and the board pivot a half turn together on the ground and roll on the same way, the other end of the deck leading (fakie after a regular landing, regular again after a fakie one); it joins the combo. | |
 | Right stick back or forward, on an edge | Along the edge: 5-0 or nosegrind instead of the 50-50. Across it on the tail, held back: bluntslide instead of the tailslide; on the nose, held forward: nosebluntslide. Let go, the slide goes back to the plain one. | |
 | A flip asked for coming down onto an edge, with room for half of it | Darkslide: the board is caught upside down on the edge, griptape on it; a pop finishes the flip the same way round (a kickflip lands as a kickflip); rolled off without a pop, the board comes down upside down and it is a bail. | |
 | Coming down on an edge square to it, or slowly along it | A stall: the board stops on the edge. Square: a board stall, with the right stick back a tail stall, forward a nose stall, with `LB` or `RB` held a frontside or backside handplant (the board goes from where it rode to the feet as the body goes up, and back as it comes down); slowly along it a 50-50 stall. A pop leaves it; after 2.5 s the board rolls off. Out of a stall the rider goes back the way he came, tail first; out of a handplant he comes round and rolls back nose first. | |
 | In a grind or a stall | The deck sits on the edge the way that grind does: a 5-0 on the back truck with the nose up, a nosegrind the other way round, a smith with the nose dipped past the edge, a feeble over it, a crooked on its edge, a bluntslide stands the deck up steeply on the tail (a nosebluntslide on the nose); a tail stall hangs the tail over the coping. The rider stands over the low end with the arms out. | |
 
-The right stick pops the board, and how it moves says what the board does in the jump. The sides
-are those of a regular rider going nose first, whose heels are on the stick's left; riding tail
-first they are the other way round.
+The right stick pops the board, and how it moves says what the board does in the jump, laid out as
+in the skate. games: the sides below are those of a regular rider going nose first; riding tail
+first, or goofy, they are the other way round.
 
 | Right stick | Trick |
 | --- | --- |
 | Held back, flicked forward | Ollie, stronger the longer it was held, up to 0.3 s |
 | Held forward, flicked back | Nollie |
-| Held back, flicked to the forward left or right | Kickflip, heelflip |
-| Held back, rolled a quarter round the rim to the left or right | Pop shove-it, frontside pop shove-it |
+| Held back, flicked to the forward right or left | Kickflip, heelflip |
+| Held back, rolled a quarter round the rim to the right or left | Pop shove-it, frontside pop shove-it |
 | Held back, rolled half way round | 360 shove-it |
-| Held at the back right or back left, flicked straight across to the opposite front | Varial kickflip, varial heelflip |
-| From the right or left rolled round to the back, then flicked to the opposite front | 360 flip, laser flip |
-| Held back, rolled a little to the left or right, flicked straight forward | Hardflip, inward heelflip |
+| Held at the back left or back right, flicked straight across to the opposite front | Varial kickflip, varial heelflip |
+| From the left or right rolled round to the back, then flicked to the opposite front | 360 flip, laser flip |
+| Held back, rolled a little to the right or left, flicked straight forward | Hardflip, inward heelflip |
 | Held back, rolled half way round backside | Impossible |
 
 An edge is taken when the rider comes down on it from an ollie: the way of travel within 60° of
@@ -144,7 +144,7 @@ line carrying `SKATE-PROBE` as an `INBOX` line. It acts on nothing; it shows whe
 | Key | On the ground | In the air |
 | --- | --- | --- |
 | `K`, or `Space` twice quickly | Get on. `K` again gets off; stepped off while rolling, the board rolls on by itself and comes to rest ahead, where it lies for a while. | |
-| `W` | Push with the back foot; rolling tail first in the same stance, a fakie push with the foot at the tail, which leads (the front foot would have to cross the standing leg); after a 180 the stance is turned round and the trailing foot pushes on its own toe side | Tap: kickflip |
+| `W` | Push with the back foot, whichever end leads: rolling tail first (a rollback, after a revert or a 180) it is at the leading end and pushes from there, a fakie push | Tap: kickflip |
 | `S` | Brake; with `A` or `D` held at more than walking pace, a powerslide: the board swings across the way of travel and scrubs speed until the keys are let go (to the left: frontside, the chest to the front; to the right: backside) | Tap: heelflip |
 | `A` / `D` | Carve | Held: the rider turns to the left / right |
 | Mouse | The board turns toward the view | |
@@ -153,7 +153,7 @@ line carrying `SKATE-PROBE` as an `INBOX` line. It acts on nothing; it shows whe
 | `X` | | Tap: body varial, the rider's half round without the board; the landing is switch |
 | `Ctrl` or `C` | Held for a moment: get off | Held: grab |
 | `L` | View from behind or the game's first person | |
-| `J` (on foot; `Back`+`Y` on the controller) | Stance: regular (left foot forward, the right foot pushes) or goofy, the mirror image. Kept in `skate-stance.txt` in the game's own data folder (`AppData\LocalLow\Facepunch Studios LTD\Rust`) for the next start; the hint on foot names the current one. | |
+| `F2` held for a second (on foot; on a Mac keyboard `fn`+`F2`; `Back`+`Y` held on the controller) | Stance: regular (left foot forward, the right foot pushes) or goofy, the mirror image. A tap changes nothing: a stray press of Y in the menu, or of J, used to switch the stance unseen; J is the game's own clan key, whose screen frees the cursor, so the switch has its own key. Kept in `skate-stance.txt` in the game's own data folder (`AppData\LocalLow\Facepunch Studios LTD\Rust`) for the next start; the hint on foot names the current one. | |
 
 Coming down over an edge while moving along it starts a grind. A turn is called frontside when it
 brings the rider's chest round to the way he travels: to the left going nose first, to the right

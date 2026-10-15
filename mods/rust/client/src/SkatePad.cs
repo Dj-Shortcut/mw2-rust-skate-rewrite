@@ -110,9 +110,24 @@ public static class SkatePad
     }
 
     // The controller's state from the moment `us` of the reader's clock on.
+    // The left stick swept round its rim, in degrees (clockwise, as seen on the stick, positive),
+    // within SweepMicros of reaching the rim: half a circle asks for a revert, as in the skate. games.
+    public static float LeftSweep;
+    public const float SweepRim = 0.7f; public const long SweepMicros = 600000;
+    private static float leftAngle; private static bool leftOnRim; private static long sweepFromUs;
+    private static void Sweep(long us, float lx, float ly)
+    {
+        if (lx * lx + ly * ly < SweepRim * SweepRim) { leftOnRim = false; LeftSweep = 0f; return; }
+        var angle = (float)(Math.Atan2(lx, ly) * 180.0 / Math.PI);
+        if (!leftOnRim || us - sweepFromUs > SweepMicros) { leftOnRim = true; LeftSweep = 0f; sweepFromUs = us; leftAngle = angle; return; }
+        var d = angle - leftAngle; while (d > 180f) d -= 360f; while (d < -180f) d += 360f;
+        LeftSweep += d; leftAngle = angle;
+    }
+
     private static void State(long us, int buttons, float lt, float rt, float lx, float ly, float rx, float ry, float now, bool edges)
     {
         Advance(us);
+        Sweep(us, lx, ly);
         if (edges) pressed |= buttons & ~Buttons;
         SkatePadLog.Stick(us, rx, ry);
         SkatePadLog.Buttons(buttons, lt, rt, lx, ly, rx, ry, now, edges);
@@ -133,7 +148,12 @@ public static class SkatePad
         var grabbing = air && (LeftTrigger > Pulled || RightTrigger > Pulled);
         // The left stick goes along for the body varial (a full circle in the air), and whether this
         // flight was popped: only then does a right-stick composition in the air count as a late flip.
-        var input = new SkateFlickInput(grabbing ? 0f : SkateRide.Clamp(RightX, -1f, 1f), grabbing ? 0f : SkateRide.Clamp(RightY, -1f, 1f), air, SkateRide.Goofy != (SkateRide.On && SkateRide.TailFirst),
+        // The flick module's sides are those of a rider whose heels are on the stick's left; in the
+        // skate. games a regular rider's kickflip goes up and to the right (varial kickflip down-left
+        // to up-right, 360 flip left, down, up-right, frontside shove-it to the left), so the stick
+        // is read mirrored for a regular rider going nose first, and as before otherwise.
+        var mirrored = SkateRide.Goofy == (SkateRide.On && SkateRide.TailFirst);
+        var input = new SkateFlickInput(grabbing ? 0f : SkateRide.Clamp(RightX, -1f, 1f), grabbing ? 0f : SkateRide.Clamp(RightY, -1f, 1f), air, mirrored,
             SkateRide.Clamp(LeftX, -1f, 1f), SkateRide.Clamp(LeftY, -1f, 1f), air && SkateRide.Jumped);
         while (seconds > 0.000001)
         {

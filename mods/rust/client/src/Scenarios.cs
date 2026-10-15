@@ -24,6 +24,28 @@ public static class Scenarios
         SkateKeys.Scripted = false; SkateKeys.Reset();
         SkateCamera.Fixed = false; SkateCamera.Chase = true; SkateRide.Frozen = false; SkateRide.Manual = SkateRide.NoseManual = false; SkateRide.ShoveDeg = 0; SkateBoard.ShowLift = 0f;
         SkateHud.Staged = false; SkateHud.Clear();
+        Lamp(false);
+    }
+
+    // A lamp over the rider for the fixed views, so that a check at night still shows the pose.
+    private static GameObject lamp;
+    public static bool LampLit { get { return lamp != null; } }
+    private static void Lamp(bool on)
+    {
+        try
+        {
+            if (!on) { if (lamp != null) UnityEngine.Object.Destroy(lamp); lamp = null; return; }
+            var at = SkateRig.LocalT;
+            if (at == null) return;
+            if (lamp == null)
+            {
+                lamp = new GameObject("skate check lamp");
+                var l = lamp.AddComponent<Light>(); l.type = LightType.Point; l.range = 14f; l.intensity = 2.5f; l.color = Color.white;
+                Say("lamp lit over the rider");
+            }
+            lamp.transform.position = at.position + Vector3.up * 3f;
+        }
+        catch (Exception e) { Say("lamp threw " + e.GetType().Name + ": " + e.Message); lamp = null; }
     }
 
     public static void Update(float now)
@@ -50,6 +72,7 @@ public static class Scenarios
         else if (Name == "place") Place(s, now);
         else if (Name == "pad") Pad(game, now);
         else if (Name == "tour") Tour(game);
+        else if (Name == "feet") Feet(game);
         else Trick(game);
     }
 
@@ -103,7 +126,7 @@ public static class Scenarios
     // is logged per piece. The pieces are those SkateParks found near the player.
     public const float TourRun = 8f, TourOut = 8f, TourReach = 0.7f, TourApproach = 25f, TourAcross = 5f, TourRest = 2f;
     private static int tourIndex = -1, tourStage, tourHeld, tourResets, tourBails, tourGrinds;
-    private static float tourAt, tourStartY, tourRise, tourAir, tourTop;
+    private static float tourAt, tourStartY, tourRise, tourAir, tourTop, tourBack;
     private static bool tourPopped;
     private static string tourGrindKinds = "";
     private static float TourSpeed(SkateParks.Kind k)
@@ -142,14 +165,24 @@ public static class Scenarios
         return (float)(Math.Atan2(want.x, want.z) * 180.0 / Math.PI);
     }
 
-    // Held against something on the way for a second: turn well off for a moment and push on.
-    private static float heldSince = -1f, turnOffUntil = -1f;
+    // Held against something on the way for a second, or not getting anywhere for two (seen live:
+    // 25 s parked by a quarterpipe without ever counting as held): turn well off for a moment and
+    // push on, a different way each time.
+    private static float heldSince = -1f, turnOffUntil = -1f, stillSince = -1f, turnBy = 110f;
+    private static Vector3 stillAt;
     private static float Unstick(float yaw, float game)
     {
-        if (game < turnOffUntil) { SkateKeys.Push = SkateRide.Speed < 3f; return yaw + 110f; }
-        if (!SkateRide.Held) { heldSince = -1f; return yaw; }
-        if (heldSince < 0f) heldSince = game;
-        if (game - heldSince > 1f) { turnOffUntil = game + 1.5f; heldSince = -1f; Say("tour: held on the way at " + Out.V1(SkateRide.Position) + ", turning off"); }
+        if (game < turnOffUntil) { SkateKeys.Push = Math.Abs(SkateRide.Speed) < 3f; return yaw + turnBy; }
+        var pos = SkateRide.On ? SkateRide.Position : SkateRig.LocalT.position;
+        if (stillSince < 0f || (pos - stillAt).sqrMagnitude > 0.25f) { stillSince = game; stillAt = pos; }
+        var still = game - stillSince > 2f;
+        if (!SkateRide.Held) heldSince = -1f;
+        else if (heldSince < 0f) heldSince = game;
+        if (still || (heldSince >= 0f && game - heldSince > 1f))
+        {
+            turnOffUntil = game + 1.5f; heldSince = -1f; stillSince = -1f; turnBy = turnBy > 0f ? -110f : 110f;
+            Say("tour: " + (still ? "not moving" : "held") + " on the way at " + Out.V1(pos) + ", mode " + SkateRide.Mode + ", speed " + SkateRide.Speed.ToString("F1") + ", turning off " + (turnBy > 0f ? "right" : "left"));
+        }
         return yaw;
     }
 
@@ -199,7 +232,7 @@ public static class Scenarios
             if (flat.magnitude < TourReach || stage > TourApproach)
             {
                 Say("tour " + kind + " #" + tourIndex + ": " + (flat.magnitude < TourReach ? "at the start" : "start not reached, " + flat.magnitude.ToString("F1") + " m off") + " after " + stage.ToString("F1") + " s, at " + Out.V1(pos));
-                tourStage = 1; tourAt = game; tourPopped = false; tourStartY = pos.y; tourRise = 0f; tourAir = 0f; tourTop = 0f; tourHeld = SkateRide.Held ? 1 : 0; tourResets = SkateRide.ResetsAll; tourBails = SkateRide.Bails; tourGrinds = SkateRide.GrindStarts; tourGrindKinds = "";
+                tourStage = 1; tourAt = game; tourPopped = false; tourStartY = pos.y; tourRise = 0f; tourAir = 0f; tourTop = 0f; tourBack = 0f; tourHeld = SkateRide.Held ? 1 : 0; tourResets = SkateRide.ResetsAll; tourBails = SkateRide.Bails; tourGrinds = SkateRide.GrindStarts; tourGrindKinds = "";
             }
             return;
         }
@@ -210,9 +243,13 @@ public static class Scenarios
             var centre = IsLedge(kind) ? origin + SkateRide.Dir(heading - 90f) * TourBeside : origin;
             var off = Vector3.Dot(pos - centre, side);
             SkateKeys.LookYaw = heading - Math.Max(-20f, Math.Min(20f, off * 30f));
-            SkateKeys.Push = SkateRide.Speed < TourSpeed(kind);
+            // Up a transition, no more pushing once on it: what comes back down is the roll back, fakie,
+            // with nothing added (#409).
+            var transition = kind == SkateParks.Kind.QuarterPipe || kind == SkateParks.Kind.Halfpipe;
+            SkateKeys.Push = SkateRide.Speed < TourSpeed(kind) && !(transition && (tourRise > 0.3f || SkateRide.Speed < 0f));
             tourRise = Math.Max(tourRise, pos.y - tourStartY);
             tourTop = Math.Max(tourTop, SkateRide.Speed);
+            if (SkateRide.Mode == RideMode.Ground) tourBack = Math.Min(tourBack, SkateRide.Speed);
             if (SkateRide.Mode == RideMode.Air) tourAir += Time.deltaTime;
             if (SkateRide.Held) tourHeld++;
             if (SkateRide.Mode == RideMode.Grind && !tourGrindKinds.Contains(SkateRide.GrindKind.ToString())) tourGrindKinds += SkateRide.GrindKind + " ";
@@ -226,14 +263,94 @@ public static class Scenarios
             if (IsLedge(kind) && toLedge < 0.6f) SkateKeys.LookYaw = heading + 8f;
             if (stage > TourAcross)
             {
-                Say("TOUR " + kind + " #" + tourIndex + ": rose " + tourRise.ToString("F2") + " m, air " + tourAir.ToString("F2") + " s, top " + tourTop.ToString("F1") + " m/s, held " + (tourHeld > 0 ? "yes" : "no")
+                Say("TOUR " + kind + " #" + tourIndex + ": rose " + tourRise.ToString("F2") + " m, air " + tourAir.ToString("F2") + " s, top " + tourTop.ToString("F1") + " m/s, back " + (-tourBack).ToString("F1") + " m/s, held " + (tourHeld > 0 ? "yes" : "no")
                     + ", grinds " + (SkateRide.GrindStarts - tourGrinds) + (tourGrindKinds != "" ? " (" + tourGrindKinds.Trim() + ")" : "") + ", bails " + (SkateRide.Bails - tourBails) + ", put backs " + (SkateRide.ResetsAll - tourResets) + ", end " + Out.V1(pos) + " " + SkateRide.Mode);
                 tourStage = 2; tourAt = game; SkateKeys.Jump = false;
             }
             return;
         }
         SkateKeys.Push = false; SkateKeys.Brake = true; SkateKeys.Jump = false;
-        if (stage > TourRest) { tourIndex++; tourStage = 0; tourAt = game; SkateKeys.Brake = false; }
+        if (stage > TourRest) { tourIndex++; tourStage = 0; tourAt = game; SkateKeys.Brake = false; stillSince = -1f; }
+    }
+
+    // The feet, watched as the owner sees them: back and forth on the runway, each run a few pushes,
+    // an ollie, a revert on landing and a stop; FeetRuns runs, then done. The camera follows from
+    // the rider's front on even runs and from behind the board on odd ones, so screenshots show
+    // where each foot is. What matters is also logged in FEET lines, in the board's own frame:
+    // along the nose (+ toward the nose), to the toe side (+ the side the chest faces) and up from
+    // the deck, in metres: each push stroke where the foot came down and left, the feet through a
+    // revert, and the feet rolling. The origin is the deck top under the ankles (0.05 m toward the
+    // heels of the centre line); a foot on the ground is about 0.1 m below it, at the ankle.
+    public const float FeetCycle = 8f; public const int FeetRuns = 24;
+    private static int feetRun = -1, feetStrokes; private static bool feetPopped, feetReverted, feetWasDown, feetRolledLogged, feetWasRevert;
+    private static float feetSpinUntil, feetLow; private static string feetDown = "";
+    private static Vector3 FeetLocal(Vector3 world, Vector3 at, Vector3 nose, Vector3 toe, Vector3 up)
+    {
+        var d = world - at;
+        return new Vector3(Vector3.Dot(d, nose), Vector3.Dot(d, toe), Vector3.Dot(d, up));
+    }
+    private static string FeetLine(out float lowest, out string lowFoot)
+    {
+        lowest = 9f; lowFoot = "";
+        if (RiderRig.LFoot == null || RiderRig.RFoot == null || SkateRig.LocalT == null) return "no rig";
+        var up = SkateRide.ViewNormal; if (up.sqrMagnitude < 0.5f) up = Vector3.up;
+        var nose = SkateRide.Dir(SkateRide.NoseYaw); nose = (nose - up * Vector3.Dot(nose, up)).normalized;
+        var toe = Vector3.Cross(up, nose) * SkateRide.StanceSign;
+        // Relative to the plane the module last posed on (the deck top under the ankles, shifted
+        // toward the heels by RiderRig.HeelShift), as the bones were set in that same frame: the
+        // player has moved on since, by a frame's travel.
+        var at = RiderRig.PosedPlane;
+        var l = FeetLocal(RiderRig.LFoot.position, at, nose, toe, up); var r = FeetLocal(RiderRig.RFoot.position, at, nose, toe, up);
+        var lt = RiderRig.LToe != null ? FeetLocal(RiderRig.LToe.position, at, nose, toe, up) : l; var rt = RiderRig.RToe != null ? FeetLocal(RiderRig.RToe.position, at, nose, toe, up) : r;
+        if (l.z < r.z) { lowest = l.z; lowFoot = "left"; } else { lowest = r.z; lowFoot = "right"; }
+        var pl = FeetLocal(new Vector3((float)RiderRig.Posed.LeftAnkle.X, (float)RiderRig.Posed.LeftAnkle.Y, (float)RiderRig.Posed.LeftAnkle.Z), at, nose, toe, up);
+        var pr = FeetLocal(new Vector3((float)RiderRig.Posed.RightAnkle.X, (float)RiderRig.Posed.RightAnkle.Y, (float)RiderRig.Posed.RightAnkle.Z), at, nose, toe, up);
+        return "L " + Out.V(l) + " toes " + Out.V(lt - l) + " | R " + Out.V(r) + " toes " + Out.V(rt - r) + " | posed L " + Out.V(pl) + " R " + Out.V(pr) + " | pelvis " + Out.V(FeetLocal(RiderRig.Pelvis != null ? RiderRig.Pelvis.position : at, at, nose, toe, up)) + " posed " + Out.V(FeetLocal(new Vector3((float)RiderRig.Posed.Pelvis.X, (float)RiderRig.Posed.Pelvis.Y, (float)RiderRig.Posed.Pelvis.Z), at, nose, toe, up)) + " knees L " + Out.V(FeetLocal(RiderRig.LKnee != null ? RiderRig.LKnee.position : at, at, nose, toe, up)) + " R " + Out.V(FeetLocal(RiderRig.RKnee != null ? RiderRig.RKnee.position : at, at, nose, toe, up)) + " miss " + RiderRig.Miss.ToString("F3") + " at " + RiderRig.MissAt
+            + " | switch=" + SkateRide.Trick.Switch + " tailFirst=" + SkateRide.TailFirst + " speed=" + SkateRide.Speed.ToString("F1") + " nose=" + SkateRide.NoseYaw.ToString("F0") + " yaw=" + SkateRide.Yaw.ToString("F0");
+    }
+    private static void FeetWatch(float game)
+    {
+        if (!SkateRide.On) return;
+        float low; string foot;
+        var down = SkateRide.Mode == RideMode.Ground && SkateRide.PushPhase > (float)SkateRider.PushDown && SkateRide.PushPhase < (float)SkateRider.PushUp;
+        if (down && !feetWasDown) { feetStrokes++; feetLow = 9f; feetDown = FeetLine(out low, out foot); feetLow = low; Say("FEET stroke " + feetStrokes + " down, " + (SkateRide.PushLead ? "lead" : "back") + " foot" + (SkateRide.PushMongo ? " (mongo)" : "") + ": " + feetDown); }
+        else if (down) { FeetLine(out low, out foot); feetLow = Math.Min(feetLow, low); }
+        else if (feetWasDown) Say("FEET stroke " + feetStrokes + " up, lowest " + feetLow.ToString("F2") + ": " + FeetLine(out low, out foot));
+        feetWasDown = down;
+        var revert = SkateRide.RevertLeft != 0f;
+        if (revert && !feetWasRevert) Say("FEET revert begins: " + FeetLine(out low, out foot));
+        else if (!revert && feetWasRevert) { Say("FEET revert over: " + FeetLine(out low, out foot)); feetRolledLogged = false; }
+        feetWasRevert = revert;
+        if (!feetRolledLogged && !down && !revert && SkateRide.Mode == RideMode.Ground && SkateRide.PushPhase == 0f && Math.Abs(SkateRide.Speed) > 2f)
+        { feetRolledLogged = true; Say("FEET rolling: " + FeetLine(out low, out foot)); }
+    }
+    private static void Feet(float game)
+    {
+        var run = (int)(game / FeetCycle); var t = game - run * FeetCycle;
+        if (run >= FeetRuns) { SkateCamera.Fixed = SkateCamera.Chase = false; Finish(); return; }
+        if (run != feetRun)
+        {
+            feetRun = run; feetPopped = feetReverted = false; feetRolledLogged = false;
+            if (!SkateRide.On) SkateRig.MountNow(yaw0);
+            var behind = run % 2 == 1;
+            SkateCamera.Fixed = true; SkateCamera.Chase = true; SkateCamera.Bearing = behind ? 180f : 90f; SkateCamera.FixedHeight = behind ? 1.0f : 0.9f; SkateCamera.FixedDistance = behind ? 3.0f : 2.6f;
+            Say("feet run " + run + ": push, camera " + (behind ? "behind" : "from the rider's front") + " | " + SkateRide.StanceName + " switch=" + SkateRide.Trick.Switch);
+        }
+        FeetWatch(game);
+        var way = yaw0 + (run % 2) * 180f;
+        SkateKeys.LookYaw = way; SkateKeys.Spin = game < feetSpinUntil ? 1f : 0f;
+        SkateKeys.Push = t < 3f && Math.Abs(SkateRide.Speed) < 5f;
+        SkateKeys.Brake = t > 5.2f && t < 7f;
+        if (!feetPopped && t >= 3f && SkateRide.Mode == RideMode.Ground)
+        {
+            feetPopped = true; SkateKeys.JumpPressed = true; SkateKeys.PopKind = SkatePopKind.Ollie; SkateKeys.PopScale = 1f;
+            Say("feet run " + run + ": ollie");
+        }
+        if (feetPopped && !feetReverted && SkateRide.Mode == RideMode.Ground && Time.realtimeSinceStartup - SkateRide.LandAt < 0.3f && SkateRide.LandAt > 0f && t > 3.2f)
+        {
+            feetReverted = true; SkateKeys.SpinPressed = true; SkateKeys.Spin = 1f; feetSpinUntil = game + 0.15f;
+            Say("feet run " + run + ": revert asked, speed " + SkateRide.Speed.ToString("F1"));
+        }
     }
 
     private static void Ride(float s)
@@ -329,7 +446,7 @@ public static class Scenarios
         new View("moving, pushing off", 115f, "move", 0f), new View("moving, turning round", 115f, "turn", 0f),
         new View("finish", 90f, "end", 0f) };
     private static float stepAt, nearAt, hudAt;
-    private static bool keyWas;
+    private static bool keyWas, poseFeetSaid;
 
     // The score display in each of its states, with made-up numbers. What fades is shown again
     // every few seconds, so that it is there whenever the view is looked at.
@@ -371,8 +488,16 @@ public static class Scenarios
         if (moving) SkateKeys.Push = SkateRide.Speed < 2.4f;
         if (state == "bail") SkateRide.ModeAt = now - views[phase - 1].Value * SkateRide.BailSeconds;
         if (now >= nearAt) { nearAt = now + 1f; RiderRig.Near(); }
+        Lamp(true);
+        // Half a second into a held view, once the pose has eased in: where the feet are, in the
+        // board's frame (see FeetLine), so a view can be read against the module's numbers.
+        if (!poseFeetSaid && phase > 0 && now - stepAt > 0.5f && !moving && state != "hud" && state != "first")
+        {
+            poseFeetSaid = true; float low; string foot;
+            Say("FEET view " + phase + " " + state + " " + views[phase - 1].Value.ToString("F2") + ": " + FeetLine(out low, out foot));
+        }
         if (!advance) return;
-        stepAt = now;
+        stepAt = now; poseFeetSaid = false;
         var v = views[phase];
         var still = v.State != "move" && v.State != "turn" && v.State != "end";
         Enter(phase + 1, v.Label + (still ? "   (K: next)" : ""));
@@ -507,12 +632,12 @@ public static class Scenarios
     // The ride with a controller, without one: its states are played into the plugin as the reader
     // outside the game would share them, and the keyboard is left to itself. The pace is walking
     // pace, which the server accepts without its skate plugin.
-    private const string OlliePath = "0:0,-100 250:0,-20 262:0,60 274:0,100 330:0,0", KickflipPath = "0:0,-100 250:-20,-30 262:-55,45 274:-70,70 330:0,0",
-        HeelflipPath = "0:0,-100 250:20,-30 262:55,45 274:70,70 330:0,0",
+    private const string OlliePath = "0:0,-100 250:0,-20 262:0,60 274:0,100 330:0,0", KickflipPath = "0:0,-100 250:20,-30 262:55,45 274:70,70 330:0,0",
+        HeelflipPath = "0:0,-100 250:-20,-30 262:-55,45 274:-70,70 330:0,0",
         // Held back and rolled a quarter round the rim to the left: the board turns half round under the feet.
-        ShovePath = "0:0,-100 250:0,-100 262:-38,-92 274:-71,-71 286:-92,-38 298:-100,0 340:-100,0 380:0,0",
+        ShovePath = "0:0,-100 250:0,-100 262:38,-92 274:71,-71 286:92,-38 298:100,0 340:100,0 380:0,0",
         // Held at the back right and flicked straight across to the front left: the same with a kickflip in it.
-        VarialPath = "0:71,-71 250:71,-71 262:20,-20 274:-45,45 286:-64,64 300:-64,64 340:0,0";
+        VarialPath = "0:-71,-71 250:-71,-71 262:-20,-20 274:45,45 286:64,64 300:64,64 340:0,0";
     private static readonly float[] padAt = { 1f, 2f, 4.5f, 5.5f, 6.5f, 8f, 10.5f, 13f, 15.5f, 16.9f, 17.6f, 17.75f, 18.15f, 20.5f, 23f, 25.4f, 25.5f, 25.95f, 28f, 28.15f, 28.55f, 30.5f, 32f, 33.5f, 35.5f, 36.5f };
     private static readonly string[] padDo = { "y", "push", "right", "left", "straight", "ollie", "kickflip", "heelflip", "manual", "release", "ollie", "grab", "release", "shove", "varial", "left", "ollie", "straight",
         "ollie", "nose grab", "release", "nose manual", "release", "brake", "y", "finish" };

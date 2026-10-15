@@ -50,6 +50,7 @@ public static class SkateKeys
     public static float Spin;
     public static SkateGrabKind Grab;
     private static bool wasPush, wasBrake, wasLeft, wasRight, wasJump, wasCrouch, wasToggle, wasCamera, wasStance, wasBody;
+    private static float stanceSince = -1f;
     private static float wasSpin;
     private static bool popKeys = true, crouchKeys = true, cameraKey = true, manualKey = true, taps = true, cursorKnown = true, failed;
 
@@ -75,16 +76,17 @@ public static class SkateKeys
             {
                 Push = Brake = Left = Right = Crouch = Jump = Manual = NoseManual = Charging = false; Steer = Charge = Spin = wasSpin = 0f; Grab = SkateGrabKind.None;
                 wasPush = wasBrake = wasLeft = wasRight = wasJump = wasCrouch = wasToggle = wasCamera = false; EndStep(); SkatePad.DropPops();
-                // J and X held through chat or the console are not a press when the cursor locks
+                // F2 and X held through chat or the console are not a press when the cursor locks
                 // again: their latches follow the keys while input is suspended.
-                if (kb != null) { try { wasStance = Down(kb.jKey); wasBody = Down(kb.xKey); } catch (Exception) { wasStance = wasBody = true; } }
+                if (kb != null) { try { wasStance = Down(kb.f2Key); wasBody = Down(kb.xKey); } catch (Exception) { wasStance = wasBody = true; } }
                 else wasStance = wasBody = true;
                 return;
             }
             SkatePieces.Keys(Down(kb.pKey), Down(kb.qKey), Down(kb.eKey), Down(kb.oKey), Down(kb.backspaceKey));
-            var stanceKey = Down(kb.jKey);
-            if (stanceKey && !wasStance) SkateRide.ToggleStance();
-            wasStance = stanceKey;
+            var stanceKey = Down(kb.f2Key);
+            // Held through chat or the console: not a hold until it has been let go once.
+            if (!stanceKey) wasStance = false;
+            SkateRide.StanceHold(ref stanceSince, stanceKey && !wasStance, now);
             bool push = Down(kb.wKey), brake = Down(kb.sKey), left = Down(kb.aKey), right = Down(kb.dKey);
             bool jump = Down(kb.spaceKey), toggle = Down(kb.kKey), crouch = false, camera = false, manual = false, noComply = false, boneless = false, body = false;
             if (popKeys)

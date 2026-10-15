@@ -13,20 +13,26 @@ public enum RideMode { Off, Ground, Air, Grind, Bail }
 public static class SkateRide
 {
     // Ground speed remains tangent speed across changing slopes; server feedback and caps are X/Z.
-    public const float PushAccel = 7f, MaxPush = 11f, BrakeDecel = 12f, RollDecel = 0.45f, MaxSpeed = 25f, MaxReverse = MaxSpeed, TurnRate = 150f, SlopeGain = 1.6f;
+    public const float PushAccel = 7f, PushSteady = 0.4f, PushKick = 2.7f, MaxPush = 11f, BrakeDecel = 12f, RollDecel = 0.45f, MaxSpeed = 25f, TurnRate = 150f, SlopeGain = 1.6f;
     // A powerslide: the brake with a turn held while rolling faster than PowerslideFrom swings the
     // board across the way of travel (PowerslideDegrees) and scrubs speed at PowerslideDecel; the
     // board keeps its line while it slides and swings back when the brake or the turn is let go.
     public const float PowerslideFrom = 2.5f, PowerslideDegrees = 85f, PowerslideDecel = 9f, PowerslideIn = 12f, PowerslideOut = 7f;
     public static float Powerslide, PowerslideSide;
+    // Steering with the stick has weight, as in the skate. games: the turn builds over a moment as the
+    // rider leans into it and eases out when let go, rather than the heading jumping with the stick;
+    // and a board barely rolling turns only a little (a stopped board is turned by a kickturn, not a carve).
+    public const float SteerIn = 7f, SteerOut = 10f, SteerStill = 0.35f, SteerFull = 2f;
+    public static float SteerRate;
+    private static bool strokeBack;
     public const float AirGravity = 16f, OlliePop = 6f, MaxFall = 30f, BailImpact = 12f, BailSeconds = 1.3f, BailDecel = 10f, PushPeriod = 0.8f, SeaLevel = -1.1f, LowestCap = 2f, LagStep = 0.1f, RaiseWait = 3f, CapForget = 30f, ManualPace = 1f, ManualHold = 0.3f, HopGrace = 0.3f;
     // Pumping: the shared SkateRidePhysics judges it (a crouch held down a transition, let go
     // through its bottom); PumpCharge only shapes the rider's crouch. Landing: the fall becomes
     // roll on a slope by LandRoll (the shared landing rule); a revert within RevertWindow of a
     // landed trick turns the board round at RevertRate and keeps the combo.
-    public const float PumpCharge = 0.4f, LandRoll = 0.8f, RevertWindow = 0.35f, RevertRate = 600f;
+    public const float PumpCharge = 0.4f, LandRoll = 0.8f, RevertWindow = 0.6f, RevertRate = 600f;
     public const long RevertPoints = 50;
-    public const float RevertStick = 0.85f;
+    public const float RevertStick = 0.85f, RevertSweep = 180f;
     private static float spinAtLand;
     private static Vector3 landRoll; private static bool hasLandRoll;
     private const float RayLift = 0.6f, FeetProbe = 0.3f, AirProbe = 3f;
@@ -90,11 +96,11 @@ public static class SkateRide
     // The push with the front foot (mongo), as the push began.
     public static int Powerslides;
     public static bool PushMongo;
-    // Which foot a push uses: the trailing foot as a rule (the back foot, or the front one in a
-    // mongo push); rolling tail first in the same stance, the tail foot leads and pushes, as a
-    // skater pushing fakie does: the trailing foot would have to cross the standing leg to reach
-    // the toe side. After a 180 the stance itself is turned round (NoseYaw), and the trailing foot
-    // pushes on its own toe side. PushLead: the foot that leads in the way of travel pushes.
+    // Which foot a push uses: the rider's back foot (the right one for a regular rider), or the
+    // front one in a mongo push, whichever end of the board leads. Rolling tail first, after a
+    // rollback, a revert or a 180 alike, the back foot is the one at the leading end, and it pushes
+    // from there, as a skater pushing fakie does; the front foot pushing there would be a mongo push
+    // the rider never asked for. PushLead: the foot that leads in the way of travel pushes.
     public static bool PushLead;
     // The deck's angle to the edge, taken when the grind begins and kept through it.
     public static float GrindDeck;
@@ -213,6 +219,16 @@ public static class SkateRide
         try { var path = StancePath(); Goofy = path != null && System.IO.File.Exists(path) && System.IO.File.ReadAllText(path).Trim().ToLowerInvariant() == "goofy"; }
         catch (Exception e) { Goofy = false; Out.Say("STANCE could not be read: " + e.GetType().Name + ": " + e.Message); }
     }
+    // A tap never changes the stance: F2 (J is the game's clan key, which frees the cursor) or Y in
+    // the controller's menu has to be held this long. A stance changed by a stray press was the rider pushing with the wrong foot.
+    public const float StanceHoldSeconds = 1f;
+    // Called each frame with whether the key is held; switches once per hold, after StanceHoldSeconds.
+    public static void StanceHold(ref float since, bool held, float now)
+    {
+        if (!held) { since = -1f; return; }
+        if (since < 0f) { since = now; SkatePieces.Said = "Stance: " + StanceName + " - hold to switch"; SkatePieces.SaidAt = now; return; }
+        if (since > 0f && now - since >= StanceHoldSeconds) { ToggleStance(); since = 0f; }
+    }
     // Only off the board: the feet are placed on getting on.
     public static bool ToggleStance()
     {
@@ -236,7 +252,7 @@ public static class SkateRide
         var v = b.linearVelocity; velocity = v; var rise = v.y; v.y = 0f;
         Speed = Vector3.Dot(v, Dir(yaw));
         SkateKeys.EndStep();
-        hasLast = false; Steps = 0; Resets = 0; Top = 0f; Lean = 0f; Powerslide = 0f; PowerslideSide = 1f; lastPull = mountAt = Time.realtimeSinceStartup;
+        hasLast = false; Steps = 0; Resets = 0; Top = 0f; Lean = 0f; SteerRate = 0f; Powerslide = 0f; PowerslideSide = 1f; lastPull = mountAt = Time.realtimeSinceStartup;
         // A cap from a ride a while ago says nothing about this one.
         if (mountAt - putBackAt > CapForget) ForgetServer();
         VSpeed = 0f; AirTime = 0f; flipLeft = shoveLeft = pendShove = bodyLeft = 0f; pendFlip = 0; SpinDeg = FlipDeg = ShoveDeg = BodyDeg = 0; LateTrick = false; Jumped = TrickAir = Braking = Manual = NoseManual = spinning = DeckReversed = false; PushPhase = 0f; stuck = 0; heldSteps = 0; Held = false;
@@ -255,7 +271,7 @@ public static class SkateRide
         {
             Enter(RideMode.Ground); Sense(Position); Tangent = SurfaceTangent(Normal, Dir(Yaw));
             Speed = Vector3.Dot(velocity, Tangent);
-            LimitSpeed(Cap, Math.Min(MaxReverse, Cap));
+            LimitSpeed(Cap, Cap);
         }
     }
 
@@ -412,8 +428,15 @@ public static class SkateRide
         Powerslide += ((wantSlide ? 1f : 0f) - Powerslide) * Clamp(dt * (wantSlide ? PowerslideIn : PowerslideOut), 0f, 1f);
         if (Powerslide < 0.01f && !wantSlide) Powerslide = 0f;
         // A stick steers by how far it is pushed; keys and the mouse turn the board toward where the rider looks.
-        if (RevertLeft != 0f || Powerslide > 0.3f) { }
-        else if (SkateKeys.Analog) Yaw += Clamp(SkateKeys.Steer, -1f, 1f) * maxTurn;
+        if (RevertLeft != 0f || Powerslide > 0.3f) SteerRate = 0f;
+        else if (SkateKeys.Analog)
+        {
+            var rolling = Clamp(SteerStill + (1f - SteerStill) * Math.Abs(Speed) / SteerFull, SteerStill, 1f);
+            var want = Clamp(SkateKeys.Steer, -1f, 1f) * TurnRate / (1f + Math.Abs(Speed) / 8f) * rolling;
+            var easing = Math.Abs(want) > Math.Abs(SteerRate) && want * SteerRate >= 0f ? SteerIn : SteerOut;
+            SteerRate += (want - SteerRate) * (1f - (float)Math.Exp(-easing * dt));
+            Yaw += SteerRate * dt;
+        }
         else Yaw += Clamp(Delta(Yaw, SkateKeys.LookYaw + ((SkateKeys.Left ? -1f : 0f) + (SkateKeys.Right ? 1f : 0f)) * 40f), -maxTurn, maxTurn);
         if (now - jumpWanted >= 0.12f) Revert(dt);
         var dir = RevertLeft != 0f ? revertDir * revertSign : Dir(Yaw);
@@ -447,24 +470,36 @@ public static class SkateRide
         // Rolling tail first, a push drives the board on the way it rolls (a fakie push), not to a stop.
         var fakiePush = Speed < -0.3f;
         var pushing = SkateKeys.Push && !SkateKeys.Brake && !Manual && !NoseManual && (fakiePush ? Speed > -pushLimit : Speed < pushLimit);
-        if (pushing && fakiePush) Speed = Math.Max(-pushLimit, Speed - PushAccel * dt);
-        else if (pushing) Speed = Math.Min(pushLimit, Speed + PushAccel * dt);
+        // Part of a push's speed comes as soon as it is asked for; the rest, the kick, comes while the
+        // foot is on the ground driving the board on (below), so the surge is seen with the stroke.
+        if (pushing && fakiePush) Speed = Math.Max(-pushLimit, Speed - PushAccel * PushSteady * dt);
+        else if (pushing) Speed = Math.Min(pushLimit, Speed + PushAccel * PushSteady * dt);
         if (Powerslide > 0.01f) Speed = Toward(Speed, 0f, (BrakeDecel * (1f - Powerslide) + PowerslideDecel * Powerslide) * dt);
         else if (SkateKeys.Brake) Speed = Toward(Speed, 0f, BrakeDecel * dt);
         Speed = Toward(Speed, 0f, RollDecel * dt);
-        LimitSpeed(Cap, Math.Min(MaxReverse, Cap));
+        // Rolling back down a transition keeps its pace both ways (#409): only friction, the brake,
+        // a powerslide and the server's horizontal cap slow it, never which end leads.
+        LimitSpeed(Cap, Cap);
         if (pushing || PushPhase > 0f)
         {
-            if (PushPhase <= 0f)
-            {
-                Pushes++; PushMongo = SkateKeys.Mongo; PushLead = PushMongo != fakiePush;
-            }
+            if (PushPhase <= 0f) { Pushes++; PushMongo = SkateKeys.Mongo; PushLead = PushMongo != TailFirst; strokeBack = fakiePush; }
             // While the foot is on the ground it stays where it came down and the board rolls on
             // past it: the stroke runs by the distance the board moves, not by the clock (a board
             // that cannot move gets the slow clock), so the foot never slides along the ground.
             var stroke = (float)(SkateRider.PushPlant + SkateRider.PushSweep);
             var span = (float)(SkateRider.PushUp - SkateRider.PushDown);
             var down = PushPhase > (float)SkateRider.PushDown && PushPhase < (float)SkateRider.PushUp;
+            // The kick: what the stroke covers of the foot's time on the ground this step drives the
+            // board on; the stroke then runs by the board's new pace, so the foot stays put.
+            var from = PushPhase;
+            var guess = from + (down ? Math.Max(dt / (PushPeriod * 3f), Math.Abs(Speed) * dt / stroke * span) : dt / PushPeriod);
+            var driven = Math.Min(guess, (float)SkateRider.PushUp) - Math.Max(from, (float)SkateRider.PushDown);
+            if (driven > 0f && SkateKeys.Push && !SkateKeys.Brake && !Manual && !NoseManual)
+            {
+                var gain = PushKick * driven / span;
+                if (strokeBack) { if (Speed > -pushLimit) Speed = Math.Max(-pushLimit, Speed - gain); }
+                else if (Speed < pushLimit) Speed = Math.Min(pushLimit, Speed + gain);
+            }
             PushPhase += down ? Math.Max(dt / (PushPeriod * 3f), Math.Abs(Speed) * dt / stroke * span) : dt / PushPeriod;
             if (PushPhase >= 1f) PushPhase = 0f;
         }
@@ -475,7 +510,7 @@ public static class SkateRide
         // In a slide the rider leans back from the way he goes, into the turn that started it.
         var leanWant = Powerslide > 0.01f ? -PowerslideSide * 18f * Powerslide : Clamp((Delta(before, Yaw) + revertStep) / dt * 0.12f, -25f, 25f);
         revertStep = 0f;
-        Lean += (leanWant - Lean) * 0.2f;
+        Lean += (leanWant - Lean) * (1f - (float)Math.Exp(-12f * dt));
         TrickTick(false, false, 0, 0, 0, 0, dt);
     }
 
@@ -506,11 +541,14 @@ public static class SkateRide
     {
         if (RevertLeft == 0f)
         {
-            // A stick that was already steering through the landing is a carve, not a revert: the turn
-            // must be asked for afresh, from the middle, and hard.
-            if (!landedTrick || now - LandAt > RevertWindow || !SkateKeys.SpinPressed || SkateKeys.Spin == 0f || Math.Abs(Speed) < 1f) return;
-            if (spinAtLand != 0f || (SkateKeys.Analog && Math.Abs(SkateKeys.Steer) < RevertStick)) return;
-            landedTrick = false; RevertLeft = 180f * (SkateKeys.Spin > 0f ? 1f : -1f); Reverts++; revertSign = Math.Sign(Speed); revertDir = Dir(Yaw) * revertSign;
+            // With the controller a revert is the left stick swept half round its rim, as in the
+            // skate. games: a hard steer after a landing is a carve (the owner's ride had a dozen
+            // reverts he never asked for). On the keys the turn must be asked for afresh.
+            if (!landedTrick || now - LandAt > RevertWindow || Math.Abs(Speed) < 1f) return;
+            float way;
+            if (SkateKeys.Analog) { if (Math.Abs(SkatePad.LeftSweep) < RevertSweep) return; way = Math.Sign(SkatePad.LeftSweep); SkatePad.LeftSweep = 0f; }
+            else { if (!SkateKeys.SpinPressed || SkateKeys.Spin == 0f || spinAtLand != 0f) return; way = SkateKeys.Spin > 0f ? 1f : -1f; }
+            landedTrick = false; RevertLeft = 180f * way; Reverts++; revertSign = Math.Sign(Speed); revertDir = Dir(Yaw) * revertSign;
             Out.Say("SKATE revert begins");
         }
         var step = Math.Min(Math.Abs(RevertLeft), RevertRate * dt) * Math.Sign(RevertLeft);
@@ -624,7 +662,7 @@ public static class SkateRide
         VSpeed -= AirGravity * dt; if (VSpeed < -MaxFall) VSpeed = -MaxFall;
         if (pos.y - takeOffY > AirPeak) AirPeak = pos.y - takeOffY;
         var dir = Dir(Yaw);
-        Tangent = dir; Lean += (0f - Lean) * 0.2f;
+        Tangent = dir; SteerRate = 0f; Lean += (0f - Lean) * (1f - (float)Math.Exp(-12f * dt));
 
         // A rotation is only started when the arc lasts long enough to finish it: an unfinished one is a bail.
         var left = (float)(TimeToGround() - 0.03);
@@ -767,6 +805,9 @@ public static class SkateRide
         else if (!recovery) { Physics_(error); Bail(); return; }
         if (AirTime > 0.12f || impact > 1.5f) { Lands++; LandAt = now; LandImpact = impact; }
         landedTrick = TrickAir; spinAtLand = SkateKeys.Spin;
+        // A revert is a sweep made after the wheels are down: one from the air (a body varial's
+        // circle, with the stick still on the rim) must not turn the board round on landing.
+        SkatePad.LeftSweep = 0f;
         // As in Skate: a grab still held as the wheels touch down is a bail.
         var heldGrab = TrickAir && !recovery && (Grab != SkateGrabKind.None || SkateKeys.Grab != SkateGrabKind.None);
         Enter(RideMode.Ground);
@@ -783,7 +824,7 @@ public static class SkateRide
             { Physics_(error); Speed = Flat(incoming).magnitude * (Speed < 0f ? -1f : 1f); Bail(); return; }
             Tangent = SurfaceTangent(normal, Dir(Yaw)); Normal = normal;
             Speed = Vector3.Dot(V(r.RollVelocity), Tangent);
-            LimitSpeed(Cap, Math.Min(MaxReverse, Cap));
+            LimitSpeed(Cap, Cap);
             landRoll = Tangent * Speed; hasLandRoll = true;
         }
         flipLeft = shoveLeft = 0f; spinning = false; TrickAir = Jumped = false; Grab = SkateGrabKind.None; AirTime = 0f;

@@ -245,14 +245,20 @@ namespace Shortcut.RustMod
             bool mongo = pushing && input.MongoPush;
             if (mongo)
             {
-                // The front foot pushes; the back foot stays on the tail and the toes stay forward.
-                // The stroke runs a foot's length further forward: the pushing foot starts from the front of the deck.
-                leadAnkle = PushFoot(input.BoardPosition + travel * (SkatePose.FootOffset * 2), travel, facing, up, input.PushPhase, input.GroundDrop, out grounded, out heel);
+                // The leading foot pushes (a mongo push, or a push rolling tail first, the back foot
+                // at the leading end); the other foot stays on its end and its toes stay forward. The
+                // foot comes down a little ahead of its own end (LeadPlant ahead of the middle) and
+                // sweeps back past the standing foot, the same stroke as the other push, and rests
+                // on its end between strokes. Planted a whole foot's length further ahead, as it
+                // was, it was out of the legs' reach over the standing foot: the pelvis dived to
+                // half its height and the frame was refused at the foot-down phase.
+                var rest = input.BoardPosition + travel * SkatePose.FootOffset;
+                leadAnkle = PushFoot(rest, input.BoardPosition + travel * (LeadPlant - PushPlant), travel, facing, up, input.PushPhase, input.GroundDrop, out grounded, out heel);
                 leadToe = RidingLeadToe * Math.PI / 180 + (Math.PI / 2 - RidingLeadToe * Math.PI / 180) * grounded;
             }
             else if (pushing)
             {
-                backAnkle = PushFoot(input.BoardPosition, travel, facing, up, input.PushPhase, input.GroundDrop, out grounded, out heel);
+                backAnkle = PushFoot(input.BoardPosition - travel * SkatePose.FootOffset, input.BoardPosition, travel, facing, up, input.PushPhase, input.GroundDrop, out grounded, out heel);
                 backToe = backToe + (Math.PI / 2 - backToe) * grounded;
             }
             if (input.FootPlant > 0 && input.Airborne && !input.Bailed)
@@ -293,7 +299,10 @@ namespace Shortcut.RustMod
             if (input.Bailed) centre = pelvisAt;
             else
             {
-                double onLead = 0.5 + PushWeight * turn * (mongo ? -1 : 1);
+                // The weight goes over the standing foot: most of the way for the usual push, where
+                // the pushing foot comes down beside it; less for the leading foot's push, whose
+                // foot comes down further out and would be beyond the legs' reach from there.
+                double onLead = 0.5 + (mongo ? -LeadPushWeight : PushWeight) * turn;
                 centre = Project(leadDeck * onLead + backDeck * (1 - onLead) - input.BoardPosition, up) + input.BoardPosition;
                 centre += right * (rig.PelvisHeight * Math.Sin(lean) * (grabbing ? 0.1 : 0.45)) + travel * (0.035 * speed);
                 centre -= facing * (rig.SpineLength * balance * (grabbing ? 3 : 1));
@@ -423,8 +432,10 @@ namespace Shortcut.RustMod
             var look = Forward(input.LookYawDegrees % 360);
             var headForward = Unit(Project(look, up));
             if (headForward.LengthSquared < 0.5) headForward = forward;
-            var leftToe = Toe(leftAnkle, leftToeDir, up, rig.FootLength, backIsLeft ? heel : 0);
-            var rightToe = Toe(rightAnkle, rightToeDir, up, rig.FootLength, backIsLeft ? 0 : heel);
+            // The heel lifts on the foot that pushes: the leading one in a mongo push, else the back one.
+            var heelLeft = mongo ? !backIsLeft : backIsLeft;
+            var leftToe = Toe(leftAnkle, leftToeDir, up, rig.FootLength, heelLeft ? heel : 0);
+            var rightToe = Toe(rightAnkle, rightToeDir, up, rig.FootLength, heelLeft ? 0 : heel);
             pose = new SkateRiderPose(pelvis, leftHip, rightHip, leftKnee, rightKnee, leftAnkle, rightAnkle,
                 leftToe, rightToe,
                 chest, neck, head, leftShoulder, rightShoulder, leftElbow, rightElbow, leftHand, rightHand,
@@ -442,6 +453,9 @@ namespace Shortcut.RustMod
         // The pushing foot comes down PushPlant ahead of the board's middle and leaves it PushSweep
         // behind: the stroke, over which the foot is on the ground (push phase PushDown..PushUp).
         public const double PushPlant = 0.18, PushSweep = 0.44, PushDown = 0.25, PushUp = 0.6;
+        // The leading foot's push comes down LeadPlant ahead of the board's middle, a little ahead
+        // of its own end, and the weight shifts LeadPushWeight of the way to the standing foot.
+        public const double LeadPlant = 0.25, LeadPushWeight = 0.12;
         private const double PushHeel = 0.07;
         private const double GrabRoll = 0.4, GrabFoldLimit = 1.0, GrabTuckMargin = 0.05, PlantDrop = 0.3, GrabBackLimit = 0.55, HeelTurn = 1.2;
         private const double HeelTurnSign = 1;
@@ -695,10 +709,13 @@ namespace Shortcut.RustMod
             return double.IsInfinity(crossing) ? best : crossing;
         }
 
-        private static SkateVector PushFoot(SkateVector origin, SkateVector travel, SkateVector side,
+        // The pushing foot through a stroke: from its resting spot on the deck (rest) down to the
+        // ground PushPlant ahead of origin, back along the ground to PushSweep behind it, up and
+        // back to its spot.
+        private static SkateVector PushFoot(SkateVector rest, SkateVector origin, SkateVector travel, SkateVector side,
                                            SkateVector up, double phase, double groundDrop, out double grounded, out double heel)
         {
-            var deck = origin - travel * SkatePose.FootOffset + up * SkatePose.FootLift;
+            var deck = rest + up * SkatePose.FootLift;
             var front = origin + travel * PushPlant + side * SkatePose.PushFootSide + up * (SkatePose.FootLift - groundDrop);
             var back = origin - travel * PushSweep + side * SkatePose.PushFootSide + up * (SkatePose.FootLift - groundDrop + PushHeel);
             var lifted = back + up * (0.1 + groundDrop * 0.5) + travel * 0.06;
