@@ -19,6 +19,7 @@ public static class SkateSfx
     private static bool failed, deaf, ranked = true;
     private static Il2CppStructArray<float> block;
     public static float RollHeard, GrindHeard, ShotsHeard;
+    public static AudioClip RollClip { get { return roll == null ? null : roll.clip; } }
 
     private static AudioClip Clip(SkateSound sound, uint seed)
     {
