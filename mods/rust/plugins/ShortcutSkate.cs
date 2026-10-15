@@ -1265,6 +1265,7 @@ namespace Oxide.Plugins
 
         private sealed class ParkItemDelivery
         {
+            public bool Delivering;
             public Item Item;
             public ItemId Uid;
             public SkateParkKind Kind;
@@ -3021,22 +3022,28 @@ namespace Oxide.Plugins
 
         private bool DeliverParkItem(ParkItemDelivery delivery)
         {
-            if (ParkDeliveryComplete(delivery)) return true;
-            if (!ReferenceEquals(instance, this) || parkClosing || !SameParkDeliveryItem(delivery) ||
-                delivery.Player == null || !delivery.Player.IsConnected || !delivery.Player.IsAdmin ||
-                delivery.Player.userID != delivery.Owner || delivery.Player.inventory == null ||
-                (delivery.Data != null && (!ReferenceEquals(delivery.Data, parkData) || !SameParkWorld(delivery.Data)))) return false;
-            Item item = delivery.Item;
-            if (item.parent != null || !ReferenceEquals(item.GetWorldEntity(), null)) return false;
-            // Check actual ownership/world placement after callbacks, rather than trusting GiveItem's bool alone.
-            delivery.Player.inventory.GiveItem(item);
-            if (ParkDeliveryComplete(delivery)) return true;
-            if (!ReferenceEquals(instance, this) || parkClosing || !SameParkDeliveryItem(delivery) ||
-                delivery.Player == null || !delivery.Player.IsConnected || !delivery.Player.IsAdmin || delivery.Player.userID != delivery.Owner ||
-                (delivery.Data != null && (!ReferenceEquals(delivery.Data, parkData) || !SameParkWorld(delivery.Data))) ||
-                item.parent != null || !ReferenceEquals(item.GetWorldEntity(), null) || !Coordinate(delivery.Position)) return false;
-            item.Drop(delivery.Position, Vector3.zero, Quaternion.identity);
-            return ParkDeliveryComplete(delivery);
+            if (delivery == null || delivery.Delivering) return false;
+            delivery.Delivering = true;
+            try
+            {
+                if (ParkDeliveryComplete(delivery)) return true;
+                if (!ReferenceEquals(instance, this) || parkClosing || !SameParkDeliveryItem(delivery) ||
+                    delivery.Player == null || !delivery.Player.IsConnected || !delivery.Player.IsAdmin ||
+                    delivery.Player.userID != delivery.Owner || delivery.Player.inventory == null ||
+                    (delivery.Data != null && (!ReferenceEquals(delivery.Data, parkData) || !SameParkWorld(delivery.Data)))) return false;
+                Item item = delivery.Item;
+                if (item.parent != null || !ReferenceEquals(item.GetWorldEntity(), null)) return false;
+                // Check actual ownership/world placement after callbacks, rather than trusting GiveItem's bool alone.
+                delivery.Player.inventory.GiveItem(item);
+                if (ParkDeliveryComplete(delivery)) return true;
+                if (!ReferenceEquals(instance, this) || parkClosing || !SameParkDeliveryItem(delivery) ||
+                    delivery.Player == null || !delivery.Player.IsConnected || !delivery.Player.IsAdmin || delivery.Player.userID != delivery.Owner ||
+                    (delivery.Data != null && (!ReferenceEquals(delivery.Data, parkData) || !SameParkWorld(delivery.Data))) ||
+                    item.parent != null || !ReferenceEquals(item.GetWorldEntity(), null) || !Coordinate(delivery.Position)) return false;
+                item.Drop(delivery.Position, Vector3.zero, Quaternion.identity);
+                return ParkDeliveryComplete(delivery);
+            }
+            finally { delivery.Delivering = false; }
         }
 
         private bool GiveParkItem(BasePlayer player, SkateParkKind kind, out string failure, ParkData expected = null)
@@ -3086,6 +3093,8 @@ namespace Oxide.Plugins
                 foreach (ParkItemDelivery delivery in parkItemDeliveries.ToArray())
                 {
                     if (player.userID != delivery.Owner) continue;
+                    if (delivery.Delivering)
+                    { arg.ReplyWith("An earlier build-item delivery is still unverified; no new items were issued."); return; }
                     Vector3 position = player.transform.position + Vector3.up;
                     if (player.inventory == null || !Coordinate(position))
                     { arg.ReplyWith("The earlier build-item delivery cannot be retried from the current inventory or position; no new items were issued."); return; }
