@@ -80,6 +80,8 @@ public static class SkatePad
                 // The state of the moment, without what was pressed before the plugin looked.
                 primed = true; count = n; clock = stamp;
                 if (n > 0) Take(Header + (int)((n - 1) % Ring) * SampleBytes, now, false);
+                // The held sample can predate this observation; its elapsed time is not new input.
+                clock = stamp;
             }
             if (n - count > Ring) count = n - Ring;
             for (; count != n; count++) Take(Header + (int)(count % Ring) * SampleBytes, now, true);
@@ -98,6 +100,7 @@ public static class SkatePad
 
     private static void Lost()
     {
+        primed = false; LeftSweep = leftAngle = 0f; leftOnRim = false; sweepFromUs = 0;
         Shared = false; Buttons = 0; LeftX = LeftY = RightX = RightY = LeftTrigger = RightTrigger = 0f;
         poppedCount = 0; BodyVarialDegrees = 0f; Charging = Manual = NoseManual = false; Charge = 0f; pressed = 0; flick = default(SkateFlickState);
     }

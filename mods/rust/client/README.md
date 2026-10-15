@@ -173,6 +173,11 @@ client, and it shares the controller's state (XInput) with the plugin in a named
 every change with the reader's own clock, so that a flick between two frames of the game is not
 lost. The plugin feeds the right stick to the shared flick module change by change.
 
+If the controller or reader is lost, pending gestures and the previous left-stick sweep are
+discarded. Recovery takes the latest held state as a baseline without replaying buffered button
+presses or time before that baseline. Fresh presses and sweeps then use the normal controls.
+Actual device/reader reconnection and controller feel still require in-game verification.
+
 - The controller rides from the moment it is touched. The keyboard rides again when a riding key
   goes down while the controller has been at rest for half a second.
 - Steam's layout for the owner's `RustClient` shortcut keeps sending keys and mouse for the same
