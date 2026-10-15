@@ -969,7 +969,7 @@ namespace Shortcut.RustMod
 
 namespace Oxide.Plugins
 {
-    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.13")]
+    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.14")]
     [Description("Player-scoped skateboard movement bounds and saved park assemblies.")]
     public sealed class ShortcutSkate : RustPlugin
     {
@@ -980,6 +980,7 @@ namespace Oxide.Plugins
         private readonly Dictionary<ulong, Session> sessions = new Dictionary<ulong, Session>();
         private readonly Dictionary<ulong, BasePlayer> optedOut = new Dictionary<ulong, BasePlayer>();
         private readonly List<BaseEntity> practice = new List<BaseEntity>();
+        private bool practiceCleaning;
         private readonly SkateDiagnosticsStore diagnostics = new SkateDiagnosticsStore();
         private static readonly Func<object, bool> ConnectedIdentity = identity =>
         {
@@ -1002,6 +1003,7 @@ namespace Oxide.Plugins
         private object parkSelectionEpoch = new object();
         private readonly Dictionary<ulong, ParkGroup> parkMembers = new Dictionary<ulong, ParkGroup>();
         private readonly List<BaseEntity> parkRollback = new List<BaseEntity>();
+        private bool parkRollbackCleaning;
         private readonly Dictionary<ulong, ParkNativeRequest> parkNativeRequests = new Dictionary<ulong, ParkNativeRequest>();
         private readonly List<ParkNativeRequest> parkNativeCleanup = new List<ParkNativeRequest>();
         private bool parkNativeCleaning;
@@ -1971,18 +1973,24 @@ namespace Oxide.Plugins
 
         private void ClearPractice()
         {
-            for (int i = practice.Count - 1; i >= 0; i--)
+            if (practiceCleaning) return;
+            practiceCleaning = true;
+            try
             {
-                BaseEntity entity = practice[i];
-                try
+                for (int i = practice.Count - 1; i >= 0; i--)
                 {
-                    if (entity != null && !entity.IsDestroyed) entity.Kill();
-                    if (entity != null && !entity.IsDestroyed)
-                    { PrintError("Practice part removal was refused by the server; the part remains tracked."); continue; }
-                    practice.RemoveAt(i);
+                    BaseEntity entity = practice[i];
+                    try
+                    {
+                        if (entity != null && !entity.IsDestroyed) entity.Kill();
+                        if (entity != null && !entity.IsDestroyed)
+                        { PrintError("Practice part removal was refused by the server; the part remains tracked."); continue; }
+                        practice.RemoveAt(i);
+                    }
+                    catch (Exception error) { PrintError("Practice part cleanup failed. " + error.Message); }
                 }
-                catch (Exception error) { PrintError("Practice part cleanup failed. " + error.Message); }
             }
+            finally { practiceCleaning = false; }
         }
 
         private void ReadGroundedData()
@@ -3977,22 +3985,29 @@ namespace Oxide.Plugins
 
         private void CleanupParkRollback()
         {
-            for (int i = parkRollback.Count - 1; i >= 0; i--)
+            // Kill hooks can unload the plugin and reenter this queue before destruction completes.
+            if (parkRollbackCleaning) return;
+            parkRollbackCleaning = true;
+            try
             {
-                BaseEntity entity = parkRollback[i];
-                try
+                for (int i = parkRollback.Count - 1; i >= 0; i--)
                 {
-                    if (entity != null && !entity.IsDestroyed)
+                    BaseEntity entity = parkRollback[i];
+                    try
                     {
-                        entity.EnableSaving(false);
-                        entity.Kill();
+                        if (entity != null && !entity.IsDestroyed)
+                        {
+                            entity.EnableSaving(false);
+                            entity.Kill();
+                        }
+                        if (entity != null && !entity.IsDestroyed)
+                        { PrintError("Unsaved park rollback part removal was refused; it remains tracked."); continue; }
+                        parkRollback.RemoveAt(i);
                     }
-                    if (entity != null && !entity.IsDestroyed)
-                    { PrintError("Unsaved park rollback part removal was refused; it remains tracked."); continue; }
-                    parkRollback.RemoveAt(i);
+                    catch (Exception error) { PrintError("Unsaved park rollback cleanup failed. " + error.Message); }
                 }
-                catch (Exception error) { PrintError("Unsaved park rollback cleanup failed. " + error.Message); }
             }
+            finally { parkRollbackCleaning = false; }
         }
 
         private ParkGroup VerifiedParkGroup(BuildingBlock block)
