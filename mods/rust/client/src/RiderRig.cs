@@ -27,6 +27,9 @@ public static class RiderRig
     public static Animator Anim;
     public static Transform Root, Pelvis, Neck, Head, LHip, LKnee, LFoot, LToe, RHip, RKnee, RFoot, RToe, LUpper, LFore, LHand, RUpper, RFore, RHand;
     public static bool Mirrored;
+    // F4 on foot or riding flips the limb mapping found at Bind, to see in the game which one is right.
+    public static bool LegsFlipped;
+    private static float bindHandedness, bindDeterminant;
     private static void Swap(ref Transform a, ref Transform b) { var t = a; a = b; b = t; }
     public static SkateRiderRig Rig;
     public static float Thigh, Shin, Foot, UpperArm, Forearm, Crouch = 0.18f;
@@ -386,6 +389,7 @@ public static class RiderRig
             if (float.IsNaN(handedness) || float.IsInfinity(handedness) || Math.Abs(handedness) < 0.0001f
                 || float.IsNaN(determinant) || float.IsInfinity(determinant) || determinant == 0f) continue;
             Mirrored = (handedness < 0f) != (determinant < 0f);
+            bindHandedness = handedness; bindDeterminant = determinant;
             return true;
         }
         return false;
@@ -419,6 +423,15 @@ public static class RiderRig
             if (!BindHandedness()) Say("no usable skeleton bind pose; humanoid limb mapping retained");
         }
         catch (Exception e) { Say("skeleton bind pose unavailable: " + e.GetType().Name + "; humanoid limb mapping retained"); }
+        // The same question asked of the joints as they stand now: the right hip on the right of the
+        // spine and the toes. Logged beside the bind pose's answer, which is the one used.
+        var toesNow = (LToe.position - LFoot.position) + (RToe.position - RFoot.position);
+        var visualRight = Vector3.Cross(Neck.position - Pelvis.position, toesNow);
+        var acrossNow = visualRight.sqrMagnitude > 0.0001f ? Vector3.Dot(RHip.position - LHip.position, visualRight.normalized) : 0f;
+        var found = Mirrored;
+        if (LegsFlipped) Mirrored = !Mirrored;
+        Say("limbs: bind pose handedness=" + bindHandedness.ToString("F3") + " determinant=" + bindDeterminant.ToString("F3") + " -> " + (found ? "mirrored" : "as is")
+            + ", standing right hip across=" + acrossNow.ToString("F3") + "; shown " + (Mirrored ? "SWAPPED" : "as is") + (LegsFlipped ? " (flipped with F4)" : ""));
         if (Mirrored)
         {
             Swap(ref LHip, ref RHip); Swap(ref LKnee, ref RKnee); Swap(ref LFoot, ref RFoot); Swap(ref LToe, ref RToe);
