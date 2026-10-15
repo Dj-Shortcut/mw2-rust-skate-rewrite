@@ -42,7 +42,7 @@ public static class SkatePad
     private static int pressed;
     private static long clock, beat;
     private static float nextOpen, beatAt;
-    private static bool primed, failed, said, fed;
+    private static bool primed, failed, said, fed, rightSuspended;
 
     private static void Say(string m) { Out.Say("PAD " + m); }
 
@@ -72,7 +72,7 @@ public static class SkatePad
                 return;
             }
             var slot = (int)BitConverter.ToUInt32(block, 12);
-            if (slot != Slot) { Slot = slot; Say(slot < 0 ? "no controller" : "controller in slot " + slot); }
+            if (slot != Slot) { Lost(); Slot = slot; Say(slot < 0 ? "no controller" : "controller in slot " + slot); }
             if (slot < 0) { Lost(); return; }
             var n = BitConverter.ToUInt32(block, 8);
             if (!primed)
@@ -80,6 +80,7 @@ public static class SkatePad
                 // The state of the moment, without what was pressed before the plugin looked.
                 primed = true; count = n; clock = stamp;
                 if (n > 0) Take(Header + (int)((n - 1) % Ring) * SampleBytes, now, false);
+                rightSuspended = RightX * RightX + RightY * RightY > SkateFlick.RearmZone * SkateFlick.RearmZone;
                 // The held sample can predate this observation; its elapsed time is not new input.
                 clock = stamp;
             }
@@ -100,7 +101,7 @@ public static class SkatePad
 
     private static void Lost()
     {
-        primed = false; LeftSweep = leftAngle = 0f; leftOnRim = false; sweepFromUs = 0;
+        primed = rightSuspended = false; LeftSweep = leftAngle = 0f; leftOnRim = false; sweepFromUs = 0;
         Shared = false; Buttons = 0; LeftX = LeftY = RightX = RightY = LeftTrigger = RightTrigger = 0f;
         poppedCount = 0; BodyVarialDegrees = 0f; Charging = Manual = NoseManual = false; Charge = 0f; pressed = 0; flick = default(SkateFlickState);
     }
@@ -130,6 +131,7 @@ public static class SkatePad
     private static void State(long us, int buttons, float lt, float rt, float lx, float ly, float rx, float ry, float now, bool edges)
     {
         Advance(us);
+        if (rx * rx + ry * ry <= SkateFlick.RearmZone * SkateFlick.RearmZone) rightSuspended = false;
         Sweep(us, lx, ly);
         if (edges) pressed |= buttons & ~Buttons;
         SkatePadLog.Stick(us, rx, ry);
@@ -156,7 +158,7 @@ public static class SkatePad
         // to up-right, 360 flip left, down, up-right, frontside shove-it to the left), so the stick
         // is read mirrored for a regular rider going nose first, and as before otherwise.
         var mirrored = SkateRide.Goofy == (SkateRide.On && SkateRide.TailFirst);
-        var input = new SkateFlickInput(grabbing ? 0f : SkateRide.Clamp(RightX, -1f, 1f), grabbing ? 0f : SkateRide.Clamp(RightY, -1f, 1f), air, mirrored,
+        var input = new SkateFlickInput(grabbing || rightSuspended ? 0f : SkateRide.Clamp(RightX, -1f, 1f), grabbing || rightSuspended ? 0f : SkateRide.Clamp(RightY, -1f, 1f), air, mirrored,
             SkateRide.Clamp(LeftX, -1f, 1f), SkateRide.Clamp(LeftY, -1f, 1f), air && SkateRide.Jumped);
         while (seconds > 0.000001)
         {
