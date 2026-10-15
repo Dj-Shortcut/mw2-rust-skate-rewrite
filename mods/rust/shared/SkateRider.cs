@@ -252,12 +252,12 @@ namespace Shortcut.RustMod
                 // on its end between strokes. Planted a whole foot's length further ahead, as it
                 // was, it was out of the legs' reach over the standing foot: the pelvis dived to
                 // half its height and the frame was refused at the foot-down phase.
-                // Rolling tail first, the body turned toward the way of travel has the leading foot's
-                // hip on the heel side: that foot goes down there, on its own side. On the toes'
-                // side it crossed in front of the standing leg, the right foot of a regular rider
-                // pushing on the left of the board with the legs and the foot twisted (owner,
-                // 15 October). A mongo push rolling nose first stays on the toes' side.
-                var pushSide = input.Switch ? facing * -1 : facing;
+                // The body turned toward the way of travel has the leading foot's hip on the heel
+                // side, nose first or tail first alike: that foot goes down there, on its own side.
+                // On the toes' side it crossed in front of the standing leg, a goofy rider's right
+                // foot mongo pushing on the left of the board with the legs and the foot twisted
+                // (owner, 15 October).
+                var pushSide = facing * -1;
                 var rest = input.BoardPosition + travel * SkatePose.FootOffset;
                 leadAnkle = PushFoot(rest, input.BoardPosition + travel * (LeadPlant - PushPlant), travel, pushSide, up, input.PushPhase, input.GroundDrop, out grounded, out heel);
                 leadToe = RidingLeadToe * Math.PI / 180 + (Math.PI / 2 - RidingLeadToe * Math.PI / 180) * grounded;
