@@ -24,7 +24,6 @@ public class SkateRig : MonoBehaviour
     public static bool CanMount { get { return Ready && late != null && Walk != null && Walk.enabled && !SkateRide.On && Time.realtimeSinceStartup - offAt > 0.7f; } }
 
     private static GameObject board;
-    public static GameObject Board { get { return board; } }
     private static LateDriver late;
     private static float offAt = -99f, lastFrame;
     private static bool wasOn;
@@ -190,7 +189,6 @@ public class SkateRig : MonoBehaviour
         SkateParks.Frame(now);
         SkatePieces.Frame(now);
         SkateInbox.Frame(now);
-        var tr = SkateClock.Now(); RemoteBoards.Frame(now, frame); SkateClock.Add(SkateClock.Board, tr);
         // With a controller the rider looks where the board goes, a little into the turn; the view
         // itself is turned by the right stick's flicks and says nothing.
         if (!SkateKeys.Scripted) SkateKeys.LookYaw = SkateKeys.Pad && SkateRide.On ? SkateRide.Yaw + SkateKeys.Steer * 35f : SkateCamera.LookYaw;
@@ -250,8 +248,6 @@ public class SkateRig : MonoBehaviour
         catch (Exception e) { Out.Err("SKATE late driver teardown threw " + e.GetType().Name + ": " + e.Message); }
         try { RiderRig.Unbind(); }
         catch (Exception e) { Out.Err("RIDER unbind threw " + e.GetType().Name + ": " + e.Message); }
-        try { RemoteBoards.Clear(); }
-        catch (Exception e) { Out.Err("REMOTE clear threw " + e.GetType().Name + ": " + e.Message); }
         try { SkateParks.Clear(); }
         catch (Exception e) { Out.Err("PARK clear threw " + e.GetType().Name + ": " + e.Message); }
         try { if (board != null) board.SetActive(false); }

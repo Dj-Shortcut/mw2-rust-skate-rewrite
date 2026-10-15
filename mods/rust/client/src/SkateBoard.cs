@@ -20,8 +20,6 @@ public static class SkateBoard
     public static Vector3 HeldAt, HeldNose = Vector3.forward, HeldUp = Vector3.up;
     private static Transform[] trucks = new Transform[0], wheels = new Transform[0];
     private static Vector3[] truckAxes = new Vector3[0], wheelAxes = new Vector3[0];
-    public static Transform[] WheelParts { get { return wheels; } }
-    public static Vector3[] WheelAxes { get { return wheelAxes; } }
     private static float[] truckSides = new float[0];
     private static float followedAt = -1f;
     private static Vector3 bailFrom, bailTravel, bailNose, bailUp;

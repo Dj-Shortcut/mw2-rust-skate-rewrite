@@ -22,7 +22,6 @@ mods/rust/client/src/SkateWatch.cs
 mods/rust/client/src/SkateGestures.cs
 mods/rust/client/src/SkateHeld.cs
 mods/rust/client/src/SkateInbox.cs
-mods/rust/client/src/RemoteBoards.cs
 mods/rust/shared/SkateBoardMesh.cs
 mods/rust/shared/SkateMotion.cs 928eb7b91ad2644f96696384120aa509ab3bb727 048fb2b82632fd46c58316c89706b259bf283e70471802b7fb15542fa60b5938
 mods/rust/shared/SkateRails.cs
