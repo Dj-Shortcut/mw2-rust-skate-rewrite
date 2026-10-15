@@ -7,13 +7,14 @@
 // told that it rests, or picking a grab would also flip the board.
 using System;
 using System.IO.MemoryMappedFiles;
+using System.Threading;
 using Shortcut.RustMod;
 using UnityEngine;
 
 public static class SkatePad
 {
-    public const string MapName = "ShortcutSkatePad";
-    public const uint Magic = 0x44504B53;
+    public const string MapName = "ShortcutSkatePad2";
+    public const uint Magic = 0x44504B53, Version = 2;
     public const int Ring = 128, SampleBytes = 24, Header = 32, Size = Header + Ring * SampleBytes;
     public const int DpadUp = 0x1, DpadDown = 0x2, DpadLeft = 0x4, DpadRight = 0x8, Start = 0x10, Back = 0x20, LeftStickClick = 0x40, RightStickClick = 0x80,
         LeftBumper = 0x100, RightBumper = 0x200, A = 0x1000, B = 0x2000, X = 0x4000, Y = 0x8000;
@@ -38,7 +39,7 @@ public static class SkatePad
     private static MemoryMappedViewAccessor view;
     private static readonly byte[] block = new byte[Size];
     private static SkateFlickState flick;
-    private static uint count;
+    private static uint count, ownership;
     private static int pressed;
     private static long clock, beat;
     private static float nextOpen, beatAt;
@@ -62,17 +63,24 @@ public static class SkatePad
                 primed = false; beatAt = now;
                 Say("the controller reader is there");
             }
+            var publication = view.ReadUInt32(28);
+            Thread.MemoryBarrier();
             view.ReadArray(0, block, 0, Size);
+            Thread.MemoryBarrier();
+            var coherent = (publication & 1) == 0 && publication == view.ReadUInt32(28);
             var stamp = BitConverter.ToInt64(block, 16);
-            if (stamp != beat) { beat = stamp; beatAt = now; }
-            if (BitConverter.ToUInt32(block, 0) != Magic || now - beatAt > SilentSeconds)
+            if (coherent && stamp < beat) Lost();
+            if (coherent && stamp != beat) { beat = stamp; beatAt = now; }
+            if (!coherent && now - beatAt <= SilentSeconds) return;
+            if (!coherent || BitConverter.ToUInt32(block, 0) != Magic || BitConverter.ToUInt32(block, 4) != Version || now - beatAt > SilentSeconds)
             {
                 Say("the controller reader has stopped");
                 view.Dispose(); map.Dispose(); view = null; map = null; Lost();
                 return;
             }
             var slot = (int)BitConverter.ToUInt32(block, 12);
-            if (slot != Slot) { Lost(); Slot = slot; Say(slot < 0 ? "no controller" : "controller in slot " + slot); }
+            var owner = BitConverter.ToUInt32(block, 24);
+            if (slot != Slot || owner != ownership) { Lost(); Slot = slot; ownership = owner; Say(slot < 0 ? "no controller" : "controller in slot " + slot); }
             if (slot < 0) { Lost(); return; }
             var n = BitConverter.ToUInt32(block, 8);
             if (!primed)

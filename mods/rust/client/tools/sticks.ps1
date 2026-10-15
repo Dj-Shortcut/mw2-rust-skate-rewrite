@@ -4,7 +4,7 @@
 #   zz sticks              watch every slot for $pwatch seconds (default 10) and say what was seen
 #   $pserve = 'RustClient' share the controller in memory until that process has come and gone;
 #                          session.ps1 starts it this way, as a process of its own
-# The shared block is named ShortcutSkatePad: a header and a ring of the last state changes, each
+# The shared block is named ShortcutSkatePad2: a header and a ring of the last state changes, each
 # with the reader's own clock, so that a flick between two frames of the game is not lost. Its
 # layout is repeated in the plugin (SkatePad.cs).
 $code = @'
@@ -27,8 +27,8 @@ public static class SkatePadReader1
     [DllImport("winmm.dll")]
     private static extern uint timeEndPeriod(uint ms);
 
-    public const string MapName = "ShortcutSkatePad";
-    public const uint Magic = 0x44504B53, Version = 1, NoSlot = 0xFFFFFFFF;
+    public const string MapName = "ShortcutSkatePad2";
+    public const uint Magic = 0x44504B53, Version = 2, NoSlot = 0xFFFFFFFF;
     public const int Ring = 128, SampleBytes = 24, Header = 32, Size = Header + Ring * SampleBytes;
     private static readonly string[] Names = { "up", "down", "left", "right", "start", "back", "left stick", "right stick", "LB", "RB", "", "", "A", "B", "X", "Y" };
 
@@ -82,7 +82,12 @@ public static class SkatePadReader1
             using (var map = MemoryMappedFile.CreateOrOpen(MapName, Size))
             using (var view = map.CreateViewAccessor(0, Size))
             {
+                uint publication = view.ReadUInt32(28) & ~1u;
+                uint ownership = unchecked(view.ReadUInt32(24) + 1);
+                view.Write(28, unchecked(++publication)); Thread.MemoryBarrier();
                 view.Write(0, Magic); view.Write(4, Version); view.Write(8, (uint)0); view.Write(12, NoSlot);
+                view.Write(16, (long)0); view.Write(24, ownership);
+                Thread.MemoryBarrier(); view.Write(28, unchecked(++publication));
                 var clock = Stopwatch.StartNew();
                 var shown = new bool[4]; var last = new uint[4]; var changedAt = new long[4];
                 uint count = 0; var slot = -1; long nextAll = 0, nextAlive = 0; var seen = false; var samples = 0L;
@@ -91,27 +96,29 @@ public static class SkatePadReader1
                 {
                     while (true)
                     {
+                        // Publish the ring and slot together; odd generations are never consumable.
+                        view.Write(28, unchecked(++publication)); Thread.MemoryBarrier();
                         var us = clock.ElapsedTicks * 1000000L / Stopwatch.Frequency;
                         var all = us >= nextAll; if (all) nextAll = us + 1000000;
                         for (var i = 0; i < 4; i++)
                         {
                             if (!all && !shown[i]) continue;
                             State s;
-                            if (Get((uint)i, out s) != 0) { shown[i] = false; if (slot == i) slot = -1; continue; }
+                            if (Get((uint)i, out s) != 0) { shown[i] = false; if (slot == i) { slot = -1; ownership = unchecked(ownership + 1); } continue; }
                             var fresh = !shown[i]; if (fresh) { shown[i] = true; last[i] = s.Packet; }
                             var changed = s.Packet != last[i]; last[i] = s.Packet;
                             if (changed) changedAt[i] = us;
                             // The slot that is shared is the one a hand is on: another slot takes over
                             // when it changes while the shared one has been still for a second.
-                            if (slot < 0 || (changed && i != slot && us - changedAt[slot] > 1000000)) { slot = i; changed = true; }
+                            if (slot < 0 || (changed && i != slot && us - changedAt[slot] > 1000000)) { slot = i; ownership = unchecked(ownership + 1); changed = true; }
                             if (i != slot || !(changed || fresh)) continue;
                             long at = Header + (count % Ring) * SampleBytes;
                             view.Write(at, us); view.Write(at + 8, s.Packet); view.Write(at + 12, s.Buttons); view.Write(at + 14, s.LeftTrigger); view.Write(at + 15, s.RightTrigger);
                             view.Write(at + 16, s.LeftX); view.Write(at + 18, s.LeftY); view.Write(at + 20, s.RightX); view.Write(at + 22, s.RightY);
                             count++; samples++; view.Write(8, count);
                         }
-                        uint mask = 0; for (var i = 0; i < 4; i++) if (shown[i]) mask |= 1u << i;
-                        view.Write(12, slot < 0 ? NoSlot : (uint)slot); view.Write(24, mask); view.Write(16, us);
+                        view.Write(12, slot < 0 ? NoSlot : (uint)slot); view.Write(24, ownership); view.Write(16, us);
+                        Thread.MemoryBarrier(); view.Write(28, unchecked(++publication));
                         if (us >= nextAlive)
                         {
                             nextAlive = us + 1000000;
@@ -123,7 +130,12 @@ public static class SkatePadReader1
                         Thread.Sleep(4);
                     }
                 }
-                finally { view.Write(12, NoSlot); view.Write(0, (uint)0); timeEndPeriod(1); }
+                finally
+                {
+                    if ((publication & 1) == 0) view.Write(28, unchecked(++publication));
+                    Thread.MemoryBarrier(); view.Write(12, NoSlot); view.Write(0, (uint)0);
+                    Thread.MemoryBarrier(); view.Write(28, unchecked(++publication)); timeEndPeriod(1);
+                }
             }
         }
     }
