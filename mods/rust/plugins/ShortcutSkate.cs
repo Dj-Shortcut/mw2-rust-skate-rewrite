@@ -4327,7 +4327,7 @@ namespace Oxide.Plugins
                         Vector3 point = cache.Segments[offset + s].point;
                         int samples = Math.Max(1, (int)Math.Ceiling((point - previous).magnitude / 0.1));
                         for (int sample = 1; sample <= samples; sample++)
-                            supported = Supported(Vector3.Lerp(previous, point, (float)sample / samples)) && supported;
+                            supported = supported && Supported(Vector3.Lerp(previous, point, (float)sample / samples));
                         previous = point;
                     }
                     if (session.Bounds.Active)
