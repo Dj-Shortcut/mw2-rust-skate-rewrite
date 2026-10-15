@@ -173,6 +173,21 @@ client, and it shares the controller's state (XInput) with the plugin in a named
 every change with the reader's own clock, so that a flick between two frames of the game is not
 lost. The plugin feeds the right stick to the shared flick module change by change.
 
+If the controller or reader is lost, or the active controller slot changes, pending gestures and
+the previous left-stick sweep are discarded. Recovery takes the latest held state as a baseline without replaying buffered button
+presses or time before that baseline. A right stick held away from center during recovery must
+return through its rearm zone before it can start another gesture. Fresh presses and sweeps
+then use the normal controls.
+The reader and plugin must both use protocol 2 (`ShortcutSkatePad2`); update/restart both
+when upgrading from protocol 1. The separate map name prevents mixing old/new adapters.
+The header has magic/version at 0/4, count/slot at 8/12, microsecond heartbeat at 16,
+controller ownership generation at 24 and publication generation at 28. The writer marks
+publication odd before changing the ring/header and even after a memory barrier. The reader
+accepts only matching even generations around its copy; a stalled publication expires by the
+normal heartbeat timeout. Ownership changes re-prime even when the slot returns to the same
+number between polls. A restarted reader clock also discards the old baseline.
+Actual device/reader reconnection and controller feel still require in-game verification.
+
 - The controller rides from the moment it is touched. The keyboard rides again when a riding key
   goes down while the controller has been at rest for half a second.
 - Steam's layout for the owner's `RustClient` shortcut keeps sending keys and mouse for the same
@@ -181,7 +196,7 @@ lost. The plugin feeds the right stick to the shared flick module change by chan
   "Gamepad" the controller does nothing in Rust. On the board the plugin ignores those keys while
   the controller rides; the game still gets them.
 - While the camera is behind the rider, the item in the player's hands is kept out of its way.
-- The reader's block is named `ShortcutSkatePad`; its layout is in `SkatePad.cs` and in
+- The reader's block is named `ShortcutSkatePad2`; its layout is in `SkatePad.cs` and in
   `sticks.ps1` and has to be the same in both.
 
 ## The score display
