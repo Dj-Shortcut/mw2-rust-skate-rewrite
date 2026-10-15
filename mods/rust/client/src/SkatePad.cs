@@ -87,7 +87,7 @@ public static class SkatePad
             {
                 // The state of the moment, without what was pressed before the plugin looked.
                 primed = true; count = n; clock = stamp;
-                if (n > 0) Take(Header + (int)((n - 1) % Ring) * SampleBytes, now, false);
+                Take(Header + (int)(unchecked(n - 1) % Ring) * SampleBytes, now, false);
                 rightSuspended = RightX * RightX + RightY * RightY > SkateFlick.RearmZone * SkateFlick.RearmZone;
                 // The held sample can predate this observation; its elapsed time is not new input.
                 clock = stamp;
