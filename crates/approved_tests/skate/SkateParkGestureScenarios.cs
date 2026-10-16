@@ -53,6 +53,18 @@ internal static class SkateParkGestureScenarios
                 Equal(state, new SkateParkSelectionState(true, DefaultOrder[index], now + 120), "halfpipe-first cycling");
             }
 
+        var expanded = new SkateParkKind[9];
+        Array.Copy(DefaultOrder, expanded, 8);
+        expanded[8] = SkateParkKind.MegaHalfpipe;
+        Check(SkateParkSelections.ValidOrder(expanded), "nine distinct appended kinds accepted");
+        var megaState = default(SkateParkSelectionState);
+        for (int i = 0; i < 18; i++)
+        {
+            megaState = Apply(megaState, SkateParkSelectionAction.Next, 40 + i, expanded);
+            Equal(megaState, new SkateParkSelectionState(true, expanded[i % 9], 160 + i), "MEGA configured cycle");
+        }
+        expanded[8] = (SkateParkKind)8;
+        Check(!SkateParkSelections.ValidOrder(expanded), "unassigned slot refused");
         var custom = new[] { SkateParkKind.LedgeHigh, SkateParkKind.Halfpipe, SkateParkKind.Kicker };
         state = Apply(state, SkateParkSelectionAction.Next, 40, custom);
         Equal(state, new SkateParkSelectionState(true, SkateParkKind.LedgeHigh, 160), "unlisted current starts configured order");
