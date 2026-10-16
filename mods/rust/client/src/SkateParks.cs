@@ -405,6 +405,36 @@ public static class SkateParks
         return false;
     }
 
+    // The half-wall kicker's ghost, from the aim (#461's TryHalfWallAnchor): the first hit within
+    // HalfWallReach must be a broad face of a native half wall, on the player's side. The floor
+    // faces the wall (side +1: wall yaw + 270, -1: + 90), pitched 30 degrees, its upper top edge on
+    // the face at the wall's top; the model origin is its low top edge, as Place reads a built one.
+    public const float HalfWallReach = 25f;
+    public static bool HalfWallAim(Vector3 from, Vector3 dir, Vector3 player, out Vector3 origin, out float yaw, out string why)
+    {
+        origin = Vector3.zero; yaw = 0f;
+        RaycastHit hit;
+        if (!Physics.Raycast(from, dir, out hit, HalfWallReach, SkateRide.GroundMask, QueryTriggerInteraction.Ignore)) { why = "aim at a half wall"; return false; }
+        BuildingBlock wall = null; string prefab = null;
+        try { wall = hit.collider.GetComponentInParent<BuildingBlock>(); prefab = wall != null ? wall.gameObject.name : null; } catch (Exception) { }
+        if (prefab != null && prefab.EndsWith(" (Clone)")) prefab = prefab.Substring(0, prefab.Length - 8);
+        if (prefab != HalfWallPrefab) { why = "aim at a half wall"; return false; }
+        var t = wall.transform;
+        var right = t.rotation * Vector3.right; right.y = 0f; right.Normalize();
+        if (Math.Abs(Vector3.Dot(hit.normal, right)) < 0.9f) { why = "aim at the broad face of the half wall"; return false; }
+        var side = Vector3.Dot(player - t.position, right) >= 0f ? 1 : -1;
+        if (Vector3.Dot(hit.normal, right) * side < 0f) { why = "stand on the side you aim at"; return false; }
+        Bounds b;
+        try { b = wall.bounds; } catch (Exception) { why = "the wall cannot be measured"; return false; }
+        var wallYaw = t.rotation.eulerAngles.y;
+        yaw = (wallYaw + (side > 0 ? 270f : 90f)) % 360f;
+        var top = t.position + Quaternion.Euler(0f, wallYaw, 0f) * new Vector3(b.center.x + side * b.extents.x, b.center.y + b.extents.y, 0f);
+        var run = (float)(2 * HalfLength * Math.Cos(30 * Degrees)); var rise = (float)(2 * HalfLength * Math.Sin(30 * Degrees));
+        origin = top - Quaternion.Euler(0f, yaw, 0f) * new Vector3(0f, rise, run);
+        why = "";
+        return true;
+    }
+
     private static void Place(Placed p, Kind kind, List<Block> blocks, List<int> matched, float anchorYaw)
     {
         var first = blocks[matched[0]];
