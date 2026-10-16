@@ -199,7 +199,7 @@ public static class SkateRide
         foreach (var h in new[] { 0.08f, 0.5f })
         {
             RaycastHit hit;
-            if (Physics.Raycast(pos + Vector3.up * h, ahead, out hit, 1.5f, GroundMask, QueryTriggerInteraction.Ignore))
+            if (SkateParks.Ray(pos + Vector3.up * h, ahead, out hit, 1.5f, GroundMask))
                 line += " | " + h.ToString("F2") + " m up: hit at " + hit.distance.ToString("F2") + " m, normal y " + hit.normal.y.ToString("F2");
             else line += " | " + h.ToString("F2") + " m up: clear";
         }
@@ -377,7 +377,7 @@ public static class SkateRide
         for (var i = 0; i < wallHeights.Length; i++)
         {
             RaycastHit hit;
-            if (Physics.SphereCast(pos + Vector3.up * wallHeights[i], WallProbe, dir, out hit, reach, GroundMask, QueryTriggerInteraction.Ignore)
+            if (SkateParks.Sphere(pos + Vector3.up * wallHeights[i], WallProbe, dir, out hit, reach, GroundMask)
                 && hit.m_Normal.y < 0.5f && hit.distance < nearest) { found = true; nearest = hit.distance; normal = hit.m_Normal; }
         }
         if (!found) return v;
@@ -447,7 +447,7 @@ public static class SkateRide
         if (rode < 0.5f || got > rode * 0.5f) return;
         RaycastHit wall;
         var ahead = new Vector3(lastDir.x, 0f, lastDir.z) * Math.Sign(Speed);
-        if (ahead.sqrMagnitude < 0.0001f || !Physics.Raycast(pos + Vector3.up * 0.3f, ahead.normalized, out wall, 0.6f, GroundMask, QueryTriggerInteraction.Ignore) || wall.m_Normal.y > 0.5f) return;
+        if (ahead.sqrMagnitude < 0.0001f || !SkateParks.Ray(pos + Vector3.up * 0.3f, ahead.normalized, out wall, 0.6f, GroundMask) || wall.m_Normal.y > 0.5f) return;
         if (Speed > 0f) LimitSpeed(Math.Max(0f, Actual) + 2f, Cap);
         else LimitSpeed(Cap, Math.Max(0f, -Actual) + 2f);
     }
@@ -457,14 +457,14 @@ public static class SkateRide
     private static bool OpenSky(Vector3 pos)
     {
         RaycastHit hit;
-        return !Physics.Raycast(pos + Vector3.up * 2f, Vector3.up, out hit, 60f, GroundMask, QueryTriggerInteraction.Ignore);
+        return !SkateParks.Ray(pos + Vector3.up * 2f, Vector3.up, out hit, 60f, GroundMask);
     }
 
     private static void Sense(Vector3 pos)
     {
         RaycastHit hit;
         var reach = Mode == RideMode.Air ? AirProbe : FeetProbe;
-        var got = Physics.Raycast(pos + Vector3.up * RayLift, Vector3.down, out hit, RayLift + reach, GroundMask, QueryTriggerInteraction.Ignore);
+        var got = SkateParks.Ray(pos + Vector3.up * RayLift, Vector3.down, out hit, RayLift + reach, GroundMask);
         Clearance = got ? hit.m_Distance - RayLift : 99f;
         Grounded = got && Clearance <= FeetProbe;
         Normal = Grounded && hit.m_Normal.y > 0.3f ? hit.m_Normal : Vector3.up;
@@ -583,14 +583,14 @@ public static class SkateRide
         if (Math.Abs(Speed) < 0.5f) return;
         var ahead = Position + dir * (Math.Sign(Speed) * StepLook);
         RaycastHit hit;
-        if (!Physics.Raycast(ahead + Vector3.up * (StepUp + 0.3f), Vector3.down, out hit, StepUp + 0.3f + FeetProbe, GroundMask, QueryTriggerInteraction.Ignore)) return;
+        if (!SkateParks.Ray(ahead + Vector3.up * (StepUp + 0.3f), Vector3.down, out hit, StepUp + 0.3f + FeetProbe, GroundMask)) return;
         var rise = hit.m_Point.y - Position.y;
         if (rise < 0.03f || rise > StepUp || hit.m_Normal.y < 0.7f) return;
         // A lip has a face: a ray along the ground from the wheels' height must meet something steep
         // before the spot ahead. A smooth bank rises as much but has no face, and is ridden up.
         RaycastHit face;
         var flat = new Vector3(dir.x, 0f, dir.z); if (flat.sqrMagnitude < 0.0001f) return; flat = flat.normalized;
-        if (!Physics.Raycast(Position + Vector3.up * 0.02f, flat * Math.Sign(Speed), out face, StepLook + 0.05f, GroundMask, QueryTriggerInteraction.Ignore) || face.m_Normal.y > 0.5f) return;
+        if (!SkateParks.Ray(Position + Vector3.up * 0.02f, flat * Math.Sign(Speed), out face, StepLook + 0.05f, GroundMask) || face.m_Normal.y > 0.5f) return;
         var lift = rise / Math.Max(dt, 0.001f) * 0.6f;
         if (velocity.y < lift) velocity.y = lift;
         if (now - steppedAt > StepGrace) StepUps++;

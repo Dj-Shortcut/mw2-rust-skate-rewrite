@@ -190,6 +190,7 @@ public static class SkateParks
     {
         public Kind Kind; public int[] Ids; public GameObject Root; public Vector3 Origin; public float Yaw;
         public readonly List<Renderer> Hidden = new List<Renderer>();
+        public readonly List<Collider> Backing = new List<Collider>();
     }
 
     public static void Frame(float now)
@@ -497,6 +498,27 @@ public static class SkateParks
             }
             catch (Exception e) { Status = "native renderers not hidden: " + e.Message; }
         }
+        // The MEGA's native chords, floors and walls are not its riding surface: their colliders are
+        // kept from the rider and from the ride's queries (Isolate, Ray, Sphere).
+        if (kind == Kind.MegaHalfpipe)
+        {
+            foreach (var m in matched)
+            {
+                try
+                {
+                    var cols = blocks[m].Entity.GetComponentsInChildren<Collider>(true);
+                    for (var k = 0; k < cols.Length; k++)
+                    {
+                        var c = cols[k];
+                        if (c == null) continue;
+                        p.Backing.Add(c); BackingIds.Add(c.GetInstanceID());
+                    }
+                }
+                catch (Exception e) { Status = "backing colliders not read: " + e.Message; }
+            }
+            backingVersion++;
+            Say("MEGA backing: " + p.Backing.Count + " native colliders kept from the ride");
+        }
     }
 
     // A preview without any server piece: the model of a kind at a place, for a look and a ride
@@ -625,31 +647,27 @@ public static class SkateParks
     // (1.5 m up over 2.598 m). The rounding lies above the native slab, so the slab never shows through.
     public const double KickerRunIn = -0.8, KickerBend = 1.2;
 
-    // The MEGA halfpipe, from the flat's middle: the transitions follow the native chords' circle but
-    // MegaInset closer to its centre, the flat that much higher and the decks MegaLift above theirs.
-    // The chords are straight, so they stand up to 0.12 m inside the true circle: Codex's profile at
-    // 0.05 above it would have their middles poke through. Inset, every native chord and floor stays
-    // behind the surface the board and the body touch, and the ride's ground and wall queries meet
-    // this surface first, with no change to the game's collision.
-    public const double MegaInset = 0.25;
+    // The MEGA halfpipe, from the flat's middle, as SkateMegaHalfpipe.TryProfilePoint (#460): 124
+    // samples, deck ends at +-(6+R+3), 60 equal steps per transition on the chords' circle, every
+    // height MegaLift above the flat. The straight native chords stand up to 0.12 m inside that
+    // circle; their colliders are kept from the rider and the ride's queries (BackingIds), so this
+    // surface is the only one the board and the body meet.
     public const int MegaSteps = 60;
     public static List<Vector2> MegaProfile()
     {
-        double r = MegaRadius, inner = r - MegaInset, half = MegaFlat / 2, deck = r + MegaLift;
+        double r = MegaRadius, half = MegaFlat / 2, lift = MegaLift - Lift, deck = r + lift;
         var pts = new List<Vector2>();
         pts.Add(new Vector2((float)-(half + r + MegaDeck), (float)deck));
-        pts.Add(new Vector2((float)-(half + inner), (float)deck));
         for (var k = MegaSteps; k >= 0; k--)
         {
             var th = Math.PI / 2 * k / MegaSteps;
-            pts.Add(new Vector2((float)-(half + inner * Math.Sin(th)), (float)(r - inner * Math.Cos(th))));
+            pts.Add(new Vector2((float)-(half + r * Math.Sin(th)), (float)(r * (1 - Math.Cos(th)) + lift)));
         }
         for (var k = 0; k <= MegaSteps; k++)
         {
             var th = Math.PI / 2 * k / MegaSteps;
-            pts.Add(new Vector2((float)(half + inner * Math.Sin(th)), (float)(r - inner * Math.Cos(th))));
+            pts.Add(new Vector2((float)(half + r * Math.Sin(th)), (float)(r * (1 - Math.Cos(th)) + lift)));
         }
-        pts.Add(new Vector2((float)(half + inner), (float)deck));
         pts.Add(new Vector2((float)(half + r + MegaDeck), (float)deck));
         return pts;
     }
@@ -784,7 +802,7 @@ public static class SkateParks
     // Coping at both lips, and a guard rail 1 m high along the back of each deck; the sides stay open.
     private static void MegaFittings(GameObject root, Material material)
     {
-        float w = 6f, deck = (float)(MegaRadius + MegaLift), lip = (float)(MegaFlat / 2 + MegaRadius - MegaInset), back = (float)(MegaFlat / 2 + MegaRadius + MegaDeck) - 0.05f;
+        float w = 6f, deck = (float)(MegaRadius + MegaLift - Lift), lip = (float)(MegaFlat / 2 + MegaRadius), back = (float)(MegaFlat / 2 + MegaRadius + MegaDeck) - 0.05f;
         var bars = new List<Vector3[]>();
         foreach (var side in new[] { -1f, 1f })
         {
@@ -923,8 +941,124 @@ public static class SkateParks
         return mesh;
     }
 
+    // The native colliders under a MEGA halfpipe, by instance ID (#460's contract): the ride's ground,
+    // wall, step and grind queries pass through them to the replacement surface or the world, and
+    // the rider's own colliders ignore them while on the board. Ordinary world collisions, other
+    // players and the game's layers are untouched.
+    public static readonly HashSet<int> BackingIds = new HashSet<int>();
+    private static int backingVersion;
+
+    // A ray as Physics.Raycast, but the nearest hit that is not MEGA backing.
+    public static bool Ray(Vector3 from, Vector3 dir, out RaycastHit hit, float distance, int mask)
+    {
+        if (BackingIds.Count == 0) return Physics.Raycast(from, dir, out hit, distance, mask, QueryTriggerInteraction.Ignore);
+        var all = Physics.RaycastAll(from, dir, distance, mask, QueryTriggerInteraction.Ignore);
+        hit = default(RaycastHit); var found = false; var best = float.MaxValue;
+        for (var i = 0; i < all.Length; i++) found |= Take(all[i], false, ref best, ref hit);
+        return found;
+    }
+    public static bool Sphere(Vector3 from, float radius, Vector3 dir, out RaycastHit hit, float distance, int mask)
+    {
+        if (BackingIds.Count == 0) return Physics.SphereCast(from, radius, dir, out hit, distance, mask, QueryTriggerInteraction.Ignore);
+        var all = Physics.SphereCastAll(from, radius, dir, distance, mask, QueryTriggerInteraction.Ignore);
+        hit = default(RaycastHit); var found = false; var best = float.MaxValue;
+        for (var i = 0; i < all.Length; i++) found |= Take(all[i], true, ref best, ref hit);
+        return found;
+    }
+    // A sweep that starts inside a collider reports it at distance 0 with no point, which a plain
+    // SphereCast leaves out: so does this.
+    private static bool Take(RaycastHit h, bool sweep, ref float best, ref RaycastHit hit)
+    {
+        if (sweep && h.distance <= 0f && h.point == Vector3.zero) return false;
+        int id;
+        try { var c = h.collider; if (c == null) return false; id = c.GetInstanceID(); } catch (Exception) { return false; }
+        if (BackingIds.Contains(id) || h.distance >= best) return false;
+        best = h.distance; hit = h;
+        return true;
+    }
+
+    // Pair isolation between the rider's colliders and the backing, while on the board. Off the
+    // board each pair is restored only once the two no longer overlap, so the body is never left
+    // inside a chord; a pair whose backing has gone (piece removed, mismatch) is restored the same way.
+    private static readonly List<Collider> isolated = new List<Collider>();
+    private static readonly HashSet<int> isolatedIds = new HashSet<int>();
+    private static Collider[] riderColliders;
+    private static int riderBody, isolatedVersion = -1, restoreWaitSaid;
+    private static float nextRestore;
+    public static int Isolated { get { return isolated.Count; } }
+    public static void Isolate(bool riding, Rigidbody body, float now)
+    {
+        if (body == null)
+        {
+            // The body is gone with its colliders: nothing is left to restore.
+            if (isolated.Count > 0) { isolated.Clear(); isolatedIds.Clear(); }
+            riderColliders = null; riderBody = 0; return;
+        }
+        if (riderColliders == null || body.GetInstanceID() != riderBody)
+        {
+            isolated.Clear(); isolatedIds.Clear(); isolatedVersion = -1;
+            riderBody = body.GetInstanceID();
+            var cols = body.GetComponentsInChildren<Collider>(true);
+            var list = new List<Collider>();
+            for (var i = 0; i < cols.Length; i++) if (cols[i] != null && !cols[i].isTrigger) list.Add(cols[i]);
+            riderColliders = list.ToArray();
+        }
+        if (riding && BackingIds.Count > 0)
+        {
+            if (isolatedVersion == backingVersion) return;
+            isolatedVersion = backingVersion;
+            var added = 0;
+            foreach (var p in placed)
+                foreach (var c in p.Backing)
+                {
+                    int id;
+                    try { if (c == null) continue; id = c.GetInstanceID(); } catch (Exception) { continue; }
+                    if (!isolatedIds.Add(id)) continue;
+                    foreach (var r in riderColliders) Physics.IgnoreCollision(r, c, true);
+                    isolated.Add(c); added++;
+                }
+            if (added > 0) Say("MEGA isolation: " + added + " backing colliders ignored by the rider's " + riderColliders.Length);
+            if (!riding || isolated.Count == 0) return;
+        }
+        if (isolated.Count == 0 || now < nextRestore) return;
+        nextRestore = now + 0.1f;
+        var waiting = 0;
+        for (var i = isolated.Count - 1; i >= 0; i--)
+        {
+            var c = isolated[i];
+            try
+            {
+                if (c == null) { isolated.RemoveAt(i); continue; }
+                var id = c.GetInstanceID();
+                // Still backing a MEGA while riding: kept.
+                if (riding && BackingIds.Contains(id)) continue;
+                if (Overlaps(c)) { waiting++; continue; }
+                foreach (var r in riderColliders) Physics.IgnoreCollision(r, c, false);
+                isolated.RemoveAt(i); isolatedIds.Remove(id);
+            }
+            catch (Exception) { isolated.RemoveAt(i); }
+        }
+        if (waiting > 0 && waiting != restoreWaitSaid) Say("MEGA isolation: " + waiting + " pairs wait, the rider still overlaps their backing");
+        restoreWaitSaid = waiting;
+        if (isolated.Count == 0) { isolatedVersion = -1; Say("MEGA isolation: all pairs restored"); }
+    }
+    private static bool Overlaps(Collider c)
+    {
+        foreach (var r in riderColliders)
+        {
+            Vector3 dir; float dist;
+            if (r != null && Physics.ComputePenetration(r, r.transform.position, r.transform.rotation, c, c.transform.position, c.transform.rotation, out dir, out dist)) return true;
+        }
+        return false;
+    }
+
     private static void Remove(Placed p)
     {
+        if (p.Backing.Count > 0)
+        {
+            foreach (var c in p.Backing) { try { if (c != null) BackingIds.Remove(c.GetInstanceID()); } catch (Exception) { } }
+            p.Backing.Clear(); backingVersion++;
+        }
         foreach (var r in p.Hidden) { try { if (r != null) r.enabled = true; } catch (Exception) { } HiddenRenderers--; }
         p.Hidden.Clear();
         if (p.Root != null) { try { UnityEngine.Object.Destroy(p.Root); } catch (Exception) { } p.Root = null; }

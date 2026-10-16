@@ -156,11 +156,11 @@ public static class SkateSfx
         if (terrainLayer == -2) { try { terrainLayer = LayerMask.NameToLayer("Terrain"); buildLayer = LayerMask.NameToLayer("Construction"); } catch (Exception) { terrainLayer = buildLayer = -1; } }
         var from = SkateRide.Position + Vector3.up * 0.5f;
         RaycastHit hit;
-        if (!Physics.Raycast(from, Vector3.down, out hit, 1f, SkateRide.GroundMask, QueryTriggerInteraction.Ignore)) return;
+        if (!SkateParks.Ray(from, Vector3.down, out hit, 1f, SkateRide.GroundMask)) return;
         var d = hit.m_Distance + 0.02f;
-        if (Physics.Raycast(from, Vector3.down, out hit, d, 1, QueryTriggerInteraction.Ignore)) Surface = Ground.Wood;
-        else if (buildLayer >= 0 && Physics.Raycast(from, Vector3.down, out hit, d, 1 << buildLayer, QueryTriggerInteraction.Ignore)) Surface = Ground.Build;
-        else if (terrainLayer >= 0 && Physics.Raycast(from, Vector3.down, out hit, d, 1 << terrainLayer, QueryTriggerInteraction.Ignore)) Surface = Ground.Dirt;
+        if (SkateParks.Ray(from, Vector3.down, out hit, d, 1)) Surface = Ground.Wood;
+        else if (buildLayer >= 0 && SkateParks.Ray(from, Vector3.down, out hit, d, 1 << buildLayer)) Surface = Ground.Build;
+        else if (terrainLayer >= 0 && SkateParks.Ray(from, Vector3.down, out hit, d, 1 << terrainLayer)) Surface = Ground.Dirt;
         else Surface = Ground.Hard;
         if (Surface != said) { said = Surface; if (surfaceSays++ < 40) Out.Say("AUDIO wheels on " + Surface); }
     }
