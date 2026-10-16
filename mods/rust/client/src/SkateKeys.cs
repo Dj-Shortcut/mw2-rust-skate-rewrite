@@ -46,6 +46,7 @@ public static class SkateKeys
     // Pad: the controller rides, not the keyboard. Analog: Steer is a rate, not a direction to turn to.
     public static bool Pad, Analog, Charging;
     public static float Steer, Charge;
+    public static bool Help;
     // Held in the air: the rider's turn, +1 to his right as the stick or the keys say, and the grab.
     public static float Spin;
     public static SkateGrabKind Grab;
@@ -53,11 +54,11 @@ public static class SkateKeys
     private static float stanceSince = -1f;
     private static float wasSpin;
     private static bool keyboardSuspended;
-    private static bool popKeys = true, crouchKeys = true, cameraKey = true, manualKey = true, taps = true, cursorKnown = true, failed;
+    private static bool popKeys = true, crouchKeys = true, cameraKey = true, manualKey = true, helpKey = true, taps = true, cursorKnown = true, failed;
 
     public static void Reset()
     {
-        Push = Brake = Left = Right = Crouch = Jump = Manual = NoseManual = Analog = Charging = false; Steer = Charge = Spin = wasSpin = 0f; PopScale = 1f;
+        Push = Brake = Left = Right = Crouch = Jump = Manual = NoseManual = Analog = Charging = Help = false; Steer = Charge = Spin = wasSpin = 0f; PopScale = 1f;
         Grab = SkateGrabKind.None; PopKind = SkatePopKind.Ollie; Mongo = HandplantFront = HandplantBack = false; aTappedAt = -99f;
         EndStep(); JumpTap = ToggleTap = CameraTap = CrouchTap = false;
         keyboardSuspended = true; stanceSince = -1f;
@@ -66,7 +67,7 @@ public static class SkateKeys
     public static void Poll()
     {
         JumpTap = ToggleTap = CameraTap = CrouchTap = false;
-        if (Scripted || failed) return;
+        if (Scripted || failed) { Help = false; return; }
         var now = Time.realtimeSinceStartup;
         SkatePad.Poll(now);
         var padDown = SkatePieces.Step(SkatePad.Pressed(), now);
@@ -76,7 +77,7 @@ public static class SkateKeys
             var kb = Keyboard.current;
             if (kb == null || CursorFree())
             {
-                Push = Brake = Left = Right = Crouch = Jump = Manual = NoseManual = Charging = false; Steer = Charge = Spin = wasSpin = 0f; Grab = SkateGrabKind.None;
+                Push = Brake = Left = Right = Crouch = Jump = Manual = NoseManual = Charging = Help = false; Steer = Charge = Spin = wasSpin = 0f; Grab = SkateGrabKind.None;
                 wasPush = wasBrake = wasLeft = wasRight = wasJump = wasCrouch = wasToggle = wasCamera = false; EndStep(); SkatePad.DropPops();
                 keyboardSuspended = true; stanceSince = -1f;
                 return;
@@ -105,6 +106,13 @@ public static class SkateKeys
                 try { manual = kb.leftShiftKey.isPressed; }
                 catch (Exception e) { manualKey = false; Out.Say("INPUT manual key unavailable: " + e.GetType().Name + ": " + e.Message); }
             }
+            var help = false;
+            if (helpKey)
+            {
+                try { help = kb.hKey.isPressed; }
+                catch (Exception e) { helpKey = false; Out.Say("INPUT help key unavailable: " + e.GetType().Name + ": " + e.Message); }
+            }
+            Help = help || (SkatePad.Shared && SkateRide.On && (SkatePad.Buttons & SkatePad.Back) != 0);
             // The first readable frame establishes held keys; it cannot distinguish a new press
             // from one carried through chat, a missing keyboard or a ride reset.
             if (keyboardSuspended)

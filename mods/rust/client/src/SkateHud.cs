@@ -252,7 +252,8 @@ public static class SkateHud
         var t = SkateRide.Trick;
         var s = new Shown();
         // Switch with the tail leading is fakie, as the scorer names the tricks.
-        s.Riding = SkateRide.On; s.Switch = t.Switch; s.Fakie = t.Switch && SkateRide.TailFirst != SkateRide.DeckReversed; s.Pad = SkateKeys.Pad; s.Hints = now - MountedAt < 9f && !Scenarios.Active;
+        s.Riding = SkateRide.On; s.Switch = t.Switch; s.Fakie = t.Switch && SkateRide.TailFirst != SkateRide.DeckReversed; s.Pad = SkateKeys.Pad;
+        s.Hints = (now - MountedAt < 9f || SkateKeys.Help) && !Scenarios.Active;
         s.Speed = Math.Abs(SkateRide.HorizontalSpeed); s.Cap = SkateRide.Cap;
         s.Score = t.TotalPoints; s.Base = t.ComboBasePoints; s.Count = t.ComboCount;
         s.Window = (float)(t.RollingSeconds / SkateTricks.ComboRollingTimeout);
@@ -270,7 +271,7 @@ public static class SkateHud
     {
         var now = Time.realtimeSinceStartup;
         var v = Staged ? Stage : Sample(now);
-        var onFoot = !Scenarios.Active && !v.Riding && (!SkateRig.Ready || now - SkateRig.AwakeAt < 12f);
+        var onFoot = !Scenarios.Active && !v.Riding && (!SkateRig.Ready || now - SkateRig.AwakeAt < 12f || SkateKeys.Help);
         var recent = now - popAt < PopSeconds || now - bankAt < BankSeconds || now - bailAt < BailSeconds;
         var pieces = v.Riding ? "" : SkatePieces.Line(now);
         if (!Scenarios.Active && !v.Riding && !recent && !onFoot && pieces == "") return;
@@ -282,7 +283,7 @@ public static class SkateHud
         if (onFoot)
         {
             var hint = !SkateRig.Ready ? "Skate mod " + SkatePlugin.Version + " loaded"
-                : (SkatePad.Shared ? "Skate mod: press Y on the controller, or K, or jump twice to get on the board" : "Skate mod: press K or jump twice to get on the board") + "   (stance " + SkateRide.StanceName + ": hold F2" + (SkatePad.Shared ? " or Back+Y" : "") + " to switch)";
+                : (SkatePad.Shared ? "Skate mod: press Y on the controller, or K, or jump twice to get on the board" : "Skate mod: press K or jump twice to get on the board") + "   (stance " + SkateRide.StanceName + ": hold F2" + (SkatePad.Shared ? " or Back+Y" : "") + " to switch)   hold H to see this again";
             Text(40f * k, 110f * k, w - 80f * k, hint, (int)(19 * k), Ink, 0, 1f);
         }
 
@@ -439,8 +440,8 @@ public static class SkateHud
 
     private static void Hints(Shown v, float w, float h, float k)
     {
-        float x = 40f * k, y = h - 196f * k; var size = (int)(17 * k);
-        Box(x - 12f * k, y - 8f * k, Math.Min(w - 80f * k, 1240f * k), 72f * k, Fade(Dark, 0.5f));
+        float x = 40f * k, y = h - 220f * k; var size = (int)(17 * k);
+        Box(x - 12f * k, y - 8f * k, Math.Min(w - 80f * k, 1240f * k), 96f * k, Fade(Dark, 0.5f));
         if (v.Pad)
         {
             Text(x, y, w - 80f * k, Key("LEFT STICK") + " steer, hold to spin in the air   " + Key("A / X") + " push   " + Key("B") + " brake   " + Key("LT / RT") + " grab, with the right stick: other grabs   " + Key("Y") + " get off   " + Key("R3") + " camera", size, Ink, 0, 1f);
@@ -451,6 +452,7 @@ public static class SkateHud
             Text(x, y, w - 80f * k, Key("W") + " push   " + Key("S") + " brake   " + Key("A / D") + " carve   " + Key("SPACE") + " ollie   hold " + Key("SHIFT") + " manual   " + Key("K") + " or hold " + Key("CTRL") + " get off   " + Key("L") + " camera", size, Ink, 0, 1f);
             Text(x, y + 28f * k, w - 80f * k, "In the air: tap " + Key("W") + " kickflip   tap " + Key("S") + " heelflip   " + Key("A / D") + " spin   hold " + Key("CTRL") + " grab", size, Ink, 0, 1f);
         }
+        Text(x, y + 56f * k, w - 80f * k, v.Pad ? "Hold " + Key("BACK") + " on the board to see these controls again" : "Hold " + Key("H") + " to see these controls again", (int)(15 * k), Dim, 0, 1f);
     }
 
     private static string Key(string name) { return AmberTag + name + End; }

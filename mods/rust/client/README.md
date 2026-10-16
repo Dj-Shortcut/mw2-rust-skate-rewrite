@@ -66,6 +66,7 @@ game; see [The controller](#the-controller).
 | Right stick | The board: see below. Kept part of the way back or forward for 0.2 s: manual or nose manual. | Flicked to a side or a forward diagonal: a flip; after a pop, a whole composition (held back then flicked, or rolled) is a late flip or late shove on top of what is under way, when the jump still lasts long enough. Pulled back: set for the pop after the landing. |
 | `LT`, `RT` | Held going down a transition and let go through its bottom: a pump (speed, by how long it was held and how steep the descent, once a pass; nothing on the flat or let go on the slope itself). | Held: grab; with the right stick held, another grab. |
 | Right stick click | View from behind or the game's first person | |
+| `Back` held on the board | The controls panel at the bottom left, as in the first seconds on the board, for as long as it is held. On foot `Back` opens the picker. Not yet seen in game. | |
 | Left stick swept half round its rim, within 0.6 s of landing a trick (as in the skate. games; a hard steer alone is a carve) | Revert: the rider and the board pivot a half turn together on the ground and roll on the same way, the other end of the deck leading (fakie after a regular landing, regular again after a fakie one); it joins the combo. | |
 | Right stick back or forward, on an edge | Along the edge: 5-0 or nosegrind instead of the 50-50. Across it on the tail, held back: bluntslide instead of the tailslide; on the nose, held forward: nosebluntslide. Let go, the slide goes back to the plain one. | |
 | A flip asked for coming down onto an edge, with room for half of it | Darkslide: the board is caught upside down on the edge, griptape on it; a pop finishes the flip the same way round (a kickflip lands as a kickflip); rolled off without a pop, the board comes down upside down and it is a bail. | |
@@ -153,6 +154,7 @@ line carrying `SKATE-PROBE` as an `INBOX` line. It acts on nothing; it shows whe
 | `X` | | Tap: body varial, the rider's half round without the board; the landing is switch |
 | `Ctrl` or `C` | Held for a moment: get off | Held: grab |
 | `L` | View from behind or the game's first person | |
+| `H` held | The controls: on the board the panel at the bottom left, on foot the line that says how to get on and which stance is set. Held, never tapped, so a stray press leaves nothing on the screen. Not yet seen in game. | |
 | `F2` held for a second (on foot; on a Mac keyboard `fn`+`F2`; `Back`+`Y` held on the controller) | Stance: regular (left foot forward, the right foot pushes) or goofy, the mirror image. A tap changes nothing: a stray press of Y in the menu, or of J, used to switch the stance unseen; J is the game's own clan key, whose screen frees the cursor, so the switch has its own key. Kept in `skate-stance.txt` in the game's own data folder (`AppData\LocalLow\Facepunch Studios LTD\Rust`) for the next start; the hint on foot names the current one. | |
 
 Coming down over an edge while moving along it starts a grind. A turn is called frontside when it
@@ -208,7 +210,8 @@ landed (coloured by its kind: grinds cool, manuals and reverts warm, grabs green
 or grind by its name, or a bail in the upper middle; under the score the session's best combo, top
 speed, longest grind and manual; at the bottom left the speed, above it the last five tricks landed
 with their points (newest largest, gone five seconds after the last), and the controls for the first
-seconds on the board. A client build keeps only the engine methods the
+seconds on the board, and again for as long as `H` (or `Back` on the controller) is held; their
+last line says so. A client build keeps only the engine methods the
 game itself calls, so the condensed system font, the flat panels and the bars are each tried once
 and done without when they are missing; the plugin's log says which (`HUD ...`).
 
