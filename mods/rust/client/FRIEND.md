@@ -64,8 +64,9 @@ repository.
 5. On the server: `Y` on the controller, `K`, or two quick jumps gets you on the board; `Y` or `K`
    again gets you off. `A` pushes, the left stick steers, `B` brakes, the right stick held back and
    flicked forward is an ollie, flicked to a forward diagonal a kickflip or heelflip, `LT`/`RT` held
-   in the air a grab. The first seconds on the board show the controls; the whole table is in the
-   [client README](README.md#controls).
+   in the air a grab. The first seconds on the board show the controls; hold `Back` on the
+   controller while on the board, or `H` on the keyboard at any time, to see them again. The whole
+   table is in the [client README](README.md#controls).
 6. Quit Rust the normal way. The window ends with "Done. The Rust folder is back to normal." If it
    does not, or the PC went off while playing, run **Rust Skate - remove mod files** before
    starting Rust normally: a loader left in the Rust folder would be loaded by a normal start too.
