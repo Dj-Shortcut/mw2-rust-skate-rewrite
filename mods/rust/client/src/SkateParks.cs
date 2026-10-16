@@ -256,6 +256,8 @@ public static class SkateParks
             try { var bounds = b.bounds; top = bounds.center.y + bounds.extents.y; bottom = bounds.center.y - bounds.extents.y; } catch (Exception) { }
             if (prefab == FloorPrefab && bottom < 0f && bottom > -0.5f) FloorBottom = bottom;
             if (prefab == FloorPrefab && top > 0f && top < 0.5f) FloorTop = top;
+            if (prefab == FloorPrefab && Math.Abs(e.x) < 1f && top > 0f && bottom < 0f)
+                try { var fb = b.bounds; FloorBox = new SkateParkBox { X = fb.center.x, Y = fb.center.y, Z = fb.center.z, SizeX = fb.size.x, SizeY = fb.size.y, SizeZ = fb.size.z }; } catch (Exception) { }
             blocks.Add(new Block { Entity = b, Prefab = prefab, Position = t.position, Rotation = t.rotation, Yaw = e.y, Pitch = Wrap(e.x), Top = top, Bottom = bottom, Id = b.GetInstanceID() });
         }
         Blocks = blocks.Count;
@@ -570,28 +572,112 @@ public static class SkateParks
         return Origin(kind, at, rotation, yawRot, FloorTop);
     }
 
-    // A park item aimed at the top of a square foundation that already stands (#471, as building on a
-    // base): the piece is centred on it and turned in the foundation's own 90 degree steps, the step
-    // nearest the way the player looks; its support is the foundation's top. False for anything else.
-    public static bool FoundationTop(RaycastHit hit, float lookYaw, out Vector3 support, out float yaw, out string why)
+    // The held park item's ghost, decided by the server's own shared rules (#476: SkateParkLayout.
+    // TryGhostFrame and TryGhostAnchor, the source the server's ResolveParkSupport calls): aimed at a
+    // level square foundation's top, or at a flat floor of a park piece for the next 3 m cell, the
+    // frame is that host's, turned by the planner's own rotation (R) in the native steps; otherwise
+    // it is the aim point and the look. Every support cell and every lowest contact is then read
+    // with a ray down, as the server reads it. Origin is where the model is drawn; Valid only when
+    // the whole support is found, and Why says what is missing when it is not.
+    public const float GhostStep = 90f;
+    public static bool Ghost(Kind kind, RaycastHit aim, float lookYaw, float turn, out Vector3 origin, out float yaw, out bool onHost, out string why)
     {
-        support = hit.point; yaw = lookYaw; why = "";
+        onHost = false; why = "";
+        var shared = (SkateParkKind)(int)kind;
+        var hint = new SkateParkTransform { X = aim.point.x, Y = aim.point.y, Z = aim.point.z, Yaw = Wrap(lookYaw + turn) };
+        double? selected = null;
         try
         {
-            if (hit.normal.y < 0.98f) { why = "not a level top"; return false; }
-            var c = hit.collider; if (c == null) { why = "no collider"; return false; }
-            var b = c.GetComponentInParent<BuildingBlock>();
-            if (b == null) { why = "not a building block"; return false; }
-            var prefab = b.gameObject.name ?? "";
+            BuildingBlock host = null; var prefab = "";
+            if (aim.collider != null && aim.normal.y >= 0.98f) host = aim.collider.GetComponentInParent<BuildingBlock>();
+            if (host != null) { prefab = host.gameObject.name ?? ""; if (prefab.EndsWith(" (Clone)")) prefab = prefab.Substring(0, prefab.Length - 8); }
+            var level = host != null && Math.Abs(Wrap(host.transform.eulerAngles.x)) < 1f && Math.Abs(Wrap(host.transform.eulerAngles.z)) < 1f;
+            var foundation = level && prefab == FoundationPrefab;
+            var adjacent = level && prefab == FloorPrefab && IsParkFloor(host);
+            if (foundation || adjacent)
+            {
+                var t = host.transform;
+                SkateParkTransform frame;
+                if (SkateParkLayout.TryGhostFrame(shared, adjacent, t.position.x, t.position.z, t.eulerAngles.y, aim.point.x, aim.point.z, turn, true, GhostStep, out frame))
+                {
+                    onHost = true;
+                    hint = new SkateParkTransform { X = frame.X, Y = aim.point.y, Z = frame.Z, Yaw = frame.Yaw };
+                    // A foundation's top, or the neighbouring park floor's underside.
+                    selected = adjacent ? t.position.y + FloorBox.Y - FloorBox.SizeY / 2 : aim.point.y;
+                }
+            }
+        }
+        catch (Exception e) { why = "target not read: " + e.GetType().Name; }
+        SkateParkTransform anchor; double top; string failure;
+        var valid = SkateParkLayout.TryGhostAnchor(shared, FloorBox, hint, selected, ReadSupport, out anchor, out top, out failure);
+        if (!valid)
+        {
+            // Not confirmed: drawn where the aim is, seated on it, and the reason shown.
+            why = failure ?? "no valid support";
+            yaw = (float)hint.Yaw;
+            origin = ModelOriginForAnchor(kind, new Vector3((float)hint.X, (float)hint.Y, (float)hint.Z), yaw);
+            return false;
+        }
+        yaw = (float)anchor.Yaw;
+        origin = ModelOriginForFinal(kind, anchor);
+        return true;
+    }
+
+    // The measured native floor box (local centre and size), as the server measures it; the
+    // prefab's own numbers until a floor has been seen (#464: centre 0, size 3 x 0.2 x 3).
+    public static SkateParkBox FloorBox = new SkateParkBox { X = 0, Y = 0, Z = 0, SizeX = 3, SizeY = 0.2, SizeZ = 3 };
+
+    // Where the model stands for a final assembly anchor (already seated: nothing is added): from its
+    // first native member's predicted pose, by the same routine as a placed piece.
+    public static Vector3 ModelOriginForFinal(Kind kind, SkateParkTransform anchor)
+    {
+        SkateParkTransform pose;
+        if (!SkateParkLayout.TryTransform((SkateParkKind)(int)kind, 0, anchor.X, anchor.Y, anchor.Z, anchor.Yaw, out pose))
+            return new Vector3((float)anchor.X, (float)anchor.Y, (float)anchor.Z);
+        var yawRot = Quaternion.Euler(0f, (float)anchor.Yaw, 0f);
+        var rotation = Quaternion.Euler((float)pose.Pitch, (float)pose.Yaw, 0f);
+        return Origin(kind, new Vector3((float)pose.X, (float)pose.Y, (float)pose.Z), rotation, yawRot, (float)(FloorBox.Y + FloorBox.SizeY / 2));
+    }
+
+    // One support probe, as the server's adapter reads it: a ray down 27 m on terrain, world,
+    // construction and deployables, no triggers; the first hit must be a level square foundation
+    // (on the expected cell, for a whole-cell probe) or the terrain. Anything else is no support.
+    public const float SupportReach = 27f;
+    private static int supportMask = -1;
+    private static bool ReadSupport(SkateParkSupportProbe probe, out SkateParkSupportHit hit, out string failure)
+    {
+        hit = new SkateParkSupportHit(); failure = null;
+        try
+        {
+            if (supportMask == -1) supportMask = LayerMask.GetMask("Terrain", "World", "Construction", "Deployed");
+            RaycastHit h;
+            var from = new Vector3((float)probe.Point.X, (float)probe.Point.Y, (float)probe.Point.Z);
+            if (!Physics.Raycast(from, Vector3.down, out h, SupportReach, supportMask, QueryTriggerInteraction.Ignore) || h.collider == null)
+            { failure = SkateParkLayout.SupportLabel(probe) + ": nothing under it"; return false; }
+            if (h.collider is TerrainCollider) { hit.Height = h.point.y; hit.FoundationId = 0; return true; }
+            var b = h.collider.GetComponentInParent<BuildingBlock>();
+            var prefab = b == null ? "" : (b.gameObject.name ?? "");
             if (prefab.EndsWith(" (Clone)")) prefab = prefab.Substring(0, prefab.Length - 8);
-            if (prefab != FoundationPrefab) { why = "not a square foundation"; return false; }
-            var t = b.transform; var host = t.eulerAngles.y;
-            if (Math.Abs(Wrap(t.eulerAngles.x)) > 1f || Math.Abs(Wrap(t.eulerAngles.z)) > 1f) { why = "foundation not level"; return false; }
-            support = new Vector3(t.position.x, hit.point.y, t.position.z);
-            yaw = Wrap(host + (float)Math.Round(Delta(host, lookYaw) / 90f) * 90f);
+            if (prefab != FoundationPrefab || h.normal.y < 0.98f)
+            { failure = SkateParkLayout.SupportLabel(probe) + ": on " + (b != null ? "a " + KindOfBlock(prefab) : "something that is not a foundation or ground"); return false; }
+            var t = b.transform;
+            if (probe.RequireCell && !SkateParkLayout.FitsSupportCell(probe.Cell, t.position.x, t.position.z, t.eulerAngles.y))
+            { failure = SkateParkLayout.SupportLabel(probe) + ": the foundation is not on this piece's grid"; return false; }
+            hit.Height = h.point.y;
+            hit.FoundationId = unchecked((ulong)(uint)b.GetInstanceID()) + 1UL;
             return true;
         }
-        catch (Exception e) { why = e.GetType().Name; return false; }
+        catch (Exception e) { failure = SkateParkLayout.SupportLabel(probe) + ": not read (" + e.GetType().Name + ")"; return false; }
+    }
+    private static string KindOfBlock(string prefab) { var i = prefab.LastIndexOf('/'); var name = i >= 0 ? prefab.Substring(i + 1) : prefab; return name.Replace(".prefab", ""); }
+
+    // A flat floor of a park piece the client has recognised: the next piece can snap beside it.
+    public static bool IsParkFloor(BuildingBlock b)
+    {
+        if (b == null) return false;
+        var id = b.GetInstanceID();
+        foreach (var p in placed) if (p.Ids != null && Array.IndexOf(p.Ids, id) >= 0) return true;
+        return false;
     }
 
     // The preview moved to another place, as the aim moves.

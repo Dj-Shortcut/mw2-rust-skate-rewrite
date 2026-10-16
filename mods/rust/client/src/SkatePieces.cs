@@ -114,6 +114,9 @@ public static class SkatePieces
     public static int HeldKind = -1;
     // Whether the ghost now sits snapped on a standing foundation's top.
     public static bool OnFoundation;
+    // Whether the whole support was found, and if not, why not.
+    public static bool Valid; public static string GhostWhy = "";
+    private static string lastWhy = ""; private static RaycastHit aimHit;
     private static float nextHeldRead;
     private static void HeldFrame(float now)
     {
@@ -136,16 +139,18 @@ public static class SkatePieces
             // No ground in reach (sky, a steep wall, too far): no ghost left at an old spot.
             if (cam == null || !Physics.Raycast(cam.transform.position, cam.transform.forward, out hit, AimReach, SkateRide.GroundMask, QueryTriggerInteraction.Ignore) || hit.normal.y < 0.5f) { HeldClear(); return; }
             AimOk = true; Aim = hit.point; Yaw = cam.transform.eulerAngles.y;
-            // On a foundation that already stands, the piece snaps onto it, as building a base.
-            Vector3 support; float yaw; string why;
-            OnFoundation = SkateParks.FoundationTop(hit, Yaw, out support, out yaw, out why);
-            if (OnFoundation) { Aim = support; Yaw = yaw; }
+            aimHit = hit;
         }
         catch (Exception) { HeldClear(); return; }
-        var origin = SkateParks.ModelOriginForAnchor((SkateParks.Kind)HeldKind, Aim, Yaw);
+        // Snapped and seated by the server's own rules (#476): onto a standing foundation, or beside a
+        // park floor, turned by the planner's R; Valid only when every support cell is found.
+        Vector3 origin; float yaw; bool onHost; string why;
+        Valid = SkateParks.Ghost((SkateParks.Kind)HeldKind, aimHit, Yaw, SkateHeld.PlannerTurn(SkateRig.Local), out origin, out yaw, out onHost, out why);
+        OnFoundation = onHost; Yaw = yaw; GhostWhy = why;
         if (HeldKind != previewKind) { SkateParks.PreviewAt((SkateParks.Kind)HeldKind, origin, Yaw, false); previewKind = HeldKind; previewAt = origin; previewYaw = Yaw; }
         else if (Vector3.Distance(previewAt, origin) > 0.01f || Math.Abs(previewYaw - Yaw) > 0.01f) { SkateParks.PreviewMove(origin, Yaw); previewAt = origin; previewYaw = Yaw; }
-        Said = SkateHeld.ItemNames[HeldKind] + (OnFoundation ? ": on this foundation (left click, R turns it)" : ": aim at a foundation's top to snap onto it, or place it like a square foundation (left click, R turns it)"); SaidAt = now;
+        Said = SkateHeld.ItemNames[HeldKind] + (Valid ? (OnFoundation ? ": fits here (left click, R turns it)" : ": on the ground here (left click, R turns it)") : ": does not fit: " + GhostWhy); SaidAt = now;
+        if (GhostWhy != lastWhy) { lastWhy = GhostWhy; Out.Say("PIECES ghost " + SkateHeld.ItemNames[HeldKind] + (Valid ? " fits" + (OnFoundation ? " on a foundation" : "") : ": " + GhostWhy)); }
     }
 
     // The half-wall kicker goes against a wall, not on the ground: its ghost stands where the

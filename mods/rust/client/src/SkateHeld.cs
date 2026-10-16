@@ -214,6 +214,21 @@ public static class SkateHeld
         catch (Exception e) { how = "holster threw " + e.GetType().Name + ": " + e.Message; return false; }
     }
 
+    // The building plan's own turn (R), in degrees about up: the held planner's rotationOffset, as
+    // the native target carries it to the server; 0 when it cannot be read.
+    public static float PlannerTurn(object player)
+    {
+        try
+        {
+            if (player == null) return 0f;
+            var held = player.GetType().GetMethod("GetHeldEntity", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance, null, Type.EmptyTypes, null);
+            var planner = held == null ? null : held.Invoke(player, null);
+            var offset = planner == null ? null : Get(planner, "rotationOffset");
+            return offset is UnityEngine.Vector3 ? ((UnityEngine.Vector3)offset).y : 0f;
+        }
+        catch (Exception) { return 0f; }
+    }
+
     // A list the game keeps: walked as a list when it is one, else by Count and its indexer.
     private static System.Collections.Generic.IEnumerable<object> Walk(object list)
     {
