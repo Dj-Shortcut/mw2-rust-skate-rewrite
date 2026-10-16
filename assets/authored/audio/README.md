@@ -20,10 +20,13 @@ seed, SHA-256, frame count, duration, peak and RMS amplitude of each cue.
 | `carbine_shot.wav` | Fired carbine round: short crack and low body |
 | `reload.wav` | Reload: magazine handling, insertion and action clicks |
 | `footstep.wav` | Footstep: low heel impact and granular sole texture |
-| `ollie.wav` | Skateboard takeoff: deck pop and shoe scrape |
-| `land.wav` | Skateboard landing: wheels, deck impact and brief rattle |
+| `ollie.wav` | Sharp dry wooden tail pop, brief tail/grip scrape and a tiny truck tick |
+| `land.wav` | Solid urethane wheel thump, staggered axles, deck flex and fading truck clatter |
 | `gather.wav` | Gathering strike: resonant impact and debris texture |
 | `ui_click.wav` | Accepted interface or editing action: short soft pluck |
 
-The sounds are original stylized game cues. Gameplay integration determines
-when they play and their final volume.
+Algorithm 2 rebuilds only the skate cues. Their names, lengths (0.34/0.40 s)
+and peak targets (0.50/0.55) remain; the other five cues regenerate unchanged.
+These WAVs serve the parked standalone runtime. The existing-Rust client creates
+its clips from the C# generators described in [the audio contract](../../../docs/RUST-SKATE-AUDIO.md).
+Gameplay integration determines timing and mixed volume; heard quality remains unverified.

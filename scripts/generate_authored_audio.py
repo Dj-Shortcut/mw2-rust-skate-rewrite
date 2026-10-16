@@ -107,23 +107,61 @@ def footstep(rng):
 
 def ollie(rng):
     samples = blank(0.34)
-    burst(samples, rng, 0.0, 0.08, 0.8, 5900.0, 0.011)
-    tone(samples, 0.002, 0.13, 0.48, 235.0, 0.025)
-    tone(samples, 0.002, 0.11, 0.16, 690.0, 0.016)
-    burst(samples, rng, 0.025, 0.18, 0.35, 2400.0, 0.065, attack=0.02)
-    click(samples, rng, 0.058, 0.15, 3200.0)
+    tuning = rng.uniform(0.94, 1.06)
+    friction(samples, rng, 0.0, 0.005, 0.52, 650.0, 6300.0)
+    wood_hit(samples, rng, 0.003, 1.0, tuning)
+    friction(samples, rng, 0.010, 0.015, 0.30, 450.0, 3700.0)
+    tone(samples, 0.023, 0.028, 0.025, 1870.0 * tuning, 0.004)
     return samples, 0.5
 
 
 def land(rng):
     samples = blank(0.40)
-    burst(samples, rng, 0.0, 0.14, 0.85, 2300.0, 0.02)
-    tone(samples, 0.001, 0.19, 0.53, 135.0, 0.032, 72.0)
-    tone(samples, 0.003, 0.13, 0.22, 440.0, 0.017)
-    for start, gain in ((0.026, 0.46), (0.052, 0.25), (0.097, 0.12), (0.145, 0.05)):
-        click(samples, rng, start, gain, 1450.0)
-    burst(samples, rng, 0.03, 0.27, 0.18, 3800.0, 0.08, attack=0.004)
+    tuning = rng.uniform(0.94, 1.06)
+    wheel_hit(samples, rng, 0.0, 1.0, tuning)
+    wheel_hit(samples, rng, 0.011, 0.72, tuning)
+    wood_hit(samples, rng, 0.002, 0.45, tuning)
+    for index in range(6):
+        start = 0.018 + index * 0.016 + rng.uniform(0.0, 0.006)
+        gain = 0.20 * math.exp(-index * 0.52)
+        friction(samples, rng, start, 0.002, gain, 1200.0, 6700.0)
+        frequency = (690.0 if index % 2 == 0 else 1910.0) * tuning
+        tone(samples, start, 0.035, gain, frequency, 0.005)
     return samples, 0.55
+
+
+def friction(samples, rng, start, decay, gain, low, high):
+    offset = round(start * SAMPLE_RATE)
+    count = round(decay * 7 * SAMPLE_RATE)
+    a = 1.0 - math.exp(-TAU * low / SAMPLE_RATE)
+    b = 1.0 - math.exp(-TAU * high / SAMPLE_RATE)
+    slow = fast = slow2 = fast2 = 0.0
+    for index in range(count):
+        target = offset + index
+        if target >= len(samples):
+            break
+        white = rng.uniform(-1.0, 1.0)
+        slow += a * (white - slow)
+        fast += b * (white - fast)
+        slow2 += a * (slow - slow2)
+        fast2 += b * (fast - fast2)
+        envelope = gain * math.exp(-index / (SAMPLE_RATE * decay))
+        samples[target] += (fast2 - slow2) * envelope * min(1.0, index / 2.0)
+
+
+def wood_hit(samples, rng, start, gain, tuning):
+    friction(samples, rng, start, 0.0035, gain * 1.1, 800.0, 7600.0)
+    friction(samples, rng, start, 0.009, gain * 0.55, 130.0, 1700.0)
+    for frequency, decay, level in ((185.0, 0.020, 0.22), (487.0, 0.010, 0.20),
+                                    (1093.0, 0.006, 0.12), (2311.0, 0.003, 0.08)):
+        tone(samples, start, decay * 7, gain * level, frequency * tuning, decay)
+
+
+def wheel_hit(samples, rng, start, gain, tuning):
+    friction(samples, rng, start, 0.012, gain * 1.1, 45.0, 1800.0)
+    friction(samples, rng, start, 0.002, gain * 0.35, 1600.0, 6600.0)
+    tone(samples, start, 0.182, gain * 0.38, 82.0 * tuning, 0.026)
+    tone(samples, start, 0.084, gain * 0.16, 217.0 * tuning, 0.012)
 
 
 def gather(rng):
@@ -187,7 +225,7 @@ def generate(output):
     manifest = {
         "format_version": 1,
         "generator": "scripts/generate_authored_audio.py",
-        "algorithm_version": 1,
+        "algorithm_version": 2,
         "base_seed": SEED,
         "license": "CC0-1.0",
         "encoding": "signed 16-bit little-endian PCM WAV",

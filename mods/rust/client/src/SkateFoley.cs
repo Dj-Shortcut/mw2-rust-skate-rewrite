@@ -79,10 +79,17 @@ public static class SkateFoley
                 }
                 break;
             case SkateFoleySound.Hollow:
-                // A wooden ramp is a box: rolling over it booms in a few low modes, with soft knocks
-                // from the plies.
-                Tones(s, rate, 55, 420, 90, new[] { 96.0, 171.0, 268.0 }, ref r);
-                for (var i = 0; i < 26; i++) Hit(s, rate, (int)(Next(ref r) % (uint)s.Length), 120 + Next(ref r) % 160u, 0.035, 0.25 + 0.2 * Unit(ref r), true);
+                for (var i = 0; i < 700; i++)
+                    Burst(s, rate, (int)(Next(ref r) % (uint)s.Length), 0.010, 90, 1700,
+                        0.20 + 0.25 * Unit(ref r), ref r, true, true);
+                for (var i = 0; i < 90; i++)
+                {
+                    var at = (int)(Next(ref r) % (uint)s.Length);
+                    var gain = 0.12 + 0.18 * Unit(ref r);
+                    Hit(s, rate, at, 96 + 8 * Unit(ref r), 0.022, gain, true);
+                    Hit(s, rate, at, 173 + 12 * Unit(ref r), 0.012, gain * 0.6, true);
+                    Hit(s, rate, at, 317 + 20 * Unit(ref r), 0.007, gain * 0.25, true);
+                }
                 break;
             case SkateFoleySound.Grit:
                 // Dirt and grass: many small crunches, no tone.
@@ -122,19 +129,24 @@ public static class SkateFoley
         }
     }
 
-    // Band-limited noise falling away over decay seconds.
-    private static void Burst(float[] s, int rate, int at, double decay, double low, double high, double gain, ref uint r, bool wrap)
+    private static void Burst(float[] s, int rate, int at, double decay, double low, double high, double gain, ref uint r, bool wrap, bool smooth = false)
     {
         var a = Math.Exp(-2 * Math.PI * low / rate); var b = Math.Exp(-2 * Math.PI * Math.Min(high, rate * 0.45) / rate);
         var k = Math.Exp(-1.0 / (rate * decay));
-        double slow = 0, fast = 0, e = gain;
+        double slow = 0, fast = 0, slow2 = 0, fast2 = 0, e = gain;
         var n = Math.Min(s.Length, (int)(rate * decay * 7));
         for (var i = 0; i < n; i++, e *= k)
         {
             var j = at + i; if (j >= s.Length) { if (!wrap) break; j -= s.Length; }
             var x = Noise(ref r);
             fast = b * fast + (1 - b) * x; slow = a * slow + (1 - a) * x;
-            s[j] += (float)(e * (fast - slow) * 3);
+            var contact = fast - slow;
+            if (smooth)
+            {
+                fast2 = b * fast2 + (1 - b) * fast; slow2 = a * slow2 + (1 - a) * slow;
+                contact = fast2 - slow2;
+            }
+            s[j] += (float)(e * contact * 3);
         }
     }
 

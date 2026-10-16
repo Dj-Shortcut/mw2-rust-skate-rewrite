@@ -53,134 +53,234 @@ namespace Shortcut.RustMod
 
         private static void Loop(SkateSound sound, int rate, float[] samples, ref uint random)
         {
-            var oscillators = new Oscillator[384];
             double peak;
             switch (sound)
             {
                 case SkateSound.Rolling:
-                    Band(oscillators, 0, 128, rate, samples.Length, 20, 180, 1, 0.3, ref random);
-                    Band(oscillators, 128, 256, rate, samples.Length, 120, 1800, 0.7, 0.65, ref random);
+                    Texture(samples, rate, 35, 260, 0.55, ref random);
+                    Texture(samples, rate, 180, 2800, 1, ref random);
+                    Texture(samples, rate, 2100, 6200, 0.13, ref random);
+                    Contacts(samples, rate, 115, 0.20, false, ref random);
+                    Rattle(samples, rate, 17, 0.13, ref random);
                     peak = 0.45;
                     break;
                 case SkateSound.Grind:
-                    Band(oscillators, 0, 128, rate, samples.Length, 120, 1100, 0.85, 0.15, ref random);
-                    Band(oscillators, 128, 256, rate, samples.Length, 650, 7000, 1, 0.1, ref random);
+                    Texture(samples, rate, 280, 1500, 0.32, ref random);
+                    Texture(samples, rate, 900, 7400, 1.15, ref random);
+                    Contacts(samples, rate, 73, 0.48, true, ref random);
+                    Rattle(samples, rate, 31, 0.34, ref random);
+                    Soften(samples, rate, Math.Min(6500, rate * 0.22));
                     peak = 0.65;
                     break;
                 default:
-                    Band(oscillators, 0, 128, rate, samples.Length, 65, 700, 1, 0.3, ref random);
-                    Band(oscillators, 128, 256, rate, samples.Length, 350, 2400, 0.6, 0.6, ref random);
+                    Texture(samples, rate, 70, 1150, 0.95, ref random);
+                    Texture(samples, rate, 650, 3400, 0.35, ref random);
+                    Contacts(samples, rate, 47, 0.60, false, ref random);
                     peak = 0.55;
                     break;
             }
-            for (int i = 1; i <= (samples.Length - 1) / 2; i++)
+            double sum = 0, weight = 0;
+            int fade = Math.Max(1, Math.Min(rate / 500, samples.Length / 8));
+            for (int i = 0; i < samples.Length; i++)
             {
-                double value = 0;
-                for (int k = 0; k < oscillators.Length; k++) value += oscillators[k].Advance();
-                samples[i] = (float)value;
-                samples[samples.Length - i] = -samples[i];
+                double window = JoinWindow(i, samples.Length, fade);
+                samples[i] = (float)(samples[i] * window);
+                sum += samples[i]; weight += window;
             }
+            for (int i = 0; i < samples.Length; i++)
+                samples[i] = (float)(samples[i] - sum / weight * JoinWindow(i, samples.Length, fade));
             Normalise(samples, peak);
         }
 
-        private static void Band(Oscillator[] oscillators, int first, int count, int rate, int length,
-                                 double minimum, double maximum, double level, double falloff, ref uint random)
+        private static double JoinWindow(int index, int length, int fade)
         {
-            int high = Math.Min((length - 1) / 2,
-                Math.Max(1, (int)Math.Floor(Math.Min(maximum, rate * 0.35) * length / rate)));
-            int low = Math.Min(high, Math.Max(1, (int)Math.Ceiling(minimum * length / rate)));
-            int span = high - low + 1;
+            double x = Math.Max(0, Math.Min(1, Math.Min(index - 2, length - 3 - index) / (double)fade));
+            return x * x * (3 - 2 * x);
+        }
+
+        private static void Soften(float[] samples, int rate, double cutoff)
+        {
+            double angle = 2 * Math.PI * cutoff / rate;
+            double cosine = Math.Cos(angle), alpha = Math.Sin(angle) / Math.Sqrt(2);
+            double divisor = 1 + alpha;
+            double b0 = (1 - cosine) / (2 * divisor), b1 = 2 * b0;
+            double a1 = -2 * cosine / divisor, a2 = (1 - alpha) / divisor;
+            double x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+            var input = (float[])samples.Clone();
+            for (int pass = 0; pass < 3; pass++)
+                for (int i = 0; i < input.Length; i++)
+                {
+                    double x = input[i];
+                    double y = b0 * x + b1 * x1 + b0 * x2 - a1 * y1 - a2 * y2;
+                    x2 = x1; x1 = x; y2 = y1; y1 = y;
+                    if (pass == 2) samples[i] = (float)y;
+                }
+        }
+
+        private static void Texture(float[] samples, int rate, double low, double high, double gain, ref uint random)
+        {
+            var white = new float[samples.Length];
+            for (int i = 0; i < white.Length; i++) white[i] = (float)Noise(ref random);
+            double a = 1 - Math.Exp(-2 * Math.PI * low / rate);
+            double b = 1 - Math.Exp(-2 * Math.PI * Math.Min(high, rate * 0.32) / rate);
+            double slow = 0, fast = 0, slow2 = 0, fast2 = 0, envelope = 0;
+            double flutter = 1 - Math.Exp(-2 * Math.PI * 23 / rate);
+            for (int pass = 0; pass < 3; pass++)
+            {
+                for (int i = 0; i < white.Length; i++)
+                {
+                    slow += a * (white[i] - slow); fast += b * (white[i] - fast);
+                    slow2 += a * (slow - slow2); fast2 += b * (fast - fast2);
+                    envelope += flutter * (white[(i + white.Length / 3) % white.Length] - envelope);
+                    if (pass == 2) samples[i] += (float)(gain * (fast2 - slow2) * (0.8 + 3 * Math.Abs(envelope)));
+                }
+            }
+        }
+
+        private static void Contacts(float[] samples, int rate, double density, double gain, bool metal, ref uint random)
+        {
+            int count = Math.Max(1, (int)Math.Round(density * samples.Length / rate));
             for (int k = 0; k < count; k++)
             {
-                int start = low + span * k / count;
-                int end = Math.Max(start, low + span * (k + 1) / count - 1);
-                int bin = start + (int)(Next(ref random) % (uint)(end - start + 1));
-                double noise = Noise(ref random);
-                double weight = level * (0.5 + 0.5 * Math.Abs(noise)) * (noise < 0 ? -1 : 1) *
-                    Math.Pow(low / (double)bin, falloff) / Math.Sqrt(count);
-                oscillators[first + k] = new Oscillator(2 * Math.PI * bin / length, weight, 1);
+                int at = (int)(Next(ref random) % (uint)samples.Length);
+                double strength = gain * (0.25 + 0.75 * Math.Abs(Noise(ref random)));
+                Friction(samples, rate, at, metal ? 1200 : 200, metal ? 7300 : 2700,
+                    metal ? 0.004 : 0.009, strength, true, ref random);
+                Ring(samples, rate, at, metal ? 1370 : 185, metal ? 0.009 : 0.012, strength * 0.25, true);
+                Ring(samples, rate, at, metal ? 3250 : 510, 0.005, strength * 0.16, true);
+            }
+        }
+
+        private static void Rattle(float[] samples, int rate, double density, double gain, ref uint random)
+        {
+            int count = Math.Max(1, (int)Math.Round(density * samples.Length / rate));
+            for (int k = 0; k < count; k++)
+            {
+                int at = (int)(Next(ref random) % (uint)samples.Length);
+                double strength = gain * (0.35 + 0.65 * Math.Abs(Noise(ref random)));
+                Friction(samples, rate, at, 1100, 6900, 0.002, strength, true, ref random);
+                Ring(samples, rate, at, 630, 0.007, strength * 0.6, true);
+                Ring(samples, rate, at, 1870, 0.004, strength * 0.3, true);
+                Ring(samples, rate, (at + Math.Max(1, rate / 250)) % samples.Length,
+                    3110, 0.003, strength * 0.18, true);
             }
         }
 
         private static void Shot(SkateSound sound, int rate, float[] samples, ref uint random)
         {
-            double duration, fastCutoff, slowCutoff, noiseGain, noiseDecay, drag;
-            var resonators = new Oscillator[3];
-            Impact[] impacts;
+            double duration;
+            switch (sound)
+            {
+                case SkateSound.Push: duration = 0.18; break;
+                case SkateSound.Ollie: duration = 0.14; break;
+                case SkateSound.Landing: duration = 0.28; break;
+                default: duration = 0.65; break;
+            }
+            double scale = (samples.Length - 1) / (rate * duration);
             double tuning = 0.94 + 0.12 * ((Noise(ref random) + 1) * 0.5);
             switch (sound)
             {
                 case SkateSound.Push:
-                    duration = 0.18; fastCutoff = 2000; slowCutoff = 150;
-                    noiseGain = 0.85; noiseDecay = 0.027; drag = 0;
-                    impacts = new[] { new Impact(1, 1) };
-                    Resonator(resonators, 0, 140, 0.018, 0.14, tuning, rate, samples.Length, duration);
-                    Resonator(resonators, 1, 420, 0.009, 0.08, tuning, rate, samples.Length, duration);
-                    Resonator(resonators, 2, 900, 0.005, 0.04, tuning, rate, samples.Length, duration);
+                    Friction(samples, rate, 1, 100, 2200, 0.024 * scale, 1.1, false, ref random);
+                    Ring(samples, rate, 1, 105 * tuning, 0.014 * scale, 0.09, false);
+                    Friction(samples, rate, (int)(rate * 0.025 * scale), 600, 3900,
+                        0.018 * scale, 0.24, false, ref random);
                     break;
                 case SkateSound.Ollie:
-                    duration = 0.14; fastCutoff = 4200; slowCutoff = 250;
-                    noiseGain = 0.7; noiseDecay = 0.006; drag = 0;
-                    impacts = new[] { new Impact(1, 1) };
-                    Resonator(resonators, 0, 180, 0.028, 0.3, tuning, rate, samples.Length, duration);
-                    Resonator(resonators, 1, 480, 0.012, 0.24, tuning, rate, samples.Length, duration);
-                    Resonator(resonators, 2, 1180, 0.006, 0.16, tuning, rate, samples.Length, duration);
+                    Friction(samples, rate, 1, 650, 6300, 0.005 * scale, 0.52, false, ref random);
+                    WoodHit(samples, rate, (int)(rate * 0.003 * scale), scale, tuning, 1, ref random);
+                    Friction(samples, rate, (int)(rate * 0.010 * scale), 450, 3700,
+                        0.015 * scale, 0.30, false, ref random);
+                    Ring(samples, rate, (int)(rate * 0.023 * scale), 1870 * tuning, 0.004 * scale, 0.025, false);
                     break;
                 case SkateSound.Landing:
-                    duration = 0.28; fastCutoff = 2800; slowCutoff = 80;
-                    noiseGain = 0.36; noiseDecay = 0.009; drag = 0;
-                    impacts = new[] { new Impact(1, 1), Impact.At(samples.Length, 0.026, 0.72),
-                        Impact.At(samples.Length, 0.061, 0.46) };
-                    Resonator(resonators, 0, 75, 0.05, 0.75, tuning, rate, samples.Length, duration);
-                    Resonator(resonators, 1, 165, 0.025, 0.3, tuning, rate, samples.Length, duration);
-                    Resonator(resonators, 2, 430, 0.012, 0.15, tuning, rate, samples.Length, duration);
+                    WheelHit(samples, rate, 1, scale, tuning, 1, ref random);
+                    WheelHit(samples, rate, (int)(rate * 0.011 * scale), scale, tuning, 0.72, ref random);
+                    WoodHit(samples, rate, (int)(rate * 0.002 * scale), scale, tuning, 0.45, ref random);
+                    Clatter(samples, rate, scale, tuning, ref random);
                     break;
                 default:
-                    duration = 0.65; fastCutoff = 2500; slowCutoff = 50;
-                    noiseGain = 0.7; noiseDecay = 0.02; drag = 0.18;
-                    impacts = new[] { new Impact(1, 1), Impact.At(samples.Length, 0.19, 0.7),
-                        Impact.At(samples.Length, 0.43, 0.45), Impact.At(samples.Length, 0.69, 0.25) };
-                    Resonator(resonators, 0, 60, 0.07, 0.45, tuning, rate, samples.Length, duration);
-                    Resonator(resonators, 1, 145, 0.035, 0.28, tuning, rate, samples.Length, duration);
-                    Resonator(resonators, 2, 380, 0.02, 0.12, tuning, rate, samples.Length, duration);
+                    WheelHit(samples, rate, 1, scale, tuning, 1, ref random);
+                    WoodHit(samples, rate, (int)(rate * 0.038 * scale), scale, tuning, 0.60, ref random);
+                    WoodHit(samples, rate, (int)(rate * 0.13 * scale), scale, tuning, 0.34, ref random);
+                    WheelHit(samples, rate, (int)(rate * 0.26 * scale), scale, tuning, 0.19, ref random);
+                    Friction(samples, rate, (int)(rate * 0.04 * scale), 200, 3200,
+                        0.085 * scale, 0.26, false, ref random);
+                    Clatter(samples, rate, scale, tuning, ref random);
                     break;
             }
-            double scale = (samples.Length - 1) / (rate * duration);
-            double fast = Math.Exp(-2 * Math.PI * Math.Min(fastCutoff, rate * 0.3) / rate);
-            double slow = Math.Exp(-2 * Math.PI * slowCutoff / rate);
-            double decay = Math.Exp(-1 / (rate * noiseDecay * scale));
-            double fastNoise = 0, slowNoise = 0, contact = 0;
-            int nextImpact = 0;
             for (int i = 1; i < samples.Length - 1; i++)
             {
-                while (nextImpact < impacts.Length && impacts[nextImpact].Index <= i)
-                {
-                    double strength = impacts[nextImpact++].Strength;
-                    contact += strength;
-                    for (int k = 0; k < resonators.Length; k++) resonators[k].Excite(strength);
-                }
                 double progress = i / (double)(samples.Length - 1);
-                double white = Noise(ref random);
-                fastNoise = fast * fastNoise + (1 - fast) * white;
-                slowNoise = slow * slowNoise + (1 - slow) * white;
-                double value = noiseGain * (contact + drag * Math.Exp(-5 * progress)) * (fastNoise - slowNoise);
-                for (int k = 0; k < resonators.Length; k++) value += resonators[k].Advance();
-                double attack = 1 - Math.Exp(-300 * progress);
                 double tail = Math.Min(1, (1 - progress) / 0.12);
-                samples[i] = (float)(value * attack * tail * tail * (3 - 2 * tail));
-                contact *= decay;
+                samples[i] *= (float)(tail * tail * (3 - 2 * tail));
             }
+            samples[0] = samples[samples.Length - 1] = 0;
             RemoveDc(samples);
             Normalise(samples, 0.8);
         }
 
-        private static void Resonator(Oscillator[] resonators, int index, double frequency, double decay,
-                                      double gain, double tuning, int rate, int length, double duration)
+        private static void WoodHit(float[] samples, int rate, int at, double scale, double tuning,
+                                    double gain, ref uint random)
         {
-            double scale = (length - 1) / (rate * duration);
-            resonators[index] = new Oscillator(2 * Math.PI * Math.Min(frequency * tuning, rate * 0.3) / rate,
-                gain, Math.Exp(-1 / (rate * decay * scale)));
-            resonators[index].Cosine = 0;
+            Friction(samples, rate, at, 800, 7600, 0.0035 * scale, gain * 1.1, false, ref random);
+            Friction(samples, rate, at, 130, 1700, 0.009 * scale, gain * 0.55, false, ref random);
+            Ring(samples, rate, at, 185 * tuning, 0.020 * scale, gain * 0.22, false);
+            Ring(samples, rate, at, 487 * tuning, 0.010 * scale, gain * 0.20, false);
+            Ring(samples, rate, at, 1093 * tuning, 0.006 * scale, gain * 0.12, false);
+            Ring(samples, rate, at, 2311 * tuning, 0.003 * scale, gain * 0.08, false);
+        }
+
+        private static void WheelHit(float[] samples, int rate, int at, double scale, double tuning,
+                                     double gain, ref uint random)
+        {
+            Friction(samples, rate, at, 45, 1800, 0.012 * scale, gain * 1.1, false, ref random);
+            Friction(samples, rate, at, 1600, 6600, 0.002 * scale, gain * 0.35, false, ref random);
+            Ring(samples, rate, at, 82 * tuning, 0.026 * scale, gain * 0.38, false);
+            Ring(samples, rate, at, 217 * tuning, 0.012 * scale, gain * 0.16, false);
+        }
+
+        private static void Clatter(float[] samples, int rate, double scale, double tuning, ref uint random)
+        {
+            for (int k = 0; k < 6; k++)
+            {
+                int at = (int)(rate * (0.018 + k * 0.016 + 0.006 * Math.Abs(Noise(ref random))) * scale);
+                double gain = 0.20 * Math.Exp(-k * 0.52);
+                Friction(samples, rate, at, 1200, 6700, 0.002 * scale, gain, false, ref random);
+                Ring(samples, rate, at, (k % 2 == 0 ? 690 : 1910) * tuning, 0.005 * scale, gain, false);
+            }
+        }
+
+        private static void Friction(float[] samples, int rate, int at, double low, double high,
+                                     double decay, double gain, bool wrap, ref uint random)
+        {
+            int count = Math.Min(samples.Length, Math.Max(2, (int)(rate * decay * 7)));
+            double a = 1 - Math.Exp(-2 * Math.PI * Math.Min(low, rate * 0.2) / rate);
+            double b = 1 - Math.Exp(-2 * Math.PI * Math.Min(high, rate * 0.32) / rate);
+            double slow = 0, fast = 0, slow2 = 0, fast2 = 0, envelope = gain;
+            double fall = Math.Exp(-1 / (rate * decay));
+            for (int i = 0; i < count; i++, envelope *= fall)
+            {
+                int target = at + i;
+                if (target >= samples.Length) { if (!wrap) break; target %= samples.Length; }
+                double white = Noise(ref random);
+                slow += a * (white - slow); fast += b * (white - fast);
+                slow2 += a * (slow - slow2); fast2 += b * (fast - fast2);
+                samples[target] += (float)((fast2 - slow2) * envelope * Math.Min(1, i / 2.0));
+            }
+        }
+
+        private static void Ring(float[] samples, int rate, int at, double frequency, double decay, double gain, bool wrap)
+        {
+            var oscillator = new Oscillator(2 * Math.PI * Math.Min(frequency, rate * 0.32) / rate,
+                gain, Math.Exp(-1 / (rate * decay)));
+            int count = Math.Min(samples.Length, Math.Max(2, (int)(rate * decay * 7)));
+            for (int i = 0; i < count; i++)
+            {
+                int target = at + i;
+                if (target >= samples.Length) { if (!wrap) break; target %= samples.Length; }
+                samples[target] += (float)(oscillator.Advance() * Math.Min(1, i / 2.0));
+            }
         }
 
         private static void RemoveDc(float[] samples)
@@ -204,32 +304,21 @@ namespace Shortcut.RustMod
         {
             private readonly double stepSine, stepCosine, weight, decay;
             private double sine;
-            public double Cosine;
+            private double cosine;
 
             public Oscillator(double angle, double weight, double decay)
             {
                 stepSine = Math.Sin(angle); stepCosine = Math.Cos(angle);
-                this.weight = weight; this.decay = decay; sine = 0; Cosine = 1;
+                this.weight = weight; this.decay = decay; sine = 0; cosine = 1;
             }
-
-            public void Excite(double strength) { Cosine += strength; }
 
             public double Advance()
             {
                 double previous = sine;
-                sine = (sine * stepCosine + Cosine * stepSine) * decay;
-                Cosine = (Cosine * stepCosine - previous * stepSine) * decay;
+                sine = (sine * stepCosine + cosine * stepSine) * decay;
+                cosine = (cosine * stepCosine - previous * stepSine) * decay;
                 return sine * weight;
             }
-        }
-
-        private struct Impact
-        {
-            public readonly int Index;
-            public readonly double Strength;
-            public Impact(int index, double strength) { Index = index; Strength = strength; }
-            public static Impact At(int length, double progress, double strength)
-            { return new Impact(1 + (int)Math.Round((length - 3) * progress), strength); }
         }
 
         private static void Normalise(float[] samples, double peak)
