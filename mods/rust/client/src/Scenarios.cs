@@ -605,8 +605,8 @@ public static class Scenarios
         }
         if (now >= megaLog)
         {
-            megaLog = now + 0.25f;
-            Say("MEGA at " + along.ToString("F2") + " up " + up.ToString("F2") + " speed " + SkateRide.Speed.ToString("F1") + " v " + SkateRide.ActualV.ToString("F1") + " mode " + SkateRide.Mode + " normal.y " + SkateRide.Normal.y.ToString("F2") + " walls " + SkateRide.WallStops + " cap " + SkateRide.Cap.ToString("F0"));
+            megaLog = now + 0.1f;
+            Say("MEGA at " + along.ToString("F2") + " up " + up.ToString("F2") + " speed " + SkateRide.Speed.ToString("F1") + " path " + SkateRide.PathSpeed.ToString("F1") + " v " + SkateRide.ActualV.ToString("F1") + " clear " + SkateRide.Clearance.ToString("F2") + " held " + SkateRide.Held + " mode " + SkateRide.Mode + " normal.y " + SkateRide.Normal.y.ToString("F2") + " walls " + SkateRide.WallStops + " cap " + SkateRide.Cap.ToString("F0"));
         }
         var side = along > 6f ? 1 : along < -6f ? -1 : 0;
         if (side != 0) { megaPeak = Math.Max(megaPeak, up); if (SkateRide.Mode == RideMode.Ground) megaLowNormal = Math.Min(megaLowNormal, SkateRide.Normal.y); }

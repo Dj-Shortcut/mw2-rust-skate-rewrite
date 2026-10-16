@@ -368,6 +368,8 @@ public static class SkateRide
     public const float WallProbe = 0.3f, WallSkin = 0.1f, WallSlam = 8f, WallFrom = 3f;
     private static readonly float[] wallHeights = { 0.6f, 1.3f };
     public static int WallStops, WallSlams;
+    // The whole measured pace of the last step, along the path the body took (for the checks' logs).
+    public static float PathSpeed;
     private static Vector3 WallAhead(Vector3 pos, Vector3 v, float dt)
     {
         var pace = v.magnitude;
@@ -413,6 +415,7 @@ public static class SkateRide
         // The whole path, up a transition as much as along the flat: on a steep bank the
         // horizontal part of a step is small while the board rides the full step along the slope.
         var path = moved.magnitude / dt;
+        PathSpeed = path;
         ActualV = moved.y / dt; moved.y = 0f;
         Actual = Vector3.Dot(moved, lastDir) / dt;
         // Through a revert the board's heading and the way of travel part: no pull-back can be read.
