@@ -7,6 +7,8 @@ de betreffende issue/PR; zie [docs/AUTONOMY.md](docs/AUTONOMY.md).
 
 ## Actief: de skate-mod, zo goed mogelijk, voor de eigenaar en zijn vrienden
 
+- [ ] #408 / #438 float-snelheidsgrens: natuurlijke fakie heeft op main al dezelfde 25 m/s-grens als vooruit (#422). De client begrenst nu ook het afgeronde float-eindpunt met gedeelde `TryBoundHorizontal`, na muurprojectie; de strikte serverpadgrens blijft behouden. Echte net48/C#7.3 shared/server-builds en volledige clientbron tegen gecachte IL2CPP/.NET6-referenties compileren zonder waarschuwingen/fouten; bestaande goedgekeurde movement- en rijfysicascenario's controleren de numerieke broncontracten. Native PhysX-eindpunten, de actuele serverbatchtijd en controller-rollback blijven ongeverifieerd; geen installatie of releasewijziging. [Contract](docs/RUST-SKATE-RIDE-PHYSICS.md#units-and-contracts).
+
 **Richting van de eigenaar, 14 oktober 2026:** de MW2-gunplay wordt **geschrapt**. Alles gaat naar de
 skate-mod: zo goed mogelijk maken, en zo dat zijn vrienden het kunnen proberen. Het doel is dus
 een client-mod op de eigen server zonder anti-cheat (zie de regels in

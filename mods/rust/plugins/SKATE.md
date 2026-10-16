@@ -38,6 +38,8 @@ The saved speed cap is preserved. A saved `14` m/s cap rejects `16.5` m/s; delib
 
 ## Session diagnostics
 
+The client bounds its final float32 horizontal velocity and predicted rounded endpoint after wall projection, using the same rule forward and fakie. The server still compares the full double-measured cached X/Z path with saved speed×authoritative batch time, without numerical slack. A client fixed step does not establish that server interval. See the [client arithmetic and integration contract](../../../docs/RUST-SKATE-RIDE-PHYSICS.md#units-and-contracts); native cap-boundary endpoints and timing remain unverified under #438.
+
 The owner-approved `skate_server_movement_policy` passes 2,686 checks on the actual
 genuine-reference net48 DLL, covering complete paths, numeric/cap bounds, guard/eligibility
 combinations, separate trusted fly authority, full vertical budgets, steep-pop/lip/fall examples, old airtime/rearm starvation, atomic refusals, determinism and warmed

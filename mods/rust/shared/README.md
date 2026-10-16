@@ -6,6 +6,8 @@ Engine-free C#7.3 source for [#335](https://github.com/Dj-Shortcut/mw2-rust-rust
 
 ## Ride physics API
 
+`SkateRidePhysics.TryBoundHorizontal` supplies the client's final direction-independent float32 velocity/endpoint budget under the 25 m/s ceiling. It preserves already fitting forward/fakie momentum and leaves the strict server path bound unchanged. Build it together with its `SkateRide` caller; see the [exact arithmetic, source-selection contract and native limits](../../../docs/RUST-SKATE-RIDE-PHYSICS.md#units-and-contracts).
+
 `SkateRidePhysics` provides pure value inputs/results for the reported client's transition pumping, ramp exit and landing calculations. It does not run a controller or query the world. The [API contract and numbered client review](../../../docs/RUST-SKATE-RIDE-PHYSICS.md) describe the adapter; the client's `SkateRide` calls `TrySlope`, `TryPump`, `TryLaunch` and `TryLand` (see the [client README](../client/README.md#sources)). Claude reports a ridden quarterpipe and long-ledge grind on his release client with server 0.3.8; complete native 0.3.9 park acceptance remains open. Existing calls remain source-compatible; motion and Drive use the shared speed ceiling above.
 
 `TrySlope(input, dt, out result, out error)` accepts an upward unit surface normal, horizontal nose heading, signed speed along its surface tangent and explicit gravity. It preserves horizontal heading, applies gravity along the unit tangent and returns full velocity, signed tangent speed, horizontal speed and travel-relative slope. `TryLaunch(input, out result, out error)` retains the full surface velocity and adds only the requested vertical pop; passive exit uses zero pop. The adapter applies subsequent air gravity once.
