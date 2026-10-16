@@ -147,17 +147,31 @@ dotnet context/skate-approved-park/bin/ShortcutSkate/net8.0/SkateParkLayoutScena
 
 The legacy `ActualPluginPath` remains a fallback when `SkateParkLibraryPath` is omitted. Reference only one DLL in each run. Intermediate/output directories under ignored `context/` are separated by the selected DLL's filename. Execute the emitted runner directly: SDK `dotnet run` can choose its default target despite the library property passed to its build. The runner prints its loaded DLL path and SHA-256 and accepts that expected hash as an optional argument.
 
-The mini/large native-bound cases include the installed floor's float32 depth
-`3.0000005` and low wall's width `0.2`, plus authored float32 center/size noise.
-The cell check allows one millimetre per horizontal edge; combined center/size
-excursions beyond that budget and genuinely oversized parts still refuse.
-MEGA cases call the same identity policy used by the server overlap loop: the
-placing player, support and current transaction are allowed; other players,
-buildings, deployables, other modules and static World colliders remain blockers.
-Null entity/anchor identities cannot exempt a static obstruction. These fixtures
-exercise reference identity tokens, without executing Unity's overlap query or
-collider-to-entity resolution. The World/Construction/Deployed/Player mask and
-trigger exclusion remain in effect; terrain/world colliders gain no broad exemption.
+The quarterpipe profile cases cover original, mini and large: independent
+circular coordinates and the vertical lip tangent, large-only 0.2 m vert,
+full-width flat decks at least 1.2 m deep, 0.05 m round coping dimensions and
+closed back/underside shell samples. Original native carrier transforms remain
+literal compatibility fixtures; they no longer define the riding surface.
+
+Native-bound cases include the installed floor's float32 depth `3.0000005`
+and low wall's width `0.2`, plus authored float32 center/size noise. The
+Construction.bounds cell check allows one millimetre per horizontal edge;
+combined center/size excursions beyond that budget and genuinely oversized
+parts still refuse. Spawned-collider corner cases call the production
+`ContainsQuarterPoint` helper with independent exact floor and rotated wall
+corners, Y limits and the missing L cell. A legal distant rotated anchor's
+float32 world round trip reproduces refusal with a fixed millimetre and passes
+the world-scale tolerance; a five-centimetre true overhang still refuses.
+
+MEGA cases call the same reference identity policy used by the server space
+and per-part native deploy filters: the placing player, support and all 80
+current transaction members are allowed; other players, buildings, deployables,
+other modules and static World colliders remain blockers. A value-equal foreign
+identity and null entity/anchor identities cannot inherit an exemption. These
+fixtures exercise scalar corners and reference tokens, without executing Unity's
+native overlap query, CheckFlags, collider-to-entity resolution or rollback.
+The World/Construction/Deployed/Player mask and trigger exclusion remain in
+effect; terrain/world colliders gain no broad exemption.
 
 These checks use the layout helpers in the selected DLL, with independent expected positions and seams. Matching tolerance is relative to the deterministic observed-part-derived anchor, rather than an ideal common-anchor fit; the opposing ±0.004/±0.009 m quarter fixtures distinguish acceptance and refusal at tolerance 0.01. Matching does not prove registered park identity or infer the kind of a single floor. The scenarios do not verify native floor dimensions/colliders, building privilege, stability, save/load callbacks, demolition or gameplay, and they do not start the Rust client or server.
 
