@@ -46,8 +46,6 @@ public static class SkateKeys
     // Pad: the controller rides, not the keyboard. Analog: Steer is a rate, not a direction to turn to.
     public static bool Pad, Analog, Charging;
     public static float Steer, Charge;
-    // The controls shown again for as long as this is held: H on the keyboard, on foot or on the
-    // board; Back on the controller on the board (on foot Back opens the picker).
     public static bool Help;
     // Held in the air: the rider's turn, +1 to his right as the stick or the keys say, and the grab.
     public static float Spin;
@@ -108,7 +106,6 @@ public static class SkateKeys
                 try { manual = kb.leftShiftKey.isPressed; }
                 catch (Exception e) { manualKey = false; Out.Say("INPUT manual key unavailable: " + e.GetType().Name + ": " + e.Message); }
             }
-            // A held key, never a tap: a stray press cannot leave the controls on the screen.
             var help = false;
             if (helpKey)
             {

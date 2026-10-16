@@ -253,7 +253,6 @@ public static class SkateHud
         var s = new Shown();
         // Switch with the tail leading is fakie, as the scorer names the tricks.
         s.Riding = SkateRide.On; s.Switch = t.Switch; s.Fakie = t.Switch && SkateRide.TailFirst != SkateRide.DeckReversed; s.Pad = SkateKeys.Pad;
-        // The controls for the first seconds on the board, and again for as long as H (or Back on the board) is held.
         s.Hints = (now - MountedAt < 9f || SkateKeys.Help) && !Scenarios.Active;
         s.Speed = Math.Abs(SkateRide.HorizontalSpeed); s.Cap = SkateRide.Cap;
         s.Score = t.TotalPoints; s.Base = t.ComboBasePoints; s.Count = t.ComboCount;
@@ -453,7 +452,6 @@ public static class SkateHud
             Text(x, y, w - 80f * k, Key("W") + " push   " + Key("S") + " brake   " + Key("A / D") + " carve   " + Key("SPACE") + " ollie   hold " + Key("SHIFT") + " manual   " + Key("K") + " or hold " + Key("CTRL") + " get off   " + Key("L") + " camera", size, Ink, 0, 1f);
             Text(x, y + 28f * k, w - 80f * k, "In the air: tap " + Key("W") + " kickflip   tap " + Key("S") + " heelflip   " + Key("A / D") + " spin   hold " + Key("CTRL") + " grab", size, Ink, 0, 1f);
         }
-        // How to get this back once it is gone: the whole table is in the client README.
         Text(x, y + 56f * k, w - 80f * k, v.Pad ? "Hold " + Key("BACK") + " on the board to see these controls again" : "Hold " + Key("H") + " to see these controls again", (int)(15 * k), Dim, 0, 1f);
     }
 
