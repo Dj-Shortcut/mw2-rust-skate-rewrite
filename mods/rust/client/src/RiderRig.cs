@@ -36,6 +36,8 @@ public static class RiderRig
     private static SkateRiderMotionState motion;
     private static RideMode motionMode = RideMode.Ground;
     public static int Applied, Refusals, WithoutPush;
+    // Where the head was left by the last pose, so the watch can tell a head moved after it.
+    public static Vector3 HeadPosed;
     // The module's last pose as computed, and as shown after the secondary motion; for the checks.
     public static SkateRiderPose Posed, Shown; public static Vector3 PosedPlane;
     private static Transform[] spine = new Transform[0];
@@ -810,6 +812,7 @@ public static class RiderRig
         var sole = SkateBoard.Held ? SkateBoard.HeldUp : up;
         Roll(LFoot, (LToe.position - LFoot.position).normalized, lSole, sole);
         Roll(RFoot, (RToe.position - RFoot.position).normalized, rSole, sole);
+        HeadPosed = Head.position;
     }
 
     private static void Limb(Transform a, Transform b, Transform c, Vector3 target, Vector3 hint, float upper, float lower, string name)
