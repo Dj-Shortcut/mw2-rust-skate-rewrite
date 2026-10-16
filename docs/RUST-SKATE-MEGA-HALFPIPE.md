@@ -1,6 +1,6 @@
 # Modular MEGA halfpipe contract
 
-`mega-halfpipe` is one atomic kit, kind **11**, marked item **0x534B500C**, exact name `Skate MEGA Halfpipe` (stock carrier/skin/quantity unchanged). IDs 0–7, their native parts and saved layouts are unchanged; 8–10 remain available for concurrent owner modules. This is shared/server source plus a required client contract, not a completed native ride.
+`mega-halfpipe` is one atomic kit, kind **11**, marked item **0x534B500C**, exact name `Skate MEGA Halfpipe` (stock carrier/skin/quantity unchanged). IDs 0–7, their native parts and saved layouts are unchanged; IDs 8/9 are the mini/L quarterpipes and ID 10 is the half-wall kicker. The server/shared catalogue and client 0.18.6 implementation are merged. Riding on server-placed kits remains unverified.
 
 ## Configuration and modules
 
@@ -28,7 +28,7 @@ Version1 metadata stores canonical kind, anchor, indexed native identities/poses
 
 ## Exact client riding contract
 
-The client must recognize all80 members before contained small kinds, validate identity/pose/grade and clear the whole replacement on mismatch/removal/reconnect/unload. `TryMatch` supports80 with distinct-member tracking. Preview must use the same origin, yaw, module positions and envelope; IDs8–10 are not automatically valid. Current eight-kind picker/recognition does not implement this.
+The client must recognize all80 members before contained small kinds, validate identity/pose/grade and clear the whole replacement on mismatch/removal/reconnect/unload. `TryMatch` supports80 with distinct-member tracking. Preview must use the same origin, yaw, module positions and envelope. The merged [SkateParks.cs](../mods/rust/client/src/SkateParks.cs) implements all twelve kinds, MEGA-first recognition, the preview and the 124-sample riding profile. [SkatePieces.cs](../mods/rust/client/src/SkatePieces.cs) supplies held-item previews. These source paths do not establish complete native placement or lifecycle acceptance.
 
 Use `SkateMegaHalfpipe.TryProfilePoint`: **124** ordered `(forward,height)` samples, extruded X−1.5…10.5 in the anchor frame. If using `VisualOrigin` (anchor+X4.5), subtract4.5 from every mesh/coping X, giving mesh X−6…6; do not apply that centre twice. The 60 equal angular steps per transition (1.5°) include both lips and both bottom joins once; decks end at Z±(6+R+3). Heights include `RideLift=0.05`. The central bottom is Y0.05; upper decks Y=R+0.05. Apply the same transform to visual, ride mesh and normals. Analytic transition normals are `(0,cosθ,−side·sinθ)`; normals remain upward until the vertical lip. Bottom joins share a horizontal tangent; adjacent lane/module vertices must be welded with no duplicate collision lips. The lip/deck corner intentionally meets coping rather than interpolating a diagonal shortcut.
 
@@ -38,4 +38,6 @@ Coping: two cylinders/edge segments, radius0.05, axis +X from−1.5 to10.5, cent
 
 Drop-in must retain the near-vertical normal and signed full tangent velocity, then apply gravity once. Current `Sense` substitutes up for normal.y≤0.3 and wall probes treat normal.y<0.5 as a wall: profile-aware support/wall handling must change before acceptance. Pump uses actual travel-relative descent/bottom timing and existing bounded energy; seams never reset/recharge it. Passive air exit preserves XYZ tangent velocity with zero pop; deliberate pop adds vertical impulse once. Landing uses the actual surface normal and whole incoming velocity with existing impact/bail limits. Uphill stall reverses physical velocity into fakie without a forced nose turn or reverse-speed penalty. Air/grind/bail clear pump state; coping leave/re-entry must not double-land or duplicate trick awards.
 
-Native acceptance remains open: rotated placement/refusal, occupancy in empty riding air, debit/rollback/removal/reload, collider restoration, visible seams/guards/coping, then deck drop-in→pump→opposite air→landing→fakie→coping→exit with real controller input. Managed compilation and geometry/accounting checks cannot establish these results.
+The merged client also contains backing-collider query filters and pairwise rider collision isolation with penetration-aware restoration. [PR #456](https://github.com/Dj-Shortcut/mw2-rust-skate-rewrite/pull/456) reports in-game previews and a local `zz mega` ride on client-created geometry, with improved slope contact. That report is separate from riding a server-placed kit. Deck drop-in and support above 72 degrees remain open.
+
+Native acceptance remains open: rotated server placement/refusal, occupancy in empty riding air, debit/rollback/removal/reload, collider restoration, visible seams/guards/coping, then deck drop-in→pump→opposite air→landing→fakie→coping→exit with real controller input. Managed compilation, geometry/accounting checks and the reported local client ride cannot establish this complete flow.

@@ -1,6 +1,6 @@
 # Half-wall kicker contract
 
-The server/shared addition for #408 attaches one Stone native square floor to an existing native half wall. The wall is an external dependency, with its own owner, building and save lifetime; it is never a park member, consumed item, rollback part or demolition/refund member. Client implementation and native acceptance remain open.
+The server/shared addition for #408 attaches one Stone native square floor to an existing native half wall. The wall is an external dependency, with its own owner, building and save lifetime; it is never a park member, consumed item, rollback part or demolition/refund member. Client 0.18.6 includes recognition, riding geometry and a wall-target preview; the client build request and complete native acceptance remain open.
 
 ## Identity and building flow
 
@@ -37,5 +37,7 @@ Host rotation is refused while an attachment is registered. Host destruction, mo
 Hammer demolition of an intact paid ramp can return its single build item once under the existing complete-group/owner/authority/delivery rules, with host validity and privilege rechecked. Free, interrupted, damaged/incomplete or dependency-lost assemblies return no item. The host is never removed, refunded, regrounded or adopted as a park member by attachment cleanup or demolition. Unload retains normal saved park records; reload revalidates their dependency.
 
 ## Acceptance limits
+
+The merged [SkateParks.cs](../mods/rust/client/src/SkateParks.cs) recognizes the tilted floor with its supporting wall and implements `HalfWallAim`; [SkatePieces.cs](../mods/rust/client/src/SkatePieces.cs) uses that pose for the held-item ghost. [PR #456](https://github.com/Dj-Shortcut/mw2-rust-skate-rewrite/pull/456) reports an in-game preview, while explicitly leaving the kicker's client build request unfinished. A visible ghost does not prove emission of the original wall-target request, successful item payment or server placement.
 
 The approved existing layout/build-item scenarios exercise the compiled shared/plugin helpers. The genuine-reference build checks source/API compatibility. Neither establishes native ray/RPC emission, current prefab collider surfaces, hook timing, actual inventory debit/refund, filesystem/world reload callbacks, collision seams, entry/drop-in, riding, unload or two-client observation. These require the paired client implementation and native verification; no live server operation is part of this source change.
