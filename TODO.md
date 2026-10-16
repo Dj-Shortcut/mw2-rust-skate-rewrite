@@ -7,6 +7,8 @@ de betreffende issue/PR; zie [docs/AUTONOMY.md](docs/AUTONOMY.md).
 
 ## Actief: de skate-mod, zo goed mogelijk, voor de eigenaar en zijn vrienden
 
+- [ ] #408 half-wall kicker: server/shared bron voegt type 10 toe met echte muur/zijde, gemeten bovenaansluiting, bouwrechten/bezetting en aparte muurlifecycle; oorspronkelijke muur valt buiten parkbetaling/teruggave. [Clientcontract en acceptatiegrenzen](docs/RUST-SKATE-HALF-WALL-KICKER.md). Clientintegratie, native plaatsing/collisienaad/instap, herladen en rijden zijn nog niet geverifieerd; niets geïnstalleerd.
+
 **Richting van de eigenaar, 14 oktober 2026:** de MW2-gunplay wordt **geschrapt**. Alles gaat naar de
 skate-mod: zo goed mogelijk maken, en zo dat zijn vrienden het kunnen proberen. Het doel is dus
 een client-mod op de eigen server zonder anti-cheat (zie de regels in

@@ -146,6 +146,8 @@ These checks use the layout helpers in the selected DLL, with independent expect
 
 ## Park build items
 
+The same approved layout/build-item scenarios also cover appended half-wall kicker kind 10, reserved ID gaps, both-side measured wall joins and item accounting. For the actual plugin parser extension, set `SKATE_PARK_PARSER_REFERENCES=/absolute/path/to/genuine/managed` when executing the plugin build-item runner. It uses the plugin's own JSON attribute assembly for round-trips of old records and rejection of malformed/conflicting wall dependencies. Without that variable, the runner explicitly skips parser checks; native callbacks and gameplay remain separate.
+
 The owner approved `skate_park_build_items` by name on 12 October 2026. It checks
 the eight independently specified names/tags, reserved marker gaps, exact stock
 carrier/skin/quantity identity, atomic invalid outputs, verified single debit,

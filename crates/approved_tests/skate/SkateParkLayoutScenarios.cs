@@ -418,7 +418,8 @@ internal static class SkateParkLayoutScenarios
         CheckSeams(0, 0, 0, 0);
         HalfpipeBounds();
         VisualOrigins();
-        Console.WriteLine("PASS: skate_park_piece_layouts (8 pieces, 48 parts, " +
+        HalfWallPieceLayout();
+        Console.WriteLine("PASS: skate_park_piece_layouts (8 original pieces/48 parts plus half-wall kicker, " +
                           (checks - start).ToString(CultureInfo.InvariantCulture) + " checks).");
     }
 
@@ -464,7 +465,8 @@ internal static class SkateParkLayoutScenarios
             CheckSeams(anchor.X, anchor.Y, anchor.Z, angle.Input);
         }
         PlacementRequests();
-        Console.WriteLine("PASS: skate_park_anchor_yaw_and_snap (20 translated/yaw anchors, " +
+        HalfWallSnap();
+        Console.WriteLine("PASS: skate_park_anchor_yaw_and_snap (20 translated/yaw anchors plus half-wall attachment, " +
                           (checks - start).ToString(CultureInfo.InvariantCulture) + " checks).");
     }
 
@@ -702,6 +704,187 @@ internal static class SkateParkLayoutScenarios
         Near(maxY, 2.4971864443607004, "halfpipe: deck rise.");
         Near(LocalEdge(SkateParkKind.Halfpipe, 0, -1.5, -1.5).Z, -1.5, "halfpipe: flat begins at snapped tile edge.");
         Near(LocalEdge(SkateParkKind.Halfpipe, 3, 1.5, 1.5).Z, 4.5, "halfpipe: central flat has 6m length.");
+    }
+
+
+    // Extension of the two existing named scenarios. The original eight fixtures above
+    // remain literal compatibility evidence; attachment joins are checked from independently
+    // transformed collider surface points rather than by reproducing the anchor solver.
+    private static void HalfWallPieceLayout()
+    {
+        Require((int)SkateParkKind.HalfWallKicker == 10, "half-wall: stable appended kind ID.");
+        Require(SkateParkLayout.Name(SkateParkKind.HalfWallKicker) == "half-wall-kicker", "half-wall: canonical name.");
+        SkateParkKind parsed;
+        Require(SkateParkLayout.TryKind("HALF-WALL-KICKER", out parsed) && parsed == SkateParkKind.HalfWallKicker,
+            "half-wall: case-insensitive kind selection.");
+        Require(SkateParkLayout.PartCount(SkateParkKind.HalfWallKicker) == 1,
+            "half-wall: only the added floor belongs to the park assembly.");
+        SkateParkPart part;
+        Require(SkateParkLayout.TryPart(SkateParkKind.HalfWallKicker, 0, out part), "half-wall: missing floor.");
+        Near(part.Right, 0, "half-wall: no local right offset.");
+        Near(part.Forward, 0, "half-wall: no local forward offset.");
+        Near(part.Height, 0, "half-wall: solved anchor is the floor origin.");
+        Near(part.Pitch, -30, "half-wall: independent 30 degree riding slope.");
+        Near(part.Yaw, 0, "half-wall: solved heading is preserved.");
+        Require(part.Prefab == FloorPrefab && part.Material == SkateParkMaterial.Stone,
+            "half-wall: original native floor material/prefab contract.");
+        foreach (int raw in new[] { 8, 9 })
+        {
+            var reserved = (SkateParkKind)raw;
+            Require(SkateParkLayout.Name(reserved) == null && SkateParkLayout.PartCount(reserved) == 0,
+                "half-wall: other module kind IDs remain reserved.");
+            Require(!SkateParkLayout.TryPart(reserved, 0, out part) && part.Right == 0 && part.Forward == 0 &&
+                part.Height == 0 && part.Pitch == 0 && part.Yaw == 0 && part.Prefab == null,
+                "half-wall: reserved kind rejects part atomically.");
+        }
+        foreach (int index in new[] { -1, 1, 2, int.MinValue, int.MaxValue })
+            Require(!SkateParkLayout.TryPart(SkateParkKind.HalfWallKicker, index, out part) &&
+                part.Right == 0 && part.Forward == 0 && part.Height == 0 && part.Pitch == 0 &&
+                part.Yaw == 0 && part.Prefab == null, "half-wall: invalid part index rejects atomically.");
+        double baseY = 123;
+        Require(!SkateParkLayout.TrySupportedAnchor(SkateParkKind.HalfWallKicker, 0, 0, 0, 0.2, 3, out baseY) && baseY == 0,
+            "half-wall: a generic terrain/foundation anchor cannot bypass the required wall target.");
+    }
+
+    private static SkateParkBox Box(double x, double y, double z, double sx, double sy, double sz)
+    { return new SkateParkBox { X = x, Y = y, Z = z, SizeX = sx, SizeY = sy, SizeZ = sz }; }
+
+    private static Point SurfacePoint(SkateParkTransform pose, double right, double up, double forward)
+    {
+        double pitch = pose.Pitch * Math.PI / 180, yaw = pose.Yaw * Math.PI / 180;
+        double vertical = up * Math.Cos(pitch) - forward * Math.Sin(pitch);
+        double horizontal = up * Math.Sin(pitch) + forward * Math.Cos(pitch);
+        return new Point(pose.X + right * Math.Cos(yaw) + horizontal * Math.Sin(yaw),
+            pose.Y + vertical, pose.Z - right * Math.Sin(yaw) + horizontal * Math.Cos(yaw));
+    }
+
+    private static void HalfWallSnap()
+    {
+        SkateParkBox wallBox = Box(0, 0.75, 0, 0.2, 1.5, 3);
+        SkateParkBox floorBox = Box(0, 0, 0, 3, 0.2, 3);
+        Point[] positions = { new Point(0, 0, 0), new Point(17.375, 2.625, -8.0625),
+            new Point(-23.8125, -4.375, 31.1875) };
+        foreach (Point position in positions)
+        foreach (double yaw in new[] { 0d, 37.25, 90, 180, 270, -90, 450, -720, 999999 })
+        foreach (int side in new[] { -1, 1 })
+        foreach (SkateParkBox nativeWall in new[] { wallBox, Box(0.03, 0.73, -0.02, 0.4, 1.5, 3.1) })
+        foreach (SkateParkBox nativeFloor in new[] { floorBox, Box(0.025, 0.1, 0.025, 2.9, 0.25, 2.9),
+            Box(-0.025, -0.05, -0.025, 2.9, 0.1, 3.1) })
+        {
+            var wall = new SkateParkBlock(HalfWallPrefab, position.X, position.Y, position.Z, yaw, 0);
+            SkateParkTransform anchor;
+            Require(SkateParkLayout.TryHalfWallAnchor(wall, nativeWall, nativeFloor, side, out anchor),
+                "half-wall: supported native target refused.");
+            Near(anchor.Pitch, -30, "half-wall: solved 30 degree pitch.");
+            Require(anchor.Yaw >= 0 && anchor.Yaw < 360, "half-wall: canonical heading.");
+            SkateParkTransform floor = Transform(SkateParkKind.HalfWallKicker, 0,
+                anchor.X, anchor.Y, anchor.Z, anchor.Yaw);
+            Near(floor.Pitch, anchor.Pitch, "half-wall: layout agrees with attachment pitch.");
+            var wallPose = new SkateParkTransform { X = wall.X, Y = wall.Y, Z = wall.Z, Yaw = wall.Yaw };
+            foreach (double across in new[] { -nativeFloor.SizeX / 2, 0, nativeFloor.SizeX / 2 })
+            {
+                Point exit = SurfacePoint(floor, nativeFloor.X + across, nativeFloor.Y + nativeFloor.SizeY / 2,
+                    nativeFloor.Z + nativeFloor.SizeZ / 2);
+                Point join = SurfacePoint(wallPose, nativeWall.X + side * nativeWall.SizeX / 2,
+                    nativeWall.Y + nativeWall.SizeY / 2, nativeWall.Z + side * across);
+                Same(exit, join, "half-wall: complete high riding edge meets the selected wall face/top.");
+                Point entry = SurfacePoint(floor, nativeFloor.X + across, nativeFloor.Y + nativeFloor.SizeY / 2,
+                    nativeFloor.Z - nativeFloor.SizeZ / 2);
+                Near(exit.Y - entry.Y, nativeFloor.SizeZ / 2,
+                    "half-wall: independent half-length rise at 30 degrees.");
+                Near(Math.Sqrt((exit.X - entry.X) * (exit.X - entry.X) +
+                    (exit.Z - entry.Z) * (exit.Z - entry.Z)), nativeFloor.SizeZ * Math.Sqrt(3) / 2,
+                    "half-wall: independent projected horizontal run.");
+                double wallAngle = yaw * Math.PI / 180;
+                double entryRight = (entry.X - wall.X) * Math.Cos(wallAngle) -
+                    (entry.Z - wall.Z) * Math.Sin(wallAngle);
+                Require(side * (entryRight - nativeWall.X) > nativeWall.SizeX / 2,
+                    "half-wall: entry extends outward on the selected side.");
+            }
+            SkateParkTransform again;
+            Require(SkateParkLayout.TryHalfWallAnchor(wall, nativeWall, nativeFloor, side, out again) &&
+                anchor.X == again.X && anchor.Y == again.Y && anchor.Z == again.Z &&
+                anchor.Yaw == again.Yaw && anchor.Pitch == again.Pitch, "half-wall: deterministic repeated snap.");
+            var observed = new[] { new SkateParkBlock(FloorPrefab, floor.X, floor.Y, floor.Z, floor.Yaw, floor.Pitch) };
+            double x, y, z, heading;
+            Require(SkateParkLayout.TryMatch(SkateParkKind.HalfWallKicker, observed, 0.01,
+                out x, out y, out z, out heading), "half-wall: placed floor round-trips through matching.");
+            Near(x, anchor.X, "half-wall: recovered anchor X."); Near(y, anchor.Y, "half-wall: recovered anchor Y.");
+            Near(z, anchor.Z, "half-wall: recovered anchor Z."); Near(heading, anchor.Yaw, "half-wall: recovered heading.");
+        }
+        HalfWallInvalidTargets(wallBox, floorBox);
+    }
+
+    private static void HalfWallRefused(SkateParkBlock wall, SkateParkBox wallBox, SkateParkBox floorBox,
+        int side, string reason)
+    {
+        var anchor = new SkateParkTransform { X = 91, Y = 92, Z = 93, Yaw = 94, Pitch = 95 };
+        Require(!SkateParkLayout.TryHalfWallAnchor(wall, wallBox, floorBox, side, out anchor), reason);
+        Require(anchor.X == 0 && anchor.Y == 0 && anchor.Z == 0 && anchor.Yaw == 0 && anchor.Pitch == 0,
+            "half-wall: refusal resets the whole output atomically.");
+    }
+
+    private static SkateParkBox ChangedBox(SkateParkBox box, int field, double value)
+    {
+        switch (field)
+        {
+            case 0: box.X = value; break; case 1: box.Y = value; break; case 2: box.Z = value; break;
+            case 3: box.SizeX = value; break; case 4: box.SizeY = value; break; case 5: box.SizeZ = value; break;
+        }
+        return box;
+    }
+
+    private static void HalfWallInvalidTargets(SkateParkBox wallBox, SkateParkBox floorBox)
+    {
+        var wall = new SkateParkBlock(HalfWallPrefab, 0, 0, 0, 0, 0);
+        foreach (int side in new[] { int.MinValue, -2, 0, 2, int.MaxValue })
+            HalfWallRefused(wall, wallBox, floorBox, side, "half-wall: side must be exactly minus or plus one.");
+        foreach (string prefab in new[] { null, "", FloorPrefab, LowWallPrefab, HalfWallPrefab.ToUpperInvariant(), HalfWallPrefab + " " })
+            HalfWallRefused(new SkateParkBlock(prefab, 0, 0, 0, 0, 0), wallBox, floorBox, 1,
+                "half-wall: target must have the exact half-wall prefab.");
+        foreach (double bad in new[] { double.NaN, double.NegativeInfinity, double.PositiveInfinity })
+        {
+            HalfWallRefused(new SkateParkBlock(HalfWallPrefab, bad, 0, 0, 0, 0), wallBox, floorBox, 1, "half-wall: invalid target X.");
+            HalfWallRefused(new SkateParkBlock(HalfWallPrefab, 0, bad, 0, 0, 0), wallBox, floorBox, 1, "half-wall: invalid target Y.");
+            HalfWallRefused(new SkateParkBlock(HalfWallPrefab, 0, 0, bad, 0, 0), wallBox, floorBox, 1, "half-wall: invalid target Z.");
+            HalfWallRefused(new SkateParkBlock(HalfWallPrefab, 0, 0, 0, bad, 0), wallBox, floorBox, 1, "half-wall: invalid target yaw.");
+            HalfWallRefused(new SkateParkBlock(HalfWallPrefab, 0, 0, 0, 0, bad), wallBox, floorBox, 1, "half-wall: invalid target pitch.");
+            for (int field = 0; field < 6; field++)
+            {
+                HalfWallRefused(wall, ChangedBox(wallBox, field, bad), floorBox, 1, "half-wall: invalid wall bound.");
+                HalfWallRefused(wall, wallBox, ChangedBox(floorBox, field, bad), 1, "half-wall: invalid floor bound.");
+            }
+        }
+        foreach (double bad in new[] { -100000.001, 100000.001 })
+        {
+            HalfWallRefused(new SkateParkBlock(HalfWallPrefab, bad, 0, 0, 0, 0), wallBox, floorBox, 1, "half-wall: out-of-range target X.");
+            HalfWallRefused(new SkateParkBlock(HalfWallPrefab, 0, bad, 0, 0, 0), wallBox, floorBox, 1, "half-wall: out-of-range target Y.");
+            HalfWallRefused(new SkateParkBlock(HalfWallPrefab, 0, 0, bad, 0, 0), wallBox, floorBox, 1, "half-wall: out-of-range target Z.");
+        }
+        foreach (double bad in new[] { -1000000.001, 1000000.001 })
+            HalfWallRefused(new SkateParkBlock(HalfWallPrefab, 0, 0, 0, bad, 0), wallBox, floorBox, 1, "half-wall: out-of-range target yaw.");
+        foreach (double bad in new[] { -30d, -0.0101, 0.0101, 90 })
+            HalfWallRefused(new SkateParkBlock(HalfWallPrefab, 0, 0, 0, 0, bad), wallBox, floorBox, 1, "half-wall: tilted target refused.");
+        for (int field = 3; field < 6; field++)
+        foreach (double bad in new[] { -1d, 0, 100001 })
+        {
+            HalfWallRefused(wall, ChangedBox(wallBox, field, bad), floorBox, 1, "half-wall: invalid wall extent.");
+            HalfWallRefused(wall, wallBox, ChangedBox(floorBox, field, bad), 1, "half-wall: invalid floor extent.");
+        }
+        foreach (SkateParkBox bad in new[] { Box(0.051, 0.75, 0, 0.2, 1.5, 3), Box(0, 0.75, 0.051, 0.2, 1.5, 3),
+            Box(0, 0.801, 0, 0.2, 1.5, 3), Box(0, 0.75, 0, 0.601, 1.5, 3), Box(0, 0.75, 0, 0.2, 1.399, 3),
+            Box(0, 0.75, 0, 0.2, 1.601, 3), Box(0, 0.75, 0, 0.2, 1.5, 2.899), Box(0, 0.75, 0, 0.2, 1.5, 3.101) })
+            HalfWallRefused(wall, bad, floorBox, 1, "half-wall: unsupported host geometry.");
+        foreach (SkateParkBox bad in new[] { Box(0.051, 0, 0, 3, 0.2, 3), Box(0, 0, 0.051, 3, 0.2, 3),
+            Box(0, 0.501, 0, 3, 0.2, 3), Box(0, 0, 0, 2.899, 0.2, 3), Box(0, 0, 0, 3.003, 0.2, 3),
+            Box(0, 0, 0, 3, 1.001, 3), Box(0, 0, 0, 3, 0.2, 2.899), Box(0, 0, 0, 3, 0.2, 3.101) })
+            HalfWallRefused(wall, wallBox, bad, 1, "half-wall: unsupported floor geometry or wall-width overhang.");
+        HalfWallRefused(new SkateParkBlock(HalfWallPrefab, 100000, 0, 0, 0, 0), wallBox, floorBox, 1,
+            "half-wall: derived anchor X exceeds world bounds.");
+        HalfWallRefused(new SkateParkBlock(HalfWallPrefab, -100000, 0, 0, 0, 0), wallBox, floorBox, -1,
+            "half-wall: derived negative anchor X exceeds world bounds.");
+        HalfWallRefused(new SkateParkBlock(HalfWallPrefab, 0, 100000, 0, 0, 0), wallBox, floorBox, 1,
+            "half-wall: derived anchor Y exceeds world bounds.");
     }
 
     private static void FoundationSupport()

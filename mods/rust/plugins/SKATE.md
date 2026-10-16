@@ -1,5 +1,7 @@
 # ShortcutSkate server component
 
+The appended [half-wall kicker](../../../docs/RUST-SKATE-HALF-WALL-KICKER.md) uses a real placed wall target and separate dependency metadata. Its client contract and native acceptance limits are explicit; it is not installed by this source change.
+
 Development source for [#335](https://github.com/Dj-Shortcut/mw2-rust-skate-rewrite/issues/335) and [#337](https://github.com/Dj-Shortcut/mw2-rust-skate-rewrite/issues/337). This enables scoped movement acceptance; the client integrates the [shared components](../shared/README.md).
 
 Source **0.3.15** handles eight marked hotbar building items through the game’s native square-foundation confirmation, with scoped material-bill suppression, verified unsaved-carrier cleanup before park creation, single-item payment and complete paid-group hammer recovery. Pending item-delivery retries require a detached item before transfer; unverified container/world associations remain untouched. Existing updater pins select 0.3.11. Typed placement endpoints remain admin fallbacks. The owner chose an own build picker and hotbar items. Claude reports an offline client implementation; native marker reading, inventory-to-belt selection, ghost agreement and woodless confirmation remain unverified. Claude owns client menu/preview/input. The [building-asset contract](../../../docs/RUST-SKATE-BUILD-ASSETS.md) describes the source and native/inventory/crash limits. This source has not been installed or exercised by Codex on a server.
