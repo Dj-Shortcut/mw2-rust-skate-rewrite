@@ -583,14 +583,15 @@ public static class Scenarios
     // to MegaPace, then left to pump nothing and roll back and forth. Every quarter second the
     // place across the profile, the height over the flat, the speed, the mode and the surface's
     // normal are logged, and each turn's highest point: how far up the transitions the ride goes.
-    public const float MegaPace = 11f, MegaRoll = 24f;
+    public const float MegaPace = 17f, MegaRoll = 24f, MegaStart = 5f;
     private static Vector3 megaAt; private static float megaLog, megaPeak, megaLowNormal = 1f; private static int megaSide;
     private static void Mega(float game, float now)
     {
         if (phase == 0)
         {
             SkateRig.MountNow(yaw0);
-            megaAt = SkateRig.LocalT.position - Vector3.up * (float)SkateParks.MegaLift;
+            // The rider starts MegaStart behind the flat's middle, for a longer push.
+            megaAt = SkateRig.LocalT.position + SkateRide.Dir(yaw0) * MegaStart - Vector3.up * (float)SkateParks.MegaLift;
             Say("mega " + SkateParks.PreviewAt(SkateParks.Kind.MegaHalfpipe, megaAt, yaw0) + " | " + SkateParks.Line());
             SkateCamera.Fixed = false; SkateCamera.Chase = true; SkateRide.Frozen = false; SkateRide.Mode = RideMode.Ground;
             stepAt = game; Enter(1, "push to " + MegaPace + " m/s");
@@ -599,8 +600,8 @@ public static class Scenarios
         var flat = SkateRide.Position - megaAt; var along = Vector3.Dot(flat, SkateRide.Dir(yaw0)); var up = flat.y;
         if (phase == 1)
         {
-            SkateKeys.Push = SkateRide.Speed < MegaPace && Math.Abs(along) < 4f;
-            if (SkateRide.Speed >= MegaPace || Math.Abs(along) >= 4f) { SkateKeys.Push = false; stepAt = game; Enter(2, "rolling, no input"); }
+            SkateKeys.Push = SkateRide.Speed < MegaPace && along < 5f;
+            if (SkateRide.Speed >= MegaPace || along >= 5f) { SkateKeys.Push = false; stepAt = game; Enter(2, "rolling, no input"); }
         }
         if (now >= megaLog)
         {
