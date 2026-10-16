@@ -1,7 +1,7 @@
 # Rust park building assets
 
 The owner chose an own build picker and hotbar items; Claude owns the client.
-ShortcutSkate source **0.3.17** has twelve kinds: the eight original types, mini/large quarterpipes, the [half-wall kicker](RUST-SKATE-HALF-WALL-KICKER.md) and the [MEGA kit](RUST-SKATE-MEGA-HALFPIPE.md). The attached kicker targets an existing half-wall; the other kinds use native square foundations.
+ShortcutSkate source **0.3.18** has twelve kinds: the eight original types, mini/large quarterpipes, the [half-wall kicker](RUST-SKATE-HALF-WALL-KICKER.md) and the [MEGA kit](RUST-SKATE-MEGA-HALFPIPE.md). The attached kicker targets an existing half-wall; the other kinds use native square foundations. Native construction bounds allow a 1 mm cell-bounds tolerance for exact-size native floors.
 The stock six belt slots cannot hold the complete catalogue: use an owned item, move/equip it
 natively and wait for actual active-item/planner state. Report missing items or
 full inventory. Native acceptance is open; commands are admin setup/fallback.
