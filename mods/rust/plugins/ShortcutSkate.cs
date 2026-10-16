@@ -705,9 +705,15 @@ namespace Shortcut.RustMod
                 double localX = centerRight + x * sizeRight / 2, localZ = centerForward + z * sizeForward / 2;
                 double r = part.Right + localX * cos + localZ * sin - CellSize * cellRight;
                 double f = part.Forward - localX * sin + localZ * cos - CellSize * cellForward;
-                if (Math.Abs(r) > 1.5 + 1e-9 || Math.Abs(f) > 1.5 + 1e-9) return false;
+                if (Math.Abs(r) > 1.5 + 1e-3 || Math.Abs(f) > 1.5 + 1e-3) return false;
             }
             return true;
+        }
+
+        public static bool BlocksMegaSpace(object entity, object placingPlayer, object anchor, bool transactionPart)
+        {
+            return entity == null || (!ReferenceEquals(entity, placingPlayer) &&
+                !ReferenceEquals(entity, anchor) && !transactionPart);
         }
 
         // Strict overlap of yaw-only boxes; touching cell edges are allowed. Inputs are world metres.
@@ -1203,7 +1209,7 @@ namespace Shortcut.RustMod
 
 namespace Oxide.Plugins
 {
-    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.17")]
+    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.18")]
     [Description("Player-scoped skateboard movement bounds and saved park assemblies.")]
     public sealed class ShortcutSkate : RustPlugin
     {
@@ -4559,9 +4565,8 @@ namespace Oxide.Plugins
             {
                 if (collider == null) continue;
                 BaseEntity entity = collider.ToBaseEntity();
-                if ((anchor != null && ReferenceEquals(entity, anchor)) ||
-                    (created != null && created.Contains(entity as BuildingBlock))) continue;
-                return false;
+                if (SkateParkLayout.BlocksMegaSpace(entity, player, anchor,
+                    created != null && created.Contains(entity as BuildingBlock))) return false;
             }
             failure = null;
             return true;

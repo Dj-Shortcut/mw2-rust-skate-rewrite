@@ -147,6 +147,18 @@ dotnet context/skate-approved-park/bin/ShortcutSkate/net8.0/SkateParkLayoutScena
 
 The legacy `ActualPluginPath` remains a fallback when `SkateParkLibraryPath` is omitted. Reference only one DLL in each run. Intermediate/output directories under ignored `context/` are separated by the selected DLL's filename. Execute the emitted runner directly: SDK `dotnet run` can choose its default target despite the library property passed to its build. The runner prints its loaded DLL path and SHA-256 and accepts that expected hash as an optional argument.
 
+The mini/large native-bound cases include the installed floor's float32 depth
+`3.0000005` and low wall's width `0.2`, plus authored float32 center/size noise.
+The cell check allows one millimetre per horizontal edge; combined center/size
+excursions beyond that budget and genuinely oversized parts still refuse.
+MEGA cases call the same identity policy used by the server overlap loop: the
+placing player, support and current transaction are allowed; other players,
+buildings, deployables, other modules and static World colliders remain blockers.
+Null entity/anchor identities cannot exempt a static obstruction. These fixtures
+exercise reference identity tokens, without executing Unity's overlap query or
+collider-to-entity resolution. The World/Construction/Deployed/Player mask and
+trigger exclusion remain in effect; terrain/world colliders gain no broad exemption.
+
 These checks use the layout helpers in the selected DLL, with independent expected positions and seams. Matching tolerance is relative to the deterministic observed-part-derived anchor, rather than an ideal common-anchor fit; the opposing ±0.004/±0.009 m quarter fixtures distinguish acceptance and refusal at tolerance 0.01. Matching does not prove registered park identity or infer the kind of a single floor. The scenarios do not verify native floor dimensions/colliders, building privilege, stability, save/load callbacks, demolition or gameplay, and they do not start the Rust client or server.
 
 ## Park build items

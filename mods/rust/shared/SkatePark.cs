@@ -188,9 +188,15 @@ namespace Shortcut.RustMod
                 double localX = centerRight + x * sizeRight / 2, localZ = centerForward + z * sizeForward / 2;
                 double r = part.Right + localX * cos + localZ * sin - CellSize * cellRight;
                 double f = part.Forward - localX * sin + localZ * cos - CellSize * cellForward;
-                if (Math.Abs(r) > 1.5 + 1e-9 || Math.Abs(f) > 1.5 + 1e-9) return false;
+                if (Math.Abs(r) > 1.5 + 1e-3 || Math.Abs(f) > 1.5 + 1e-3) return false;
             }
             return true;
+        }
+
+        public static bool BlocksMegaSpace(object entity, object placingPlayer, object anchor, bool transactionPart)
+        {
+            return entity == null || (!ReferenceEquals(entity, placingPlayer) &&
+                !ReferenceEquals(entity, anchor) && !transactionPart);
         }
 
         // Strict overlap of yaw-only boxes; touching cell edges are allowed. Inputs are world metres.
