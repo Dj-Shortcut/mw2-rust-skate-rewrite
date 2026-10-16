@@ -63,7 +63,7 @@ internal static class SkateParkGestureScenarios
             megaState = Apply(megaState, SkateParkSelectionAction.Next, 40 + i, expanded);
             Equal(megaState, new SkateParkSelectionState(true, expanded[i % 9], 160 + i), "MEGA configured cycle");
         }
-        expanded[8] = (SkateParkKind)8;
+        expanded[8] = (SkateParkKind)12;
         Check(!SkateParkSelections.ValidOrder(expanded), "unassigned slot refused");
         var custom = new[] { SkateParkKind.LedgeHigh, SkateParkKind.Halfpipe, SkateParkKind.Kicker };
         state = Apply(state, SkateParkSelectionAction.Next, 40, custom);
@@ -156,7 +156,7 @@ internal static class SkateParkGestureScenarios
         duplicates[9] = SkateParkKind.MiniQuarterPipe;
         Check(!SkateParkSelections.ValidOrder(duplicates), "duplicate appended kind refused");
         duplicates[9] = (SkateParkKind)10;
-        Check(!SkateParkSelections.ValidOrder(duplicates), "future kind 10 is still refused");
+        Check(!SkateParkSelections.ValidOrder(duplicates), "half-wall attachment kind 10 is still refused");
     }
 
     private static void Refusals()

@@ -26,6 +26,7 @@ namespace Shortcut.RustMod
                 case SkateParkKind.MegaHalfpipe: return "Skate MEGA Halfpipe";
                 case SkateParkKind.MiniQuarterPipe: return "Skate Mini Quarterpipe";
                 case SkateParkKind.LargeQuarterPipe: return "Skate Large Quarterpipe";
+                case SkateParkKind.HalfWallKicker: return "Skate Half-wall Kicker";
                 default: return null;
             }
         }

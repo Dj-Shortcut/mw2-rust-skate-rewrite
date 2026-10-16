@@ -5,7 +5,7 @@ namespace Shortcut.RustMod
 {
     // BEGIN SHARED SKATE PARK
     public enum SkateParkKind { Bank, Kicker, QuarterPipe, LedgeLow, LedgeHigh, LongLedge, Funbox, Halfpipe,
-        MiniQuarterPipe, LargeQuarterPipe, MegaHalfpipe = 11 }
+        MiniQuarterPipe, LargeQuarterPipe, HalfWallKicker, MegaHalfpipe }
     public enum SkateParkMaterial { Stone, Metal, Wood }
 
     public struct SkateParkPart
@@ -35,6 +35,11 @@ namespace Shortcut.RustMod
         public double Skin, RailRadius, RailHeight;
     }
 
+    public struct SkateParkBox
+    {
+        public double X, Y, Z, SizeX, SizeY, SizeZ;
+    }
+
     public static class SkateParkLayout
     {
         public const string FloorPrefab = "assets/prefabs/building core/floor/floor.prefab";
@@ -59,6 +64,7 @@ namespace Shortcut.RustMod
                 case SkateParkKind.MegaHalfpipe: return "mega-halfpipe";
                 case SkateParkKind.MiniQuarterPipe: return "mini-quarterpipe";
                 case SkateParkKind.LargeQuarterPipe: return "large-quarterpipe";
+                case SkateParkKind.HalfWallKicker: return "half-wall-kicker";
                 default: return null;
             }
         }
@@ -75,7 +81,7 @@ namespace Shortcut.RustMod
         {
             switch (kind)
             {
-                case SkateParkKind.Bank: case SkateParkKind.Kicker:
+                case SkateParkKind.Bank: case SkateParkKind.Kicker: case SkateParkKind.HalfWallKicker:
                 case SkateParkKind.LedgeLow: case SkateParkKind.LedgeHigh: return 1;
                 case SkateParkKind.QuarterPipe: return 2;
                 case SkateParkKind.LongLedge: case SkateParkKind.Funbox: return 3;
@@ -95,6 +101,7 @@ namespace Shortcut.RustMod
             {
                 case SkateParkKind.Bank: part.Height = HalfLength * Math.Sin(12 * Degrees); part.Pitch = -12; break;
                 case SkateParkKind.Kicker: part.Height = HalfLength * Math.Sin(25 * Degrees); part.Pitch = -25; break;
+                case SkateParkKind.HalfWallKicker: part.Pitch = -30; break;
                 case SkateParkKind.QuarterPipe:
                     part.Height = index == 0 ? low : 2 * low + HalfLength * Math.Sin(35 * Degrees);
                     part.Forward = index == 0 ? 0 : HalfLength * (Math.Cos(15 * Degrees) + Math.Cos(35 * Degrees));
@@ -279,7 +286,7 @@ namespace Shortcut.RustMod
             double floorCenterZ, double floorSizeY, double floorSizeZ, out double anchorY)
         {
             anchorY = 0;
-            if (PartCount(kind) == 0 || !Coordinate(supportTop) || !Coordinate(floorCenterY) ||
+            if (kind == SkateParkKind.HalfWallKicker || PartCount(kind) == 0 || !Coordinate(supportTop) || !Coordinate(floorCenterY) ||
                 !Coordinate(floorCenterZ) || !Coordinate(floorSizeY) || !Coordinate(floorSizeZ) ||
                 floorSizeY <= 0 || floorSizeZ <= 0) return false;
             double baseline = supportTop - (floorCenterY - floorSizeY / 2) + 0.025;
@@ -296,6 +303,41 @@ namespace Shortcut.RustMod
             if (!Coordinate(baseline)) return false;
             anchorY = baseline;
             return true;
+        }
+
+        public static bool TryHalfWallAnchor(SkateParkBlock wall, SkateParkBox wallBounds,
+            SkateParkBox floorBounds, int side, out SkateParkTransform anchor)
+        {
+            anchor = new SkateParkTransform();
+            if (wall.Prefab != HalfWallPrefab || !Valid(wall) || !CloseAngle(wall.Pitch, 0, 0.01) ||
+                (side != -1 && side != 1) || !Box(wallBounds) || !Box(floorBounds) ||
+                wallBounds.SizeX > 0.6 || wallBounds.SizeY < 1.4 || wallBounds.SizeY > 1.6 ||
+                wallBounds.SizeZ < 2.9 || wallBounds.SizeZ > 3.1 || Math.Abs(wallBounds.X) > 0.05 ||
+                Math.Abs(wallBounds.Z) > 0.05 || Math.Abs(wallBounds.Y - wallBounds.SizeY / 2) > 0.05 ||
+                floorBounds.SizeX < 2.9 || floorBounds.SizeX > wallBounds.SizeZ + 0.002 ||
+                floorBounds.SizeZ < 2.9 || floorBounds.SizeZ > 3.1 || floorBounds.SizeY > 1 ||
+                Math.Abs(floorBounds.X) > 0.05 || Math.Abs(floorBounds.Z) > 0.05 || Math.Abs(floorBounds.Y) > 0.5)
+                return false;
+            double yaw = Normalize(wall.Yaw + (side == 1 ? 270 : 90));
+            double sin = Math.Sin(wall.Yaw * Degrees), cos = Math.Cos(wall.Yaw * Degrees);
+            double top = floorBounds.Y + floorBounds.SizeY / 2;
+            double end = floorBounds.Z + floorBounds.SizeZ / 2;
+            double rise = top * Math.Cos(30 * Degrees) + end * Math.Sin(30 * Degrees);
+            double run = -top * Math.Sin(30 * Degrees) + end * Math.Cos(30 * Degrees);
+            double wallRight = wallBounds.X + side * wallBounds.SizeX / 2;
+            double x = wall.X + wallRight * cos + wallBounds.Z * sin - run * Math.Sin(yaw * Degrees) - floorBounds.X * Math.Cos(yaw * Degrees);
+            double y = wall.Y + wallBounds.Y + wallBounds.SizeY / 2 - rise;
+            double z = wall.Z - wallRight * sin + wallBounds.Z * cos - run * Math.Cos(yaw * Degrees) + floorBounds.X * Math.Sin(yaw * Degrees);
+            if (!Coordinate(x) || !Coordinate(y) || !Coordinate(z)) return false;
+            anchor = new SkateParkTransform { X = x, Y = y, Z = z, Yaw = yaw, Pitch = -30 };
+            return true;
+        }
+
+        private static bool Box(SkateParkBox box)
+        {
+            return Coordinate(box.X) && Coordinate(box.Y) && Coordinate(box.Z) &&
+                Finite(box.SizeX) && Finite(box.SizeY) && Finite(box.SizeZ) &&
+                box.SizeX > 0 && box.SizeY > 0 && box.SizeZ > 0;
         }
         public static bool TryAnchor(SkateParkKind kind, int index, double partX, double partY,
             double partZ, double partYaw, out double anchorX, out double anchorY,
