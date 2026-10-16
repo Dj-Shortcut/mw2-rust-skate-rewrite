@@ -671,9 +671,9 @@ public static class SkateParks
     public static void QuarterSize(Kind kind, out double radius, out double height, out double back)
     {
         if (kind == Kind.MiniQuarterPipe) { radius = 1.2; height = 1.2; back = 1.4; }
-        // No straight vert anywhere (owner, 2026-10-16): the large one is a larger circle, not 0.2 m
-        // of wall on top of the plain one's.
-        else { radius = kind == Kind.LargeQuarterPipe ? 3.2 : 3; height = radius; back = 4.4; }
+        // No straight vert anywhere (owner, 2026-10-16): the large one has the plain one's 3 m
+        // circle (#470, c7d9b3c), with its apron beside it.
+        else { radius = 3; height = 3; back = 4.4; }
     }
     public static List<Vector2> QuarterProfile(Kind kind)
     {
