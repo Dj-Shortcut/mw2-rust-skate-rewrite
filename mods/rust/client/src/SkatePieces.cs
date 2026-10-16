@@ -112,6 +112,8 @@ public static class SkatePieces
     // While a park item is held (and not on the board): its piece as a ghost where the player aims,
     // facing the way the player looks, as the native foundation is placed. Read a few times a second.
     public static int HeldKind = -1;
+    // Whether the ghost now sits snapped on a standing foundation's top.
+    public static bool OnFoundation;
     private static float nextHeldRead;
     private static void HeldFrame(float now)
     {
@@ -134,12 +136,16 @@ public static class SkatePieces
             // No ground in reach (sky, a steep wall, too far): no ghost left at an old spot.
             if (cam == null || !Physics.Raycast(cam.transform.position, cam.transform.forward, out hit, AimReach, SkateRide.GroundMask, QueryTriggerInteraction.Ignore) || hit.normal.y < 0.5f) { HeldClear(); return; }
             AimOk = true; Aim = hit.point; Yaw = cam.transform.eulerAngles.y;
+            // On a foundation that already stands, the piece snaps onto it, as building a base.
+            Vector3 support; float yaw; string why;
+            OnFoundation = SkateParks.FoundationTop(hit, Yaw, out support, out yaw, out why);
+            if (OnFoundation) { Aim = support; Yaw = yaw; }
         }
         catch (Exception) { HeldClear(); return; }
         var origin = SkateParks.ModelOriginForAnchor((SkateParks.Kind)HeldKind, Aim, Yaw);
         if (HeldKind != previewKind) { SkateParks.PreviewAt((SkateParks.Kind)HeldKind, origin, Yaw, false); previewKind = HeldKind; previewAt = origin; previewYaw = Yaw; }
         else if (Vector3.Distance(previewAt, origin) > 0.01f || Math.Abs(previewYaw - Yaw) > 0.01f) { SkateParks.PreviewMove(origin, Yaw); previewAt = origin; previewYaw = Yaw; }
-        Said = SkateHeld.ItemNames[HeldKind] + ": place it like a square foundation (left click, R turns it)"; SaidAt = now;
+        Said = SkateHeld.ItemNames[HeldKind] + (OnFoundation ? ": on this foundation (left click, R turns it)" : ": aim at a foundation's top to snap onto it, or place it like a square foundation (left click, R turns it)"); SaidAt = now;
     }
 
     // The half-wall kicker goes against a wall, not on the ground: its ghost stands where the

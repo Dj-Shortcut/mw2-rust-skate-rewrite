@@ -22,6 +22,8 @@ public static class SkateParks
     // How far a native floor tile's bottom lies below its own origin, read from the last floor seen
     // (the picker lifts an explicit anchor by it so the first tile clears the ground); a guess until then.
     public static float FloorBottom = -0.1f;
+    // How far its top lies above its origin, read the same way (the riding datum of a flat floor).
+    public static float FloorTop = 0.1f;
     public static int Blocks, Assemblies, Drawn, Colliders, HiddenRenderers, Scans;
     public static string Status = "", Error = "";
     private static float nextScan;
@@ -253,6 +255,7 @@ public static class SkateParks
             float top = 0f, bottom = 0f;
             try { var bounds = b.bounds; top = bounds.center.y + bounds.extents.y; bottom = bounds.center.y - bounds.extents.y; } catch (Exception) { }
             if (prefab == FloorPrefab && bottom < 0f && bottom > -0.5f) FloorBottom = bottom;
+            if (prefab == FloorPrefab && top > 0f && top < 0.5f) FloorTop = top;
             blocks.Add(new Block { Entity = b, Prefab = prefab, Position = t.position, Rotation = t.rotation, Yaw = e.y, Pitch = Wrap(e.x), Top = top, Bottom = bottom, Id = b.GetInstanceID() });
         }
         Blocks = blocks.Count;
@@ -443,41 +446,7 @@ public static class SkateParks
     {
         var first = blocks[matched[0]];
         var yawRot = Quaternion.Euler(0f, anchorYaw, 0f);
-        Vector3 origin;
-        switch (kind)
-        {
-            case Kind.Bank: case Kind.Kicker: case Kind.HalfWallKicker:
-                // The model's origin is the entry midpoint on the riding surface: the first tile's
-                // low edge, on its top.
-                origin = first.Position + first.Rotation * new Vector3(0f, first.Top, -(float)HalfLength);
-                break;
-            case Kind.Funbox:
-                // The base below the deck's centre, the deck 0.776 above it.
-                origin = first.Position + Vector3.up * (first.Top - (float)(2 * HalfLength * Math.Sin(15 * Degrees)));
-                break;
-            case Kind.MiniQuarterPipe: case Kind.LargeQuarterPipe:
-                // The first floor's pivot, at the riding datum: its top.
-                origin = first.Position + Vector3.up * first.Top;
-                break;
-            case Kind.QuarterPipe:
-                // The group anchor at the riding datum, as for the grid quarters: the first carrier
-                // floor stands 1.5*sin15 above the anchor, pitched; the datum is an unpitched floor's top.
-                origin = first.Position + Vector3.up * (first.Top - (float)(HalfLength * Math.Sin(15 * Degrees)));
-                break;
-            case Kind.MegaHalfpipe:
-                // The first flat floor is lane 0, 4.5 m back from the flat's middle; the model's origin is
-                // the middle of the flat across all four lanes, on the floors' top.
-                origin = first.Position + yawRot * new Vector3((float)MegaCentre, first.Top, 4.5f);
-                break;
-            case Kind.Halfpipe:
-                // The flat's centre: the four flat tiles are at right 0/3, forward 0/3 from the first.
-                origin = first.Position + yawRot * new Vector3((float)HalfLength, first.Top, (float)HalfLength);
-                break;
-            default:
-                // A ledge's base centre, its top 0.4 or 0.8 above.
-                origin = first.Position + Vector3.up * (first.Top - (kind == Kind.LedgeHigh ? 0.8f : 0.4f));
-                break;
-        }
+        var origin = Origin(kind, first.Position, first.Rotation, yawRot, first.Top);
         origin += Vector3.up * Lift;
         p.Origin = origin; p.Yaw = anchorYaw;
         int colliders;
@@ -530,6 +499,40 @@ public static class SkateParks
         }
     }
 
+    // Where a kind's model stands, from its first native block: at (its position), rotation (its full
+    // rotation), the group's yaw and that block's local top. The same for a placed piece and for the
+    // ghost of a held park item (#471: one model-origin routine for both).
+    private static Vector3 Origin(Kind kind, Vector3 at, Quaternion rotation, Quaternion yawRot, float top)
+    {
+        switch (kind)
+        {
+            case Kind.Bank: case Kind.Kicker: case Kind.HalfWallKicker:
+                // The model's origin is the entry midpoint on the riding surface: the first tile's
+                // low edge, on its top.
+                return at + rotation * new Vector3(0f, top, -(float)HalfLength);
+            case Kind.Funbox:
+                // The base below the deck's centre, the deck 0.776 above it.
+                return at + Vector3.up * (top - (float)(2 * HalfLength * Math.Sin(15 * Degrees)));
+            case Kind.MiniQuarterPipe: case Kind.LargeQuarterPipe:
+                // The first floor's pivot, at the riding datum: its top.
+                return at + Vector3.up * top;
+            case Kind.QuarterPipe:
+                // The group anchor at the riding datum, as for the grid quarters: the first carrier
+                // floor stands 1.5*sin15 above the anchor, pitched; the datum is an unpitched floor's top.
+                return at + Vector3.up * (top - (float)(HalfLength * Math.Sin(15 * Degrees)));
+            case Kind.MegaHalfpipe:
+                // The first flat floor is lane 0, 4.5 m back from the flat's middle; the model's origin is
+                // the middle of the flat across all four lanes, on the floors' top.
+                return at + yawRot * new Vector3((float)MegaCentre, top, 4.5f);
+            case Kind.Halfpipe:
+                // The flat's centre: the four flat tiles are at right 0/3, forward 0/3 from the first.
+                return at + yawRot * new Vector3((float)HalfLength, top, (float)HalfLength);
+            default:
+                // A ledge's base centre, its top 0.4 or 0.8 above.
+                return at + Vector3.up * (top - (kind == Kind.LedgeHigh ? 0.8f : 0.4f));
+        }
+    }
+
     // A preview without any server piece: the model of a kind at a place, for a look and a ride
     // (solid), or as a ghost without colliders for the picker, whose preview follows the aim and
     // must never stand in the player's way.
@@ -543,23 +546,52 @@ public static class SkateParks
         Colliders += colliders;
         return "drawn at " + Out.V1(origin) + " yaw " + yaw.ToString("F0") + " with " + colliders + " colliders";
     }
-    // Where a kind's model stands for a server anchor (the native square foundation's origin, its Y
-    // the support plane, and its yaw: Codex's 0.3.11 frame), for the ghost of a held park item: the
-    // same model origins as Place uses for the tiles the server will put there. The tiles' height
-    // above the support plane is the server's to choose; a floor tile's thickness is the guess.
-    public static Vector3 ModelOriginForAnchor(Kind kind, Vector3 anchor, float yaw)
+    // Where a kind's model stands on a support plane (#471's seating): the group anchor lies so that
+    // the lowest underside of its native floors meets the support, with no added clearance; the first
+    // floor then stands where the server puts it, and the model is drawn from it as a placed one is.
+    public static Vector3 ModelOriginForAnchor(Kind kind, Vector3 support, float yaw)
     {
-        var rot = Quaternion.Euler(0f, yaw, 0f);
-        var lift = -FloorBottom + 0.025f;
-        switch (kind)
+        var yawRot = Quaternion.Euler(0f, yaw, 0f);
+        var layout = Layout(kind);
+        if (layout.Length == 0) return support;
+        float cy = (FloorTop + FloorBottom) / 2f, sy = FloorTop - FloorBottom;
+        var lowest = double.MaxValue;
+        foreach (var part in layout)
         {
-            case Kind.Bank: return anchor + rot * new Vector3(0f, lift, -(float)(HalfLength * Math.Cos(12 * Degrees)));
-            case Kind.Kicker: return anchor + rot * new Vector3(0f, lift, -(float)(HalfLength * Math.Cos(25 * Degrees)));
-            case Kind.Halfpipe: return anchor + rot * new Vector3((float)HalfLength, lift, (float)HalfLength);
-            case Kind.QuarterPipe: case Kind.MiniQuarterPipe: case Kind.LargeQuarterPipe: return anchor + Vector3.up * lift;
-            case Kind.MegaHalfpipe: return anchor + rot * new Vector3((float)MegaCentre, lift, 0f);
-            default: return anchor;
+            if (part.Prefab != FloorPrefab) continue;
+            var pitch = part.Pitch * Degrees;
+            lowest = Math.Min(lowest, part.Height + cy * Math.Cos(pitch) - sy / 2 * Math.Abs(Math.Cos(pitch)) - HalfLength * Math.Abs(Math.Sin(pitch)));
         }
+        if (lowest == double.MaxValue) lowest = FloorBottom;
+        var anchor = support - Vector3.up * (float)lowest;
+        var first = layout[0];
+        var at = anchor + yawRot * new Vector3((float)first.Right, (float)first.Height, (float)first.Forward);
+        var rotation = yawRot * Quaternion.Euler((float)first.Pitch, (float)first.Yaw, 0f);
+        return Origin(kind, at, rotation, yawRot, FloorTop);
+    }
+
+    // A park item aimed at the top of a square foundation that already stands (#471, as building on a
+    // base): the piece is centred on it and turned in the foundation's own 90 degree steps, the step
+    // nearest the way the player looks; its support is the foundation's top. False for anything else.
+    public static bool FoundationTop(RaycastHit hit, float lookYaw, out Vector3 support, out float yaw, out string why)
+    {
+        support = hit.point; yaw = lookYaw; why = "";
+        try
+        {
+            if (hit.normal.y < 0.98f) { why = "not a level top"; return false; }
+            var c = hit.collider; if (c == null) { why = "no collider"; return false; }
+            var b = c.GetComponentInParent<BuildingBlock>();
+            if (b == null) { why = "not a building block"; return false; }
+            var prefab = b.gameObject.name ?? "";
+            if (prefab.EndsWith(" (Clone)")) prefab = prefab.Substring(0, prefab.Length - 8);
+            if (prefab != FoundationPrefab) { why = "not a square foundation"; return false; }
+            var t = b.transform; var host = t.eulerAngles.y;
+            if (Math.Abs(Wrap(t.eulerAngles.x)) > 1f || Math.Abs(Wrap(t.eulerAngles.z)) > 1f) { why = "foundation not level"; return false; }
+            support = new Vector3(t.position.x, hit.point.y, t.position.z);
+            yaw = Wrap(host + (float)Math.Round(Delta(host, lookYaw) / 90f) * 90f);
+            return true;
+        }
+        catch (Exception e) { why = e.GetType().Name; return false; }
     }
 
     // The preview moved to another place, as the aim moves.
