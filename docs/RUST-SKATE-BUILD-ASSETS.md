@@ -1,7 +1,7 @@
 # Rust park building assets
 
 The owner chose an own build picker and hotbar items; Claude owns the client.
-ShortcutSkate source **0.3.17** has twelve kinds: the eight original types, mini/large quarterpipes, the [half-wall kicker](RUST-SKATE-HALF-WALL-KICKER.md) and the [MEGA kit](RUST-SKATE-MEGA-HALFPIPE.md). The attached kicker targets an existing half-wall; the other kinds use native square foundations.
+ShortcutSkate source **0.3.19** has twelve kinds: the eight original types, mini/large quarterpipes, the [half-wall kicker](RUST-SKATE-HALF-WALL-KICKER.md) and the [MEGA kit](RUST-SKATE-MEGA-HALFPIPE.md). The attached kicker targets an existing half-wall; the other kinds use native square foundations.
 The stock six belt slots cannot hold the complete catalogue: use an owned item, move/equip it
 natively and wait for actual active-item/planner state. Report missing items or
 full inventory. Native acceptance is open; commands are admin setup/fallback.
@@ -26,12 +26,17 @@ carriers stay untouched and block placement until every removal is proved.
 Tracking is instance-local, so interrupted callbacks/unload may need private cleanup.
 The temporary carrier can be visible. Only one marked transaction is admitted;
 no crafting recipe, material price or global building override is added.
-The final native foundation origin supplies X/Z/yaw and its Y is the support
-plane. Actual first-floor bounds determine the park baseline; no guessed top
-height is added. Client ghost agreement remains unverified. Full prefab/material,
-privilege, terrain/water, occupancy, range25m, save identity and assembly guards
-remain. Typed `skate.placeitem [x y z yaw]` / `skate.place <kind> [pose]` are admin
-fallbacks; explicit coordinates remain exact [layout origins](RUST-SKATE-RAMP-ASSETS.md).
+The [supported placement contract](RUST-SKATE-PLACEMENT.md) defines native socket,
+existing-foundation-top and compatible adjacent-park targets, normal rotation
+steps and the exact ghost offsets. X/Z/yaw follow the selected frame; measured
+remaining terrain/foundation support determines Y, including explicit admin
+coordinates. The lowest actual native floor bounds meet support with no added
+gap. Missing or uneven support refuses placement and retains the item. Existing
+saved anchors and all kind IDs/markers/relative layouts remain unchanged.
+Client ghost agreement remains unverified. Full prefab/material, privilege,
+terrain/water, occupancy, range25m, save identity and assembly guards remain.
+Typed `skate.placeitem [x y z yaw]` / `skate.place <kind> [pose]` are admin fallbacks;
+explicit Y is a support-search hint, X/Z stay explicit and yaw uses native steps.
 
 Only the original item's verified quantity1→0 pays after complete registration.
 Earlier refusals retain it. Post-debit rollback returns it only after complete

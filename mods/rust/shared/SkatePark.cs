@@ -295,7 +295,7 @@ namespace Shortcut.RustMod
             if (kind == SkateParkKind.HalfWallKicker || PartCount(kind) == 0 || !Coordinate(supportTop) || !Coordinate(floorCenterY) ||
                 !Coordinate(floorCenterZ) || !Coordinate(floorSizeY) || !Coordinate(floorSizeZ) ||
                 floorSizeY <= 0 || floorSizeZ <= 0) return false;
-            double baseline = supportTop - (floorCenterY - floorSizeY / 2) + 0.025;
+            double baseline = double.NegativeInfinity;
             for (int i = 0; i < PartCount(kind); i++)
             {
                 SkateParkPart part;
@@ -304,10 +304,85 @@ namespace Shortcut.RustMod
                 double cos = Math.Cos(part.Pitch * Degrees), sin = Math.Sin(part.Pitch * Degrees);
                 double bottom = part.Height + floorCenterY * cos - floorCenterZ * sin -
                     floorSizeY / 2 * Math.Abs(cos) - floorSizeZ / 2 * Math.Abs(sin);
-                baseline = Math.Max(baseline, supportTop + 0.025 - bottom);
+                baseline = Math.Max(baseline, supportTop - bottom);
             }
             if (!Coordinate(baseline)) return false;
             anchorY = baseline;
+            return true;
+        }
+
+        public const double SupportTolerance = 0.02;
+
+        public static bool TrySnapYaw(double requestedYaw, double referenceYaw, double step, out double yaw)
+        {
+            yaw = 0;
+            if (!Angle(requestedYaw) || !Angle(referenceYaw) || !Finite(step) || step <= 0 || step > 360 || !Finite(360 / step) ||
+                Math.Abs(360 / step - Math.Round(360 / step)) > 1e-6) return false;
+            double turns = (requestedYaw - referenceYaw) / step;
+            if (!Finite(turns)) return false;
+            double snapped = referenceYaw + Math.Round(turns, MidpointRounding.AwayFromZero) * step;
+            if (!Finite(snapped)) return false;
+            yaw = Normalize(snapped);
+            return true;
+        }
+
+        public static bool TryAdjacentCell(double referenceX, double referenceZ, double referenceYaw,
+            double hitX, double hitZ, out double x, out double z)
+        {
+            x = z = 0;
+            if (!Coordinate(referenceX) || !Coordinate(referenceZ) || !Angle(referenceYaw) ||
+                !Coordinate(hitX) || !Coordinate(hitZ)) return false;
+            double sin = Math.Sin(referenceYaw * Degrees), cos = Math.Cos(referenceYaw * Degrees);
+            double right = (hitX - referenceX) * cos - (hitZ - referenceZ) * sin;
+            double forward = (hitX - referenceX) * sin + (hitZ - referenceZ) * cos;
+            if (Math.Abs(right) > CellSize / 2 + SupportTolerance ||
+                Math.Abs(forward) > CellSize / 2 + SupportTolerance) return false;
+            double r = Math.Abs(right) >= Math.Abs(forward) ? (right < 0 ? -CellSize : CellSize) : 0;
+            double f = r == 0 ? (forward < 0 ? -CellSize : CellSize) : 0;
+            double nextX = referenceX + r * cos + f * sin;
+            double nextZ = referenceZ - r * sin + f * cos;
+            if (!Coordinate(nextX) || !Coordinate(nextZ)) return false;
+            x = nextX; z = nextZ;
+            return true;
+        }
+
+        public static bool TrySupportPlane(IReadOnlyList<double> heights, out double top)
+        {
+            top = 0;
+            if (heights == null || heights.Count == 0) return false;
+            double low = double.PositiveInfinity, high = double.NegativeInfinity;
+            foreach (double height in heights)
+            {
+                if (!Coordinate(height)) return false;
+                low = Math.Min(low, height); high = Math.Max(high, height);
+            }
+            if (high - low > SupportTolerance) return false;
+            top = high;
+            return true;
+        }
+
+        public static bool TrySupportSample(SkateParkKind kind, int index, int sample, SkateParkBox floor,
+            double x, double z, double yaw, out SkateParkTransform point)
+        {
+            point = new SkateParkTransform();
+            double baseline;
+            SkateParkPart part;
+            SkateParkTransform pose;
+            if (!Box(floor) || sample < 0 || sample >= 9 || !TryPart(kind, index, out part) ||
+                part.Prefab != FloorPrefab || !TrySupportedAnchor(kind, 0, floor.Y, floor.Z,
+                    floor.SizeY, floor.SizeZ, out baseline) ||
+                !TryTransform(kind, index, x, 0, z, yaw, out pose)) return false;
+            double pitch = part.Pitch * Degrees, heading = pose.Yaw * Degrees;
+            double right = floor.X + (sample % 3 - 1) * floor.SizeX / 2;
+            double forward = floor.Z + (sample / 3 - 1) * floor.SizeZ / 2;
+            double bottom = floor.Y - floor.SizeY / 2;
+            double height = part.Height + bottom * Math.Cos(pitch) - forward * Math.Sin(pitch);
+            if (Math.Abs(height + baseline) > 1e-6) return false;
+            double run = bottom * Math.Sin(pitch) + forward * Math.Cos(pitch);
+            double px = pose.X + right * Math.Cos(heading) + run * Math.Sin(heading);
+            double pz = pose.Z - right * Math.Sin(heading) + run * Math.Cos(heading);
+            if (!Coordinate(px) || !Coordinate(pz)) return false;
+            point = new SkateParkTransform { X = px, Y = height, Z = pz };
             return true;
         }
 
