@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace Shortcut.RustMod
 {
     // BEGIN SHARED SKATE PARK
-    public enum SkateParkKind { Bank, Kicker, QuarterPipe, LedgeLow, LedgeHigh, LongLedge, Funbox, Halfpipe }
+    public enum SkateParkKind { Bank, Kicker, QuarterPipe, LedgeLow, LedgeHigh, LongLedge, Funbox, Halfpipe, MegaHalfpipe = 11 }
     public enum SkateParkMaterial { Stone, Metal, Wood }
 
     public struct SkateParkPart
@@ -46,6 +46,7 @@ namespace Shortcut.RustMod
                 case SkateParkKind.LongLedge: return "long-ledge";
                 case SkateParkKind.Funbox: return "funbox";
                 case SkateParkKind.Halfpipe: return "halfpipe";
+                case SkateParkKind.MegaHalfpipe: return "mega-halfpipe";
                 default: return null;
             }
         }
@@ -53,7 +54,7 @@ namespace Shortcut.RustMod
         {
             kind = SkateParkKind.Bank;
             if (name == null) return false;
-            for (int i = 0; i <= (int)SkateParkKind.Halfpipe; i++)
+            for (int i = 0; i <= (int)SkateParkKind.MegaHalfpipe; i++)
                 if (string.Equals(name, Name((SkateParkKind)i), StringComparison.OrdinalIgnoreCase))
                 { kind = (SkateParkKind)i; return true; }
             return false;
@@ -67,6 +68,7 @@ namespace Shortcut.RustMod
                 case SkateParkKind.QuarterPipe: return 2;
                 case SkateParkKind.LongLedge: case SkateParkKind.Funbox: return 3;
                 case SkateParkKind.Halfpipe: return 36;
+                case SkateParkKind.MegaHalfpipe: return SkateMegaHalfpipe.PartCount;
                 default: return 0;
             }
         }
@@ -91,6 +93,7 @@ namespace Shortcut.RustMod
                     part.Forward = index == 0 ? 0 : (index == 1 ? -1 : 1) * HalfLength * (1 + Math.Cos(15 * Degrees));
                     part.Pitch = index == 0 ? 0 : index == 1 ? -15 : 15; break;
                 case SkateParkKind.Halfpipe: HalfpipePart(index, out part); break;
+                case SkateParkKind.MegaHalfpipe: return SkateMegaHalfpipe.TryPart(index, out part);
                 default: return false;
             }
             if (part.Prefab == null) part.Prefab = FloorPrefab;
@@ -213,7 +216,7 @@ namespace Shortcut.RustMod
         {
             anchorX = anchorY = anchorZ = anchorYaw = 0;
             int count = PartCount(kind);
-            if (count == 0 || count > 36 || blocks == null || blocks.Count != count || !Finite(tolerance) ||
+            if (count == 0 || count > SkateMegaHalfpipe.PartCount || blocks == null || blocks.Count != count || !Finite(tolerance) ||
                 tolerance < 0 || tolerance > 0.1) return false;
             SkateParkBlock first = blocks[0];
             for (int i = 0; i < count; i++)
@@ -252,6 +255,7 @@ namespace Shortcut.RustMod
                 case SkateParkKind.Bank: case SkateParkKind.Kicker: case SkateParkKind.QuarterPipe:
                     forward = -HalfLength * Math.Cos(first.Pitch * Degrees); break;
                 case SkateParkKind.Halfpipe: right = forward = HalfLength; break;
+                case SkateParkKind.MegaHalfpipe: right = SkateMegaHalfpipe.CenterRight; break;
             }
             return true;
         }
@@ -260,7 +264,7 @@ namespace Shortcut.RustMod
             double tolerance, double anchorX, double anchorY, double anchorZ, double anchorYaw)
         {
             int count = PartCount(kind);
-            ulong used = 0;
+            var used = new bool[count];
             for (int index = 0; index < count; index++)
             {
                 SkateParkPart part;
@@ -278,10 +282,10 @@ namespace Shortcut.RustMod
                     if (match >= 0) return false;
                     match = observed;
                 }
-                if (match < 0 || (used & (1UL << match)) != 0) return false;
-                used |= 1UL << match;
+                if (match < 0 || used[match]) return false;
+                used[match] = true;
             }
-            return used == (1UL << count) - 1;
+            return true;
         }
 
         private static bool Valid(SkateParkBlock block)
@@ -330,6 +334,74 @@ namespace Shortcut.RustMod
 
         private static bool Coordinate(double value)
         { return Finite(value) && Math.Abs(value) <= 100000; }
+    }
+
+    public static class SkateMegaHalfpipe
+    {
+        public const int PartCount = 80, Lanes = 4, TransitionSegments = 5, CurveSteps = 60;
+        public const int ProfilePointCount = 2 * CurveSteps + 4;
+        public const double Tile = 3, Width = 12, FlatLength = 12, DeckLength = 3;
+        public const double CenterRight = 4.5, RideLift = 0.05, CopingRadius = 0.05;
+        public const double EnvelopeMargin = 0.65, AirClearance = 3;
+        public static readonly double Radius = Tile / (2 * Math.Sin(Math.PI / 20));
+        public static double LipForward { get { return FlatLength / 2 + Radius; } }
+        public static double Length { get { return 2 * (LipForward + DeckLength); } }
+
+        public static bool TryPart(int index, out SkateParkPart part)
+        {
+            part = new SkateParkPart();
+            if (index < 0 || index >= PartCount) return false;
+            part.Prefab = SkateParkLayout.FloorPrefab;
+            part.Material = SkateParkMaterial.Metal;
+            part.Right = index % Lanes * Tile;
+            if (index < 16)
+            {
+                part.Forward = -4.5 + index / Lanes * Tile;
+                part.Material = SkateParkMaterial.Stone;
+            }
+            else if (index < 56)
+            {
+                int segment = (index - 16) % 20 / Lanes;
+                int side = index < 36 ? -1 : 1;
+                double a = segment * Math.PI / 10, b = (segment + 1) * Math.PI / 10;
+                part.Forward = side * (FlatLength / 2 + Radius * (Math.Sin(a) + Math.Sin(b)) / 2);
+                part.Height = Radius * (1 - (Math.Cos(a) + Math.Cos(b)) / 2);
+                part.Pitch = -side * (segment * 18 + 9);
+            }
+            else
+            {
+                int side = (index / Lanes) % 2 == 0 ? -1 : 1;
+                part.Height = Radius;
+                part.Forward = side * (LipForward + DeckLength / 2);
+                if (index >= 64)
+                {
+                    part.Prefab = SkateParkLayout.LowWallPrefab;
+                    part.Yaw = side < 0 ? 270 : 90;
+                    part.Forward = side * (LipForward + (index < 72 ? 0 : DeckLength) + 0.3);
+                    if (index < 72) part.Height -= 1;
+                    else part.Material = SkateParkMaterial.Wood;
+                }
+            }
+            return true;
+        }
+
+        public static bool TryProfilePoint(int index, out double forward, out double height)
+        {
+            forward = height = 0;
+            if (index < 0 || index >= ProfilePointCount) return false;
+            height = RideLift;
+            if (index == 0 || index == ProfilePointCount - 1)
+            {
+                forward = (index == 0 ? -1 : 1) * (LipForward + DeckLength);
+                height += Radius;
+                return true;
+            }
+            bool back = index <= CurveSteps + 1;
+            double angle = (back ? CurveSteps + 1 - index : index - CurveSteps - 2) * Math.PI / (2 * CurveSteps);
+            forward = (back ? -1 : 1) * (FlatLength / 2 + Radius * Math.Sin(angle));
+            height += Radius * (1 - Math.Cos(angle));
+            return true;
+        }
     }
 
     // END SHARED SKATE PARK

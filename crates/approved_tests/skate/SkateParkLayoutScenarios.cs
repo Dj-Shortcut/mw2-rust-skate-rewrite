@@ -113,6 +113,7 @@ internal static class SkateParkLayoutScenarios
             PieceLayouts();
             AnchorYawAndSnap();
             FoundationSupport();
+            MegaConfiguration();
             Console.WriteLine("PASS: both approved park layout scenarios (" + checks.ToString(CultureInfo.InvariantCulture) + " checks).");
             return 0;
         }
@@ -121,6 +122,101 @@ internal static class SkateParkLayoutScenarios
             Console.Error.WriteLine(error.Message);
             return 1;
         }
+    }
+
+    private static void MegaConfiguration()
+    {
+        const double radius = 9.588679832249493;
+        double[] run = { 0, 2.963065021785413, 5.636084594350517, 7.757404937910159, 9.119376437128798, radius };
+        double[] rise = { 0, 0.46930339512069297, 1.8312748943393327, 3.9525952378989753, 6.625614810464081, radius };
+        var expected = new ExpectedPart[80];
+        for (int i = 0; i < 16; i++) expected[i] = new ExpectedPart(i % 4 * 3, -4.5 + i / 4 * 3, 0, 0);
+        for (int i = 16; i < 56; i++)
+        {
+            int segment = (i - 16) % 20 / 4, side = i < 36 ? -1 : 1;
+            expected[i] = new ExpectedPart(i % 4 * 3, side * (6 + (run[segment] + run[segment + 1]) / 2),
+                (rise[segment] + rise[segment + 1]) / 2, -side * (9 + 18 * segment), SkateParkMaterial.Metal);
+        }
+        for (int i = 56; i < 80; i++)
+        {
+            int side = i / 4 % 2 == 0 ? -1 : 1;
+            expected[i] = i < 64 ? new ExpectedPart(i % 4 * 3, side * (7.5 + radius), radius, 0, SkateParkMaterial.Metal) :
+                new ExpectedPart(i % 4 * 3, side * (6 + radius + (i < 72 ? 0 : 3) + 0.3),
+                    radius - (i < 72 ? 1 : 0), 0, i < 72 ? SkateParkMaterial.Metal : SkateParkMaterial.Wood,
+                    LowWallPrefab, side < 0 ? 270 : 90);
+        }
+        var piece = new Piece(SkateParkKind.MegaHalfpipe, "mega-halfpipe", expected);
+        Require((int)piece.Kind == 11 && SkateParkLayout.Name(piece.Kind) == piece.Name, "MEGA stable appended identity.");
+        Require(SkateParkLayout.PartCount(piece.Kind) == 80, "MEGA complete assembly count.");
+        double visualRight, visualForward, visualHeight, visualYaw;
+        Require(SkateParkLayout.VisualOrigin(piece.Kind, out visualRight, out visualForward, out visualHeight, out visualYaw), "MEGA visual origin.");
+        Near(visualRight, 4.5, "MEGA model centre offset."); Near(visualForward, 0, "MEGA model forward centre.");
+        Near(visualHeight, 0, "MEGA model height centre."); Near(visualYaw, 0, "MEGA model yaw.");
+        SkateParkKind parsed;
+        Require(SkateParkLayout.TryKind("MEGA-HALFPIPE", out parsed) && parsed == piece.Kind, "MEGA name parser.");
+        foreach (double yaw in new[] { 0.0, 90, 180, 270, 37.25 })
+        {
+            double radians = yaw * Math.PI / 180;
+            var angle = new Angle(yaw, yaw, Math.Cos(radians), Math.Sin(radians));
+            var anchor = new Point(17.375, 2.625, -8.0625);
+            var blocks = Observations(piece, anchor, angle);
+            for (int i = 0; i < 80; i++)
+            {
+                SkateParkPart part; SkateParkTransform transform;
+                Require(SkateParkLayout.TryPart(piece.Kind, i, out part), "MEGA native part.");
+                Near(part.Right, expected[i].Right, "MEGA module width join.");
+                Near(part.Forward, expected[i].Forward, "MEGA module station.");
+                Near(part.Height, expected[i].Height, "MEGA module rise.");
+                Near(part.Pitch, expected[i].Pitch, "MEGA module pitch.");
+                Require(part.Prefab == expected[i].Prefab && part.Material == expected[i].Material, "MEGA module identity.");
+                Require(SkateParkLayout.TryTransform(piece.Kind, i, anchor.X, anchor.Y, anchor.Z, yaw, out transform), "MEGA transform.");
+                Near(transform.X, blocks[i].X, "MEGA world X."); Near(transform.Y, blocks[i].Y, "MEGA world Y.");
+                Near(transform.Z, blocks[i].Z, "MEGA world Z.");
+            }
+            Array.Reverse(blocks);
+            double x, y, z, matchedYaw;
+            Require(SkateParkLayout.TryMatch(piece.Kind, blocks, 0.01, out x, out y, out z, out matchedYaw), "MEGA 80-member reordered recognition.");
+            Near(x, anchor.X, "MEGA recovered X."); Near(y, anchor.Y, "MEGA recovered Y.");
+            Near(z, anchor.Z, "MEGA recovered Z."); Near(matchedYaw, yaw, "MEGA recovered yaw.");
+            for (int i = 0; i < blocks.Length; i++)
+            {
+                var original = blocks[i];
+                blocks[i] = new SkateParkBlock(original.Prefab, original.X, original.Y + 0.11, original.Z, original.Yaw, original.Pitch);
+                Refused(piece.Kind, blocks, 0.01, "MEGA shifted member accepted.");
+                blocks[i] = original;
+            }
+            var duplicate = blocks[79]; blocks[79] = blocks[0];
+            Refused(piece.Kind, blocks, 0.01, "MEGA duplicate after bit 64 accepted."); blocks[79] = duplicate;
+            Array.Resize(ref blocks, 79);
+            Refused(piece.Kind, blocks, 0.01, "MEGA incomplete paid assembly accepted.");
+        }
+        for (int i = 0; i < 5; i++)
+        {
+            Near(Math.Sqrt(Math.Pow(run[i + 1] - run[i], 2) + Math.Pow(rise[i + 1] - rise[i], 2)), 3, "MEGA 3m chord seam.");
+            SkateParkPart a;
+            Require(SkateParkLayout.TryPart(piece.Kind, 36 + i * 4, out a), "MEGA front transition.");
+            double pitch = -a.Pitch * Math.PI / 180;
+            Near(a.Forward - 1.5 * Math.Cos(pitch), 6 + run[i], "MEGA lower native seam station.");
+            Near(a.Height - 1.5 * Math.Sin(pitch), rise[i], "MEGA lower native seam height.");
+            Near(a.Forward + 1.5 * Math.Cos(pitch), 6 + run[i + 1], "MEGA upper native seam station.");
+            Near(a.Height + 1.5 * Math.Sin(pitch), rise[i + 1], "MEGA upper native seam height.");
+        }
+        double previous = double.NegativeInfinity;
+        for (int i = 0; i < 124; i++)
+        {
+            double f, h, mirrorF, mirrorH;
+            Require(SkateMegaHalfpipe.TryProfilePoint(i, out f, out h), "MEGA client profile sample.");
+            Require(f > previous, "MEGA profile ordered without duplicated seam."); previous = f;
+            Require(SkateMegaHalfpipe.TryProfilePoint(123 - i, out mirrorF, out mirrorH), "MEGA mirrored profile sample.");
+            Near(f, -mirrorF, "MEGA opposing station symmetry."); Near(h, mirrorH, "MEGA opposing height symmetry.");
+            Require(h >= 0.05 && h <= radius + 0.050000001, "MEGA height envelope.");
+        }
+        double invalidF, invalidH;
+        Require(!SkateMegaHalfpipe.TryProfilePoint(-1, out invalidF, out invalidH) && invalidF == 0 && invalidH == 0, "MEGA invalid profile atomic refusal.");
+        Require(!SkateMegaHalfpipe.TryProfilePoint(124, out invalidF, out invalidH), "MEGA past-end profile refused.");
+        Near(SkateMegaHalfpipe.Width, 12, "MEGA width parameter."); Near(SkateMegaHalfpipe.FlatLength, 12, "MEGA bottom parameter.");
+        Near(SkateMegaHalfpipe.Length, 18 + 2 * radius, "MEGA full envelope length.");
+        Console.WriteLine("PASS: MEGA configuration within approved park layout/anchor scenarios.");
     }
 
     private static SkateParkBlock[] Observations(Piece piece, Point anchor, Angle angle)

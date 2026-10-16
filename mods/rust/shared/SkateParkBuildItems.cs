@@ -9,7 +9,7 @@ namespace Shortcut.RustMod
     {
         public const string Carrier = "building.planner";
         public const int MarkerBase = 0x534B5000;
-        public const int PieceCount = 8;
+        public const int PieceCount = 12;
 
         public static string Name(SkateParkKind kind)
         {
@@ -23,6 +23,7 @@ namespace Shortcut.RustMod
                 case SkateParkKind.LongLedge: return "Skate Long Ledge";
                 case SkateParkKind.Funbox: return "Skate Funbox";
                 case SkateParkKind.Halfpipe: return "Skate Halfpipe";
+                case SkateParkKind.MegaHalfpipe: return "Skate MEGA Halfpipe";
                 default: return null;
             }
         }
@@ -39,8 +40,10 @@ namespace Shortcut.RustMod
             if (!Tagged(marker)) return false;
             int index = marker - MarkerBase - 1;
             if (index < 0 || index >= PieceCount) return false;
-            kind = (SkateParkKind)index;
-            return Name(kind) != null;
+            var parsed = (SkateParkKind)index;
+            if (Name(parsed) == null) return false;
+            kind = parsed;
+            return true;
         }
 
         public static bool TryIdentity(string carrier, ulong skin, int marker, string name,
