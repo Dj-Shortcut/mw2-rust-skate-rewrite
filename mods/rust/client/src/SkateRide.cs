@@ -754,9 +754,11 @@ public static class SkateRide
         // A rotation is only started when the arc lasts long enough to finish it: an unfinished one is a bail.
         var left = (float)(TimeToGround() - 0.03);
         var flips = pendFlip + SkateKeys.LateFlip; var lateFlips = SkateKeys.LateFlip != 0 && Jumped && AirTime > LateAfter; pendFlip = 0;
-        // As in Skate, a flip and a grab never overlap: a flip asked for during a grab is not done,
-        // and a grab held during a flip or shove-it starts once the board has come round.
-        var grabbing = Grab != SkateGrabKind.None;
+        // As in Skate, a flip and a grab never overlap: a flip or shove-it asked for during a grab,
+        // or while the grab button is already held (also from before the pop), is not done; a grab
+        // pressed during a flip or shove-it starts once the board has come round.
+        var grabbing = Grab != SkateGrabKind.None || SkateKeys.Grab != SkateGrabKind.None;
+        if (grabbing && Math.Abs(shoveLeft) < 0.001f) pendShove = 0f;
         if (flips != 0 && !grabbing && (Math.Abs(flipLeft) < 0.001f || Math.Sign(flipLeft) == Math.Sign(flips)))
         {
             // As in Skate: a flip is started whenever it is asked for. One asked too late does not
