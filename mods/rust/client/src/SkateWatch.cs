@@ -14,7 +14,8 @@ public static class SkateWatch
     public static int Snaps, Said;
     private static bool had;
     private static float nose, deck, at = -99f;
-    private static Vector3 board, lFoot, rFoot, lHand, rHand, head;
+    private static Vector3 board, lFoot, rFoot, lHand, rHand, head, neck;
+    private static int applied;
     private static RideMode mode;
     private static string trick = "";
 
@@ -34,6 +35,7 @@ public static class SkateWatch
         var rig = RiderRig.Bound && RiderRig.LFoot != null && RiderRig.RFoot != null && RiderRig.LHand != null && RiderRig.RHand != null && RiderRig.Head != null;
         Vector3 lf = rig ? RiderRig.LFoot.position - p : Vector3.zero, rf = rig ? RiderRig.RFoot.position - p : Vector3.zero;
         Vector3 lh = rig ? RiderRig.LHand.position - p : Vector3.zero, rh = rig ? RiderRig.RHand.position - p : Vector3.zero, hd = rig ? RiderRig.Head.position - p : Vector3.zero;
+        var nk = rig && RiderRig.Neck != null ? RiderRig.Neck.position - p : Vector3.zero;
         if (!fresh)
         {
             var line = "";
@@ -59,7 +61,14 @@ public static class SkateWatch
                 var d3 = (lh - lHand).magnitude; var d4 = (rh - rHand).magnitude; var d5 = (hd - head).magnitude;
                 if (d3 > HandStep * k) line += " left hand " + d3.ToString("F2") + " m";
                 if (d4 > HandStep * k) line += " right hand " + d4.ToString("F2") + " m";
-                if (d5 > HeadStep * k) line += " head " + d5.ToString("F2") + " m";
+                if (d5 > HeadStep * k)
+                {
+                    // What the head moved with: the neck (the spine moved), a frame without a pose,
+                    // or something that moved the head after the pose was written.
+                    var posed = RiderRig.Applied != applied;
+                    line += " head " + d5.ToString("F2") + " m (neck " + (nk - neck).magnitude.ToString("F2") + " m, head-neck " + (hd - nk).magnitude.ToString("F2")
+                        + " m, " + (posed ? "posed, moved after " + (RiderRig.Head.position - RiderRig.HeadPosed).magnitude.ToString("F2") + " m" : "not posed this frame") + ")";
+                }
             }
             if (line != "")
             {
@@ -73,7 +82,7 @@ public static class SkateWatch
                 }
             }
         }
-        nose = noseNow; deck = deckNow; board = boardNow; lFoot = lf; rFoot = rf; lHand = lh; rHand = rh; head = hd;
+        nose = noseNow; deck = deckNow; board = boardNow; lFoot = lf; rFoot = rf; lHand = lh; rHand = rh; head = hd; neck = nk; applied = RiderRig.Applied;
         mode = SkateRide.Mode; trick = SkateRide.TrickName ?? ""; at = now; had = true;
     }
 }

@@ -207,8 +207,8 @@ public static class SkateHud
     {
         var key = ((int)(c.r * 31f) << 15) | ((int)(c.g * 31f) << 10) | ((int)(c.b * 31f) << 5) | (int)(c.a * 31f);
         Texture2D t;
-        if (fills.TryGetValue(key, out t)) return t;
-        t = new Texture2D(2, 2);
+        if (fills.TryGetValue(key, out t) && t != null) return t;
+        t = Out.Keep(new Texture2D(2, 2));
         for (var i = 0; i < 4; i++) t.SetPixel(i % 2, i / 2, c);
         t.Apply();
         fills[key] = t;

@@ -532,7 +532,7 @@ public static class SkateParks
     private static GameObject Transition(Kind kind, Vector3 origin, Quaternion yawRot, bool solid, out int colliders)
     {
         colliders = 0;
-        if (plain == null) plain = MaterialFor(new SkateModelMaterial());
+        if (plain == null) plain = Out.Keep(MaterialFor(new SkateModelMaterial()));
         var material = plain;
         try { var loaded = Model(kind); if (loaded != null && loaded.Materials != null && loaded.Materials.Length > 0 && loaded.Materials[0] != null) material = loaded.Materials[0]; }
         catch (Exception) { }
@@ -682,9 +682,9 @@ public static class SkateParks
             SkateModel model; string error;
             if (!SkateModel.TryParse(bytes, out model, out error)) { loaded.Error = stem + ": " + error; Status = loaded.Error; Say(loaded.Error); return loaded; }
             loaded.Meshes = new Mesh[model.Meshes.Length];
-            for (var i = 0; i < model.Meshes.Length; i++) loaded.Meshes[i] = Convert(model.Meshes[i], model);
+            for (var i = 0; i < model.Meshes.Length; i++) loaded.Meshes[i] = Out.Keep(Convert(model.Meshes[i], model));
             loaded.Materials = new Material[model.Materials.Length];
-            for (var i = 0; i < model.Materials.Length; i++) loaded.Materials[i] = MaterialFor(model.Materials[i]);
+            for (var i = 0; i < model.Materials.Length; i++) loaded.Materials[i] = Out.Keep(MaterialFor(model.Materials[i]));
             if (plain == null) plain = MaterialFor(new SkateModelMaterial());
             loaded.Model = model;
             var tris = 0; foreach (var m in model.Meshes) tris += m.TriangleCount;
