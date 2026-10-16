@@ -5,7 +5,7 @@
 ## Completion means one repeatable player flow
 
 - [ ] Establish the exact installed game, client/shared/server source and release pins together.
-- [ ] With the controller, choose/equip a genuine owned kicker or quarterpipe item, preview/rotate/place it, then return to riding. Handle the eight-item/six-belt-slot inventory flow; normal play needs no admin console.
+- [ ] With the controller, choose/equip a genuine owned kicker or quarterpipe item, preview/rotate/place it, then return to riding. Handle the park-catalogue/six-belt-slot inventory flow; normal play needs no admin console.
 - [ ] Mount, push/carve into a transition, perform one deliberate trick, land, dismount, restart the attempt with the controller and repeat. Verify input rearming and presentation-history recovery; preserve the calibrated direction convention and natural fakie momentum. Releasing a flick must not trigger another flip.
 - [ ] Confirm that placed geometry agrees with the preview and native transform. Invalid targets/identity clear the preview; cancel/refusal preserves correct item accounting.
 - [ ] Demonstrate reconnect/unload and duplicate-callback recovery without lost items, untracked carriers or replacement while cleanup is unresolved. Retain existing server ownership, build privilege and payment/refund rules.
@@ -13,7 +13,7 @@
 
 These boxes remain open until their stated evidence exists. Compiler checks, headless fixtures, source screenshots and upstream test assertions cannot complete native acceptance. Before taking implementation, build, validation or integration work, read the current claims and merge/install instructions in [#337](https://github.com/Dj-Shortcut/mw2-rust-skate-rewrite/issues/337), #408 and the relevant open issue/PR, following [AUTONOMY](AUTONOMY.md).
 
-The half-wall kicker attachment, one-cell mini quarterpipe, three-cell L quarterpipe and modular mega-halfpipe remain in #408 after the coherent baseline. Preserve the calibrated mapping. A new lower-level transport and undo feature are outside this baseline; no deadline is set.
+The half-wall kicker attachment and modular mega-halfpipe remain in #408. Source contracts for the one-cell mini and three-cell L quarterpipes are [available for client integration](../mods/rust/shared/README.md#one-cell-mini-and-three-cell-l-quarterpipes); native acceptance remains open. Preserve the calibrated mapping. A new lower-level transport and undo feature are outside this baseline; no deadline is set.
 
 The held-item application identity protocol is part of this demo: first demonstrate the native receipt route, then implement the version/session/sequence/UID/kind, explicit-clear and expiry contract in [the inbox gate](RUST-SKATE-INBOX.md). Picker choice or arbitrary log text cannot establish identity; native placement/payment checks remain authoritative.
 

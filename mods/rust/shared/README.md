@@ -6,6 +6,8 @@ Engine-free C#7.3 source for [#335](https://github.com/Dj-Shortcut/mw2-rust-rust
 
 ## Ride physics API
 
+`SkateRidePhysics.TryBoundHorizontal` supplies the client's final direction-independent float32 velocity/endpoint budget under the 25 m/s ceiling. It preserves already fitting forward/fakie momentum and leaves the strict server path bound unchanged. Build it together with its `SkateRide` caller; see the [exact arithmetic, source-selection contract and native limits](../../../docs/RUST-SKATE-RIDE-PHYSICS.md#units-and-contracts).
+
 `SkateRidePhysics` provides pure value inputs/results for the reported client's transition pumping, ramp exit and landing calculations. It does not run a controller or query the world. The [API contract and numbered client review](../../../docs/RUST-SKATE-RIDE-PHYSICS.md) describe the adapter; the client's `SkateRide` calls `TrySlope`, `TryPump`, `TryLaunch` and `TryLand` (see the [client README](../client/README.md#sources)). Claude reports a ridden quarterpipe and long-ledge grind on his release client with server 0.3.8; complete native 0.3.9 park acceptance remains open. Existing calls remain source-compatible; motion and Drive use the shared speed ceiling above.
 
 `TrySlope(input, dt, out result, out error)` accepts an upward unit surface normal, horizontal nose heading, signed speed along its surface tangent and explicit gravity. It preserves horizontal heading, applies gravity along the unit tangent and returns full velocity, signed tangent speed, horizontal speed and travel-relative slope. `TryLaunch(input, out result, out error)` retains the full surface velocity and adds only the requested vertical pop; passive exit uses zero pop. The adapter applies subsequent air gravity once.
@@ -37,13 +39,13 @@ Jump starts only on a fresh grounded press. `TakeoffPending` preserves rising ve
 
 ## Park layout API
 
-`SkateParkLayout` preserves the eight original native park assemblies and appends the [MEGA halfpipe kit](../../../docs/RUST-SKATE-MEGA-HALFPIPE.md) in metres, +X right, +Y up and +Z forward. The existing part counts, materials, prefab paths and `TryPart`, `TryTransform`, `TrySupportedAnchor`, `Name` and `TryKind` contracts are preserved. `SkateMegaHalfpipe` supplies its 80-part module layout, fixed dimensions and 124-point client riding profile; native smooth riding/coping integration remains open. `SkatePark.cs` is canonical; the self-contained server plugin embeds its identical marked block, checked by `publish-check`.
+`SkateParkLayout` preserves the eight original native park assemblies and appends mini/L quarterpipes, a half-wall kicker and the [MEGA halfpipe kit](../../../docs/RUST-SKATE-MEGA-HALFPIPE.md) in metres, +X right, +Y up and +Z forward. The existing part counts, materials, prefab paths and `TryPart`, `TryTransform`, `TrySupportedAnchor`, `Name` and `TryKind` contracts are preserved. `SkateMegaHalfpipe` supplies its 80-part module layout, fixed dimensions and 124-point client riding profile; native smooth riding/coping integration remains open. `SkatePark.cs` is canonical; the self-contained server plugin embeds its identical marked block, checked by `publish-check`.
 
 Halfpipe walls use native local-Z length (3 m) and local-X thickness (the owner reported approximately 0.2 m). End rails have local yaw 270/90 degrees; left/right side panels have 180/0 degrees. The sixteen ride floors and all floor-only pieces keep their existing transforms. This corrects the wall-axis assumption in new layouts; `TryMatch` now expects those corrected headings, so an older halfpipe with the preceding wall headings is not recognized as the current complete layout. Stored server group records use their recorded poses and are not migrated by this helper; the server parser also accepts the preceding halfpipe wall headings. The client’s separate layout copy needs the corresponding heading change before recognizing a newly placed halfpipe. The existing approved layout scenarios check wall footprints, adjoining rail ends and rotated anchors against both actual shared and plugin DLLs. Native collision/contact and visible full-halfpipe acceptance remain pending.
 
 `TryAnchor(kind, index, partX, partY, partZ, partYaw, out anchorX, out anchorY, out anchorZ, out anchorYaw)` reverses a known part's translation and yaw. It does not validate an observed prefab or pitch. Coordinates must be finite within ±100,000 m; yaw must be finite within ±1,000,000 degrees and is returned normalized to [0,360).
 
-`SkateParkBlock` holds readonly Prefab, X/Y/Z, Yaw and Pitch fields. `TryMatch(kind, blocks, tolerance, out anchorX, out anchorY, out anchorZ, out anchorYaw)` checks a known candidate kind against exactly its complete part count, up to 36. The caller retains its stable `IReadOnlyList`; the helper allocates no collections. Observed coordinates have the same bounds, and yaw/pitch must be finite within ±1,000,000 degrees. Prefab paths match exactly, position uses Euclidean distance, and yaw/pitch use shortest wrapped differences. One finite tolerance in [0,0.1] applies in metres and degrees; zero means exact floating-point comparison.
+`SkateParkBlock` holds readonly Prefab, X/Y/Z, Yaw and Pitch fields. `TryMatch(kind, blocks, tolerance, out anchorX, out anchorY, out anchorZ, out anchorYaw)` checks a known candidate kind against exactly its complete part count, up to 80. The caller retains its stable `IReadOnlyList`; the helper allocates no collections. Observed coordinates have the same bounds, and yaw/pitch must be finite within ±1,000,000 degrees. Prefab paths match exactly, position uses Euclidean distance, and yaw/pitch use shortest wrapped differences. One finite tolerance in [0,0.1] applies in metres and degrees; zero means exact floating-point comparison.
 
 The anchor follows a deterministically selected observation, ordered by prefab, X/Y/Z and normalized yaw/pitch, paired with the known layout's parts. Tolerance is measured from that observed-part-derived anchor; this does not search for any possible best-fit anchor. Opposing ±0.009 m errors can therefore fail at tolerance 0.01 even when an ideal common anchor exists. Choose the allowance for relative native rounding. Missing, extra, reused or ambiguously matching observations fail, as do valid anchors separated by more than that tolerance. Reordering a fixed input set does not change the selected anchor. All failed calls leave four zero outputs.
 
@@ -51,11 +53,40 @@ This verifies geometric consistency, not park registration, ownership, grade or 
 
 `VisualOrigin(kind, out right, out forward, out height, out yaw)` returns the nominal local authored-asset pivot offset: bank/kicker/quarter use the first floor's low edge, halfpipe uses the flat centre (1.5,1.5), and ledges/funbox use the layout baseline. Rotate right/forward by the anchor yaw before translating the visual node. All returned heights and local yaws are zero. This relation does not determine native floor-top thickness: the adapter adds the measured surface offset in the correctly rotated local normal. An origin mapping does not make different asset and native collider profiles coincide.
 
+The [half-wall kicker contract](../../../docs/RUST-SKATE-HALF-WALL-KICKER.md) specifies appended kind 10, `SkateParkBox` / `TryHalfWallAnchor`, the exact measured wall-face/top-surface join and native client request. Its external wall dependency never enters paid/refunded members. Native preview, collision, riding and lifecycle acceptance remain open.
+
 ## Park build-item API
 
-`SkateParkBuildItems` provides the eight exact English names and authored metadata tags for stock `building.planner` items with skin 0 and amount 1. `Name`, `Marker`, `TryKind` and `TryIdentity` share stable `SkateParkKind` order; `Tagged` reserves the complete marker range, including unrecognized tags that must not become ordinary building plans. Invalid lookup outputs are atomic. The plugin embeds the identical marked helper.
+`SkateParkBuildItems` provides twelve exact English names and authored metadata tags for stock `building.planner` items with skin 0 and amount 1. `Name`, `Marker`, `TryKind` and `TryIdentity` share stable `SkateParkKind` order; `Tagged` reserves the complete marker range, including unrecognized tags that must not become ordinary building plans. Invalid lookup outputs are atomic. The plugin embeds the identical marked helper.
 
 `VerifiedDebit(before, after, sameItem)` accepts only the original identity changing 1→0. The native adapter must verify its full UID/definition/metadata/name/skin fingerprint and execute actual item consumption. `Recoverable(state, members, kind)` accepts only a complete `Paid` group; `None`, `Preparing`, `RecoveryClaimed` and partial groups refuse. These predicates do not implement inventory, persistence or exactly-once delivery. The [building-asset contract](../../../docs/RUST-SKATE-BUILD-ASSETS.md) records native/client acceptance and crash/recovery limits.
+
+## One-cell mini and three-cell L quarterpipes
+
+| Kind / ID / token | Item name / marker | Native members in index order (right, forward, height, yaw) |
+| --- | --- | --- |
+| `MiniQuarterPipe` / 8 / `mini-quarterpipe` | Skate Mini Quarterpipe / `0x534B5009` | Stone floor (0,0,0,0); Stone low wall (0,1.15,0,90) |
+| `LargeQuarterPipe` / 9 / `large-quarterpipe` | Skate Large Quarterpipe / `0x534B500A` | Stone floors (0,0,0,0), (3,0,0,0), (0,3,0,0) |
+
+All native pitches are zero. These are support/identity assemblies; the client supplies the curved visual and riding collider above them. Recognize the complete known-kind assembly before loose single floors. Replace only its verified native carrier renderers/colliders while the authored module is active and restore them on teardown. An older client does not acquire these modules by updating the server alone. Native placement and riding remain unverified.
+
+`CellCount` / `TryCell(kind,index,out right,out forward)` return integer local grid coordinates: mini (0,0); large (0,0),(1,0),(0,1). Cell centres are (3*right,3*forward), each extending +/-1.5 m; (1,1) is empty. Anchor is the first floor pivot. Transform the mask/profile by `worldX=anchorX+right*cos(yaw)+forward*sin(yaw)`, `worldZ=anchorZ-right*sin(yaw)+forward*cos(yaw)`. At yaw 0/90/180/270 each local centre maps to (r,f),(f,-r),(-r,-f),(-f,r), about the same anchor; native snapped yaw is retained. The L is a straight rising left lane with a front-right staging apron, without a corner-bowl turn.
+
+`VisualOrigin` returns zero offsets for both. The riding datum is **anchorY + the measured native floor bounds.max.y**, not anchorY alone. `TryQuarterProfile` returns these metre values:
+
+| Field | Mini | Large |
+| --- | --- | --- |
+| Radius = Height | 1.2 | 3 |
+| StartForward / Entry | -1.4 / 0.2 | -1.4 / 0.2 |
+| Deck / EndForward | 1.4 / 1.4 | 2.6 / 4.4 |
+| HalfWidth / Skin | 1.4 / 0.08 | 1.4 / 0.08 |
+| RailRadius / RailHeight | 0.05 / 0.8 | 0.05 / 0.8 |
+
+Entry is level from StartForward through -1.2. The quarter-circle is `forward=-1.2+R*sin(theta)`, `height=R*(1-cos(theta))`, theta 0..pi/2; its unit normal is (0,cos(theta),-sin(theta)). Deck is level from -1.2+R through EndForward. `TryQuarterSurface` supplies analytic heights/normals for the lane x=-1.4..1.4; deck/entry endpoints return up. Large also supplies a level apron x=(1.4,4.4], z=[-1.4,1.4]; it meets the lane's flat entry only. Its rising side requires a side face; there is no promised seamless sideways entry into the curve. False returns three zero outputs.
+
+Author visuals/colliders from the **same** profile samples, with skin extending downward by at most 0.08 m. Back rail centreline runs x=-1.4..1.4 at z=EndForward-0.05; side deck rail centrelines run x=+/-1.4 from z=-1.2+R+0.05 to EndForward-0.05. Rail top centreline is deck height+0.8, tube radius0.05; posts share that radius and reach the deck. Coping centreline is at the transition/deck seam, radius0.05, x=-1.4..1.4. Keep end caps, posts, side faces and collider padding inside x=+/-1.45 and z=[-1.45,EndForward+0.05]. The apron is inset 0.1 m from its outer cell edges. No geometry may enter cell(1,1), including rail caps, skirts or collider inflation.
+
+Server preflight reserves each complete 3x3 cell vertically from min(native floor bottom, datum-Skin) through datum+Height+RailHeight+RailRadius. It checks permission, terrain/water, physical obstruction and existing saved module reservations, then repeats before registration; later park placement also respects those reservations. Full cell reservations and MEGA riding envelopes are checked against each other in both placement directions. `ContainsNativeBounds` rejects native support bounds beyond their assigned cells; spawned colliders are checked again. Native dimensions that fail these stricter new-kind checks refuse placement without payment. Saved Version1 schema, original layouts/markers and existing single-debit, rollback, complete paid-group refund/removal paths are retained; partial groups retain reservations until removed. Headless layout/item checks do not verify native prefab dimensions, hook timing, persistence callbacks, client replacement, seams or riding.
 
 ## Board mesh API
 

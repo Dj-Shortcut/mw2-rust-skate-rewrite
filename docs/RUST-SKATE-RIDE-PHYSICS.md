@@ -28,6 +28,34 @@ signed slope is positive uphill along the resulting actual travel. Gravity may
 stall and reverse signed speed. Push, brake, rolling resistance and steering
 remain adapter policy.
 
+`TryBoundHorizontal(x,z,velocityX,velocityZ,dt,maximumSpeed,out boundedX,out boundedZ)`
+uses float32 positions, velocities and seconds, with `0 < dt <= 0.05f`, X/Z within
+±100000 and a positive cap at most `SkateMotion.MaximumGroundSpeed` (25 m/s).
+It retains fitting velocity; otherwise at most 32 scale searches reduce its
+components without reversing travel. Invalid input preserves both supplied
+components and returns false. The helper allocates no per-step objects.
+
+The returned float components satisfy two double-measured bounds: X/Z speed is
+at most the supplied cap, and the predicted displacement is at most cap×dt.
+Prediction rounds each velocity×dt product to float, then each position+product
+sum to float, before measuring endpoint differences in double. This is a
+specific numerical integration model, not a PhysX guarantee.
+
+`SkateRide` applies this last, after wall projection, before publishing body
+velocity. Forward and natural fakie share its adaptive `Cap` (at most 25 m/s);
+there is no 6 m/s reverse ceiling. Signed surface speed is scaled by the retained
+horizontal fraction. Ground Y adjusts only the tangent-speed contribution;
+clearance correction and air/grind Y remain owned by their existing paths.
+Build `SkateRide.cs` and the unpinned `SkateRidePhysics.cs` together from the same
+selected source commit; the pinned `SkateMotion.cs` already supplies the 25 cap.
+
+The server still sums the complete cached X/Z path and requires it to be at
+most saved `MaximumHorizontalSpeed`×authoritative batch time. It does not add a
+float epsilon or infer time from the client step. The approved movement scenario
+checks authored rounded endpoints against the actual server helpers. Native
+endpoints, collision integration and server timing remain open under #438;
+source checks do not establish correction-free riding.
+
 Pump slope and `TravelForward` refer to the same actual travel direction, not
 the rider's nose, visual board yaw or stance. Supported descent at least 8 degrees
 and speed at least 0.5 m/s can charge a crouch for up to 0.4 seconds. When descent

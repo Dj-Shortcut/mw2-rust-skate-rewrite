@@ -434,7 +434,7 @@ namespace Shortcut.RustMod
             if (order == null || order.Length < 1 || order.Length > SkateParkBuildItems.PieceCount) return false;
             for (int i = 0; i < order.Length; i++)
             {
-                if (SkateParkLayout.Name(order[i]) == null) return false;
+                if (SkateParkLayout.Name(order[i]) == null || order[i] == SkateParkKind.HalfWallKicker) return false;
                 for (int j = 0; j < i; j++) if (order[i] == order[j]) return false;
             }
             return true;
@@ -521,7 +521,8 @@ namespace Shortcut.RustMod
     }
 
     // BEGIN SHARED SKATE PARK
-    public enum SkateParkKind { Bank, Kicker, QuarterPipe, LedgeLow, LedgeHigh, LongLedge, Funbox, Halfpipe, MegaHalfpipe = 11 }
+    public enum SkateParkKind { Bank, Kicker, QuarterPipe, LedgeLow, LedgeHigh, LongLedge, Funbox, Halfpipe,
+        MiniQuarterPipe, LargeQuarterPipe, HalfWallKicker, MegaHalfpipe }
     public enum SkateParkMaterial { Stone, Metal, Wood }
 
     public struct SkateParkPart
@@ -544,6 +545,18 @@ namespace Shortcut.RustMod
         { Prefab = prefab; X = x; Y = y; Z = z; Yaw = yaw; Pitch = pitch; }
     }
 
+    public struct SkateParkQuarterProfile
+    {
+        // Metres above the measured native floor top. Curved lane runs along +Forward.
+        public double Radius, Height, Entry, Deck, StartForward, HalfWidth, EndForward;
+        public double Skin, RailRadius, RailHeight;
+    }
+
+    public struct SkateParkBox
+    {
+        public double X, Y, Z, SizeX, SizeY, SizeZ;
+    }
+
     public static class SkateParkLayout
     {
         public const string FloorPrefab = "assets/prefabs/building core/floor/floor.prefab";
@@ -551,6 +564,8 @@ namespace Shortcut.RustMod
         public const string HalfWallPrefab = "assets/prefabs/building core/wall.half/wall.half.prefab";
         private const double HalfLength = 1.5;
         private const double Degrees = Math.PI / 180;
+        public const int KindCount = 12;
+        public const double CellSize = 3;
         public static string Name(SkateParkKind kind)
         {
             switch (kind)
@@ -564,6 +579,9 @@ namespace Shortcut.RustMod
                 case SkateParkKind.Funbox: return "funbox";
                 case SkateParkKind.Halfpipe: return "halfpipe";
                 case SkateParkKind.MegaHalfpipe: return "mega-halfpipe";
+                case SkateParkKind.MiniQuarterPipe: return "mini-quarterpipe";
+                case SkateParkKind.LargeQuarterPipe: return "large-quarterpipe";
+                case SkateParkKind.HalfWallKicker: return "half-wall-kicker";
                 default: return null;
             }
         }
@@ -580,12 +598,14 @@ namespace Shortcut.RustMod
         {
             switch (kind)
             {
-                case SkateParkKind.Bank: case SkateParkKind.Kicker:
+                case SkateParkKind.Bank: case SkateParkKind.Kicker: case SkateParkKind.HalfWallKicker:
                 case SkateParkKind.LedgeLow: case SkateParkKind.LedgeHigh: return 1;
                 case SkateParkKind.QuarterPipe: return 2;
                 case SkateParkKind.LongLedge: case SkateParkKind.Funbox: return 3;
                 case SkateParkKind.Halfpipe: return 36;
                 case SkateParkKind.MegaHalfpipe: return SkateMegaHalfpipe.PartCount;
+                case SkateParkKind.MiniQuarterPipe: return 2;
+                case SkateParkKind.LargeQuarterPipe: return 3;
                 default: return 0;
             }
         }
@@ -598,6 +618,7 @@ namespace Shortcut.RustMod
             {
                 case SkateParkKind.Bank: part.Height = HalfLength * Math.Sin(12 * Degrees); part.Pitch = -12; break;
                 case SkateParkKind.Kicker: part.Height = HalfLength * Math.Sin(25 * Degrees); part.Pitch = -25; break;
+                case SkateParkKind.HalfWallKicker: part.Pitch = -30; break;
                 case SkateParkKind.QuarterPipe:
                     part.Height = index == 0 ? low : 2 * low + HalfLength * Math.Sin(35 * Degrees);
                     part.Forward = index == 0 ? 0 : HalfLength * (Math.Cos(15 * Degrees) + Math.Cos(35 * Degrees));
@@ -611,10 +632,100 @@ namespace Shortcut.RustMod
                     part.Pitch = index == 0 ? 0 : index == 1 ? -15 : 15; break;
                 case SkateParkKind.Halfpipe: HalfpipePart(index, out part); break;
                 case SkateParkKind.MegaHalfpipe: return SkateMegaHalfpipe.TryPart(index, out part);
+                case SkateParkKind.MiniQuarterPipe:
+                    if (index == 1)
+                        part = new SkateParkPart { Prefab = LowWallPrefab, Forward = 1.15, Yaw = 90 };
+                    break;
+                case SkateParkKind.LargeQuarterPipe:
+                    part.Right = index == 1 ? 3 : 0; part.Forward = index == 2 ? 3 : 0; break;
                 default: return false;
             }
             if (part.Prefab == null) part.Prefab = FloorPrefab;
             return true;
+        }
+
+        public static int CellCount(SkateParkKind kind)
+        { return kind == SkateParkKind.MiniQuarterPipe ? 1 : kind == SkateParkKind.LargeQuarterPipe ? 3 : 0; }
+
+        public static bool TryCell(SkateParkKind kind, int index, out int right, out int forward)
+        {
+            right = forward = 0;
+            if (index < 0 || index >= CellCount(kind)) return false;
+            right = index == 1 ? 1 : 0; forward = index == 2 ? 1 : 0;
+            return true;
+        }
+
+        public static bool TryQuarterProfile(SkateParkKind kind, out SkateParkQuarterProfile profile)
+        {
+            profile = new SkateParkQuarterProfile();
+            if (CellCount(kind) == 0) return false;
+            bool mini = kind == SkateParkKind.MiniQuarterPipe;
+            profile = new SkateParkQuarterProfile { Radius = mini ? 1.2 : 3, Height = mini ? 1.2 : 3,
+                Entry = 0.2, Deck = mini ? 1.4 : 2.6, StartForward = -1.4, HalfWidth = 1.4,
+                EndForward = mini ? 1.4 : 4.4, Skin = 0.08, RailRadius = 0.05, RailHeight = 0.8 };
+            return true;
+        }
+
+        public static bool TryQuarterSurface(SkateParkKind kind, double right, double forward,
+            out double height, out double normalUp, out double normalForward)
+        {
+            height = normalUp = normalForward = 0;
+            SkateParkQuarterProfile profile;
+            if (!TryQuarterProfile(kind, out profile) || !Finite(right) || !Finite(forward)) return false;
+            // The large front-right staging apron meets only the flat entry, not the rising side.
+            if (kind == SkateParkKind.LargeQuarterPipe && right > profile.HalfWidth && right <= 4.4 &&
+                forward >= -1.4 && forward <= 1.4)
+            { normalUp = 1; return true; }
+            if (Math.Abs(right) > profile.HalfWidth || forward < profile.StartForward || forward > profile.EndForward)
+                return false;
+            double run = forward - profile.StartForward - profile.Entry;
+            normalUp = 1;
+            if (run <= 0) return true;
+            if (run >= profile.Radius) { height = profile.Height; return true; }
+            double vertical = Math.Sqrt(Math.Max(0, profile.Radius * profile.Radius - run * run));
+            height = profile.Radius - vertical;
+            normalUp = vertical / profile.Radius; normalForward = -run / profile.Radius;
+            return true;
+        }
+
+        // Tests every horizontal corner in the part's assigned cell, including rotated wall thickness.
+        public static bool ContainsNativeBounds(SkateParkKind kind, int index, double centerRight,
+            double centerForward, double sizeRight, double sizeForward)
+        {
+            SkateParkPart part;
+            if (CellCount(kind) == 0 || !TryPart(kind, index, out part) || !Finite(centerRight) ||
+                !Finite(centerForward) || !Finite(sizeRight) || !Finite(sizeForward) || sizeRight <= 0 || sizeForward <= 0)
+                return false;
+            int cellRight = kind == SkateParkKind.LargeQuarterPipe && index == 1 ? 1 : 0;
+            int cellForward = kind == SkateParkKind.LargeQuarterPipe && index == 2 ? 1 : 0;
+            double sin = Math.Sin(part.Yaw * Degrees), cos = Math.Cos(part.Yaw * Degrees);
+            for (int x = -1; x <= 1; x += 2)
+            for (int z = -1; z <= 1; z += 2)
+            {
+                double localX = centerRight + x * sizeRight / 2, localZ = centerForward + z * sizeForward / 2;
+                double r = part.Right + localX * cos + localZ * sin - CellSize * cellRight;
+                double f = part.Forward - localX * sin + localZ * cos - CellSize * cellForward;
+                if (Math.Abs(r) > 1.5 + 1e-9 || Math.Abs(f) > 1.5 + 1e-9) return false;
+            }
+            return true;
+        }
+
+        // Strict overlap of yaw-only boxes; touching cell edges are allowed. Inputs are world metres.
+        public static bool OverlapsBox(double x, double z, double yaw, double halfRight, double halfForward,
+            double otherX, double otherZ, double otherYaw, double otherHalfRight, double otherHalfForward)
+        {
+            if (!Coordinate(x) || !Coordinate(z) || !Angle(yaw) || !Coordinate(otherX) || !Coordinate(otherZ) ||
+                !Angle(otherYaw) || !Finite(halfRight) || !Finite(halfForward) || !Finite(otherHalfRight) ||
+                !Finite(otherHalfForward) || halfRight <= 0 || halfForward <= 0 || otherHalfRight <= 0 || otherHalfForward <= 0)
+                return true;
+            double a = yaw * Degrees, b = otherYaw * Degrees;
+            double ax = Math.Cos(a), az = -Math.Sin(a), bx = Math.Cos(b), bz = -Math.Sin(b);
+            double dx = otherX - x, dz = otherZ - z;
+            double c = Math.Abs(ax * bx + az * bz), s = Math.Abs(ax * -bz + az * bx);
+            return Math.Abs(dx * ax + dz * az) < halfRight + otherHalfRight * c + otherHalfForward * s - 1e-7 &&
+                Math.Abs(dx * -az + dz * ax) < halfForward + otherHalfRight * s + otherHalfForward * c - 1e-7 &&
+                Math.Abs(dx * bx + dz * bz) < otherHalfRight + halfRight * c + halfForward * s - 1e-7 &&
+                Math.Abs(dx * -bz + dz * bx) < otherHalfForward + halfRight * s + halfForward * c - 1e-7;
         }
         private static void HalfpipePart(int index, out SkateParkPart part)
         {
@@ -692,7 +803,7 @@ namespace Shortcut.RustMod
             double floorCenterZ, double floorSizeY, double floorSizeZ, out double anchorY)
         {
             anchorY = 0;
-            if (PartCount(kind) == 0 || !Coordinate(supportTop) || !Coordinate(floorCenterY) ||
+            if (kind == SkateParkKind.HalfWallKicker || PartCount(kind) == 0 || !Coordinate(supportTop) || !Coordinate(floorCenterY) ||
                 !Coordinate(floorCenterZ) || !Coordinate(floorSizeY) || !Coordinate(floorSizeZ) ||
                 floorSizeY <= 0 || floorSizeZ <= 0) return false;
             double baseline = supportTop - (floorCenterY - floorSizeY / 2) + 0.025;
@@ -709,6 +820,41 @@ namespace Shortcut.RustMod
             if (!Coordinate(baseline)) return false;
             anchorY = baseline;
             return true;
+        }
+
+        public static bool TryHalfWallAnchor(SkateParkBlock wall, SkateParkBox wallBounds,
+            SkateParkBox floorBounds, int side, out SkateParkTransform anchor)
+        {
+            anchor = new SkateParkTransform();
+            if (wall.Prefab != HalfWallPrefab || !Valid(wall) || !CloseAngle(wall.Pitch, 0, 0.01) ||
+                (side != -1 && side != 1) || !Box(wallBounds) || !Box(floorBounds) ||
+                wallBounds.SizeX > 0.6 || wallBounds.SizeY < 1.4 || wallBounds.SizeY > 1.6 ||
+                wallBounds.SizeZ < 2.9 || wallBounds.SizeZ > 3.1 || Math.Abs(wallBounds.X) > 0.05 ||
+                Math.Abs(wallBounds.Z) > 0.05 || Math.Abs(wallBounds.Y - wallBounds.SizeY / 2) > 0.05 ||
+                floorBounds.SizeX < 2.9 || floorBounds.SizeX > wallBounds.SizeZ + 0.002 ||
+                floorBounds.SizeZ < 2.9 || floorBounds.SizeZ > 3.1 || floorBounds.SizeY > 1 ||
+                Math.Abs(floorBounds.X) > 0.05 || Math.Abs(floorBounds.Z) > 0.05 || Math.Abs(floorBounds.Y) > 0.5)
+                return false;
+            double yaw = Normalize(wall.Yaw + (side == 1 ? 270 : 90));
+            double sin = Math.Sin(wall.Yaw * Degrees), cos = Math.Cos(wall.Yaw * Degrees);
+            double top = floorBounds.Y + floorBounds.SizeY / 2;
+            double end = floorBounds.Z + floorBounds.SizeZ / 2;
+            double rise = top * Math.Cos(30 * Degrees) + end * Math.Sin(30 * Degrees);
+            double run = -top * Math.Sin(30 * Degrees) + end * Math.Cos(30 * Degrees);
+            double wallRight = wallBounds.X + side * wallBounds.SizeX / 2;
+            double x = wall.X + wallRight * cos + wallBounds.Z * sin - run * Math.Sin(yaw * Degrees) - floorBounds.X * Math.Cos(yaw * Degrees);
+            double y = wall.Y + wallBounds.Y + wallBounds.SizeY / 2 - rise;
+            double z = wall.Z - wallRight * sin + wallBounds.Z * cos - run * Math.Cos(yaw * Degrees) + floorBounds.X * Math.Sin(yaw * Degrees);
+            if (!Coordinate(x) || !Coordinate(y) || !Coordinate(z)) return false;
+            anchor = new SkateParkTransform { X = x, Y = y, Z = z, Yaw = yaw, Pitch = -30 };
+            return true;
+        }
+
+        private static bool Box(SkateParkBox box)
+        {
+            return Coordinate(box.X) && Coordinate(box.Y) && Coordinate(box.Z) &&
+                Finite(box.SizeX) && Finite(box.SizeY) && Finite(box.SizeZ) &&
+                box.SizeX > 0 && box.SizeY > 0 && box.SizeZ > 0;
         }
         public static bool TryAnchor(SkateParkKind kind, int index, double partX, double partY,
             double partZ, double partYaw, out double anchorX, out double anchorY,
@@ -977,6 +1123,9 @@ namespace Shortcut.RustMod
                 case SkateParkKind.Funbox: return "Skate Funbox";
                 case SkateParkKind.Halfpipe: return "Skate Halfpipe";
                 case SkateParkKind.MegaHalfpipe: return "Skate MEGA Halfpipe";
+                case SkateParkKind.MiniQuarterPipe: return "Skate Mini Quarterpipe";
+                case SkateParkKind.LargeQuarterPipe: return "Skate Large Quarterpipe";
+                case SkateParkKind.HalfWallKicker: return "Skate Half-wall Kicker";
                 default: return null;
             }
         }
@@ -1035,7 +1184,7 @@ namespace Shortcut.RustMod
             if (args == null || (args.Length != 1 && args.Length != 5)) return false;
             SkateParkKind parsed;
             if (!SkateParkLayout.TryKind(args[0], out parsed))
-            { failure = "Unknown park piece. Use bank, kicker, quarterpipe, ledge-low, ledge-high, long-ledge, funbox, halfpipe or mega-halfpipe."; return false; }
+            { failure = "Unknown park piece. Use bank, kicker, quarterpipe, ledge-low, ledge-high, long-ledge, funbox, halfpipe, mini-quarterpipe, large-quarterpipe or mega-halfpipe."; return false; }
             if (args.Length == 1) { kind = parsed; failure = null; return true; }
             var values = new double[4];
             string[] names = { "x", "y", "z", "yaw" };
@@ -1247,6 +1396,16 @@ namespace Oxide.Plugins
             [JsonProperty(Required = Required.Always)] public List<ParkMember> Members;
             [JsonProperty(Required = Required.DisallowNull, DefaultValueHandling = DefaultValueHandling.Ignore)]
             public SkateParkBuildItemState BuildItemState;
+            [JsonProperty(NullValueHandling = NullValueHandling.Ignore)] public ParkWallAttachment Wall;
+        }
+
+        public sealed class ParkWallAttachment
+        {
+            [JsonProperty(Required = Required.Always), JsonConverter(typeof(ParkIdConverter))] public ulong Id, Owner;
+            [JsonProperty(Required = Required.Always)] public uint Building;
+            [JsonProperty(Required = Required.Always)] public int Side, Grade;
+            [JsonProperty(Required = Required.Always)] public double X, Y, Z, Yaw;
+            [JsonProperty(Required = Required.Always)] public SkateParkBox WallBounds, FloorBounds;
         }
 
         public sealed class ParkMember
@@ -1345,6 +1504,8 @@ namespace Oxide.Plugins
             public Item PlannerItem;
             public ItemContainer Belt;
             public ParkData Data;
+            public BuildingBlock WallBlock;
+            public ParkWallAttachment Wall;
             public BuildingBlock Foundation;
             public ulong FoundationId;
             public ParkAnchorSnapshot Snapshot;
@@ -1481,6 +1642,13 @@ namespace Oxide.Plugins
                     !SkateParkLayout.TryKind(group.Kind, out kind) || group.Kind != SkateParkLayout.Name(kind) ||
                     group.Members == null || group.Members.Count < 1 || group.Members.Count > SkateParkLayout.PartCount(kind))
                     throw new InvalidDataException("Invalid park group identity or kind.");
+                SkateParkTransform wallAnchor;
+                if (kind == SkateParkKind.HalfWallKicker ? !ValidWallAttachment(group.Wall, out wallAnchor) : group.Wall != null)
+                    throw new InvalidDataException("Invalid half-wall attachment metadata.");
+                if (group.Wall != null && (!TryWallAnchor(group.Wall, out wallAnchor) ||
+                    !Near(group.AnchorX, wallAnchor.X) || !Near(group.AnchorY, wallAnchor.Y) ||
+                    !Near(group.AnchorZ, wallAnchor.Z) || !Near(group.AnchorYaw, wallAnchor.Yaw)))
+                    throw new InvalidDataException("Half-wall attachment join does not match its anchor.");
                 var indices = new HashSet<int>();
                 foreach (ParkMember member in group.Members)
                 {
@@ -1494,6 +1662,11 @@ namespace Oxide.Plugins
                         throw new InvalidDataException("Invalid or duplicate park member identity or layout.");
                 }
             }
+            var sockets = new HashSet<string>(StringComparer.Ordinal);
+            foreach (ParkGroup group in value.Groups)
+                if (group.Wall != null && (members.Contains(group.Wall.Id) ||
+                    !sockets.Add(group.Wall.Id.ToString(CultureInfo.InvariantCulture) + ":" + group.Wall.Side)))
+                    throw new InvalidDataException("A half-wall host is a park member or its side is already occupied.");
             return value;
         }
 
@@ -1512,7 +1685,8 @@ namespace Oxide.Plugins
             [JsonProperty(Required = Required.DisallowNull)] public string ParkNextGesture = "I need wood";
             [JsonProperty(Required = Required.DisallowNull)] public string ParkCancelGesture = "Thumbs up";
             [JsonProperty(Required = Required.DisallowNull)] public string[] ParkPieceOrder =
-                { "halfpipe", "bank", "kicker", "quarterpipe", "ledge-low", "ledge-high", "long-ledge", "funbox" };
+                { "halfpipe", "bank", "kicker", "quarterpipe", "ledge-low", "ledge-high", "long-ledge", "funbox",
+                    "mini-quarterpipe", "large-quarterpipe" };
         }
 
         private sealed class Session
@@ -1602,6 +1776,7 @@ namespace Oxide.Plugins
         {
             InitializeGroundedBuildings();
             InitializeParks();
+            CleanupWallAttachments();
             InitializeParkGestures();
             ready = settings != null && Patched("ValidateMoves", typeof(MovePatch), false) &&
                 Patched("AreSpeeding", typeof(SpeedPatch), true) && Patched("AreFlying", typeof(FlyPatch), true) && StallPatched();
@@ -1609,6 +1784,7 @@ namespace Oxide.Plugins
             else Puts("Skating ready: movement patches installed; permitted eligible players up to " + settings.MaximumHorizontalSpeed +
                 " m/s; fly exemption requires a server admin or shortcutskate.fly and vertical travel up to 200 m/s; support, airtime and rearm are diagnostic only.");
             timer.Every(0.1f, Sweep);
+            timer.Every(1f, CleanupWallAttachments);
         }
 
         private static bool Patched(string name, Type patch, bool postfix)
@@ -2751,6 +2927,8 @@ namespace Oxide.Plugins
                 foreach (var pair in entities)
                     if (pair.Key != null && ParkId(pair.Key) != 0) saved[ParkId(pair.Key)] = pair;
                 foreach (ParkGroup group in parkData.Groups)
+                {
+                    if (group.Wall != null && !SavedWallMatches(group.Wall, saved)) continue;
                     foreach (ParkMember member in group.Members)
                     {
                         SkateParkKind kind;
@@ -2769,6 +2947,7 @@ namespace Oxide.Plugins
                             !ParkPose(block.transform.position, block.transform.rotation, member)) continue;
                         block.grounded = true;
                     }
+                }
             }
             catch (Exception error) { PrintError("Early park support restoration failed. " + error.Message); }
         }
@@ -2800,7 +2979,7 @@ namespace Oxide.Plugins
                     {
                         BuildingBlock block = FindParkBlock(member.Id);
                         if (!ParkMatches(block, group, member)) { group.Members.Remove(member); continue; }
-                        block.grounded = true;
+                        block.grounded = group.Wall == null || WallMatches(FindParkBlock(group.Wall.Id), group.Wall);
                         block.InitializeSupports();
                         block.UpdateSurroundingEntities();
                         parkMembers.Add(member.Id, group);
@@ -2888,7 +3067,7 @@ namespace Oxide.Plugins
             if (player == null || !player.IsAdmin)
             { arg.ReplyWith("Use this command as an in-game administrator."); return; }
             if (arg.Args == null || arg.Args.Length != 1)
-            { arg.ReplyWith("Usage: skate.piece <bank|kicker|quarterpipe|ledge-low|ledge-high|long-ledge|funbox|halfpipe|mega-halfpipe|cancel>."); return; }
+            { arg.ReplyWith("Usage: skate.piece <bank|kicker|quarterpipe|ledge-low|ledge-high|long-ledge|funbox|halfpipe|mini-quarterpipe|large-quarterpipe|mega-halfpipe|cancel>."); return; }
             if (string.Equals(arg.GetString(0), "cancel", StringComparison.OrdinalIgnoreCase))
             {
                 ParkSelection previous;
@@ -2902,7 +3081,9 @@ namespace Oxide.Plugins
             }
             SkateParkKind kind;
             if (!SkateParkLayout.TryKind(arg.GetString(0), out kind))
-            { arg.ReplyWith("Unknown park piece. Use bank, kicker, quarterpipe, ledge-low, ledge-high, long-ledge, funbox, halfpipe or mega-halfpipe."); return; }
+            { arg.ReplyWith("Unknown park piece. Use bank, kicker, quarterpipe, ledge-low, ledge-high, long-ledge, funbox, halfpipe, mini-quarterpipe, large-quarterpipe, half-wall-kicker or mega-halfpipe."); return; }
+            if (kind == SkateParkKind.HalfWallKicker)
+            { arg.ReplyWith("Use the Half-wall Kicker build item and aim at an existing half wall."); return; }
             string failure;
             if (!Eligible(player))
             { arg.ReplyWith("Park placement is unavailable; be alive, awake, unmounted and on dry land."); return; }
@@ -3005,6 +3186,12 @@ namespace Oxide.Plugins
             {
                 pending.Failure = "The original administrator, building plan, build item, native construction or world changed after affordability; placement was refused.";
                 ReportParkFailures(request.Player, new[] { pending.Failure });
+                return false;
+            }
+            if (request.ItemKind == SkateParkKind.HalfWallKicker)
+            {
+                parkNativeRequests.Remove(request.Owner);
+                PlaceNativeWallKicker(request, construction, target);
                 return false;
             }
             if (!target.valid || !ReferenceEquals(target.player, player) || target.shouldParent ||
@@ -3219,7 +3406,7 @@ namespace Oxide.Plugins
             if (player == null || !player.IsAdmin || !Eligible(player))
             { arg.ReplyWith("Use this command as an alive, awake, unmounted in-game administrator on dry land."); return; }
             if (arg.Args == null || arg.Args.Length != 1)
-            { arg.ReplyWith("Usage: skate.items <bank|kicker|quarterpipe|ledge-low|ledge-high|long-ledge|funbox|halfpipe|mega-halfpipe|all>."); return; }
+            { arg.ReplyWith("Usage: skate.items <bank|kicker|quarterpipe|ledge-low|ledge-high|long-ledge|funbox|halfpipe|mini-quarterpipe|large-quarterpipe|mega-halfpipe|all>."); return; }
             if (parkBusy || parkClosing || parkNativeRequests.Count != 0 || parkNativeCleaning)
             { arg.ReplyWith("Park placement or removal is busy; try again shortly."); return; }
             SkateParkKind selected = SkateParkKind.Bank;
@@ -3261,6 +3448,16 @@ namespace Oxide.Plugins
             if (request == null || !ReferenceEquals(instance, this) || parkClosing || !parkReady ||
                 SaveRestore.IsSaving || !ReferenceEquals(parkData, request.Data) || !SameParkWorld(request.Data) ||
                 request.Player == null || request.Player.userID != request.Owner || !request.Player.IsAdmin || !Eligible(request.Player)) return false;
+            if (request.Wall != null)
+            {
+                SkateParkTransform wallAnchor;
+                if (!ReferenceEquals(FindParkBlock(request.Wall.Id), request.WallBlock) ||
+                    !WallMatches(request.WallBlock, request.Wall) || !WallPermission(request.Player, request.WallBlock) ||
+                    request.Player.eyes == null || !Coordinate(request.Player.eyes.position) ||
+                    !TryWallAnchor(request.Wall, out wallAnchor) || Vector3.Distance(request.Player.eyes.position,
+                        new Vector3((float)wallAnchor.X, (float)wallAnchor.Y, (float)wallAnchor.Z)) > MaximumParkPlacementDistance)
+                    return false;
+            }
             if (request.BuildItem && request.ItemSpent)
                 return SameParkPaymentItem(request) && request.PlannerItem.amount == 0;
             if (request.Planner == null || request.Planner.IsDestroyed ||
@@ -3352,7 +3549,18 @@ namespace Oxide.Plugins
                 ParkNativePart[] definitions;
                 ParkPrefabs(kind, failures, out definitions);
                 if (failures.Count != 0) { arg.ReplyWith(string.Join("\n", failures)); return; }
-                if (!explicitAnchor)
+                ParkGroup wallGroup = null;
+                var wallRequest = new ParkPlacementRequest { Player = player, Planner = planner, PlannerItem = item,
+                    Belt = belt, Data = parkData, BuildItem = buildItem, ItemKind = kind, ItemUid = item.uid,
+                    ItemDefinition = item.info, ItemData = item.instanceData, Owner = player.userID };
+                if (kind == SkateParkKind.HalfWallKicker)
+                {
+                    if (explicitAnchor) { arg.ReplyWith("Half-wall kickers require an aimed placed half wall; free anchors are not supported."); return; }
+                    if (!TryWallPlacement(wallRequest, new Ray(eye, player.eyes.HeadForward()), null, definitions, out wallGroup, out failure))
+                    { arg.ReplyWith(failure); return; }
+                    x = wallGroup.AnchorX; y = wallGroup.AnchorY; z = wallGroup.AnchorZ; yaw = wallGroup.AnchorYaw;
+                }
+                else if (!explicitAnchor)
                 {
                     Vector3 direction = player.eyes.HeadForward();
                     int mask = LayerMask.GetMask("Terrain", "Construction");
@@ -3375,10 +3583,8 @@ namespace Oxide.Plugins
                 Vector3 anchor = new Vector3((float)x, (float)y, (float)z);
                 if (!Coordinate(anchor) || Vector3.Distance(eye, anchor) > MaximumParkPlacementDistance)
                 { arg.ReplyWith("The park anchor must be within 25 metres of your server eye position."); return; }
-                var request = new ParkPlacementRequest { Player = player, Planner = planner, PlannerItem = item,
-                    Belt = belt, Data = parkData, BuildItem = buildItem, ItemKind = kind, ItemUid = item.uid,
-                    ItemDefinition = item.info, ItemData = item.instanceData, Owner = player.userID };
-                var group = new ParkGroup { Id = Guid.NewGuid().ToString("N"), Owner = player.userID,
+                var request = wallRequest;
+                var group = wallGroup ?? new ParkGroup { Id = Guid.NewGuid().ToString("N"), Owner = player.userID,
                     Kind = SkateParkLayout.Name(kind), AnchorX = x, AnchorY = y, AnchorZ = z, AnchorYaw = yaw,
                     Members = new List<ParkMember>(), BuildItemState = buildItem ? SkateParkBuildItemState.Preparing : SkateParkBuildItemState.None };
                 if (!BuildParkAssembly(request, kind, definitions, group, out failure))
@@ -3727,6 +3933,211 @@ namespace Oxide.Plugins
             }
         }
 
+        private static SkateParkBox ParkBox(Bounds bounds)
+        {
+            return new SkateParkBox { X = bounds.center.x, Y = bounds.center.y, Z = bounds.center.z,
+                SizeX = bounds.size.x, SizeY = bounds.size.y, SizeZ = bounds.size.z };
+        }
+
+        private static bool SameParkBox(SkateParkBox a, SkateParkBox b)
+        {
+            return Near(a.X, b.X) && Near(a.Y, b.Y) && Near(a.Z, b.Z) &&
+                Near(a.SizeX, b.SizeX) && Near(a.SizeY, b.SizeY) && Near(a.SizeZ, b.SizeZ);
+        }
+
+        private static bool TryWallAnchor(ParkWallAttachment wall, out SkateParkTransform anchor)
+        {
+            anchor = new SkateParkTransform();
+            return wall != null && SkateParkLayout.TryHalfWallAnchor(new SkateParkBlock(SkateParkLayout.HalfWallPrefab,
+                wall.X, wall.Y, wall.Z, wall.Yaw, 0), wall.WallBounds, wall.FloorBounds, wall.Side, out anchor);
+        }
+
+        private static bool ValidWallAttachment(ParkWallAttachment wall, out SkateParkTransform anchor)
+        {
+            anchor = new SkateParkTransform();
+            return wall != null && wall.Id != 0 && wall.Owner != 0 && wall.Building != 0 &&
+                wall.Grade >= (int)BuildingGrade.Enum.Twigs && wall.Grade <= (int)BuildingGrade.Enum.TopTier &&
+                wall.Yaw >= 0 && wall.Yaw < 360 && TryWallAnchor(wall, out anchor);
+        }
+
+        private static bool WallMatches(BuildingBlock block, ParkWallAttachment wall)
+        {
+            SkateParkTransform anchor;
+            if (!ValidWallAttachment(wall, out anchor) || block == null || block.IsDestroyed || block.net == null ||
+                !ReferenceEquals(FindParkBlock(wall.Id), block) || ParkId(block) != wall.Id ||
+                block.PrefabName != SkateParkLayout.HalfWallPrefab || block.prefabID != StringPool.Get(SkateParkLayout.HalfWallPrefab) ||
+                block.OwnerID != wall.Owner || block.buildingID != wall.Building || !block.enableSaving ||
+                block.GetParentEntity() != null || block.skinID != 0 || (int)block.grade != wall.Grade ||
+                block.blockDefinition == null || !SameParkBox(ParkBox(block.blockDefinition.bounds), wall.WallBounds) ||
+                (block.transform.localScale - Vector3.one).sqrMagnitude > 1e-8f ||
+                (block.transform.position - new Vector3((float)wall.X, (float)wall.Y, (float)wall.Z)).sqrMagnitude > 1e-6f ||
+                Quaternion.Angle(block.transform.rotation, Quaternion.Euler(0, (float)wall.Yaw, 0)) > 0.01f) return false;
+            uint floorId = StringPool.Get(SkateParkLayout.FloorPrefab);
+            Construction floor = PrefabAttribute.server == null ? null : PrefabAttribute.server.Find<Construction>(floorId);
+            return floor != null && SameParkBox(ParkBox(floor.bounds), wall.FloorBounds);
+        }
+
+        private static bool WallPermission(BasePlayer player, BuildingBlock wall)
+        {
+            if (player == null || wall == null || wall.blockDefinition == null ||
+                !player.CanBuild(wall.transform.position, wall.transform.rotation, wall.blockDefinition.bounds, false)) return false;
+            var building = wall.GetBuilding();
+            if (building == null) return false;
+            var privilege = building.GetDominatingBuildingPrivilege();
+            return privilege == null ? wall.OwnerID == player.userID : privilege.CanBuild(player);
+        }
+
+        private static bool RecoverableWall(ParkGroup group, BasePlayer player)
+        {
+            return group.Wall == null || (WallMatches(FindParkBlock(group.Wall.Id), group.Wall) &&
+                WallPermission(player, FindParkBlock(group.Wall.Id)));
+        }
+
+        private bool WallSocketOccupied(ParkWallAttachment wall, ParkGroup except = null)
+        {
+            return parkData == null || parkMembers.ContainsKey(wall.Id) || parkData.Groups.Any(g =>
+                !ReferenceEquals(g, except) && g.Wall != null && g.Wall.Id == wall.Id && g.Wall.Side == wall.Side);
+        }
+
+        private bool TryWallPlacement(ParkPlacementRequest request, Ray ray, BuildingBlock expected,
+            ParkNativePart[] definitions, out ParkGroup group, out string failure)
+        {
+            group = null;
+            failure = "Aim at the broad side of a saved, upright, unparented half wall within 25 metres.";
+            BasePlayer player = request.Player;
+            if (player.eyes == null || !Coordinate(ray.origin) || !Coordinate(ray.direction) ||
+                ray.direction.sqrMagnitude < 0.0001f || Vector3.Distance(ray.origin, player.eyes.position) > 0.5f) return false;
+            RaycastHit hit;
+            int mask = LayerMask.GetMask("World", "Terrain", "Construction", "Deployed", "Player (Server)");
+            if (mask == 0 || !Physics.Raycast(ray.origin, ray.direction.normalized, out hit,
+                MaximumParkPlacementDistance, mask, QueryTriggerInteraction.Ignore) || hit.collider == null ||
+                !Coordinate(hit.point) || !Coordinate(hit.normal)) return false;
+            BuildingBlock wall = hit.collider.ToBaseEntity() as BuildingBlock;
+            if (wall == null || (expected != null && !ReferenceEquals(wall, expected)) || wall.blockDefinition == null ||
+                wall.net == null || wall.OwnerID == 0 || wall.buildingID == 0 || definitions == null || definitions.Length != 1) return false;
+            float dot = Vector3.Dot(hit.normal, wall.transform.right);
+            if (Math.Abs(dot) < 0.98f) return false;
+            var attachment = new ParkWallAttachment { Id = ParkId(wall), Owner = wall.OwnerID, Building = wall.buildingID,
+                Grade = (int)wall.grade, Side = dot > 0 ? 1 : -1, X = wall.transform.position.x,
+                Y = wall.transform.position.y, Z = wall.transform.position.z, Yaw = wall.transform.rotation.eulerAngles.y,
+                WallBounds = ParkBox(wall.blockDefinition.bounds), FloorBounds = ParkBox(definitions[0].Construction.bounds) };
+            SkateParkTransform anchor;
+            if (!WallMatches(wall, attachment) || !TryWallAnchor(attachment, out anchor) ||
+                Vector3.Dot(ray.origin - wall.transform.position, wall.transform.right) * attachment.Side <= 0 ||
+                Vector3.Distance(player.eyes.position, new Vector3((float)anchor.X, (float)anchor.Y, (float)anchor.Z)) > MaximumParkPlacementDistance)
+                return false;
+            failure = "The half wall is a park member, its side is occupied, or its building privilege is unavailable.";
+            if (WallSocketOccupied(attachment) || !WallPermission(player, wall)) return false;
+            request.WallBlock = wall;
+            request.Wall = attachment;
+            request.Building = wall.buildingID;
+            group = new ParkGroup { Id = Guid.NewGuid().ToString("N"), Owner = request.Owner,
+                Kind = SkateParkLayout.Name(SkateParkKind.HalfWallKicker), AnchorX = anchor.X, AnchorY = anchor.Y,
+                AnchorZ = anchor.Z, AnchorYaw = anchor.Yaw, Members = new List<ParkMember>(), Wall = attachment,
+                BuildItemState = request.BuildItem ? SkateParkBuildItemState.Preparing : SkateParkBuildItemState.None };
+            failure = null;
+            return true;
+        }
+
+        private void PlaceNativeWallKicker(ParkPlacementRequest request, Construction construction, Construction.Target target)
+        {
+            try
+            {
+                string failure;
+                if (!target.valid || !ReferenceEquals(target.player, request.Player) || target.shouldParent ||
+                    !(target.entity is BuildingBlock) || !CurrentParkRequest(request))
+                { request.Player.ConsoleMessage("Half-wall attachment needs an unchanged native wall target; the item was retained."); return; }
+                var failures = new List<string>();
+                ParkNativePart[] definitions;
+                ParkPrefabs(SkateParkKind.HalfWallKicker, failures, out definitions);
+                if (failures.Count != 0) { ReportParkFailures(request.Player, failures); return; }
+                ParkGroup group;
+                if (!TryWallPlacement(request, target.ray, target.entity as BuildingBlock, definitions, out group, out failure))
+                { request.Player.ConsoleMessage(failure); return; }
+                // Finish the original hook dispatch before invoking any creation or payment callbacks.
+                NextTick(() =>
+                {
+                    if (!CurrentParkRequest(request) || parkBusy || parkRefreshing || parkNativeRequests.Count != 0) return;
+                    try
+                    {
+                        bool permitted;
+                        parkBusy = true;
+                        try { permitted = ParkBuildingHook(request, construction, target); }
+                        finally { parkBusy = false; }
+                        if (!permitted || !CurrentParkRequest(request))
+                        { request.Player.ConsoleMessage("A native wall-target building hook refused the attachment; the item was retained."); return; }
+                        string refused;
+                        if (!BuildParkAssembly(request, SkateParkKind.HalfWallKicker, definitions, group, out refused))
+                        { request.Player.ConsoleMessage(refused); return; }
+                        request.Player.ConsoleMessage(ParkPlacementReply(group));
+                    }
+                    catch (Exception error) { PrintWarning("Deferred half-wall attachment refused: " + error.Message); }
+                });
+            }
+            catch (Exception error) { PrintWarning("Half-wall attachment refused: " + error.Message); }
+        }
+
+        private static bool SavedWallMatches(ParkWallAttachment wall,
+            Dictionary<ulong, KeyValuePair<BaseEntity, ProtoBuf.Entity>> saved)
+        {
+            KeyValuePair<BaseEntity, ProtoBuf.Entity> pair;
+            SkateParkTransform anchor;
+            if (!ValidWallAttachment(wall, out anchor) || !saved.TryGetValue(wall.Id, out pair)) return false;
+            ProtoBuf.Entity proto = pair.Value;
+            return pair.Key is BuildingBlock && pair.Key.PrefabName == SkateParkLayout.HalfWallPrefab &&
+                proto != null && proto.baseNetworkable != null && proto.baseEntity != null && proto.ownerInfo != null &&
+                proto.baseNetworkable.uid.Value == wall.Id && proto.baseNetworkable.prefabID == StringPool.Get(SkateParkLayout.HalfWallPrefab) &&
+                proto.ownerInfo.steamid == wall.Owner && proto.buildingBlock != null && proto.buildingBlock.grade == wall.Grade &&
+                proto.decayEntity != null && proto.decayEntity.buildingID == wall.Building &&
+                (proto.parent == null || proto.parent.uid.Value == 0) &&
+                (proto.baseEntity.pos - new Vector3((float)wall.X, (float)wall.Y, (float)wall.Z)).sqrMagnitude <= 1e-6f &&
+                Quaternion.Angle(Quaternion.Euler(proto.baseEntity.rot), Quaternion.Euler(0, (float)wall.Yaw, 0)) <= 0.01f;
+        }
+
+        private bool CurrentWallCleanup(ParkData data)
+        {
+            return ReferenceEquals(instance, this) && !parkClosing && !parkRefreshing && !SaveRestore.IsSaving &&
+                !parkDataBroken && !parkStorageFailed && ReferenceEquals(parkData, data) && SameParkWorld(data);
+        }
+
+        private void CleanupWallAttachments()
+        {
+            if (!ReferenceEquals(instance, this) || parkClosing || parkBusy || parkRefreshing || SaveRestore.IsSaving ||
+                parkDataBroken || parkStorageFailed || parkData == null || !SameParkWorld(parkData)) return;
+            ParkData data = parkData;
+            parkBusy = true;
+            try
+            {
+                foreach (ParkGroup group in data.Groups.ToArray())
+                {
+                    if (!CurrentWallCleanup(data)) return;
+                    if (group.Wall == null) continue;
+                    if (WallMatches(FindParkBlock(group.Wall.Id), group.Wall))
+                    {
+                        PruneDestroyedParkMembers(group);
+                        continue;
+                    }
+                    // Dependency loss is destruction, never a paid-group recovery operation.
+                    if (!CurrentWallCleanup(data) || !data.Groups.Contains(group)) return;
+                    group.BuildItemState = SkateParkBuildItemState.RecoveryClaimed;
+                    SaveParkData();
+                    foreach (ParkMember member in group.Members.ToArray())
+                    {
+                        if (!CurrentWallCleanup(data) || !data.Groups.Contains(group)) return;
+                        BuildingBlock block = FindParkBlock(member.Id);
+                        if (!ParkMatches(block, group, member)) continue;
+                        block.grounded = false;
+                        block.Kill(BaseNetworkable.DestroyMode.Gib);
+                        if (!CurrentWallCleanup(data)) return;
+                    }
+                    if (!CurrentWallCleanup(data)) return;
+                    PruneDestroyedParkMembers(group);
+                }
+            }
+            catch (Exception error) { PrintWarning("Half-wall dependency cleanup remains pending: " + error.Message); }
+            finally { parkBusy = false; }
+        }
+
         private static bool HorizontalParkFoundation(BuildingBlock anchor)
         {
             return anchor != null && !anchor.IsDestroyed && anchor.net != null && anchor.enableSaving &&
@@ -3874,8 +4285,136 @@ namespace Oxide.Plugins
                     cache.Add(key, definition);
                 }
                 definitions[i] = definition;
+                if (definition != null && SkateParkLayout.CellCount(kind) != 0)
+                {
+                    Bounds bounds = definition.Construction.bounds;
+                    SkateParkQuarterProfile profile;
+                    SkateParkLayout.TryQuarterProfile(kind, out profile);
+                    if (!SkateParkLayout.ContainsNativeBounds(kind, i, bounds.center.x, bounds.center.z,
+                        bounds.size.x, bounds.size.z) || (part.Prefab != SkateParkLayout.FloorPrefab &&
+                        (definitions[0] == null || bounds.max.y > definitions[0].Construction.bounds.max.y + profile.Height)))
+                        failures.Add("Park module part[" + i.ToString(CultureInfo.InvariantCulture) + "]: native bounds exceed its cell or riding envelope.");
+                }
             }
             return failures.Count == 0;
+        }
+
+        private struct ParkSpace
+        {
+            public Vector3 Position;
+            public Quaternion Rotation;
+            public Bounds Bounds;
+        }
+
+        private static Bounds ParkCellBounds(SkateParkKind kind, Bounds floor)
+        {
+            SkateParkQuarterProfile profile;
+            SkateParkLayout.TryQuarterProfile(kind, out profile);
+            float bottom = Math.Min(floor.min.y, floor.max.y - (float)profile.Skin);
+            float top = floor.max.y + (float)(profile.Height + profile.RailHeight + profile.RailRadius);
+            return new Bounds(new Vector3(0, (bottom + top) / 2, 0), new Vector3(3, top - bottom, 3));
+        }
+
+        private static List<ParkSpace> ParkSpaces(SkateParkKind kind, ParkGroup group, Bounds floor)
+        {
+            var spaces = new List<ParkSpace>();
+            Quaternion rotation = Quaternion.Euler(0, (float)group.AnchorYaw, 0);
+            for (int i = 0; i < SkateParkLayout.CellCount(kind); i++)
+            {
+                int right, forward;
+                SkateParkLayout.TryCell(kind, i, out right, out forward);
+                spaces.Add(new ParkSpace { Position = new Vector3((float)group.AnchorX, (float)group.AnchorY, (float)group.AnchorZ) +
+                    rotation * new Vector3(right * 3, 0, forward * 3), Rotation = rotation, Bounds = ParkCellBounds(kind, floor) });
+            }
+            return spaces;
+        }
+
+        private static bool ParkSpacesOverlap(ParkSpace first, ParkSpace second)
+        {
+            Vector3 a = first.Position + first.Rotation * first.Bounds.center;
+            Vector3 b = second.Position + second.Rotation * second.Bounds.center;
+            Vector3 ae = first.Bounds.extents, be = second.Bounds.extents;
+            // Project pitched native bounds onto their yaw frame before comparison with a cell.
+            double pitch = first.Rotation.eulerAngles.x * Math.PI / 180;
+            double vertical = ae.y * Math.Abs(Math.Cos(pitch)) + ae.z * Math.Abs(Math.Sin(pitch));
+            double forward = ae.z * Math.Abs(Math.Cos(pitch)) + ae.y * Math.Abs(Math.Sin(pitch));
+            return Math.Abs(a.y - b.y) < vertical + be.y - 1e-5 && SkateParkLayout.OverlapsBox(
+                a.x, a.z, first.Rotation.eulerAngles.y, ae.x, forward,
+                b.x, b.z, second.Rotation.eulerAngles.y, be.x, be.z);
+        }
+
+        private bool ParkModuleSpace(ParkPlacementRequest request, SkateParkKind kind, ParkNativePart[] definitions,
+            ParkGroup group, ParkMember[] parts, List<BuildingBlock> created, out string failure)
+        {
+            failure = "The reserved park cells need dry, clear space and building permission through the complete ramp/deck/rail height.";
+            Bounds floor = definitions[0].Construction.bounds;
+            List<ParkSpace> spaces = ParkSpaces(kind, group, floor);
+            bool module = spaces.Count != 0;
+            int mask = LayerMask.GetMask("World", "Construction", "Deployed", "Player (Server)");
+            foreach (ParkSpace space in spaces)
+            {
+                if (!ParkReservedBounds(space.Position, space.Rotation, space.Bounds, out failure, group) ||
+                    !request.Player.CanBuild(space.Position, space.Rotation, space.Bounds, false) ||
+                    !ParkFootprint(space.Position, space.Rotation, space.Bounds, request.Foundation, created, mask, out failure, true))
+                    return false;
+            }
+            // Other park layouts also respect saved module reservations, even where no native collider exists.
+            if (kind == SkateParkKind.MegaHalfpipe)
+                spaces.Add(new ParkSpace { Position = new Vector3((float)group.AnchorX, (float)group.AnchorY, (float)group.AnchorZ),
+                    Rotation = Quaternion.Euler(0, (float)group.AnchorYaw, 0), Bounds = MegaBounds() });
+            else if (!module)
+                foreach (ParkMember part in parts)
+                    spaces.Add(new ParkSpace { Position = ParkPosition(part), Rotation = ParkRotation(part),
+                        Bounds = definitions[part.Index].Construction.bounds });
+            foreach (ParkGroup existing in request.Data.Groups)
+            {
+                SkateParkKind existingKind;
+                if (ReferenceEquals(existing, group) || !SkateParkLayout.TryKind(existing.Kind, out existingKind) ||
+                    SkateParkLayout.CellCount(existingKind) == 0) continue;
+                foreach (ParkSpace reserved in ParkSpaces(existingKind, existing, floor))
+                foreach (ParkSpace space in spaces)
+                    if (ParkSpacesOverlap(space, reserved))
+                    { failure = "The park assembly overlaps a saved module's reserved cells."; return false; }
+            }
+            if (module && created != null)
+                for (int i = 0; i < created.Count; i++)
+                    if (!ParkModuleColliders(kind, i, created[i], group, floor))
+                    { failure = "A native module collider exceeds its assigned cell or riding envelope."; return false; }
+            return true;
+        }
+
+        private static bool ParkModuleColliders(SkateParkKind kind, int index, BuildingBlock block, ParkGroup group, Bounds floor)
+        {
+            int cellRight = kind == SkateParkKind.LargeQuarterPipe && index == 1 ? 1 : 0;
+            int cellForward = kind == SkateParkKind.LargeQuarterPipe && index == 2 ? 1 : 0;
+            Bounds envelope = ParkCellBounds(kind, floor);
+            Vector3 origin = new Vector3((float)group.AnchorX, (float)group.AnchorY, (float)group.AnchorZ);
+            Quaternion inverse = Quaternion.Inverse(Quaternion.Euler(0, (float)group.AnchorYaw, 0));
+            Collider[] colliders = block.GetComponentsInChildren<Collider>(true);
+            if (colliders == null || colliders.Length == 0) return false;
+            foreach (Collider collider in colliders)
+            {
+                if (collider == null) return false;
+                BoxCollider box = collider as BoxCollider;
+                MeshCollider mesh = collider as MeshCollider;
+                Bounds bounds;
+                Transform frame;
+                if (box != null) { bounds = new Bounds(box.center, box.size); frame = box.transform; }
+                else if (mesh != null && mesh.sharedMesh != null) { bounds = mesh.sharedMesh.bounds; frame = mesh.transform; }
+                else { bounds = collider.bounds; frame = null; }
+                for (int x = -1; x <= 1; x += 2)
+                for (int y = -1; y <= 1; y += 2)
+                for (int z = -1; z <= 1; z += 2)
+                {
+                    Vector3 point = bounds.center + Vector3.Scale(bounds.extents, new Vector3(x, y, z));
+                    point = inverse * ((frame == null ? point : frame.TransformPoint(point)) - origin);
+                    if (!Coordinate(point) || Math.Abs(point.x - cellRight * 3) > 1.50001 ||
+                        Math.Abs(point.z - cellForward * 3) > 1.50001 || point.y < envelope.min.y - 1e-5 ||
+                        point.y > floor.max.y + (kind == SkateParkKind.MiniQuarterPipe ? 1.2 : 3) + 1e-5)
+                        return false;
+                }
+            }
+            return true;
         }
 
         private static bool ParkFoundation(BuildingBlock anchor, List<string> failures, out Construction construction)
@@ -4029,12 +4568,13 @@ namespace Oxide.Plugins
         }
 
         private static bool ParkFootprint(Vector3 position, Quaternion rotation, Bounds bounds, BuildingBlock anchor,
-            List<BuildingBlock> transactionParts, int mask, out string failure)
+            List<BuildingBlock> transactionParts, int mask, out string failure, bool reservedCell = false)
         {
             failure = "The complete park assembly needs dry, clear space.";
             Vector3 extents = bounds.extents;
-            extents.x = Math.Max(0.01f, extents.x - 0.015f);
-            extents.z = Math.Max(0.01f, extents.z - 0.015f);
+            float inset = reservedCell ? 0.00001f : 0.015f;
+            extents.x = Math.Max(0.01f, extents.x - inset);
+            extents.z = Math.Max(0.01f, extents.z - inset);
             foreach (Collider collider in Physics.OverlapBox(position + rotation * bounds.center, extents, rotation,
                 mask, QueryTriggerInteraction.Ignore))
             {
@@ -4083,6 +4623,8 @@ namespace Oxide.Plugins
 
         private void BuildParkPiece(BasePlayer player, Planner planner, BuildingBlock anchor, ulong anchorId, ParkSelection selection)
         {
+            if (selection.Kind == SkateParkKind.HalfWallKicker)
+            { player.ConsoleMessage("Use the Half-wall Kicker build item and aim at an existing half wall."); return; }
             if (!CurrentParkSelection(player, selection) || parkClosing) return;
             string failure;
             if (!RefreshParkWorld(out failure))
@@ -4143,7 +4685,7 @@ namespace Oxide.Plugins
             { failure = "Park group limit reached: 256."; return false; }
             BasePlayer player = request.Player;
             Planner planner = request.Planner;
-            BuildingBlock anchor = request.Foundation;
+            BuildingBlock anchor = request.WallBlock ?? request.Foundation;
             var parts = new ParkMember[SkateParkLayout.PartCount(kind)];
             for (int i = 0; i < parts.Length; i++)
             {
@@ -4159,7 +4701,11 @@ namespace Oxide.Plugins
             parkBusy = true;
             try
             {
-                if (!ParkPreflight(request, kind, anchor, definitions, parts, out failure))
+                if (kind == SkateParkKind.HalfWallKicker && (request.Wall == null ||
+                    !ReferenceEquals(group.Wall, request.Wall) || WallSocketOccupied(request.Wall, group)))
+                    throw new InvalidDataException("The half-wall attachment is missing or its side is occupied.");
+                if (!ParkPreflight(request, kind, anchor, definitions, parts, out failure) ||
+                    !ParkModuleSpace(request, kind, definitions, group, parts, null, out failure))
                     throw new InvalidDataException(failure);
                 // Native/plugin callbacks can change the actor, planner, world or foundation.
                 if (!CurrentParkRequest(request))
@@ -4196,7 +4742,7 @@ namespace Oxide.Plugins
                     block.skinID = 0;
                     block.SetGrade(definitions[i].Grade);
                     block.SetHealthToMax();
-                    if (request.Selection == null && i == 0)
+                    if (request.Selection == null && request.Wall == null && i == 0)
                     {
                         // The DecayEntity overload allocates a real native building; uint zero does not.
                         block.AttachToBuilding((DecayEntity)null);
@@ -4232,7 +4778,8 @@ namespace Oxide.Plugins
                             LayerMask.GetMask("World", "Construction", "Deployed", "Player (Server)"), out failure))
                         throw new InvalidDataException("A placement request or park member changed during final permission verification.");
                 }
-                if (!ParkMegaSpace(kind, parts, player, anchor, created, out failure))
+                if (!ParkMegaSpace(kind, parts, player, anchor, created, out failure) ||
+                    !ParkModuleSpace(request, kind, definitions, group, parts, created, out failure))
                     throw new InvalidDataException(failure);
                 group.Members.AddRange(parts);
                 request.Data.Groups.Add(group);
@@ -4275,8 +4822,9 @@ namespace Oxide.Plugins
                     !SkateParkSelections.TryApply(request.Selection.State, SkateParkSelectionAction.PlacementSucceeded,
                         player.IsAdmin, parkReady, clock.Elapsed.TotalSeconds, null, out consumed)))
                     throw new InvalidDataException("The placement request expired or changed before completion.");
-                if (!ParkMegaSpace(kind, parts, player, anchor, created, out failure, group) || !CurrentParkRequest(request))
-                    throw new InvalidDataException(failure ?? "The placement request changed during final MEGA verification.");
+                if (!ParkMegaSpace(kind, parts, player, anchor, created, out failure, group) ||
+                    !ParkModuleSpace(request, kind, definitions, group, parts, created, out failure) || !CurrentParkRequest(request))
+                    throw new InvalidDataException(failure ?? "The placement request changed during final park-space verification.");
                 foreach (ParkMember part in parts) parkMembers.Add(part.Id, group);
                 foreach (ParkRollbackReceipt receipt in rollbackReceipts) parkRollback.Remove(receipt);
                 if (request.Selection != null)
@@ -4429,6 +4977,12 @@ namespace Oxide.Plugins
 
         private object OnStructureRotate(BuildingBlock block, BasePlayer player)
         {
+            if (parkData != null && SameParkGeneration(parkData) && parkData.Groups.Any(g =>
+                g.Wall != null && g.Wall.Id == ParkId(block) && WallMatches(block, g.Wall)))
+            {
+                if (player != null) player.ConsoleMessage("Remove attached half-wall kickers before rotating this wall.");
+                return false;
+            }
             if (VerifiedParkGroup(block) == null) return null;
             if (player != null) player.ConsoleMessage("Park assembly rotation is fixed. Demolish the group and place a new selected piece to turn it.");
             return false;
@@ -4461,7 +5015,7 @@ namespace Oxide.Plugins
             SkateParkKind itemKind;
             bool recover = SkateParkLayout.TryKind(group.Kind, out itemKind) &&
                 SkateParkBuildItems.Recoverable(group.BuildItemState, group.Members.Count, itemKind) &&
-                player.IsAdmin && player.userID == group.Owner && Eligible(player);
+                player.IsAdmin && player.userID == group.Owner && Eligible(player) && RecoverableWall(group, player);
             bool removalStarted = false, recoveryClaimed = false, recoverySaved = false;
             string recoveryMessage = null;
             parkBusy = true;
@@ -4505,7 +5059,7 @@ namespace Oxide.Plugins
                 {
                     if (!ReferenceEquals(instance, this) || !ReferenceEquals(data, parkData) || !SameParkWorld(data) ||
                         SaveRestore.IsSaving || !player.IsAdmin || player.userID != group.Owner || !Eligible(player) ||
-                        !data.Groups.Contains(group) ||
+                        !data.Groups.Contains(group) || !RecoverableWall(group, player) ||
                         !SkateParkBuildItems.Recoverable(group.BuildItemState, blocks.Count, itemKind))
                         throw new InvalidDataException("Paid park recovery authority, identity or complete-group state changed.");
                     // Persist the once-only claim before removing anything. Partial removal never yields an item.
@@ -4519,7 +5073,8 @@ namespace Oxide.Plugins
                         !ParkMatches(blocks[i], group, group.Members[i]))
                         throw new InvalidDataException("A remaining park member or actor changed during removal; remaining parts were retained.");
                     if (recover && (!ReferenceEquals(instance, this) || !ReferenceEquals(data, parkData) ||
-                        !SameParkWorld(data) || SaveRestore.IsSaving || !player.IsAdmin || player.userID != group.Owner || !Eligible(player)))
+                        !SameParkWorld(data) || SaveRestore.IsSaving || !player.IsAdmin || player.userID != group.Owner || !Eligible(player) ||
+                        !RecoverableWall(group, player)))
                         throw new InvalidDataException("Paid park recovery authority or save/world changed during removal.");
                     removalStarted = true;
                     blocks[i].Kill(BaseNetworkable.DestroyMode.Gib);
@@ -4566,7 +5121,7 @@ namespace Oxide.Plugins
                     }
                 }
             }
-            if (recover && recoverySaved)
+            if (recover && recoverySaved && RecoverableWall(group, player))
             {
                 string failure;
                 if (GiveParkItem(player, itemKind, out failure, data)) recoveryMessage = "Park build item returned once.";
@@ -4580,6 +5135,7 @@ namespace Oxide.Plugins
 
         private void PruneDestroyedParkMembers(ParkGroup group)
         {
+            if (group.Wall != null && (!CurrentWallCleanup(parkData) || !parkData.Groups.Contains(group))) return;
             bool changed = false;
             foreach (ParkMember member in group.Members.ToArray())
             {
@@ -4598,6 +5154,8 @@ namespace Oxide.Plugins
             ParkGroup group;
             ulong id = ParkId(entity);
             QueueGroundedRemoval(entity, id);
+            if (parkData != null && parkData.Groups.Any(g => g.Wall != null && g.Wall.Id == id))
+                NextTick(() => { if (entity == null || entity.IsDestroyed) CleanupWallAttachments(); });
             if (id == 0 || !parkMembers.TryGetValue(id, out group)) return;
             // Kill hooks can cancel destruction. Never delete metadata or cascade while the origin is alive.
             NextTick(() =>
@@ -4631,7 +5189,8 @@ namespace Oxide.Plugins
         {
             if (VerifiedGroundedMember(entity)) entity.grounded = true;
             BuildingBlock block = entity as BuildingBlock;
-            if (VerifiedParkGroup(block) != null) block.grounded = true;
+            ParkGroup group = VerifiedParkGroup(block);
+            if (group != null) block.grounded = group.Wall == null || WallMatches(FindParkBlock(group.Wall.Id), group.Wall);
             // Do not return a non-null override: normal stability processing and other hooks still run.
         }
 

@@ -348,6 +348,18 @@ public static class SkateRide
                 velocity = WallAhead(pos, velocity, dt);
                 flat = Flat(velocity); pace = flat.magnitude;
             }
+            float boundedX, boundedZ;
+            if (!SkateRidePhysics.TryBoundHorizontal(pos.x, pos.z, velocity.x, velocity.z, dt, Cap, out boundedX, out boundedZ))
+            { Dismount("invalid movement speed budget"); return; }
+            if (boundedX != velocity.x || boundedZ != velocity.z)
+            {
+                var previousPace = Math.Sqrt((double)velocity.x * velocity.x + (double)velocity.z * velocity.z);
+                var scale = previousPace > 0 ? (float)(Math.Sqrt((double)boundedX * boundedX + (double)boundedZ * boundedZ) / previousPace) : 0f;
+                if (Mode == RideMode.Ground) velocity.y += Tangent.y * Speed * (scale - 1f);
+                velocity.x = boundedX; velocity.z = boundedZ;
+                Speed *= scale; if (Mode == RideMode.Grind) SkateGrind.Speed = Speed;
+                flat = Flat(velocity); pace = flat.magnitude;
+            }
             if (pace > Top) Top = pace;
             body.linearVelocity = velocity;
             var sign = Speed < 0f ? -1f : 1f;

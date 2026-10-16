@@ -277,18 +277,121 @@ internal static class SkateServerMovementPolicyScenarios
         Check(rejected && GC.GetAllocatedBytesForCurrentThread() - before == 0, "warmed malformed/stale requests allocate zero bytes");
     }
 
+    private static SkateMovementPoint FloatEndpoint(float x, float z, float velocityX, float velocityZ, float dt)
+    {
+        float stepX = velocityX * dt, stepZ = velocityZ * dt;
+        float nextX = x + stepX, nextZ = z + stepZ;
+        return new SkateMovementPoint(nextX, 0, nextZ);
+    }
+
+    private static bool FloatPathAllowed(float x, float z, float velocityX, float velocityZ, float dt, double maximum)
+    {
+        double horizontal = 0, vertical = 0; bool allowed; SkateSessionReason reason;
+        if (!SkateMovementPolicy.TryAccumulate(new SkateMovementPoint(x, 0, z), FloatEndpoint(x, z, velocityX, velocityZ, dt),
+            0, 0, out horizontal, out vertical)) return false;
+        Check(SkateMovementPolicy.TryAllow(dt, horizontal, maximum, out allowed, out reason), "float endpoint reaches actual server decision");
+        return allowed;
+    }
+
+    private static void FloatCoordinateBudget()
+    {
+        float diagonal = (float)(25 / Math.Sqrt(2)); int originalRefusals = 0;
+        foreach (float start in new[] { 0f, 10f, 1000f, 2500f })
+        {
+            Check(Math.Sqrt((double)diagonal * diagonal * 2) <= 25, "authored diagonal velocity is within25");
+            if (!FloatPathAllowed(start, start, diagonal, diagonal, 1f / 32, 25)) originalRefusals++;
+        }
+        Check(originalRefusals == 3, "uncorrected float endpoints reproduce coordinate-dependent cap refusals");
+        foreach (float start in new[] { 0f, 10f, 1000f, 2500f, 65536.0f, 99999.0f })
+            foreach (float dt in new[] { 0.001f, 1f / 32, 0.05f })
+                foreach (double maximum in new[] { 1.0, 14, 25 })
+                    foreach (double fraction in new[] { 0.5, 1.0, 1.25 })
+                        for (int angle = 0; angle < 360; angle += 15)
+                        {
+                            float vx = (float)(Math.Cos(angle * Math.PI / 180) * maximum * fraction);
+                            float vz = (float)(Math.Sin(angle * Math.PI / 180) * maximum * fraction);
+                            float bx, bz, mirrorX, mirrorZ;
+                            Check(SkateRidePhysics.TryBoundHorizontal(start, start, vx, vz, dt, maximum, out bx, out bz), "valid float budget accepted");
+                            Check(Math.Sqrt((double)bx * bx + (double)bz * bz) <= maximum, "bounded actual float velocity stays inside cap");
+                            Check(Math.Abs(bx) <= Math.Abs(vx) && Math.Abs(bz) <= Math.Abs(vz) && bx * (double)vx >= 0 && bz * (double)vz >= 0,
+                                "budget only reduces existing travel, never pushes or reverses it");
+                            Check(FloatPathAllowed(start, start, bx, bz, dt, maximum), "bounded rounded endpoint passes strict production server cap");
+                            Check(SkateRidePhysics.TryBoundHorizontal(-start, -start, -vx, -vz, dt, maximum, out mirrorX, out mirrorZ) &&
+                                bx == -mirrorX && bz == -mirrorZ, "mirrored forward and fakie motion use identical budget");
+                            if (Math.Sqrt((double)vx * vx + (double)vz * vz) <= maximum && FloatPathAllowed(start, start, vx, vz, dt, maximum))
+                                Check(bx == vx && bz == vz, "already fitting carried momentum is unchanged");
+                        }
+        float retainedX, retainedZ;
+        Check(SkateRidePhysics.TryBoundHorizontal(2500, 2500, 0, -18, 1f / 32, 25, out retainedX, out retainedZ) &&
+            retainedX == 0 && retainedZ == -18, "ordinary fakie above6 preserves its full in-budget momentum");
+        foreach (float edge in new[] { -100000f, 100000f })
+        {
+            Check(SkateRidePhysics.TryBoundHorizontal(edge, edge, diagonal, diagonal, 1f / 32, 25, out retainedX, out retainedZ) &&
+                FloatPathAllowed(edge, edge, retainedX, retainedZ, 1f / 32, 25), "world extrema remain within coordinate and speed bounds");
+        }
+        double batchHorizontal = 0, batchVertical = 0, seconds = 0;
+        var previous = new SkateMovementPoint(2500, 0, 2500);
+        for (int segment = 0; segment < 12; segment++)
+        {
+            float dt = segment % 2 == 0 ? 1f / 32 : 0.01f;
+            float direction = segment < 6 ? 1 : -1;
+            Check(SkateRidePhysics.TryBoundHorizontal((float)previous.X, (float)previous.Z, diagonal * direction, diagonal * direction,
+                dt, 25, out retainedX, out retainedZ), "each out-and-back segment receives fresh local budget");
+            var next = FloatEndpoint((float)previous.X, (float)previous.Z, retainedX, retainedZ, dt);
+            Accumulate(previous, next, ref batchHorizontal, ref batchVertical); previous = next; seconds += dt;
+        }
+        Check(Allow(seconds, batchHorizontal, 25, SkateSessionReason.None), "full multi-segment path passes matching authoritative budget");
+        Check(!Allow(seconds / 2, batchHorizontal, 25, SkateSessionReason.HorizontalSpeed), "shorter server interval still refuses, no timing tolerance introduced");
+        foreach (float invalid in new[] { float.NaN, float.PositiveInfinity, float.NegativeInfinity, 100001f, -100001f })
+            Check(!SkateRidePhysics.TryBoundHorizontal(invalid, 0, 3, -4, 1f / 32, 25, out retainedX, out retainedZ) &&
+                retainedX == 3 && retainedZ == -4, "invalid position preserves supplied velocity");
+        foreach (float invalid in new[] { float.NaN, float.PositiveInfinity, float.NegativeInfinity, 0f, -1f, 0.050000004f })
+            Check(!SkateRidePhysics.TryBoundHorizontal(0, 0, 3, -4, invalid, 25, out retainedX, out retainedZ) &&
+                retainedX == 3 && retainedZ == -4, "invalid float step preserves supplied velocity");
+        foreach (double invalid in new[] { double.NaN, double.PositiveInfinity, double.NegativeInfinity, 0, -1, 25.000001 })
+            Check(!SkateRidePhysics.TryBoundHorizontal(0, 0, 3, -4, 1f / 32, invalid, out retainedX, out retainedZ) &&
+                retainedX == 3 && retainedZ == -4, "invalid cap preserves supplied velocity");
+        Check(SkateRidePhysics.TryBoundHorizontal(2500, 2500, diagonal, diagonal, float.Epsilon, 25, out retainedX, out retainedZ) &&
+            FloatPathAllowed(2500, 2500, retainedX, retainedZ, float.Epsilon, 25), "tiny float step safely retains stationary rounded endpoint");
+        Check(SkateRidePhysics.TryBoundHorizontal(100000, -100000, 0, 0, 0.05f, 25, out retainedX, out retainedZ) &&
+            retainedX == 0 && retainedZ == 0, "stationary boundary needs no search or division");
+        Check(SkateRidePhysics.TryBoundHorizontal(2500, 2500, float.MaxValue, -float.MaxValue, 1f / 32, 25, out retainedX, out retainedZ) &&
+            FloatPathAllowed(2500, 2500, retainedX, retainedZ, 1f / 32, 25), "huge finite desired velocity has a bounded finite result");
+        foreach (float invalid in new[] { float.NaN, float.PositiveInfinity, float.NegativeInfinity })
+        {
+            Check(!SkateRidePhysics.TryBoundHorizontal(0, 0, invalid, 4, 1f / 32, 25, out retainedX, out retainedZ) &&
+                BitConverter.SingleToInt32Bits(retainedX) == BitConverter.SingleToInt32Bits(invalid) && retainedZ == 4,
+                "invalid X velocity preserves both supplied float bits");
+            Check(!SkateRidePhysics.TryBoundHorizontal(0, 0, 3, invalid, 1f / 32, 25, out retainedX, out retainedZ) &&
+                retainedX == 3 && BitConverter.SingleToInt32Bits(retainedZ) == BitConverter.SingleToInt32Bits(invalid),
+                "invalid Z velocity preserves both supplied float bits");
+        }
+        for (int i = 0; i < 200; i++)
+            SkateRidePhysics.TryBoundHorizontal(2500, 2500, diagonal, diagonal, 1f / 32, 25, out retainedX, out retainedZ);
+        long before = GC.GetAllocatedBytesForCurrentThread(); bool success = true;
+        for (int i = 0; i < 20000; i++)
+            success &= SkateRidePhysics.TryBoundHorizontal(2500, 2500, diagonal, diagonal, 1f / 32, 25, out retainedX, out retainedZ);
+        Check(success && GC.GetAllocatedBytesForCurrentThread() - before == 0, "warmed float budgeting allocates zero bytes");
+    }
+
     public static int Main(string[] args)
     {
         try
         {
-            Check(args.Length <= 1, "optional argument is expected actual-plugin SHA-256");
+            Check(args.Length <= 2, "optional arguments are expected plugin and shared SHA-256");
             string library = typeof(SkateMovementPolicy).Assembly.Location, digest;
             using (var hash = SHA256.Create())
                 digest = BitConverter.ToString(hash.ComputeHash(File.ReadAllBytes(library))).Replace("-", "").ToLowerInvariant();
             Console.WriteLine("Actual plugin: " + library + "\nSHA-256: " + digest);
-            if (args.Length == 1) Check(string.Equals(args[0], digest, StringComparison.OrdinalIgnoreCase), "actual plugin hash pinned");
+            if (args.Length >= 1) Check(string.Equals(args[0], digest, StringComparison.OrdinalIgnoreCase), "actual plugin hash pinned");
+            library = typeof(SkateRidePhysics).Assembly.Location;
+            using (var hash = SHA256.Create())
+                digest = BitConverter.ToString(hash.ComputeHash(File.ReadAllBytes(library))).Replace("-", "").ToLowerInvariant();
+            Console.WriteLine("Actual shared library: " + library + "\nSHA-256: " + digest);
+            if (args.Length == 2) Check(string.Equals(args[1], digest, StringComparison.OrdinalIgnoreCase), "actual shared hash pinned");
             TickCountsAndCoordinates(); FullPathAndHorizontalPolicy(); NumberBoundaries(); AccessAndFreshness();
             LegacyHistoryCannotStarveMovement(); TrustedFlyPolicy(); DeterminismAndAllocation();
+            FloatCoordinateBudget();
             Console.WriteLine("skate_server_movement_policy: " + checks + " checks passed");
             return 0;
         }

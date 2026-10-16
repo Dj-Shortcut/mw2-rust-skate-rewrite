@@ -10,13 +10,16 @@
     <LangVersion>7.3</LangVersion>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
     <ActualPluginPath Condition="'$(ActualPluginPath)' == ''">../../../context/rust-skate-plugin-build/bin/net48/ShortcutSkate.dll</ActualPluginPath>
+    <SkateLibraryPath Condition="'$(SkateLibraryPath)' == ''">../../../context/rust-skate-build/bin/net48/SkateMotion.dll</SkateLibraryPath>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="SkateServerMovementPolicyScenarios.cs" />
     <Reference Include="ShortcutSkate"><HintPath>$(ActualPluginPath)</HintPath></Reference>
+    <Reference Include="SkateMotion"><HintPath>$(SkateLibraryPath)</HintPath></Reference>
   </ItemGroup>
   <Target Name="RequireActualPlugin" BeforeTargets="PrepareForBuild">
     <Error Condition="'$(ActualPluginPath)' == '' Or !Exists('$(ActualPluginPath)')" Text="Provide ActualPluginPath pointing to ShortcutSkate.dll built against genuine Rust references." />
+    <Error Condition="'$(SkateLibraryPath)' == '' Or !Exists('$(SkateLibraryPath)')" Text="Provide SkateLibraryPath pointing to SkateMotion.dll built against genuine framework references." />
   </Target>
   <Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk" />
 </Project>
