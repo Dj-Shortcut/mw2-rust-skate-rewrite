@@ -82,7 +82,6 @@ public static class SkatePieces
     {
         if (!Open) { HeldFrame(now); return; }
         AimOk = false;
-        if (HeldKind == (int)SkateParks.Kind.HalfWallKicker) { HeldWallFrame(now); return; }
         try
         {
             var cam = Camera.main;
@@ -109,29 +108,21 @@ public static class SkatePieces
         }
     }
 
-    // While a park item is held (and not on the board): its piece as a ghost where the player aims,
-    // facing the way the player looks, as the native foundation is placed. Read a few times a second.
     public static int HeldKind = -1;
     // Whether the ghost now sits snapped on a standing foundation's top.
     public static bool OnFoundation;
     // Whether the whole support was found, and if not, why not.
     public static bool Valid; public static string GhostWhy = "";
     private static string lastWhy = ""; private static RaycastHit aimHit;
-    private static float nextHeldRead;
     private static void HeldFrame(float now)
     {
-        if (now >= nextHeldRead)
-        {
-            nextHeldRead = now + 0.25f;
-            var was = HeldKind;
-            var read = !SkateRide.On && SkateRig.Local != null && SkateHeld.Read(SkateRig.Local);
-            HeldKind = read ? SkateHeld.HeldKind() : -1;
-            // No ghost unless the held item itself is read as a park item: a building plan in the
-            // hand says nothing about which item it is.
-            if (HeldKind != was) Out.Say("PIECES held: " + (HeldKind < 0 ? "no park item" : SkateHeld.ItemNames[HeldKind]) + " (item " + SkateHeld.Shortname + " '" + SkateHeld.Name + "' marker " + SkateHeld.Marker.ToString("X") + ")");
-        }
-        if (HeldKind < 0) { HeldClear(); return; }
+        var was = HeldKind;
+        var read = !SkateRide.On && SkateRig.Local != null && SkateHeld.Read(SkateRig.Local);
+        HeldKind = read ? SkateHeld.HeldKind() : -1;
+        if (HeldKind != was) Out.Say("PIECES held: " + (HeldKind < 0 ? "no park item" : SkateHeld.ItemNames[HeldKind]) + " (item " + SkateHeld.Shortname + " '" + SkateHeld.Name + "' marker " + SkateHeld.Marker.ToString("X") + ")");
         AimOk = false;
+        if (HeldKind < 0) { HeldClear(); return; }
+        if (HeldKind == (int)SkateParks.Kind.HalfWallKicker) { HeldWallFrame(now); return; }
         try
         {
             var cam = Camera.main;
@@ -195,7 +186,7 @@ public static class SkatePieces
             Said = "Press the number key of your " + SkateHeld.ItemNames[Chosen] + ", then place it like a square foundation (left click, R turns it)";
             return;
         }
-        if (slot < 0) { Said = Status = "No " + SkateHeld.ItemNames[Chosen] + " in your belt (an admin gives the park items: skate.items all)"; return; }
+        if (slot < 0) { Said = Status = "Move your " + SkateHeld.ItemNames[Chosen] + " from inventory to a belt slot, then select it"; return; }
         string how;
         if (SkateHeld.SelectSlot(player, slot, out how))
         {

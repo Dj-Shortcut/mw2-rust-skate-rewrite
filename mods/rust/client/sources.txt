@@ -36,3 +36,4 @@ mods/rust/shared/SkateRidePhysics.cs
 mods/rust/shared/SkateRiderMotion.cs
 mods/rust/shared/SkateModel.cs
 mods/rust/shared/SkatePark.cs 62311d583f4228679849b4768c80cf66dcc10936 cd662ad2b369089878c92b2a4b27c31cac1e1509b64837cb802f8e1cb77c7fa9
+mods/rust/shared/SkateParkBuildItems.cs

@@ -15,11 +15,15 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="SkateParkBuildItemScenarios.cs" />
+    <Compile Include="../../../mods/rust/client/src/SkateHeld.cs" />
+    <Reference Include="UnityEngine.CoreModule"><HintPath>$(RustManagedPath)/UnityEngine.CoreModule.dll</HintPath></Reference>
     <Reference Include="$([System.IO.Path]::GetFileNameWithoutExtension('$(ActualLibraryPath)'))">
       <HintPath>$(ActualLibraryPath)</HintPath>
     </Reference>
   </ItemGroup>
   <Target Name="RequireActualLibrary" BeforeTargets="PrepareForBuild">
+    <Error Condition="!Exists('$(RustManagedPath)/UnityEngine.CoreModule.dll')"
+           Text="Set RustManagedPath to genuine managed references for the production held reader's planner rotation type. No Unity/native methods are executed by these item scenarios." />
     <Error Condition="'$(ActualLibraryPath)' == '' Or !Exists('$(ActualLibraryPath)')"
            Text="Provide ActualLibraryPath (or SkateLibraryPath) pointing to a genuine compiled SkateMotion.dll or ShortcutSkate.dll containing SkateParkBuildItems." />
   </Target>

@@ -1,7 +1,7 @@
 # Rust park building assets
 
-The owner chose an own build picker and hotbar items; Claude owns the client.
-ShortcutSkate source **0.3.20** has twelve kinds: the eight original types, mini/large quarterpipes, the [half-wall kicker](RUST-SKATE-HALF-WALL-KICKER.md) and the [MEGA kit](RUST-SKATE-MEGA-HALFPIPE.md). The attached kicker targets an existing half-wall; the other kinds use native square foundations.
+The owner chose an own build picker and hotbar items; current assignments are recorded in the issues.
+ShortcutSkate source **0.3.20** has twelve kinds: the eight original types, mini/large quarterpipes, the [half-wall kicker](RUST-SKATE-HALF-WALL-KICKER.md) and the [MEGA kit](RUST-SKATE-MEGA-HALFPIPE.md). The attached kicker targets an existing half-wall; the other kinds use native square foundations. Native construction bounds allow a 1 mm cell-bounds tolerance for exact-size native floors.
 The stock six belt slots cannot hold the complete catalogue: use an owned item, move/equip it
 natively and wait for actual active-item/planner state. Report missing items or
 full inventory. Native acceptance is open; commands are admin setup/fallback.
@@ -15,6 +15,29 @@ The stock carrier is `building.planner`, skin0, amount1. Authored
 `instanceData.dataInt` markers `0x534B5001`–`0x534B500C` follow `SkateParkKind`;
 the [catalogue](../mods/rust/shared/SkateParkBuildItems.cs) supplies exact names.
 Tagged plans do not stack. Other plans retain ordinary placement and payment.
+
+Client held-item and belt selection use the same compiled `SkateParkBuildItems.TryIdentity`
+contract as the server: carrier, skin, quantity, marker and exact name must agree.
+A name or marker alone never selects a park item. The client source list includes
+both current shared park files; keep them with `SkateHeld.cs`. Missing fields fail
+closed. Each held preview reads the current active item; switching or unequipping
+clears an invalid preview immediately. The half-wall kicker uses its wall-target
+preview after actual equip. The picker scans current belt positions 0–5 and tells
+the player to move an inventory item into the belt when it cannot select one.
+
+Native inventory movement can recreate the held Planner while retaining the
+item UID and marked metadata. Never bind future placement to an issuance slot or
+the earlier Planner. The server accepts delivery into any owned native container,
+removes a completed delivery receipt, and captures the active item UID, metadata
+and current Planner anew at native confirmation. A move during an outstanding
+confirmation invalidates that transaction; re-equip and confirm again. Pending
+delivery retries retain their original item identity and never mint another item.
+
+The #469 item-4 audit found no initial-belt restriction: the recorded moved Mini,
+Large and MEGA requests reached module placement checks; a moved MEGA also used
+the marked-item payment path. Those module refusals are separate from item
+selection and remain covered by #470. Exact client identity and fresh preview
+state do not establish that native placement succeeds for every module.
 The server captures item/planner/world before waiving native affordability.
 CanBuild consumes that receipt once; changed identity refuses placement. Only
 its native material bill is suppressed. A temporary foundation spawned by native
@@ -60,6 +83,8 @@ Reload needs private recovery. Existing updater pins still select 0.3.11.
 Older0.3.9 refuses nonzero provenance: retain matching park-data/source backups.
 
 Approved `skate_park_build_items` checks the actual compiled pure catalogue,
-identity/debit/recovery predicates. Native construction/payment/cleanup, inventory,
+identity/debit/recovery predicates and the production client identity reader against
+controlled inventory/active-item observations for every kind and belt slot. It does
+not execute native inventory moves. Native construction/payment/cleanup, inventory,
 reload/hammer delivery, ghost and placement remain unverified. Codex runs no Rust
 client, Shadow PC or server; owner/Claude provide native acceptance.
