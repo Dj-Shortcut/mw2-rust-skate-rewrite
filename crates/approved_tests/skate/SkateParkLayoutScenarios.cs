@@ -221,7 +221,32 @@ internal static class SkateParkLayoutScenarios
         Require(!SkateMegaHalfpipe.TryProfilePoint(124, out invalidF, out invalidH), "MEGA past-end profile refused.");
         Near(SkateMegaHalfpipe.Width, 12, "MEGA width parameter."); Near(SkateMegaHalfpipe.FlatLength, 12, "MEGA bottom parameter.");
         Near(SkateMegaHalfpipe.Length, 18 + 2 * radius, "MEGA full envelope length.");
+        MegaOccupancy();
         Console.WriteLine("PASS: MEGA configuration within approved park layout/anchor scenarios.");
+    }
+
+    private static void MegaOccupancy()
+    {
+        object placer = new object(), anchor = new object(), part = new object();
+        Require(!SkateParkLayout.BlocksMegaSpace(placer, placer, null, false),
+            "MEGA: placing player inside otherwise empty riding envelope must not obstruct it.");
+        Require(!SkateParkLayout.BlocksMegaSpace(placer, placer, anchor, false),
+            "MEGA: snapped placement also excludes the placing player.");
+        Require(!SkateParkLayout.BlocksMegaSpace(anchor, placer, anchor, false),
+            "MEGA: this placement's support is allowed.");
+        Require(!SkateParkLayout.BlocksMegaSpace(part, placer, anchor, true),
+            "MEGA: this transaction's created part is allowed during revalidation.");
+        foreach (string obstruction in new[] { "other player", "building", "deployable", "other park module", "World entity" })
+            Require(SkateParkLayout.BlocksMegaSpace(new object(), placer, anchor, false),
+                "MEGA: " + obstruction + " inside riding envelope must still block.");
+        Require(SkateParkLayout.BlocksMegaSpace(part, placer, anchor, false),
+            "MEGA: a part outside the current transaction must block.");
+        Require(SkateParkLayout.BlocksMegaSpace(null, placer, null, false),
+            "MEGA: static World collider with no entity must block even without an anchor.");
+        Require(SkateParkLayout.BlocksMegaSpace(null, null, null, true),
+            "MEGA: unknown World collider cannot inherit a null identity exemption.");
+        Require(SkateParkLayout.BlocksMegaSpace(new object(), null, null, false),
+            "MEGA: missing player and anchor do not exempt another entity.");
     }
 
     private static SkateParkBlock[] Observations(Piece piece, Point anchor, Angle angle)
@@ -980,15 +1005,27 @@ internal static class SkateParkLayoutScenarios
             {
                 Require(SkateParkLayout.ContainsNativeBounds(kind, index, 0, 0, 3, 3), kind + ": exact native floor fits.");
                 Require(SkateParkLayout.ContainsNativeBounds(kind, index, 0.025, -0.025, 2.9, 2.9),
-                    kind + ": inset native bounds with measured center offset fit.");
-                foreach (double size in new[] { 3.000001, 3.1 })
+                    kind + ": inset native bounds with authored center offset fit.");
+                Require(SkateParkLayout.ContainsNativeBounds(kind, index, 0, 0, 3f, 3.000000476837158203125f),
+                    kind + ": installed floor float32 bounds fit.");
+                foreach (float offset in new[] { -1e-7f, 0f, 1e-7f })
+                    Require(SkateParkLayout.ContainsNativeBounds(kind, index, offset, -offset,
+                        3.0000002384185791015625f, 3.000000476837158203125f),
+                        kind + ": float32 size and center rounding fit.");
+                Require(SkateParkLayout.ContainsNativeBounds(kind, index, 0.0005, -0.0005, 3.001, 3.001),
+                    kind + ": combined size and center at one millimetre edge tolerance fit.");
+                Require(!SkateParkLayout.ContainsNativeBounds(kind, index, 0.0006, 0, 3.001, 3),
+                    kind + ": combined size and center beyond tolerance refused.");
+                Require(!SkateParkLayout.ContainsNativeBounds(kind, index, 0, -0.0006, 3, 3.001),
+                    kind + ": combined depth and center beyond tolerance refused.");
+                foreach (double size in new[] { 3.0021, 3.1 })
                 {
                     Require(!SkateParkLayout.ContainsNativeBounds(kind, index, 0, 0, size, 3),
                         kind + ": native floor width cannot overhang claimed cell.");
                     Require(!SkateParkLayout.ContainsNativeBounds(kind, index, 0, 0, 3, size),
                         kind + ": native floor length cannot overhang claimed cell.");
                 }
-                foreach (double offset in new[] { -0.000001, 0.000001 })
+                foreach (double offset in new[] { -0.0011, 0.0011 })
                 {
                     Require(!SkateParkLayout.ContainsNativeBounds(kind, index, offset, 0, 3, 3),
                         kind + ": native center-right overhang refused.");
@@ -1011,13 +1048,15 @@ internal static class SkateParkLayoutScenarios
                 Require(!SkateParkLayout.ContainsNativeBounds(kind, 0, 0, 0, 3, invalid), "nonpositive native depth.");
             }
         }
+        Require(SkateParkLayout.ContainsNativeBounds(SkateParkKind.MiniQuarterPipe, 1, 0, 0,
+            0.20000000298023223876953125f, 3f), "installed mini low-wall float32 bounds fit.");
         Require(SkateParkLayout.ContainsNativeBounds(SkateParkKind.MiniQuarterPipe, 1, 0, 0, 0.6, 3),
             "mini rear wall rotates three-metre local-Z length across width; thickness remains in cell.");
         Require(!SkateParkLayout.ContainsNativeBounds(SkateParkKind.MiniQuarterPipe, 1, 0, 0, 0.8, 3),
             "mini rotated rear wall includes thickness overhang.");
         Require(!SkateParkLayout.ContainsNativeBounds(SkateParkKind.MiniQuarterPipe, 1, -0.1, 0, 0.6, 3),
             "mini rotated rear wall includes native local-X center offset.");
-        Require(!SkateParkLayout.ContainsNativeBounds(SkateParkKind.MiniQuarterPipe, 1, 0, 0.001, 0.6, 3),
+        Require(!SkateParkLayout.ContainsNativeBounds(SkateParkKind.MiniQuarterPipe, 1, 0, 0.0011, 0.6, 3),
             "mini rotated rear wall includes native local-Z center offset.");
     }
 
