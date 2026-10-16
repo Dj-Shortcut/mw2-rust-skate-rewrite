@@ -13,7 +13,7 @@ using UnityEngine;
 
 public static class SkatePieces
 {
-    public static readonly string[] Names = { "bank", "kicker", "quarterpipe", "ledge-low", "ledge-high", "long-ledge", "funbox", "halfpipe" };
+    public static readonly string[] Names = { "bank", "kicker", "quarterpipe", "ledge-low", "ledge-high", "long-ledge", "funbox", "halfpipe", "mini-quarterpipe", "large-quarterpipe", "half-wall-kicker", "mega-halfpipe" };
     public const int MenuButton = SkatePad.Back;
     public const float ShownSeconds = 6f, PlaceSeconds = 120f, AimReach = 40f, TurnStep = 15f, ClearGround = 0.04f;
 
@@ -82,6 +82,7 @@ public static class SkatePieces
     {
         if (!Open) { HeldFrame(now); return; }
         AimOk = false;
+        if (HeldKind == (int)SkateParks.Kind.HalfWallKicker) { HeldWallFrame(now); return; }
         try
         {
             var cam = Camera.main;
@@ -139,6 +140,25 @@ public static class SkatePieces
         if (HeldKind != previewKind) { SkateParks.PreviewAt((SkateParks.Kind)HeldKind, origin, Yaw, false); previewKind = HeldKind; previewAt = origin; previewYaw = Yaw; }
         else if (Vector3.Distance(previewAt, origin) > 0.01f || Math.Abs(previewYaw - Yaw) > 0.01f) { SkateParks.PreviewMove(origin, Yaw); previewAt = origin; previewYaw = Yaw; }
         Said = SkateHeld.ItemNames[HeldKind] + ": place it like a square foundation (left click, R turns it)"; SaidAt = now;
+    }
+
+    // The half-wall kicker goes against a wall, not on the ground: its ghost stands where the
+    // server would put it on the half wall aimed at, and nowhere else.
+    private static void HeldWallFrame(float now)
+    {
+        var origin = Vector3.zero; var yaw = 0f; var why = "no camera"; var ok = false;
+        try
+        {
+            var cam = Camera.main;
+            if (cam != null && SkateRig.LocalT != null) ok = SkateParks.HalfWallAim(cam.transform.position, cam.transform.forward, SkateRig.LocalT.position, out origin, out yaw, out why);
+        }
+        catch (Exception e) { ok = false; why = e.GetType().Name; }
+        SaidAt = now;
+        if (!ok) { HeldClear(); Said = SkateHeld.ItemNames[HeldKind] + ": " + why; return; }
+        AimOk = true; Aim = origin; Yaw = yaw;
+        if (HeldKind != previewKind) { SkateParks.PreviewAt((SkateParks.Kind)HeldKind, origin, yaw, false); previewKind = HeldKind; previewAt = origin; previewYaw = yaw; }
+        else if (Vector3.Distance(previewAt, origin) > 0.01f || Math.Abs(previewYaw - yaw) > 0.01f) { SkateParks.PreviewMove(origin, yaw); previewAt = origin; previewYaw = yaw; }
+        Said = SkateHeld.ItemNames[HeldKind] + ": against this half wall (left click with the square foundation)";
     }
 
     private static void HeldClear() { if (previewKind >= 0) { SkateParks.PreviewClear(); previewKind = -1; } }

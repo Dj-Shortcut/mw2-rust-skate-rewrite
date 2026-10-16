@@ -15,6 +15,14 @@ recorded in [NOTICE](../NOTICE).
 | Landing | Staggered wheel/deck impacts | 0.28 | Land counter, scaled by normal impact |
 | Bail | Repeated impacts and drag | 0.65 | Bail counter |
 
+The client adds `SkateFoley` (client-only, same seeded-synthesis approach, no assets):
+truck clank as a grind locks on, deck slap as a slide or stall locks on, a clack leaving the
+edge, wheel ticks over a lip and over foundation seams every 3 m, a wall slam, the board set
+down on mount and dismount, and a tail scrape in a revert. Three more loops sit under the
+rolling sound: a hollow wooden boom on park pieces (default layer), dirt/grass crunch on
+terrain, and the wheels spinning free and winding down in the air. The surface is read by
+layer a few times a second and on every landing.
+
 Truck/deck profiles identify the board part in contact, not the rail's material.
 There is no native surface-material detection. Existing enum values 0–5 and both
 `TryCreate` overloads remain; `DeckSlide` is appended as value 6.

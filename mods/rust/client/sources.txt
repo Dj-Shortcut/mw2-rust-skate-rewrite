@@ -12,6 +12,7 @@ mods/rust/client/src/RiderRig.cs
 mods/rust/client/src/SkateCamera.cs
 mods/rust/client/src/SkateHud.cs
 mods/rust/client/src/SkateSfx.cs
+mods/rust/client/src/SkateFoley.cs
 mods/rust/client/src/Scenarios.cs
 mods/rust/client/src/SkatePad.cs
 mods/rust/client/src/SkatePadLog.cs

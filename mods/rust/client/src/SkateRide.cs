@@ -199,7 +199,7 @@ public static class SkateRide
         foreach (var h in new[] { 0.08f, 0.5f })
         {
             RaycastHit hit;
-            if (Physics.Raycast(pos + Vector3.up * h, ahead, out hit, 1.5f, GroundMask, QueryTriggerInteraction.Ignore))
+            if (SkateParks.Ray(pos + Vector3.up * h, ahead, out hit, 1.5f, GroundMask))
                 line += " | " + h.ToString("F2") + " m up: hit at " + hit.distance.ToString("F2") + " m, normal y " + hit.normal.y.ToString("F2");
             else line += " | " + h.ToString("F2") + " m up: clear";
         }
@@ -256,6 +256,7 @@ public static class SkateRide
         {
             var cap = b.gameObject.GetComponent<CapsuleCollider>();
             CapsuleReach = cap != null ? Math.Max(0f, cap.radius - WallProbe) : 0.2f;
+            CapsuleRadius = cap != null ? Math.Max(0f, Math.Min(1f, cap.radius)) : 0.5f;
             if (!capsuleSaid) { capsuleSaid = true; Out.Say("SKATE capsule " + (cap != null ? "radius " + cap.radius.ToString("F2") + " height " + cap.height.ToString("F2") : "not found") + "; walls are swept " + CapsuleReach.ToString("F2") + " m past the probe"); }
         }
         catch (Exception e) { CapsuleReach = 0.2f; if (!capsuleSaid) { capsuleSaid = true; Out.Say("SKATE capsule unreadable: " + e.GetType().Name + ": " + e.Message); } }
@@ -380,6 +381,8 @@ public static class SkateRide
     public const float WallProbe = 0.3f, WallSkin = 0.1f, WallSlam = 8f, WallFrom = 3f;
     private static readonly float[] wallHeights = { 0.6f, 1.3f };
     public static int WallStops, WallSlams;
+    // The whole measured pace of the last step, along the path the body took (for the checks' logs).
+    public static float PathSpeed;
     private static Vector3 WallAhead(Vector3 pos, Vector3 v, float dt)
     {
         var pace = v.magnitude;
@@ -389,7 +392,7 @@ public static class SkateRide
         for (var i = 0; i < wallHeights.Length; i++)
         {
             RaycastHit hit;
-            if (Physics.SphereCast(pos + Vector3.up * wallHeights[i], WallProbe, dir, out hit, reach, GroundMask, QueryTriggerInteraction.Ignore)
+            if (SkateParks.Sphere(pos + Vector3.up * wallHeights[i], WallProbe, dir, out hit, reach, GroundMask)
                 && hit.m_Normal.y < 0.5f && hit.distance < nearest) { found = true; nearest = hit.distance; normal = hit.m_Normal; }
         }
         if (!found) return v;
@@ -416,6 +419,9 @@ public static class SkateRide
     }
     // How far the player's capsule reaches past the probe's sphere, read from its collider.
     private static float CapsuleReach = 0.2f;
+    // The capsule's radius, for its rest on a slope (Sense); a slope over 78 degrees counts as 78.
+    private static float CapsuleRadius = 0.5f;
+    private const float CapsuleSlackMost = 2f;
     private static bool capsuleSaid;
 
     private static void Measure(Vector3 pos, float dt)
@@ -425,6 +431,7 @@ public static class SkateRide
         // The whole path, up a transition as much as along the flat: on a steep bank the
         // horizontal part of a step is small while the board rides the full step along the slope.
         var path = moved.magnitude / dt;
+        PathSpeed = path;
         ActualV = moved.y / dt; moved.y = 0f;
         Actual = Vector3.Dot(moved, lastDir) / dt;
         // Through a revert the board's heading and the way of travel part: no pull-back can be read.
@@ -459,7 +466,7 @@ public static class SkateRide
         if (rode < 0.5f || got > rode * 0.5f) return;
         RaycastHit wall;
         var ahead = new Vector3(lastDir.x, 0f, lastDir.z) * Math.Sign(Speed);
-        if (ahead.sqrMagnitude < 0.0001f || !Physics.Raycast(pos + Vector3.up * 0.3f, ahead.normalized, out wall, 0.6f, GroundMask, QueryTriggerInteraction.Ignore) || wall.m_Normal.y > 0.5f) return;
+        if (ahead.sqrMagnitude < 0.0001f || !SkateParks.Ray(pos + Vector3.up * 0.3f, ahead.normalized, out wall, 0.6f, GroundMask) || wall.m_Normal.y > 0.5f) return;
         if (Speed > 0f) LimitSpeed(Math.Max(0f, Actual) + 2f, Cap);
         else LimitSpeed(Cap, Math.Max(0f, -Actual) + 2f);
     }
@@ -469,15 +476,21 @@ public static class SkateRide
     private static bool OpenSky(Vector3 pos)
     {
         RaycastHit hit;
-        return !Physics.Raycast(pos + Vector3.up * 2f, Vector3.up, out hit, 60f, GroundMask, QueryTriggerInteraction.Ignore);
+        return !SkateParks.Ray(pos + Vector3.up * 2f, Vector3.up, out hit, 60f, GroundMask);
     }
 
     private static void Sense(Vector3 pos)
     {
         RaycastHit hit;
         var reach = Mode == RideMode.Air ? AirProbe : FeetProbe;
-        var got = Physics.Raycast(pos + Vector3.up * RayLift, Vector3.down, out hit, RayLift + reach, GroundMask, QueryTriggerInteraction.Ignore);
-        Clearance = got ? hit.m_Distance - RayLift : 99f;
+        var got = SkateParks.Ray(pos + Vector3.up * RayLift, Vector3.down, out hit, RayLift + reach, GroundMask);
+        // The player's capsule ends in a half sphere: on a slope it rests on its side of that sphere, so
+        // its lowest point stands radius * (1/cos - 1) over the ground straight below (0.19 m at 43
+        // degrees, 0.5 m at 60, measured on a MEGA transition). That is contact, not a gap: read as a
+        // gap, the gap closer pressed the body into every transition and the ground was lost past 55
+        // degrees.
+        var slack = got && hit.m_Normal.y > 0.2f && hit.m_Normal.y < 0.999f ? Math.Min(CapsuleSlackMost, CapsuleRadius * (1f / hit.m_Normal.y - 1f)) : 0f;
+        Clearance = got ? hit.m_Distance - RayLift - slack : 99f;
         Grounded = got && Clearance <= FeetProbe;
         Normal = Grounded && hit.m_Normal.y > 0.3f ? hit.m_Normal : Vector3.up;
         if (got && hit.m_Normal.y > 0.3f) ContactNormal = hit.m_Normal;
@@ -595,14 +608,14 @@ public static class SkateRide
         if (Math.Abs(Speed) < 0.5f) return;
         var ahead = Position + dir * (Math.Sign(Speed) * StepLook);
         RaycastHit hit;
-        if (!Physics.Raycast(ahead + Vector3.up * (StepUp + 0.3f), Vector3.down, out hit, StepUp + 0.3f + FeetProbe, GroundMask, QueryTriggerInteraction.Ignore)) return;
+        if (!SkateParks.Ray(ahead + Vector3.up * (StepUp + 0.3f), Vector3.down, out hit, StepUp + 0.3f + FeetProbe, GroundMask)) return;
         var rise = hit.m_Point.y - Position.y;
         if (rise < 0.03f || rise > StepUp || hit.m_Normal.y < 0.7f) return;
         // A lip has a face: a ray along the ground from the wheels' height must meet something steep
         // before the spot ahead. A smooth bank rises as much but has no face, and is ridden up.
         RaycastHit face;
         var flat = new Vector3(dir.x, 0f, dir.z); if (flat.sqrMagnitude < 0.0001f) return; flat = flat.normalized;
-        if (!Physics.Raycast(Position + Vector3.up * 0.02f, flat * Math.Sign(Speed), out face, StepLook + 0.05f, GroundMask, QueryTriggerInteraction.Ignore) || face.m_Normal.y > 0.5f) return;
+        if (!SkateParks.Ray(Position + Vector3.up * 0.02f, flat * Math.Sign(Speed), out face, StepLook + 0.05f, GroundMask) || face.m_Normal.y > 0.5f) return;
         var lift = rise / Math.Max(dt, 0.001f) * 0.6f;
         if (velocity.y < lift) velocity.y = lift;
         if (now - steppedAt > StepGrace) StepUps++;

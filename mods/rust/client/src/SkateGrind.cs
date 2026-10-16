@@ -75,7 +75,7 @@ public static class SkateGrind
             for (var col = 0; col < Cols; col++)
             {
                 var from = new Vector3((float)(ox + fx * row * RowStep + rx * col * ColStep), top, (float)(oz + fz * row * RowStep + rz * col * ColStep));
-                heights[row * Cols + col] = Physics.Raycast(from, Vector3.down, out hit, 2.3f, SkateRide.GroundMask, QueryTriggerInteraction.Ignore) ? hit.m_Point.y : double.NaN;
+                heights[row * Cols + col] = SkateParks.Ray(from, Vector3.down, out hit, 2.3f, SkateRide.GroundMask) ? hit.m_Point.y : double.NaN;
             }
         Scans++;
         return new SkateHeightGrid(new SkateVector(ox, pos.y, oz), new SkateVector(fx, 0, fz), new SkateVector(rx, 0, rz), RowStep, ColStep, Rows, Cols, heights);

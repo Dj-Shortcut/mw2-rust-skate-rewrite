@@ -187,6 +187,7 @@ public class SkateRig : MonoBehaviour
         }
         else downSince = -1f;
         SkateParks.Frame(now);
+        try { SkateParks.Isolate(SkateRide.On, Body, now); } catch (Exception e) { Say("isolation threw " + e.GetType().Name + ": " + e.Message); }
         SkatePieces.Frame(now);
         SkateInbox.Frame(now);
         // With a controller the rider looks where the board goes, a little into the turn; the view
