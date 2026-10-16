@@ -27,7 +27,7 @@ public class SkateRig : MonoBehaviour
     private static LateDriver late;
     private static float offAt = -99f, lastFrame;
     private static bool wasOn;
-    private float holsterSaidAt = -99f;
+    private float holsterSaidAt = -99f; private int restoreSlot = -1;
     private string lastHolster = "";
     private float nextTick, nextLog, lateRetryAt, lastJumpTap = -1f, crouchSince = -1f;
     private int standTicks, lyingTicks, lateFailures;
@@ -65,13 +65,16 @@ public class SkateRig : MonoBehaviour
             }
         }
         if (SkateRide.On && now >= nextLog) { nextLog = now + 1f; Say(SkateRide.Status() + " | " + SkateClock.Report()); }
-        if (wasOn && !SkateRide.On) { offAt = now; Say("OFF (" + SkateRide.OffReason + ") top=" + SkateRide.Top.ToString("F1") + " pull-backs=" + SkateRide.Resets + " score=" + SkateRide.Trick.TotalPoints); LevelView(); }
+        if (wasOn && !SkateRide.On) { offAt = now; Say("OFF (" + SkateRide.OffReason + ") top=" + SkateRide.Top.ToString("F1") + " pull-backs=" + SkateRide.Resets + " score=" + SkateRide.Trick.TotalPoints); LevelView(); Unholster(); }
         // Nothing in the hand while riding, as on a vehicle: no building or swinging from the board,
         // and nothing held to be seen. Every frame, so a slot picked mid-ride never shows.
         if (SkateRide.On && Local != null)
         {
             string how;
-            if (SkateHeld.Holster(Local, out how) || how != "") { if (how != lastHolster || now - holsterSaidAt > 10f) { lastHolster = how; holsterSaidAt = now; Say("HOLSTER " + how); } }
+            var held = SkateHeld.Holster(Local, out how);
+            // The slot held when the ride began, to hand back on stepping off.
+            if (held && restoreSlot < 0 && SkateHeld.Slot >= 0 && SkateHeld.Slot < 6) restoreSlot = SkateHeld.Slot;
+            if (held || how != "") { if (how != lastHolster || now - holsterSaidAt > 10f) { lastHolster = how; holsterSaidAt = now; Say("HOLSTER " + how); } }
         }
         wasOn = SkateRide.On;
         if (Scenarios.Active && Ready && late != null)
@@ -112,6 +115,16 @@ public class SkateRig : MonoBehaviour
     // mouse may have taken the game's own pitch far up or down while the chase camera clamped it.
     // The player's input is told the new view (SetViewVars); the route is logged once.
     private static bool viewLooked; private static System.Reflection.MethodInfo setView; private static System.Reflection.MemberInfo inputMember;
+    // Off the board the item put away at the start of the ride is taken in hand again.
+    private void Unholster()
+    {
+        var slot = restoreSlot; restoreSlot = -1;
+        if (slot < 0 || Local == null) return;
+        string how;
+        SkateHeld.SelectSlot(Local, slot, out how);
+        Say("UNHOLSTER " + how);
+    }
+
     public static void LevelView()
     {
         if (Local == null) return;

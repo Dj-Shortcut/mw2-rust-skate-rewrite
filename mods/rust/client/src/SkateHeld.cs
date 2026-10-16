@@ -10,6 +10,8 @@ public static class SkateHeld
     public static bool Reported;
     public static string Shortname = "", Name = "";
     public static int Marker;
+    // The belt slot of the held item (its position), or -1.
+    public static int Slot = -1;
     private static MethodInfo activeItem;
     private static bool looked;
 
@@ -75,7 +77,7 @@ public static class SkateHeld
     // (GetActiveItem); otherwise nothing, and the log says what there is.
     public static bool Read(object player)
     {
-        Shortname = ""; Name = ""; Marker = 0;
+        Shortname = ""; Name = ""; Marker = 0; Slot = -1;
         if (player == null) return false;
         try
         {
@@ -89,6 +91,8 @@ public static class SkateHeld
             var data = Get(it, "instanceData");
             var marker = data == null ? null : Get(data, "dataInt");
             Marker = marker is int ? (int)marker : 0;
+            var pos = Get(it, "position");
+            Slot = pos is int ? (int)pos : -1;
             return true;
         }
         catch (Exception) { return false; }
