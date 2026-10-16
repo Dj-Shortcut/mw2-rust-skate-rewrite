@@ -28,7 +28,7 @@ namespace Shortcut.RustMod
         Unavailable, Disconnected, Npc, Dead, Sleeping, Wounded, Mounted, Swimming, Parented,
         IdentityChanged, ManualOff, ManualOn, AutomaticRearm, ManualRestart, Unload,
         BatchException, MovePatchException, SpeedPatchException, FlyPatchException,
-        BatchExhausted, BeginRejected, Count
+        BatchExhausted, BeginRejected, StallPatchException, Count
     }
 
     public struct SkateSessionObservation
@@ -66,6 +66,14 @@ namespace Shortcut.RustMod
         public SkateSessionObservation LastActivation { get; private set; }
         public SkateSessionObservation LastWarmupReset { get; private set; }
         public SkateSessionObservation LastSample { get; private set; }
+        public long NativeStallCorrections { get; private set; }
+        public long NativeStallExemptions { get; private set; }
+
+        public void RecordNativeStall(bool exempted)
+        {
+            if (NativeStallCorrections < long.MaxValue) NativeStallCorrections++;
+            if (exempted && NativeStallExemptions < long.MaxValue) NativeStallExemptions++;
+        }
 
         private static bool Valid(SkateSessionReason reason)
         { return reason > SkateSessionReason.None && reason < SkateSessionReason.Count; }
@@ -203,6 +211,8 @@ namespace Shortcut.RustMod
         {
             if (history == null) return "Diagnostics unavailable: the bounded connection store is full.";
             var text = new StringBuilder();
+            text.Append("Native stall would-correct=").Append(history.NativeStallCorrections.ToString(CultureInfo.InvariantCulture))
+                .Append("; exempted=").Append(history.NativeStallExemptions.ToString(CultureInfo.InvariantCulture)).AppendLine();
             if (history.HasSample) Observation(text, "Latest observation", history.LastSample, now);
             if (history.HasDisarm) Observation(text, "Last active disarm", history.LastDisarm, now);
             else text.AppendLine("Last active disarm: none recorded for this connection.");
@@ -969,7 +979,7 @@ namespace Shortcut.RustMod
 
 namespace Oxide.Plugins
 {
-    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.16")]
+    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.17")]
     [Description("Player-scoped skateboard movement bounds and saved park assemblies.")]
     public sealed class ShortcutSkate : RustPlugin
     {
@@ -993,6 +1003,16 @@ namespace Oxide.Plugins
         private long batch;
         private bool validating;
         private bool ready;
+        private const double NativeStallStartupSeconds = 5;
+        private readonly Dictionary<ulong, StallStartup> stallStartups = new Dictionary<ulong, StallStartup>();
+        private long nativeStallCorrections, nativeStallExemptions;
+        private double nativeStallSaidAt = -99;
+
+        private sealed class StallStartup
+        {
+            public BasePlayer Player;
+            public double Started;
+        }
 
         private const int MaximumParkGroups = 256;
         private const int MaximumParkSelections = 128;
@@ -1509,7 +1529,7 @@ namespace Oxide.Plugins
             InitializeParks();
             InitializeParkGestures();
             ready = settings != null && Patched("ValidateMoves", typeof(MovePatch), false) &&
-                Patched("AreSpeeding", typeof(SpeedPatch), true) && Patched("AreFlying", typeof(FlyPatch), true);
+                Patched("AreSpeeding", typeof(SpeedPatch), true) && Patched("AreFlying", typeof(FlyPatch), true) && StallPatched();
             if (!ready) PrintError("Skating is disabled: matching movement patches and valid config are required.");
             else Puts("Skating ready: movement patches installed; permitted eligible players up to " + settings.MaximumHorizontalSpeed +
                 " m/s; fly exemption requires a server admin or shortcutskate.fly and vertical travel up to 200 m/s; support, airtime and rearm are diagnostic only.");
@@ -1523,6 +1543,13 @@ namespace Oxide.Plugins
             if (info == null) return false;
             return (postfix ? info.Postfixes : info.Prefixes).Any(p => p.PatchMethod.DeclaringType == patch) &&
                 (postfix || info.Finalizers.Any(p => p.PatchMethod.DeclaringType == patch));
+        }
+
+        private static bool StallPatched()
+        {
+            var method = AccessTools.Method(typeof(BasePlayer), "UpdatePositionFromTick", new[] { typeof(PlayerTick), typeof(bool) });
+            var info = method == null ? null : Harmony.GetPatchInfo(method);
+            return info != null && info.Prefixes.Any(p => p.PatchMethod.DeclaringType == typeof(StallPatch));
         }
 
         private void InitializeParkGestures()
@@ -1908,6 +1935,11 @@ namespace Oxide.Plugins
 
         private void Sweep()
         {
+            double now = clock.Elapsed.TotalSeconds;
+            foreach (var pair in stallStartups.ToArray())
+                if (pair.Value.Player == null || !pair.Value.Player.IsConnected ||
+                    now < pair.Value.Started || now - pair.Value.Started >= NativeStallStartupSeconds)
+                    stallStartups.Remove(pair.Key);
             foreach (Session session in sessions.Values.ToArray())
             {
                 if (!ready || !Eligible(session.Player) || !Permitted(session.Player) || OptedOut(session.Player))
@@ -1921,10 +1953,30 @@ namespace Oxide.Plugins
             diagnostics.RemoveInactive(ConnectedIdentity);
         }
 
-        private void OnPlayerDeath(BasePlayer player, HitInfo info) { Stop(player, SkateSessionReason.Dead); }
-        private void OnPlayerSleep(BasePlayer player) { Stop(player, SkateSessionReason.Sleeping); }
+        private void StartStallStartup(BasePlayer player)
+        {
+            if (player == null || !player.IsConnected || player.IsNpc) return;
+            if (!stallStartups.ContainsKey(player.userID) && stallStartups.Count >= SkateDiagnosticsStore.Capacity) return;
+            stallStartups[player.userID] = new StallStartup { Player = player, Started = clock.Elapsed.TotalSeconds };
+        }
+
+        private void EndStallStartup(BasePlayer player)
+        {
+            StallStartup startup;
+            if (player != null && stallStartups.TryGetValue(player.userID, out startup) && ReferenceEquals(startup.Player, player))
+                stallStartups.Remove(player.userID);
+        }
+
+        private void OnPlayerConnected(BasePlayer player) { StartStallStartup(player); }
+        private void OnPlayerSleepEnded(BasePlayer player) { StartStallStartup(player); }
+        private void OnPlayerRespawned(BasePlayer player) { StartStallStartup(player); }
+        private void OnPlayerDeath(BasePlayer player, HitInfo info)
+        { EndStallStartup(player); Stop(player, SkateSessionReason.Dead); }
+        private void OnPlayerSleep(BasePlayer player)
+        { EndStallStartup(player); Stop(player, SkateSessionReason.Sleeping); }
         private void OnPlayerDisconnected(BasePlayer player, string reason)
         {
+            EndStallStartup(player);
             Stop(player, SkateSessionReason.Disconnected);
             BasePlayer previous;
             if (player != null)
@@ -1974,6 +2026,7 @@ namespace Oxide.Plugins
                 PrintError("Unload has " + parkItemDeliveries.Count + " unverified build-item deliveries. No replacement items were minted; private operator recovery may be required.");
             if (!parkDataBroken && parkData != null && SameParkWorld(parkData)) SaveParksSafely();
             ready = false;
+            stallStartups.Clear();
             foreach (Session session in sessions.Values.ToArray()) Stop(session.Player, SkateSessionReason.Unload);
             optedOut.Clear();
             diagnostics.Clear();
@@ -4617,6 +4670,95 @@ namespace Oxide.Plugins
                 if (flying && !SkateMovementPolicy.CanExemptFly(FlyPermitted(player),
                     session.MovementSeconds, session.MovementVerticalPath)) continue;
                 results[n] = false;
+            }
+        }
+
+        private bool StallMovementAllowed(TickInterpolatorCache.ReadOnlyState cache, int index, PlayerTick tick,
+            double elapsed, out double horizontal, out double seconds, out SkateSessionReason reason)
+        {
+            horizontal = 0;
+            // Stall returns do not finalize ticks, so the native interval can keep accumulating.
+            // Cap its budget without changing the interval later native validation receives.
+            seconds = Math.Min(elapsed, SkateSessionBounds.MaximumBatchSeconds);
+            if (!SkateSessionBounds.Finite(elapsed) || elapsed <= 0)
+            { reason = SkateSessionReason.InvalidDelta; return false; }
+            bool allowed;
+            if (!SkateMovementPolicy.TryAllow(seconds, 0, settings.MaximumHorizontalSpeed, out allowed, out reason)) return false;
+            int count = cache.Infos[index].Count;
+            if (count < 0 || !SkateMovementPolicy.ValidTickCount(count + 1, cache.BufferSize))
+            { reason = SkateSessionReason.InvalidTickCount; return false; }
+            int offset = checked(index * cache.BufferSize);
+            Vector3 previous = cache.Segments[offset].point;
+            double vertical = 0;
+            for (int s = 1; s <= count + 1; s++)
+            {
+                Vector3 point = s <= count ? cache.Segments[offset + s].point : tick.position;
+                double nextHorizontal, nextVertical;
+                if (!SkateMovementPolicy.TryAccumulate(new SkateMovementPoint(previous.x, previous.y, previous.z),
+                    new SkateMovementPoint(point.x, point.y, point.z), horizontal, vertical, out nextHorizontal, out nextVertical))
+                { reason = SkateSessionReason.InvalidCoordinate; return false; }
+                horizontal = nextHorizontal; vertical = nextVertical; previous = point;
+            }
+            return SkateMovementPolicy.TryAllow(seconds, horizontal, settings.MaximumHorizontalSpeed, out allowed, out reason) && allowed;
+        }
+
+        private bool ExemptNativeStall(BasePlayer player, PlayerTick tick)
+        {
+            if (settings == null || !Eligible(player) || !Permitted(player) || OptedOut(player) ||
+                player.IsReceivingSnapshot || player.IsLoadingAfterTransfer() || tick == null ||
+                tick.position.IsNaNOrInfinity() || tick.eyePos.IsNaNOrInfinity() || tick.parentID != player.parentEntity.uid ||
+                (player.modelState != null && player.modelState.mounted) ||
+                (player.modelStateTick != null && player.modelStateTick.mounted)) return false;
+            int index = player.ActivePlayerInd;
+            var states = BasePlayer.PlayerStates;
+            if (index < 0 || index >= states.PlayerCache.Objects.Length || !ReferenceEquals(states.PlayerCache.Objects[index], player) ||
+                index >= states.TickDeltaTime.Length || index >= AntiHack.PlayerStates.Length || states.TickCache == null) return false;
+            var cache = states.TickCache.ReadOnly;
+            if (index >= cache.Infos.Length || cache.BufferSize < 2) return false;
+            int count = cache.Infos[index].Count;
+            if (count < 0 || count >= cache.BufferSize) return false;
+            int endpointIndex = checked(index * cache.BufferSize + count);
+            if (endpointIndex < 0 || endpointIndex >= cache.Segments.Length) return false;
+            Vector3 endpoint = cache.Segments[endpointIndex].point;
+            float distance = Vector3.Distance(tick.position, endpoint);
+            if (!SkateSessionBounds.Finite(distance)) return false;
+
+            double now = clock.Elapsed.TotalSeconds, horizontal = double.NaN, seconds = double.NaN;
+            StallStartup startup;
+            double age = stallStartups.TryGetValue(player.userID, out startup) && ReferenceEquals(startup.Player, player) ?
+                now - startup.Started : double.NaN;
+            SkateSessionReason reason = !ready ? unavailableReason : SkateSessionReason.Duration;
+            bool exempted = ready && SkateSessionBounds.Finite(age) && age >= 0 && age < NativeStallStartupSeconds &&
+                StallMovementAllowed(cache, index, tick, states.TickDeltaTime[index], out horizontal, out seconds, out reason);
+            if (distance > 0.5f)
+            {
+                if (nativeStallCorrections < long.MaxValue) nativeStallCorrections++;
+                if (exempted && nativeStallExemptions < long.MaxValue) nativeStallExemptions++;
+                var history = diagnostics.GetOrCreate(player.userID, player);
+                if (history != null) history.RecordNativeStall(exempted);
+                if (now - nativeStallSaidAt >= 2)
+                {
+                    nativeStallSaidAt = now;
+                    Puts("Native stall would-correct=" + nativeStallCorrections.ToString(CultureInfo.InvariantCulture) +
+                        "; exempted=" + nativeStallExemptions.ToString(CultureInfo.InvariantCulture) +
+                        "; this-exempted=" + exempted + "; reason=" + reason +
+                        "; startup-age=" + SkateStatusReport.Number(age) + "s/5s; distance=" + SkateStatusReport.Number(distance) +
+                        "m/0.5m; horizontal=" + SkateStatusReport.Number(horizontal) + "m; budget-dt=" + SkateStatusReport.Number(seconds) + "s.");
+                }
+            }
+            return exempted;
+        }
+
+        [AutoPatch]
+        [HarmonyPatch(typeof(BasePlayer), "UpdatePositionFromTick", new[] { typeof(PlayerTick), typeof(bool) })]
+        private static class StallPatch
+        {
+            private static void Prefix(BasePlayer __instance, PlayerTick __0, ref bool __1)
+            {
+                if (instance == null || !__1) return;
+                try { if (instance.ExemptNativeStall(__instance, __0)) __1 = false; }
+                catch (Exception)
+                { instance.ready = false; instance.unavailableReason = SkateSessionReason.StallPatchException; }
             }
         }
 
