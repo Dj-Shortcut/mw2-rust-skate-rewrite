@@ -33,15 +33,20 @@ public static class SkateParks
     // The kinds, by their native layout: the floor tiles (right, forward, height, pitch), the walls
     // of a halfpipe, and where the model's origin sits on the tiles. Mirrors ShortcutSkate's
     // SkateParkLayout until the shared SkatePark module lands; the numbers are the plugin's.
-    public enum Kind { Bank = 0, Kicker = 1, QuarterPipe = 2, LedgeLow = 3, LedgeHigh = 4, LongLedge = 5, Funbox = 6, Halfpipe = 7 }
+    public enum Kind { Bank = 0, Kicker = 1, QuarterPipe = 2, LedgeLow = 3, LedgeHigh = 4, LongLedge = 5, Funbox = 6, Halfpipe = 7, MiniQuarterPipe = 8, LargeQuarterPipe = 9 }
+    public const int KindCount = 10;
+    // The owner's quarterpipes on the 3 m grid (#408, Codex's shared SkatePark contract): flat native
+    // floors under them, the curve made here.
+    public static bool IsGridQuarter(Kind k) { return k == Kind.MiniQuarterPipe || k == Kind.LargeQuarterPipe; }
+    public static bool IsTransition(Kind k) { return k == Kind.QuarterPipe || k == Kind.Halfpipe || IsGridQuarter(k); }
     private struct Part { public string Prefab; public double Right, Forward, Height, Pitch, Yaw; }
     private const double HalfLength = 1.5, Degrees = Math.PI / 180;
-    private static readonly string[] fileStems = { "skate_bank", "skate_kicker", "skate_quarterpipe", "skate_ledge_low", "skate_ledge_high", "skate_long_ledge", "skate_funbox", "skate_halfpipe" };
+    private static readonly string[] fileStems = { "skate_bank", "skate_kicker", "skate_quarterpipe", "skate_ledge_low", "skate_ledge_high", "skate_long_ledge", "skate_funbox", "skate_halfpipe", "skate_mini_quarterpipe", "skate_large_quarterpipe" };
     private static Part[][] layouts;
 
     private static Part[] Layout(Kind kind)
     {
-        if (layouts == null) { layouts = new Part[8][]; for (var k = 0; k < 8; k++) layouts[k] = BuildLayout((Kind)k); }
+        if (layouts == null) { layouts = new Part[KindCount][]; for (var k = 0; k < KindCount; k++) layouts[k] = BuildLayout((Kind)k); }
         return layouts[(int)kind];
     }
 
@@ -70,6 +75,15 @@ public static class SkateParks
                 break;
             case Kind.Halfpipe:
                 for (var i = 0; i < 36; i++) { HalfpipePart(i, out p); parts.Add(p); }
+                break;
+            case Kind.MiniQuarterPipe:
+                parts.Add(new Part { Prefab = FloorPrefab });
+                parts.Add(new Part { Prefab = LowWallPrefab, Forward = 1.15, Yaw = 90 });
+                break;
+            case Kind.LargeQuarterPipe:
+                parts.Add(new Part { Prefab = FloorPrefab });
+                parts.Add(new Part { Prefab = FloorPrefab, Right = 3 });
+                parts.Add(new Part { Prefab = FloorPrefab, Forward = 3 });
                 break;
         }
         return parts.ToArray();
@@ -215,7 +229,7 @@ public static class SkateParks
         for (var i = 0; i < blocks.Count; i++) { var key = Cell(blocks[i].Position); List<int> l; if (!cells.TryGetValue(key, out l)) cells[key] = l = new List<int>(); l.Add(i); }
         var matched = new List<int>();
         // Pitched kinds first (the most distinctive), the halfpipe before the quarterpipe it contains.
-        var order = new[] { Kind.Halfpipe, Kind.QuarterPipe, Kind.Funbox, Kind.Kicker, Kind.Bank, Kind.LongLedge, Kind.LedgeHigh, Kind.LedgeLow };
+        var order = new[] { Kind.Halfpipe, Kind.LargeQuarterPipe, Kind.MiniQuarterPipe, Kind.QuarterPipe, Kind.Funbox, Kind.Kicker, Kind.Bank, Kind.LongLedge, Kind.LedgeHigh, Kind.LedgeLow };
         foreach (var kind in order)
         {
             var layout = Layout(kind);
@@ -228,6 +242,7 @@ public static class SkateParks
                 matched.Clear();
                 if (!Match(kind, layout, blocks, cells, taken, b, anchorYaw, matched)) continue;
                 if ((kind == Kind.LedgeLow || kind == Kind.LedgeHigh || kind == Kind.LongLedge) && !OverFoundation(b, blocks, cells, kind == Kind.LedgeHigh) && !OverGround(b, kind == Kind.LedgeHigh)) continue;
+                if (IsGridQuarter(kind) && !GridQuarter(kind, b, blocks, cells, anchorYaw)) continue;
                 var ids = new int[matched.Count];
                 for (var m = 0; m < matched.Count; m++) { ids[m] = blocks[matched[m]].Id; taken.Add(ids[m]); }
                 var p = new Placed { Kind = kind, Ids = ids };
@@ -315,6 +330,24 @@ public static class SkateParks
         return high ? gap >= LedgeSplit : gap < LedgeSplit;
     }
 
+    // Flat floors in an L (or a floor and a low wall) are common in any base, a storey up on walls.
+    // The server's grid quarterpipes rest their floors on the ground or a foundation, which an ordinary
+    // floor never does; and the L's fourth cell is empty, or it is just a floor.
+    public const float RestGap = 0.35f;
+    private static bool GridQuarter(Kind kind, Block first, List<Block> blocks, Dictionary<long, List<int>> cells, float anchorYaw)
+    {
+        if (Math.Abs(first.Pitch) > AngleTolerance) return false;
+        RaycastHit hit;
+        var under = first.Position + Vector3.up * (first.Bottom - 0.02f);
+        if (!Physics.Raycast(under, Vector3.down, out hit, RestGap, SkateRide.GroundMask, QueryTriggerInteraction.Ignore)) return false;
+        if (kind != Kind.LargeQuarterPipe) return true;
+        var sin = (float)Math.Sin(anchorYaw * Degrees); var cos = (float)Math.Cos(anchorYaw * Degrees);
+        var fourth = first.Position + new Vector3(3f * cos + 3f * sin, 0f, -3f * sin + 3f * cos);
+        foreach (var i in Near(cells, fourth))
+            if (blocks[i].Prefab == FloorPrefab && Vector3.Distance(blocks[i].Position, fourth) < 1f) return false;
+        return true;
+    }
+
     private static void Place(Placed p, Kind kind, List<Block> blocks, List<int> matched, float anchorYaw)
     {
         var first = blocks[matched[0]];
@@ -330,6 +363,10 @@ public static class SkateParks
             case Kind.Funbox:
                 // The base below the deck's centre, the deck 0.776 above it.
                 origin = first.Position + Vector3.up * (first.Top - (float)(2 * HalfLength * Math.Sin(15 * Degrees)));
+                break;
+            case Kind.MiniQuarterPipe: case Kind.LargeQuarterPipe:
+                // The first floor's pivot, at the riding datum: its top.
+                origin = first.Position + Vector3.up * first.Top;
                 break;
             case Kind.Halfpipe:
                 // The flat's centre: the four flat tiles are at right 0/3, forward 0/3 from the first.
@@ -348,6 +385,7 @@ public static class SkateParks
         Colliders += colliders;
         p.Root = root;
         if (kind == Kind.Bank || kind == Kind.Kicker || kind == Kind.QuarterPipe) Colliders += Entry(root, kind == Kind.QuarterPipe ? -1.2f : 0f, -1f);
+        if (IsGridQuarter(kind)) Colliders += Entry(root, (float)QuarterStart, -1f);
         // A funbox is entered from both ends.
         if (kind == Kind.Funbox) { Colliders += Entry(root, -FunboxEnd, -1f); Colliders += Entry(root, FunboxEnd, 1f); }
         // The native tiles and walls under the model are not drawn; the foundation stays.
@@ -395,6 +433,7 @@ public static class SkateParks
             case Kind.Kicker: return anchor + rot * new Vector3(0f, lift, -(float)(HalfLength * Math.Cos(25 * Degrees)));
             case Kind.QuarterPipe: return anchor + rot * new Vector3(0f, lift, -(float)(HalfLength * Math.Cos(15 * Degrees)));
             case Kind.Halfpipe: return anchor + rot * new Vector3((float)HalfLength, lift, (float)HalfLength);
+            case Kind.MiniQuarterPipe: case Kind.LargeQuarterPipe: return anchor + Vector3.up * lift;
             default: return anchor;
         }
     }
@@ -418,7 +457,7 @@ public static class SkateParks
     private static GameObject Build(Kind kind, Vector3 origin, Quaternion yawRot, bool solid, out int colliders)
     {
         colliders = 0;
-        if (kind == Kind.QuarterPipe || kind == Kind.Halfpipe) return Transition(kind, origin, yawRot, solid, out colliders);
+        if (IsTransition(kind)) return Transition(kind, origin, yawRot, solid, out colliders);
         var loaded = Model(kind);
         if (loaded == null || loaded.Model == null) return null;
         var root = new GameObject("skate_park_" + fileStems[(int)kind]);
@@ -467,8 +506,30 @@ public static class SkateParks
 
     // The riding profile, (forward, height) points in the piece's frame. The quarterpipe starts at
     // its entry (the first tile's low edge); the halfpipe's frame is the middle of its flat.
+    // The grid quarterpipes' profile (Codex's TryQuarterProfile): level from QuarterStart to -1.2, a
+    // quarter circle of radius R up to height R, then the level deck to the end. One sample every 3
+    // degrees, used for both the drawn surface and the collider.
+    public const double QuarterStart = -1.4, QuarterHalfWidth = 1.4, RailHeight = 0.8, RailRadius = 0.05;
+    public static void QuarterSize(Kind kind, out double radius, out double end)
+    {
+        if (kind == Kind.LargeQuarterPipe) { radius = 3; end = 4.4; } else { radius = 1.2; end = 1.4; }
+    }
+    public static List<Vector2> QuarterProfile(Kind kind)
+    {
+        double r, end; QuarterSize(kind, out r, out end);
+        var pts = new List<Vector2> { new Vector2((float)QuarterStart, 0f) };
+        for (var k = 0; k <= 30; k++)
+        {
+            var th = Math.PI / 2 * k / 30;
+            pts.Add(new Vector2((float)(-1.2 + r * Math.Sin(th)), (float)(r * (1 - Math.Cos(th)))));
+        }
+        pts.Add(new Vector2((float)end, (float)r));
+        return pts;
+    }
+
     public static List<Vector2> TransitionProfile(Kind kind)
     {
+        if (IsGridQuarter(kind)) return QuarterProfile(kind);
         double run1 = 2 * HalfLength * Math.Cos(15 * Degrees), rise1 = 2 * HalfLength * Math.Sin(15 * Degrees);
         double run2 = 2 * HalfLength * Math.Cos(35 * Degrees), rise2 = 2 * HalfLength * Math.Sin(35 * Degrees);
         var corners = new List<Vector2>(); var radii = new List<double>();
@@ -534,10 +595,10 @@ public static class SkateParks
         colliders = 0;
         if (plain == null) plain = Out.Keep(MaterialFor(new SkateModelMaterial()));
         var material = plain;
-        try { var loaded = Model(kind); if (loaded != null && loaded.Materials != null && loaded.Materials.Length > 0 && loaded.Materials[0] != null) material = loaded.Materials[0]; }
+        try { var loaded = Model(IsGridQuarter(kind) ? Kind.QuarterPipe : kind); if (loaded != null && loaded.Materials != null && loaded.Materials.Length > 0 && loaded.Materials[0] != null) material = loaded.Materials[0]; }
         catch (Exception) { }
         var profile = TransitionProfile(kind);
-        var halfWidth = (float)(kind == Kind.QuarterPipe ? HalfLength : 2 * HalfLength);
+        var halfWidth = (float)(IsGridQuarter(kind) ? QuarterHalfWidth : kind == Kind.QuarterPipe ? HalfLength : 2 * HalfLength);
         var root = new GameObject("skate_park_" + fileStems[(int)kind]);
         root.transform.position = origin; root.transform.rotation = yawRot;
         var surface = SurfaceMesh(profile, halfWidth);
@@ -549,7 +610,66 @@ public static class SkateParks
             var proxy = new GameObject("COLLISION__transition"); proxy.transform.SetParent(root.transform, false);
             proxy.AddComponent<MeshCollider>().sharedMesh = surface; proxy.layer = 0; colliders++;
         }
+        if (IsGridQuarter(kind)) colliders += Fittings(kind, root, material, solid);
         return root;
+    }
+
+    // The coping at the top of the curve, the rails round the deck, and the large one's apron: metal
+    // bars drawn only (the deck stays open to ride and grind), the apron a level plate to ride on.
+    private static int Fittings(Kind kind, GameObject root, Material material, bool solid)
+    {
+        double r, end; QuarterSize(kind, out r, out end);
+        float h = (float)r, w = (float)QuarterHalfWidth, top = h + (float)RailHeight, back = (float)end - 0.05f, lip = (float)(-1.2 + r);
+        var bars = new List<Vector3[]>
+        {
+            new[] { new Vector3(-w, h, lip), new Vector3(w, h, lip) },
+            new[] { new Vector3(-w, top, back), new Vector3(w, top, back) },
+        };
+        foreach (var x in new[] { -w, w })
+        {
+            bars.Add(new[] { new Vector3(x, top, lip + 0.05f), new Vector3(x, top, back) });
+            bars.Add(new[] { new Vector3(x, h, back), new Vector3(x, top, back) });
+            bars.Add(new[] { new Vector3(x, h, lip + 0.05f), new Vector3(x, top, lip + 0.05f) });
+        }
+        var metal = new GameObject("VISUAL__rails"); metal.transform.SetParent(root.transform, false);
+        metal.AddComponent<MeshFilter>().sharedMesh = Bars(bars, (float)RailRadius);
+        metal.AddComponent<MeshRenderer>().sharedMaterial = material;
+        if (kind != Kind.LargeQuarterPipe) return 0;
+        var apron = new List<Vector2> { new Vector2(-1.4f, 0f), new Vector2(1.4f, 0f) };
+        var plate = new GameObject("VISUAL__apron"); plate.transform.SetParent(root.transform, false);
+        plate.transform.localPosition = new Vector3(2.9f, 0f, 0f);
+        plate.AddComponent<MeshFilter>().sharedMesh = SolidMesh(apron, 1.5f);
+        plate.AddComponent<MeshRenderer>().sharedMaterial = material;
+        if (!solid) return 0;
+        var floor = new GameObject("COLLISION__apron"); floor.transform.SetParent(plate.transform, false);
+        floor.AddComponent<MeshCollider>().sharedMesh = SurfaceMesh(apron, 1.5f); floor.layer = 0;
+        return 1;
+    }
+
+    // Square tubes along each pair of points.
+    private static Mesh Bars(List<Vector3[]> bars, float radius)
+    {
+        var verts = new List<Vector3>(); var tris = new List<int>();
+        foreach (var bar in bars)
+        {
+            Vector3 a = bar[0], b = bar[1];
+            var along = new Vector3(b.x - a.x, b.y - a.y, b.z - a.z);
+            var side = Math.Abs(along.y) > Math.Abs(along.x) + Math.Abs(along.z) ? new Vector3(radius, 0f, 0f) : new Vector3(0f, radius, 0f);
+            var other = Vector3.Cross(along, side); var m = other.magnitude; if (m < 1e-6f) continue;
+            other = new Vector3(other.x / m * radius, other.y / m * radius, other.z / m * radius);
+            var start = verts.Count;
+            var corners = new[] { side + other, other - side, Vector3.zero - side - other, side - other };
+            foreach (var c in corners) { verts.Add(a + c); verts.Add(b + c); }
+            for (var k = 0; k < 4; k++)
+            {
+                int i0 = start + k * 2, i1 = start + ((k + 1) % 4) * 2;
+                tris.Add(i0); tris.Add(i1); tris.Add(i0 + 1); tris.Add(i1); tris.Add(i1 + 1); tris.Add(i0 + 1);
+                tris.Add(i0); tris.Add(i0 + 1); tris.Add(i1); tris.Add(i1); tris.Add(i0 + 1); tris.Add(i1 + 1);
+            }
+        }
+        var mesh = new Mesh(); mesh.name = "rails";
+        mesh.vertices = verts.ToArray(); mesh.triangles = tris.ToArray(); mesh.RecalculateNormals(); mesh.RecalculateBounds();
+        return mesh;
     }
 
     // The server rests a piece so that its lowest tile corner clears the ground, which leaves the

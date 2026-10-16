@@ -131,7 +131,7 @@ public static class Scenarios
     private static string tourGrindKinds = "";
     private static float TourSpeed(SkateParks.Kind k)
     {
-        switch (k) { case SkateParks.Kind.QuarterPipe: case SkateParks.Kind.Halfpipe: return 8f; case SkateParks.Kind.LedgeLow: case SkateParks.Kind.LedgeHigh: case SkateParks.Kind.LongLedge: return 5f; default: return 6.5f; }
+        switch (k) { case SkateParks.Kind.QuarterPipe: case SkateParks.Kind.Halfpipe: case SkateParks.Kind.LargeQuarterPipe: return 8f; case SkateParks.Kind.MiniQuarterPipe: return 6f; case SkateParks.Kind.LedgeLow: case SkateParks.Kind.LedgeHigh: case SkateParks.Kind.LongLedge: return 5f; default: return 6.5f; }
     }
     private static bool IsLedge(SkateParks.Kind k) { return k == SkateParks.Kind.LedgeLow || k == SkateParks.Kind.LedgeHigh || k == SkateParks.Kind.LongLedge; }
     // Toward the target, bent away from the pieces on the way (all of them, or all but the one being
@@ -245,7 +245,7 @@ public static class Scenarios
             SkateKeys.LookYaw = heading - Math.Max(-20f, Math.Min(20f, off * 30f));
             // Up a transition, no more pushing once on it: what comes back down is the roll back, fakie,
             // with nothing added (#409).
-            var transition = kind == SkateParks.Kind.QuarterPipe || kind == SkateParks.Kind.Halfpipe;
+            var transition = SkateParks.IsTransition(kind);
             SkateKeys.Push = SkateRide.Speed < TourSpeed(kind) && !(transition && (tourRise > 0.3f || SkateRide.Speed < 0f));
             tourRise = Math.Max(tourRise, pos.y - tourStartY);
             tourTop = Math.Max(tourTop, SkateRide.Speed);
@@ -538,7 +538,7 @@ public static class Scenarios
     // The park models, one at a time 6 m ahead of the rider, seen from a fixed camera (K steps on),
     // then a ride up the bank: the models' reading, drawing and colliders, without any server piece.
     private static readonly SkateParks.Kind[] parkKinds = { SkateParks.Kind.Bank, SkateParks.Kind.Kicker, SkateParks.Kind.QuarterPipe, SkateParks.Kind.LedgeLow,
-        SkateParks.Kind.LedgeHigh, SkateParks.Kind.LongLedge, SkateParks.Kind.Funbox, SkateParks.Kind.Halfpipe };
+        SkateParks.Kind.LedgeHigh, SkateParks.Kind.LongLedge, SkateParks.Kind.Funbox, SkateParks.Kind.Halfpipe, SkateParks.Kind.MiniQuarterPipe, SkateParks.Kind.LargeQuarterPipe };
     private static Vector3 parkAt;
     // Each model is held for ParkSeconds; the check runs on its own, no key steps it.
     public const float ParkSeconds = 20f;
@@ -562,7 +562,7 @@ public static class Scenarios
         if (phase < parkKinds.Length)
         {
             var kind = parkKinds[phase];
-            var big = kind == SkateParks.Kind.Halfpipe || kind == SkateParks.Kind.QuarterPipe;
+            var big = kind == SkateParks.Kind.Halfpipe || kind == SkateParks.Kind.QuarterPipe || kind == SkateParks.Kind.LargeQuarterPipe;
             SkateCamera.FixedDistance = big ? 16f : 9f; SkateCamera.FixedHeight = big ? 5f : 3.2f;
             // The halfpipe's origin is its flat's centre: further out, so the near transition is not on the rider.
             var at = kind == SkateParks.Kind.Halfpipe ? parkAt + SkateRide.Dir(yaw0) * 9f : parkAt;

@@ -94,9 +94,9 @@ public static class SkateHeld
         catch (Exception) { return false; }
     }
 
-    // The park items (Codex's catalogue): building plans marked 0x534B5001..08 in this order.
+    // The park items (Codex's catalogue): building plans marked 0x534B5001..0A in this order.
     public const int FirstMarker = 0x534B5001;
-    public static readonly string[] ItemNames = { "Skate Bank", "Skate Kicker", "Skate Quarterpipe", "Skate Low Ledge", "Skate High Ledge", "Skate Long Ledge", "Skate Funbox", "Skate Halfpipe" };
+    public static readonly string[] ItemNames = { "Skate Bank", "Skate Kicker", "Skate Quarterpipe", "Skate Low Ledge", "Skate High Ledge", "Skate Long Ledge", "Skate Funbox", "Skate Halfpipe", "Skate Mini Quarterpipe", "Skate Large Quarterpipe" };
     // The park kind of the held item, or -1.
     public static int HeldKind()
     {
