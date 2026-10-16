@@ -256,6 +256,7 @@ public static class SkateRide
         {
             var cap = b.gameObject.GetComponent<CapsuleCollider>();
             CapsuleReach = cap != null ? Math.Max(0f, cap.radius - WallProbe) : 0.2f;
+            CapsuleRadius = cap != null ? Math.Max(0f, Math.Min(1f, cap.radius)) : 0.5f;
             if (!capsuleSaid) { capsuleSaid = true; Out.Say("SKATE capsule " + (cap != null ? "radius " + cap.radius.ToString("F2") + " height " + cap.height.ToString("F2") : "not found") + "; walls are swept " + CapsuleReach.ToString("F2") + " m past the probe"); }
         }
         catch (Exception e) { CapsuleReach = 0.2f; if (!capsuleSaid) { capsuleSaid = true; Out.Say("SKATE capsule unreadable: " + e.GetType().Name + ": " + e.Message); } }
@@ -406,6 +407,9 @@ public static class SkateRide
     }
     // How far the player's capsule reaches past the probe's sphere, read from its collider.
     private static float CapsuleReach = 0.2f;
+    // The capsule's radius, for its rest on a slope (Sense); a slope over 78 degrees counts as 78.
+    private static float CapsuleRadius = 0.5f;
+    private const float CapsuleSlackMost = 2f;
     private static bool capsuleSaid;
 
     private static void Measure(Vector3 pos, float dt)
@@ -468,7 +472,13 @@ public static class SkateRide
         RaycastHit hit;
         var reach = Mode == RideMode.Air ? AirProbe : FeetProbe;
         var got = SkateParks.Ray(pos + Vector3.up * RayLift, Vector3.down, out hit, RayLift + reach, GroundMask);
-        Clearance = got ? hit.m_Distance - RayLift : 99f;
+        // The player's capsule ends in a half sphere: on a slope it rests on its side of that sphere, so
+        // its lowest point stands radius * (1/cos - 1) over the ground straight below (0.19 m at 43
+        // degrees, 0.5 m at 60, measured on a MEGA transition). That is contact, not a gap: read as a
+        // gap, the gap closer pressed the body into every transition and the ground was lost past 55
+        // degrees.
+        var slack = got && hit.m_Normal.y > 0.2f && hit.m_Normal.y < 0.999f ? Math.Min(CapsuleSlackMost, CapsuleRadius * (1f / hit.m_Normal.y - 1f)) : 0f;
+        Clearance = got ? hit.m_Distance - RayLift - slack : 99f;
         Grounded = got && Clearance <= FeetProbe;
         Normal = Grounded && hit.m_Normal.y > 0.3f ? hit.m_Normal : Vector3.up;
         if (got && hit.m_Normal.y > 0.3f) ContactNormal = hit.m_Normal;
