@@ -38,6 +38,9 @@ public static class SkateParks
     // The owner's quarterpipes on the 3 m grid (#408, Codex's shared SkatePark contract): flat native
     // floors under them, the curve made here.
     public static bool IsGridQuarter(Kind k) { return k == Kind.MiniQuarterPipe || k == Kind.LargeQuarterPipe; }
+    // All three quarterpipes share one shape (#470, docs/RUST-SKATE-QUARTERPIPES.md): their native
+    // blocks only carry the piece; the riding surface, coping and closed shell are drawn here.
+    public static bool IsQuarter(Kind k) { return k == Kind.QuarterPipe || IsGridQuarter(k); }
     public static bool IsTransition(Kind k) { return k == Kind.QuarterPipe || k == Kind.Halfpipe || IsGridQuarter(k) || k == Kind.HalfWallKicker || k == Kind.MegaHalfpipe; }
     private struct Part { public string Prefab; public double Right, Forward, Height, Pitch, Yaw; }
     private const double HalfLength = 1.5, Degrees = Math.PI / 180;
@@ -443,7 +446,7 @@ public static class SkateParks
         Vector3 origin;
         switch (kind)
         {
-            case Kind.Bank: case Kind.Kicker: case Kind.QuarterPipe: case Kind.HalfWallKicker:
+            case Kind.Bank: case Kind.Kicker: case Kind.HalfWallKicker:
                 // The model's origin is the entry midpoint on the riding surface: the first tile's
                 // low edge, on its top.
                 origin = first.Position + first.Rotation * new Vector3(0f, first.Top, -(float)HalfLength);
@@ -455,6 +458,11 @@ public static class SkateParks
             case Kind.MiniQuarterPipe: case Kind.LargeQuarterPipe:
                 // The first floor's pivot, at the riding datum: its top.
                 origin = first.Position + Vector3.up * first.Top;
+                break;
+            case Kind.QuarterPipe:
+                // The group anchor at the riding datum, as for the grid quarters: the first carrier
+                // floor stands 1.5*sin15 above the anchor, pitched; the datum is an unpitched floor's top.
+                origin = first.Position + Vector3.up * (first.Top - (float)(HalfLength * Math.Sin(15 * Degrees)));
                 break;
             case Kind.MegaHalfpipe:
                 // The first flat floor is lane 0, 4.5 m back from the flat's middle; the model's origin is
@@ -477,8 +485,8 @@ public static class SkateParks
         if (root == null) return;
         Colliders += colliders;
         p.Root = root;
-        if (kind == Kind.Bank || kind == Kind.Kicker || kind == Kind.QuarterPipe) Colliders += Entry(root, kind == Kind.QuarterPipe ? -1.2f : 0f, -1f);
-        if (IsGridQuarter(kind)) Colliders += Entry(root, (float)QuarterStart, -1f);
+        if (kind == Kind.Bank || kind == Kind.Kicker) Colliders += Entry(root, 0f, -1f);
+        if (IsQuarter(kind)) Colliders += Entry(root, (float)QuarterStart, -1f);
         if (kind == Kind.HalfWallKicker) Colliders += Entry(root, (float)KickerRunIn, -1f);
         // A funbox is entered from both ends.
         if (kind == Kind.Funbox) { Colliders += Entry(root, -FunboxEnd, -1f); Colliders += Entry(root, FunboxEnd, 1f); }
@@ -498,9 +506,10 @@ public static class SkateParks
             }
             catch (Exception e) { Status = "native renderers not hidden: " + e.Message; }
         }
-        // The MEGA's native chords, floors and walls are not its riding surface: their colliders are
-        // kept from the rider and from the ride's queries (Isolate, Ray, Sphere).
-        if (kind == Kind.MegaHalfpipe)
+        // The MEGA's native chords, floors and walls, and a quarterpipe's carrier floors and wall, are
+        // not the riding surface: their colliders are kept from the rider and from the ride's queries
+        // (Isolate, Ray, Sphere).
+        if (kind == Kind.MegaHalfpipe || IsQuarter(kind))
         {
             foreach (var m in matched)
             {
@@ -517,7 +526,7 @@ public static class SkateParks
                 catch (Exception e) { Status = "backing colliders not read: " + e.Message; }
             }
             backingVersion++;
-            Say("MEGA backing: " + p.Backing.Count + " native colliders kept from the ride");
+            Say(KindName(kind) + " backing: " + p.Backing.Count + " native colliders kept from the ride");
         }
     }
 
@@ -546,9 +555,8 @@ public static class SkateParks
         {
             case Kind.Bank: return anchor + rot * new Vector3(0f, lift, -(float)(HalfLength * Math.Cos(12 * Degrees)));
             case Kind.Kicker: return anchor + rot * new Vector3(0f, lift, -(float)(HalfLength * Math.Cos(25 * Degrees)));
-            case Kind.QuarterPipe: return anchor + rot * new Vector3(0f, lift, -(float)(HalfLength * Math.Cos(15 * Degrees)));
             case Kind.Halfpipe: return anchor + rot * new Vector3((float)HalfLength, lift, (float)HalfLength);
-            case Kind.MiniQuarterPipe: case Kind.LargeQuarterPipe: return anchor + Vector3.up * lift;
+            case Kind.QuarterPipe: case Kind.MiniQuarterPipe: case Kind.LargeQuarterPipe: return anchor + Vector3.up * lift;
             case Kind.MegaHalfpipe: return anchor + rot * new Vector3((float)MegaCentre, lift, 0f);
             default: return anchor;
         }
@@ -612,34 +620,38 @@ public static class SkateParks
         return root;
     }
 
-    // The quarterpipe and the halfpipe follow the server's own blocks: a 15 degree tile and a 35
+    // The halfpipe follows the server's own blocks: a 15 degree tile and a 35
     // degree tile up from the flat (a halfpipe has that on both ends of its 6 m flat, with a 3 m
     // deck on top). The authored models are circular and shorter, so they would leave the tiles
     // standing out of them; these are made here instead, on the tiles' tops, with the bends
     // rounded (radius Bend) so the board rolls through them, and the coping edge left sharp.
-    public const double Bend = 3.0, VertBend = 1.6, VertAngle = 90, VertLength = 0.9, QuarterDeck = 1.5;
+    public const double Bend = 3.0;
     private const int BendSteps = 8;
 
     // The riding profile, (forward, height) points in the piece's frame. The quarterpipe starts at
     // its entry (the first tile's low edge); the halfpipe's frame is the middle of its flat.
-    // The grid quarterpipes' profile (Codex's TryQuarterProfile): level from QuarterStart to -1.2, a
-    // quarter circle of radius R up to height R, then the level deck to the end. One sample every 3
-    // degrees, used for both the drawn surface and the collider.
-    public const double QuarterStart = -1.4, QuarterHalfWidth = 1.4, RailHeight = 0.8, RailRadius = 0.05;
-    public static void QuarterSize(Kind kind, out double radius, out double end)
+    // The quarterpipes' profile (Codex's TryQuarterPoint, #470): level from QuarterStart to the foot
+    // at -1.2, a quarter circle of radius r in 30 equal steps up to vertical at the lip, on the large
+    // one 0.2 m more of vert, then the level deck to the back. The same points make the drawn
+    // surface and the collider; the closed shell goes down to -QuarterSkin.
+    public const double QuarterStart = -1.4, QuarterFoot = -1.2, QuarterHalfWidth = 1.4, QuarterSkin = 0.08, CopingRadius = 0.05, RailRadius = 0.05;
+    public const int QuarterSteps = 30;
+    public static void QuarterSize(Kind kind, out double radius, out double height, out double back)
     {
-        if (kind == Kind.LargeQuarterPipe) { radius = 3; end = 4.4; } else { radius = 1.2; end = 1.4; }
+        if (kind == Kind.MiniQuarterPipe) { radius = 1.2; height = 1.2; back = 1.4; }
+        else { radius = 3; height = kind == Kind.LargeQuarterPipe ? 3.2 : 3; back = 4.4; }
     }
     public static List<Vector2> QuarterProfile(Kind kind)
     {
-        double r, end; QuarterSize(kind, out r, out end);
+        double r, h, back; QuarterSize(kind, out r, out h, out back);
         var pts = new List<Vector2> { new Vector2((float)QuarterStart, 0f) };
-        for (var k = 0; k <= 30; k++)
+        for (var k = 0; k <= QuarterSteps; k++)
         {
-            var th = Math.PI / 2 * k / 30;
-            pts.Add(new Vector2((float)(-1.2 + r * Math.Sin(th)), (float)(r * (1 - Math.Cos(th)))));
+            var th = Math.PI / 2 * k / QuarterSteps;
+            pts.Add(k == QuarterSteps ? new Vector2((float)(QuarterFoot + r), (float)r) : new Vector2((float)(QuarterFoot + r * Math.Sin(th)), (float)(r * (1 - Math.Cos(th)))));
         }
-        pts.Add(new Vector2((float)end, (float)r));
+        if (h > r) pts.Add(new Vector2((float)(QuarterFoot + r), (float)h));
+        pts.Add(new Vector2((float)back, (float)h));
         return pts;
     }
 
@@ -674,28 +686,12 @@ public static class SkateParks
 
     public static List<Vector2> TransitionProfile(Kind kind)
     {
-        if (IsGridQuarter(kind)) return QuarterProfile(kind);
+        if (IsQuarter(kind)) return QuarterProfile(kind);
         if (kind == Kind.MegaHalfpipe) return MegaProfile();
         double run1 = 2 * HalfLength * Math.Cos(15 * Degrees), rise1 = 2 * HalfLength * Math.Sin(15 * Degrees);
         double run2 = 2 * HalfLength * Math.Cos(35 * Degrees), rise2 = 2 * HalfLength * Math.Sin(35 * Degrees);
         var corners = new List<Vector2>(); var radii = new List<double>();
-        if (kind == Kind.QuarterPipe)
-        {
-            corners.Add(new Vector2(0f, -1.2f)); radii.Add(0);
-            corners.Add(new Vector2(0f, 0f)); radii.Add(Bend);
-            corners.Add(new Vector2((float)run1, (float)rise1)); radii.Add(Bend);
-            // Past the top tile the wall goes on up to vertical, so the board leaves it upward
-            // and comes back down into it, as from a real quarterpipe: seen live, a run up the
-            // 35 degree top tile launched the board 12 m on over the deck.
-            corners.Add(new Vector2((float)(run1 + run2), (float)(rise1 + rise2))); radii.Add(VertBend);
-            var lip = new Vector2((float)(run1 + run2 + VertLength * Math.Cos(VertAngle * Degrees)), (float)(rise1 + rise2 + VertLength * Math.Sin(VertAngle * Degrees)));
-            corners.Add(lip); radii.Add(0);
-            // A real quarterpipe ends in vert, the coping and a level deck behind it, not in a point.
-            corners.Add(new Vector2(lip.x + (float)QuarterDeck, lip.y)); radii.Add(0);
-            // Points are (forward, height); the first is a run-in on the ground.
-            corners[0] = new Vector2(-1.2f, 0f);
-        }
-        else if (kind == Kind.HalfWallKicker)
+        if (kind == Kind.HalfWallKicker)
         {
             corners.Add(new Vector2((float)KickerRunIn, 0f)); radii.Add(0);
             corners.Add(new Vector2(0f, 0f)); radii.Add(KickerBend);
@@ -750,67 +746,82 @@ public static class SkateParks
         colliders = 0;
         if (plain == null) plain = Out.Keep(MaterialFor(new SkateModelMaterial()));
         var material = plain;
-        try { var loaded = Model(IsGridQuarter(kind) ? Kind.QuarterPipe : kind); if (loaded != null && loaded.Materials != null && loaded.Materials.Length > 0 && loaded.Materials[0] != null) material = loaded.Materials[0]; }
+        try { var loaded = Model(IsQuarter(kind) ? Kind.QuarterPipe : kind); if (loaded != null && loaded.Materials != null && loaded.Materials.Length > 0 && loaded.Materials[0] != null) material = loaded.Materials[0]; }
         catch (Exception) { }
         var profile = TransitionProfile(kind);
-        var halfWidth = (float)(IsGridQuarter(kind) ? QuarterHalfWidth : kind == Kind.MegaHalfpipe ? 2 * 3.0 : kind == Kind.QuarterPipe || kind == Kind.HalfWallKicker ? HalfLength : 2 * HalfLength);
+        var halfWidth = (float)(IsQuarter(kind) ? QuarterHalfWidth : kind == Kind.MegaHalfpipe ? 2 * 3.0 : kind == Kind.HalfWallKicker ? HalfLength : 2 * HalfLength);
         var root = new GameObject("skate_park_" + fileStems[(int)kind]);
         root.transform.position = origin; root.transform.rotation = yawRot;
         var surface = SurfaceMesh(profile, halfWidth);
         var visual = new GameObject("VISUAL__transition"); visual.transform.SetParent(root.transform, false);
-        visual.AddComponent<MeshFilter>().sharedMesh = SolidMesh(profile, halfWidth);
+        visual.AddComponent<MeshFilter>().sharedMesh = SolidMesh(profile, halfWidth, IsQuarter(kind) ? -(float)QuarterSkin : 0f);
         visual.AddComponent<MeshRenderer>().sharedMaterial = material;
         if (solid)
         {
             var proxy = new GameObject("COLLISION__transition"); proxy.transform.SetParent(root.transform, false);
             proxy.AddComponent<MeshCollider>().sharedMesh = surface; proxy.layer = 0; colliders++;
         }
-        if (IsGridQuarter(kind)) colliders += Fittings(kind, root, material, solid);
+        if (IsQuarter(kind)) colliders += Fittings(kind, root, material, solid);
         if (kind == Kind.MegaHalfpipe) MegaFittings(root, material);
-        if (kind == Kind.QuarterPipe) QuarterCoping(root, material, profile, halfWidth);
         return root;
     }
 
-    // The coping at the top of the curve, the rails round the deck, and the large one's apron: metal
-    // bars drawn only (the deck stays open to ride and grind), the apron a level plate to ride on.
+    // The coping, a round metal pipe along the lip with round ends and a capsule collider to grind
+    // and stall on; the large one's apron, a level closed plate beside its entry. No guard rail: the
+    // deck stays open.
     private static int Fittings(Kind kind, GameObject root, Material material, bool solid)
     {
-        double r, end; QuarterSize(kind, out r, out end);
-        float h = (float)r, w = (float)QuarterHalfWidth, top = h + (float)RailHeight, back = (float)end - 0.05f, lip = (float)(-1.2 + r);
-        var bars = new List<Vector3[]>
+        double r, h, back; QuarterSize(kind, out r, out h, out back);
+        float w = (float)QuarterHalfWidth, lip = (float)(QuarterFoot + r), radius = (float)CopingRadius;
+        var added = 0;
+        var coping = new GameObject("VISUAL__coping"); coping.transform.SetParent(root.transform, false);
+        coping.transform.localPosition = new Vector3(0f, (float)h, lip);
+        coping.AddComponent<MeshFilter>().sharedMesh = Pipe(w, radius, 16);
+        coping.AddComponent<MeshRenderer>().sharedMaterial = material;
+        if (solid)
         {
-            new[] { new Vector3(-w, h, lip), new Vector3(w, h, lip) },
-            new[] { new Vector3(-w, top, back), new Vector3(w, top, back) },
-        };
-        foreach (var x in new[] { -w, w })
-        {
-            bars.Add(new[] { new Vector3(x, top, lip + 0.05f), new Vector3(x, top, back) });
-            bars.Add(new[] { new Vector3(x, h, back), new Vector3(x, top, back) });
-            bars.Add(new[] { new Vector3(x, h, lip + 0.05f), new Vector3(x, top, lip + 0.05f) });
+            var grip = new GameObject("COLLISION__coping"); grip.transform.SetParent(coping.transform, false); grip.layer = 0;
+            var capsule = grip.AddComponent<CapsuleCollider>();
+            capsule.direction = 0; capsule.radius = radius; capsule.height = 2 * (w + radius);
+            added++;
         }
-        var metal = new GameObject("VISUAL__rails"); metal.transform.SetParent(root.transform, false);
-        metal.AddComponent<MeshFilter>().sharedMesh = Bars(bars, (float)RailRadius);
-        metal.AddComponent<MeshRenderer>().sharedMaterial = material;
-        if (kind != Kind.LargeQuarterPipe) return 0;
+        if (kind != Kind.LargeQuarterPipe) return added;
         var apron = new List<Vector2> { new Vector2(-1.4f, 0f), new Vector2(1.4f, 0f) };
         var plate = new GameObject("VISUAL__apron"); plate.transform.SetParent(root.transform, false);
         plate.transform.localPosition = new Vector3(2.9f, 0f, 0f);
-        plate.AddComponent<MeshFilter>().sharedMesh = SolidMesh(apron, 1.5f);
+        plate.AddComponent<MeshFilter>().sharedMesh = SolidMesh(apron, 1.5f, -(float)QuarterSkin);
         plate.AddComponent<MeshRenderer>().sharedMaterial = material;
-        if (!solid) return 0;
+        if (!solid) return added;
         var floor = new GameObject("COLLISION__apron"); floor.transform.SetParent(plate.transform, false);
         floor.AddComponent<MeshCollider>().sharedMesh = SurfaceMesh(apron, 1.5f); floor.layer = 0;
-        return 1;
+        return added + 1;
     }
 
-    // The plain quarterpipe's coping: a metal pipe along the lip, where the vert meets the deck.
-    private static void QuarterCoping(GameObject root, Material material, List<Vector2> profile, float halfWidth)
+    // A round pipe along x from -half to half, with hemispherical ends: rings of the given number of
+    // sides, the caps closed in quarter-circle steps.
+    private static Mesh Pipe(float half, float radius, int sides)
     {
-        var lip = profile[profile.Count - 2];
-        var bars = new List<Vector3[]> { new[] { new Vector3(-halfWidth, lip.y, lip.x), new Vector3(halfWidth, lip.y, lip.x) } };
-        var metal = new GameObject("VISUAL__coping"); metal.transform.SetParent(root.transform, false);
-        metal.AddComponent<MeshFilter>().sharedMesh = Bars(bars, (float)RailRadius);
-        metal.AddComponent<MeshRenderer>().sharedMaterial = material;
+        var verts = new List<Vector3>(); var tris = new List<int>();
+        const int capSteps = 4;
+        // Rings from the left pole to the right pole: x and ring radius of each.
+        var rings = new List<Vector2>();
+        for (var k = 0; k <= capSteps; k++) { var a = Math.PI / 2 * k / capSteps; rings.Add(new Vector2(-half - radius * (float)Math.Cos(a), radius * (float)Math.Sin(a))); }
+        for (var k = 0; k <= capSteps; k++) { var a = Math.PI / 2 * k / capSteps; rings.Add(new Vector2(half + radius * (float)Math.Sin(a), radius * (float)Math.Cos(a))); }
+        foreach (var ring in rings)
+            for (var j = 0; j < sides; j++)
+            {
+                var a = 2 * Math.PI * j / sides;
+                verts.Add(new Vector3(ring.x, ring.y * (float)Math.Cos(a), ring.y * (float)Math.Sin(a)));
+            }
+        for (var i = 0; i < rings.Count - 1; i++)
+            for (var j = 0; j < sides; j++)
+            {
+                int a = i * sides + j, b = i * sides + (j + 1) % sides, c = a + sides, d = b + sides;
+                tris.Add(a); tris.Add(b); tris.Add(c); tris.Add(b); tris.Add(d); tris.Add(c);
+            }
+        var mesh = new Mesh(); mesh.name = "coping";
+        mesh.vertices = verts.ToArray(); mesh.triangles = tris.ToArray(); mesh.RecalculateNormals(); mesh.RecalculateBounds();
+        return mesh;
     }
 
     // Coping at both lips, and a guard rail 1 m high along the back of each deck; the sides stay open.
@@ -908,7 +919,7 @@ public static class SkateParks
 
     // The drawn piece: the surface, the two sides down to the ground and the ends down to it, each
     // face with vertices of its own so its edges stay sharp.
-    private static Mesh SolidMesh(List<Vector2> profile, float halfWidth)
+    private static Mesh SolidMesh(List<Vector2> profile, float halfWidth, float bottom = 0f)
     {
         var verts = new List<Vector3>(); var tris = new List<int>(); var uv = new List<Vector2>();
         var n = profile.Count;
@@ -928,7 +939,7 @@ public static class SkateParks
             for (var i = 0; i < n; i++)
             {
                 verts.Add(new Vector3(side * halfWidth, profile[i].y, profile[i].x)); uv.Add(new Vector2(profile[i].x / 2f, profile[i].y / 2f));
-                verts.Add(new Vector3(side * halfWidth, 0f, profile[i].x)); uv.Add(new Vector2(profile[i].x / 2f, 0f));
+                verts.Add(new Vector3(side * halfWidth, bottom, profile[i].x)); uv.Add(new Vector2(profile[i].x / 2f, bottom / 2f));
             }
             for (var i = 0; i < n - 1; i++)
             {
@@ -940,13 +951,22 @@ public static class SkateParks
         // The ends: from the first and the last point down to the ground, where they stand up.
         foreach (var end in new[] { 0, n - 1 })
         {
-            var p = profile[end]; if (p.y < 0.01f) continue;
+            var p = profile[end]; if (p.y - bottom < 0.01f) continue;
             var start = verts.Count; var facing = end == 0 ? -1f : 1f;
             verts.Add(new Vector3(-halfWidth, p.y, p.x)); verts.Add(new Vector3(halfWidth, p.y, p.x));
-            verts.Add(new Vector3(-halfWidth, 0f, p.x)); verts.Add(new Vector3(halfWidth, 0f, p.x));
+            verts.Add(new Vector3(-halfWidth, bottom, p.x)); verts.Add(new Vector3(halfWidth, bottom, p.x));
             uv.Add(new Vector2(0f, p.y)); uv.Add(new Vector2(halfWidth, p.y)); uv.Add(new Vector2(0f, 0f)); uv.Add(new Vector2(halfWidth, 0f));
             if (facing > 0) { tris.Add(start); tris.Add(start + 1); tris.Add(start + 2); tris.Add(start + 1); tris.Add(start + 3); tris.Add(start + 2); }
             else { tris.Add(start); tris.Add(start + 2); tris.Add(start + 1); tris.Add(start + 1); tris.Add(start + 2); tris.Add(start + 3); }
+        }
+        // A closed shell (the quarterpipes) also has its underside, facing down.
+        if (bottom < 0f)
+        {
+            var start = verts.Count; float x0 = profile[0].x, x1 = profile[n - 1].x;
+            verts.Add(new Vector3(-halfWidth, bottom, x0)); verts.Add(new Vector3(halfWidth, bottom, x0));
+            verts.Add(new Vector3(-halfWidth, bottom, x1)); verts.Add(new Vector3(halfWidth, bottom, x1));
+            uv.Add(new Vector2(0f, x0)); uv.Add(new Vector2(halfWidth, x0)); uv.Add(new Vector2(0f, x1)); uv.Add(new Vector2(halfWidth, x1));
+            tris.Add(start); tris.Add(start + 1); tris.Add(start + 2); tris.Add(start + 1); tris.Add(start + 3); tris.Add(start + 2);
         }
         var cols = new Color[verts.Count]; for (var i = 0; i < cols.Length; i++) cols[i] = Color.white;
         var mesh = new Mesh(); mesh.name = "transition";
