@@ -57,6 +57,18 @@ This verifies geometric consistency, not park registration, ownership, grade or 
 
 The [half-wall kicker contract](../../../docs/RUST-SKATE-HALF-WALL-KICKER.md) specifies appended kind 10, `SkateParkBox` / `TryHalfWallAnchor`, the exact measured wall-face/top-surface join and native client request. Its external wall dependency never enters paid/refunded members. Native preview, collision, riding and lifecycle acceptance remain open.
 
+### Foundation support grids
+
+`SkateParkLayout.SupportCellCount`, `TrySupportCell`, `TrySupportCellPose`,
+`TrySupportGridAnchor` and `FitsSupportCell` define the full rotated support mask
+and foundation-grid fit independently of native part positions. Large L keeps its
+three-cell mask; MEGA covers its full existing reservation with 84 cells and
+anchors its first flat floor to the selected cell. Every required cell needs its
+own verified level foundation or permitted dry terrain on the common support
+plane. See the [placement and ghost contract](../../../docs/RUST-SKATE-PLACEMENT.md).
+These helpers describe geometry; native support/permission/collision queries and
+transaction revalidation remain server responsibilities.
+
 ## Park build-item API
 
 `SkateParkBuildItems` provides twelve exact English names and authored metadata tags for stock `building.planner` items with skin 0 and amount 1. `Name`, `Marker`, `TryKind` and `TryIdentity` share stable `SkateParkKind` order; `Tagged` reserves the complete marker range, including unrecognized tags that must not become ordinary building plans. Invalid lookup outputs are atomic. The plugin embeds the identical marked helper.

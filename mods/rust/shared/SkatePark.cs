@@ -418,6 +418,71 @@ namespace Shortcut.RustMod
             return true;
         }
 
+        public static int SupportCellCount(SkateParkKind kind)
+        {
+            switch (kind)
+            {
+                case SkateParkKind.Bank: case SkateParkKind.Kicker: case SkateParkKind.LedgeLow:
+                case SkateParkKind.LedgeHigh: case SkateParkKind.MiniQuarterPipe: return 1;
+                case SkateParkKind.QuarterPipe: return 2;
+                case SkateParkKind.LongLedge: case SkateParkKind.Funbox: case SkateParkKind.LargeQuarterPipe: return 3;
+                case SkateParkKind.Halfpipe: return 32;
+                case SkateParkKind.MegaHalfpipe: return 84;
+                default: return 0;
+            }
+        }
+
+        public static bool TrySupportCell(SkateParkKind kind, int index, out int right, out int forward)
+        {
+            right = forward = 0;
+            if (index < 0 || index >= SupportCellCount(kind)) return false;
+            switch (kind)
+            {
+                case SkateParkKind.QuarterPipe: forward = index; break;
+                case SkateParkKind.LongLedge: right = index - 1; break;
+                case SkateParkKind.Funbox: forward = index - 1; break;
+                case SkateParkKind.LargeQuarterPipe: right = index == 1 ? 1 : 0; forward = index == 2 ? 1 : 0; break;
+                case SkateParkKind.Halfpipe: right = index % 4 - 1; forward = index / 4 - 3; break;
+                case SkateParkKind.MegaHalfpipe: right = index % 6 - 1; forward = index / 6 - 5; break;
+            }
+            return true;
+        }
+
+        public static bool TrySupportGridAnchor(SkateParkKind kind, double gridX, double gridZ, double yaw,
+            out double x, out double z)
+        {
+            x = z = 0;
+            if (SupportCellCount(kind) == 0 || !Coordinate(gridX) || !Coordinate(gridZ) || !Angle(yaw)) return false;
+            double phase = kind == SkateParkKind.MegaHalfpipe ? -4.5 : 0;
+            double px = gridX - phase * Math.Sin(yaw * Degrees), pz = gridZ - phase * Math.Cos(yaw * Degrees);
+            if (!Coordinate(px) || !Coordinate(pz)) return false;
+            x = px; z = pz;
+            return true;
+        }
+
+        public static bool TrySupportCellPose(SkateParkKind kind, int index, double x, double z, double yaw,
+            out SkateParkTransform cell)
+        {
+            cell = new SkateParkTransform();
+            int right, forward;
+            if (!TrySupportCell(kind, index, out right, out forward) || !Coordinate(x) || !Coordinate(z) || !Angle(yaw)) return false;
+            double r = right * CellSize, f = forward * CellSize + (kind == SkateParkKind.MegaHalfpipe ? -4.5 : 0);
+            double px = x + r * Math.Cos(yaw * Degrees) + f * Math.Sin(yaw * Degrees);
+            double pz = z - r * Math.Sin(yaw * Degrees) + f * Math.Cos(yaw * Degrees);
+            if (!Coordinate(px) || !Coordinate(pz)) return false;
+            cell = new SkateParkTransform { X = px, Z = pz, Yaw = Normalize(yaw) };
+            return true;
+        }
+
+        public static bool FitsSupportCell(SkateParkTransform cell, double foundationX, double foundationZ, double foundationYaw)
+        {
+            double snapped;
+            if (!Coordinate(cell.X) || !Coordinate(cell.Z) || !Angle(cell.Yaw) || !Coordinate(foundationX) ||
+                !Coordinate(foundationZ) || !TrySnapYaw(foundationYaw, cell.Yaw, 90, out snapped)) return false;
+            return Math.Abs(cell.X - foundationX) <= SupportTolerance && Math.Abs(cell.Z - foundationZ) <= SupportTolerance &&
+                Math.Abs(Normalize(foundationYaw - snapped + 180) - 180) <= 0.01;
+        }
+
         public static bool TrySupportPlane(IReadOnlyList<double> heights, out double top)
         {
             top = 0;

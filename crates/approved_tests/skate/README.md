@@ -145,6 +145,12 @@ dotnet build crates/approved_tests/skate/SkateParkLayoutScenarios.csproj -p:Skat
 dotnet context/skate-approved-park/bin/ShortcutSkate/net8.0/SkateParkLayoutScenarios.dll
 ```
 
+The same anchor scenario checks the complete foundation-support masks, the L hole,
+rotated grid poses and square symmetries, MEGA's first-flat-floor grid phase and
+full reservation coverage, fit tolerances, and scalar missing/uneven all-cell
+planes. These compose actual production helpers; they do not simulate native
+raycasts, support labels, privilege checks or transaction callbacks.
+
 The legacy `ActualPluginPath` remains a fallback when `SkateParkLibraryPath` is omitted. Reference only one DLL in each run. Intermediate/output directories under ignored `context/` are separated by the selected DLL's filename. Execute the emitted runner directly: SDK `dotnet run` can choose its default target despite the library property passed to its build. The runner prints its loaded DLL path and SHA-256 and accepts that expected hash as an optional argument.
 
 The source 0.3.20 quarterpipe profile cases cover original, mini and large: independent
