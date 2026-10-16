@@ -27,7 +27,7 @@ public class SkateRig : MonoBehaviour
     private static LateDriver late;
     private static float offAt = -99f, lastFrame;
     private static bool wasOn;
-    private float nextHolster, holsterSaidAt = -99f;
+    private float holsterSaidAt = -99f;
     private string lastHolster = "";
     private float nextTick, nextLog, lateRetryAt, lastJumpTap = -1f, crouchSince = -1f;
     private int standTicks, lyingTicks, lateFailures;
@@ -66,10 +66,10 @@ public class SkateRig : MonoBehaviour
         }
         if (SkateRide.On && now >= nextLog) { nextLog = now + 1f; Say(SkateRide.Status() + " | " + SkateClock.Report()); }
         if (wasOn && !SkateRide.On) { offAt = now; Say("OFF (" + SkateRide.OffReason + ") top=" + SkateRide.Top.ToString("F1") + " pull-backs=" + SkateRide.Resets + " score=" + SkateRide.Trick.TotalPoints); LevelView(); }
-        // Nothing in the hand while riding, as on a vehicle: no building or swinging from the board.
-        if (SkateRide.On && Local != null && now >= nextHolster)
+        // Nothing in the hand while riding, as on a vehicle: no building or swinging from the board,
+        // and nothing held to be seen. Every frame, so a slot picked mid-ride never shows.
+        if (SkateRide.On && Local != null)
         {
-            nextHolster = now + 0.25f;
             string how;
             if (SkateHeld.Holster(Local, out how) || how != "") { if (how != lastHolster || now - holsterSaidAt > 10f) { lastHolster = how; holsterSaidAt = now; Say("HOLSTER " + how); } }
         }
