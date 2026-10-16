@@ -7,6 +7,8 @@ de betreffende issue/PR; zie [docs/AUTONOMY.md](docs/AUTONOMY.md).
 
 ## Actief: de skate-mod, zo goed mogelijk, voor de eigenaar en zijn vrienden
 
+- #452: ShortcutSkate 0.3.17 bevat een begrensde native stall-uitzondering voor de eerste vijf seconden na join/wake/respawn, met horizontale padlimiet en anonieme correctietellers. De C#7.3/net48-build en vier bestaande approved runners slagen (59.788 checks); native Harmony-gedrag en live join/wake/respawn blijven open. Deze bronwijziging autoriseert geen deployment of merge.
+
 **Richting van de eigenaar, 14 oktober 2026:** de MW2-gunplay wordt **geschrapt**. Alles gaat naar de
 skate-mod: zo goed mogelijk maken, en zo dat zijn vrienden het kunnen proberen. Het doel is dus
 een client-mod op de eigen server zonder anti-cheat (zie de regels in
@@ -21,6 +23,8 @@ Geschrapt: MW2-gunplay ([#266](https://github.com/Dj-Shortcut/mw2-rust-rust-rewr
 [docs/RUST-MW2-SKATE.md](docs/RUST-MW2-SKATE.md) items 1–3, [docs/RUST-SERVER-MOD.md](docs/RUST-SERVER-MOD.md));
 geen nieuw werk daaraan, bestaande bron blijft staan. De zelfstandige rewrite blijft geparkeerd
 sinds 5 oktober 2026; geen nieuwe rewrite-implementatie of automatische rewrite-loop starten.
+
+- [ ] #408 MEGA-halfpipe: gedeelde/serverbron voor één 80-delige kit (12 m breed, 12 m bodem, R/hoogte 9,589 m, decks 3 m), nieuw kind11/marker0x534B500C; oude acht identiteiten/layouts blijven behouden. [Exact profiel- en lifecyclecontract](docs/RUST-SKATE-MEGA-HALFPIPE.md) omvat naden, coping, bezetting, betaling/refund, sloop en persistentie. Echte net48/C#7.3-builds:0 waarschuwingen/fouten; bestaande goedgekeurde layout/itemscenario's slagen tegen beide DLLs. Clientherkenning/preview, gerichte colliderisolatie/herstel, steile steun en volledige native plaatsing/herladen/rijacceptatie blijven open. Geen live server, installatie of releasepinwijziging.
 
 - [ ] Eerst skategevoel en bediening samen in game bewijzen: doseerbaar pushen, carven en remmen/powerslides, bewuste flicktricks en continu momentum bij rampen/landen/natuurlijk fakie terugrollen. Gebruik echte controllerinput en een herhaalbare rit; vergelijk het waargenomen gevoel met skate. Broncorrecties en compiles zijn tussenstappen, geen afgeronde speeltest.
 
