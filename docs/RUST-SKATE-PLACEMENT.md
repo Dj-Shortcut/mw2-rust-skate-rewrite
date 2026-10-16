@@ -1,6 +1,6 @@
 # Supported park placement
 
-Marked plans use native square-foundation confirmation. The server owns the final
+In source **0.3.20**, marked plans use native square-foundation confirmation. The server owns the final
 pose and item debit. The [item contract](RUST-SKATE-BUILD-ASSETS.md) and
 [shared helpers](../mods/rust/shared/SkatePark.cs) apply to both client frontends.
 Half-wall kickers retain their separate wall/side/join contract.
@@ -51,6 +51,10 @@ anchorY = supportTop - min(bottom over actual floor parts)
 `TrySupportedAnchor` implements this equation with zero added clearance. It does
 not introduce an imaginary unraised floor. Old IDs, markers, relative part poses,
 counts and saved anchors retain their meaning; existing saved pieces do not move.
+This seats the native recognition carriers; the three quarterpipe kinds retain
+their separate yaw-only [closed shell and coping](RUST-SKATE-QUARTERPIPES.md),
+whose riding datum is the final anchor plus the measured unpitched floor top.
+Do not pitch that shell with the original quarterpipe's carrier floors.
 Ledges currently contain floors without legs: new supported placements lower their
 whole anchor so the floor underside meets support. Keeping their old unsupported
 0.4/0.8m elevation would require additional geometry; low/high remain distinct IDs.
@@ -87,9 +91,12 @@ anchor. Never add foundation height, the former0.025m gap, a guessed floor thick
 or another support correction. Send the real native target, not `skate.place`.
 
 The authored model's ghost must use the **same origin routine as its placed model**,
-computed from those predicted final members. For floor0 pose P/Q and measured
-local top t: bank/kicker/quarterpipe use P+Q*(0,t,-1.5); mini/large use P+(0,t,0);
-halfpipe uses P+Yaw*(1.5,t,1.5); MEGA uses P+Yaw*(4.5,t,4.5); funbox uses
+computed from those predicted final members. All three quarterpipe kinds use
+`Anchor + Yaw*(0,t,0)`, where t is the measured unpitched floor top; their
+`VisualOrigin` offsets are zero. In particular, the original quarterpipe does not
+use a pitched-floor toe or inherit that carrier's pitch. For the other kinds,
+floor0 pose P/Q and measured local top t give: bank/kicker P+Q*(0,t,-1.5);
+halfpipe P+Yaw*(1.5,t,1.5); MEGA P+Yaw*(4.5,t,4.5); funbox
 P+(0,t-3*sin(15deg),0); low/long ledge use P+(0,t-0.4,0), high uses t-0.8.
 Any intentional visual skin/lift must be identical in ghost and placed rendering
 and must not change the authoritative native anchor or support validity.

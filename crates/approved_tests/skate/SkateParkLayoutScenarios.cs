@@ -225,6 +225,12 @@ internal static class SkateParkLayoutScenarios
         Console.WriteLine("PASS: MEGA configuration within approved park layout/anchor scenarios.");
     }
 
+    private sealed class EqualIdentityToken
+    {
+        public override bool Equals(object other) { return other is EqualIdentityToken; }
+        public override int GetHashCode() { return 0; }
+    }
+
     private static void MegaOccupancy()
     {
         object placer = new object(), anchor = new object(), part = new object();
@@ -247,6 +253,17 @@ internal static class SkateParkLayoutScenarios
             "MEGA: unknown World collider cannot inherit a null identity exemption.");
         Require(SkateParkLayout.BlocksMegaSpace(new object(), null, null, false),
             "MEGA: missing player and anchor do not exempt another entity.");
+        var equalPlacer = new EqualIdentityToken(); var equalSupport = new EqualIdentityToken();
+        Require(SkateParkLayout.BlocksMegaSpace(new EqualIdentityToken(), equalPlacer, equalSupport, false),
+            "MEGA native deploy: value-equal foreign player/support cannot inherit an identity exemption.");
+        for (int index = 0; index < 80; index++)
+        {
+            var member = new object();
+            Require(!SkateParkLayout.BlocksMegaSpace(member, placer, anchor, true),
+                "MEGA native deploy: own touching transaction member " + index + " is allowed.");
+            Require(SkateParkLayout.BlocksMegaSpace(member, placer, anchor, false),
+                "MEGA native deploy: same member outside the current transaction " + index + " still blocks.");
+        }
     }
 
     private static SkateParkBlock[] Observations(Piece piece, Point anchor, Angle angle)
@@ -480,7 +497,7 @@ internal static class SkateParkLayoutScenarios
     private static void VisualOrigins()
     {
         double[] expectedForward = { -1.4672214011007085, -1.3594616805549748,
-            -1.4488887394336025, 0, 0, 0, 0, 1.5, 0, 0 };
+            0, 0, 0, 0, 0, 1.5, 0, 0 };
         foreach (Piece piece in Pieces)
         {
             double right, forward, height, yaw;
@@ -948,10 +965,10 @@ internal static class SkateParkLayoutScenarios
             Require((int)Pieces[i].Kind == i, "persisted kind ID remains stable " + i);
         Require((int)SkateParkKind.MiniQuarterPipe == 8 && (int)SkateParkKind.LargeQuarterPipe == 9,
             "owner quarterpipes append IDs 8 and 9.");
-        foreach (int raw in new[] { -1, 0, 1, 2, 3, 4, 5, 6, 7, 10, int.MaxValue })
+        foreach (int raw in new[] { -1, 0, 1, 3, 4, 5, 6, 7, 10, int.MaxValue })
         {
             var kind = (SkateParkKind)raw;
-            Require(SkateParkLayout.CellCount(kind) == 0, "only appended parks use the cell contract " + raw);
+            Require(SkateParkLayout.CellCount(kind) == 0, "only quarterpipes use the cell contract " + raw);
             int right = 91, forward = 92;
             Require(!SkateParkLayout.TryCell(kind, 0, out right, out forward) && right == 0 && forward == 0,
                 "unsupported cell lookup resets outputs " + raw);
@@ -964,7 +981,9 @@ internal static class SkateParkLayoutScenarios
         }
         OwnerParkCells();
         OwnerQuarterProfiles();
+        QuarterShellContract();
         OwnerNativeBounds();
+        SpawnedQuarterBounds();
         ReservedBoxOverlaps();
     }
 
@@ -972,7 +991,8 @@ internal static class SkateParkLayoutScenarios
     {
         return value.Radius == 0 && value.Height == 0 && value.Entry == 0 && value.Deck == 0 &&
             value.StartForward == 0 && value.HalfWidth == 0 && value.EndForward == 0 &&
-            value.Skin == 0 && value.RailRadius == 0 && value.RailHeight == 0;
+            value.Skin == 0 && value.RailRadius == 0 && value.RailHeight == 0 &&
+            value.Vert == 0 && value.CopingRadius == 0;
     }
 
     private static Point QuarterTurn(double right, double forward, int turn)
@@ -988,6 +1008,14 @@ internal static class SkateParkLayoutScenarios
 
     private static void OwnerParkCells()
     {
+        Require(SkateParkLayout.CellCount(SkateParkKind.QuarterPipe) == 2,
+            "original quarterpipe claims both cells required by its transition and full-width deck.");
+        for (int i = 0; i < 2; i++)
+        {
+            int right, forward;
+            Require(SkateParkLayout.TryCell(SkateParkKind.QuarterPipe, i, out right, out forward) &&
+                right == 0 && forward == i, "original quarterpipe literal two-cell mask.");
+        }
         foreach (var kind in new[] { SkateParkKind.MiniQuarterPipe, SkateParkKind.LargeQuarterPipe })
         {
             int count = kind == SkateParkKind.MiniQuarterPipe ? 1 : 3;
@@ -1031,27 +1059,30 @@ internal static class SkateParkLayoutScenarios
 
     private static void OwnerQuarterProfiles()
     {
-        foreach (var kind in new[] { SkateParkKind.MiniQuarterPipe, SkateParkKind.LargeQuarterPipe })
+        foreach (var kind in new[] { SkateParkKind.QuarterPipe, SkateParkKind.MiniQuarterPipe, SkateParkKind.LargeQuarterPipe })
         {
             bool mini = kind == SkateParkKind.MiniQuarterPipe;
-            double radius = mini ? 1.2 : 3, end = mini ? 1.4 : 4.4;
+            double radius = mini ? 1.2 : 3, end = mini ? 1.4 : 4.4, height = radius;
             SkateParkQuarterProfile profile;
             Require(SkateParkLayout.TryQuarterProfile(kind, out profile), kind + ": client profile exists.");
             Near(profile.Radius, radius, kind + ": transition radius.");
-            Near(profile.Height, radius, kind + ": transition height.");
+            Near(profile.Height, height, kind + ": deck height.");
+            Near(profile.Vert, 0, kind + ": pure circular transition has no added vertical face.");
             Near(profile.Entry, 0.2, kind + ": flat entry length.");
             Near(profile.Deck, mini ? 1.4 : 2.6, kind + ": deck length.");
+            Require(profile.Deck >= 1.2, kind + ": full-width platform is at least 1.2 metres deep.");
             Near(profile.StartForward, -1.4, kind + ": entry origin.");
             Near(profile.EndForward, end, kind + ": complete run ends inside its final cell.");
             Near(profile.HalfWidth, 1.4, kind + ": transition half width.");
             Near(profile.Skin, 0.08, kind + ": maximum skin/collider overhang.");
-            Near(profile.RailRadius, 0.05, kind + ": rail radius.");
-            Near(profile.RailHeight, 0.8, kind + ": rail height above deck.");
+            Near(profile.CopingRadius, 0.05, kind + ": round coping radius.");
+            Near(profile.RailRadius, profile.CopingRadius, kind + ": legacy rail radius preserves coping width.");
+            Near(profile.RailHeight, 0, kind + ": legacy guard height cannot become a spike above the lip.");
             Near(profile.StartForward + profile.Entry + profile.Radius + profile.Deck, end,
                 kind + ": entry, curve and deck consume the declared length.");
-            Require(profile.HalfWidth + profile.Skin <= 1.5 && profile.HalfWidth + profile.RailRadius <= 1.5 &&
+            Require(profile.HalfWidth + profile.Skin <= 1.5 && profile.HalfWidth + profile.CopingRadius <= 1.5 &&
                 profile.StartForward - profile.Skin >= -1.5 && end + profile.Skin <= (mini ? 1.5 : 4.5),
-                kind + ": authored skin, rail and collider horizontal limits fit claimed cells.");
+                kind + ": authored skin, coping and collider horizontal limits fit claimed cells.");
 
             foreach (double right in new[] { -1.4, 0, 1.4 })
             {
@@ -1060,8 +1091,9 @@ internal static class SkateParkLayoutScenarios
                 Surface(kind, right, -1.2, 0, 1, 0, "transition start");
                 Surface(kind, right, mini ? -0.48 : 0.6, mini ? 0.24 : 0.6, 0.8, -0.6,
                     "independent 3-4-5 circular point and unit normal");
-                Surface(kind, right, mini ? 0 : 1.8, radius, 1, 0, "deck entry");
-                Surface(kind, right, end, radius, 1, 0, "deck back edge");
+                Surface(kind, right, mini ? 0 : 1.8, radius, 0, -1, "vertical circular lip tangent");
+                Surface(kind, right, (mini ? 0 : 1.8) + 0.1, height, 1, 0, "flat full-width deck begins after lip");
+                Surface(kind, right, end, height, 1, 0, "deck back edge");
             }
             SurfaceRefused(kind, -1.400001, 0, "left outer edge");
             SurfaceRefused(kind, 0, -1.400001, "before entry");
@@ -1079,6 +1111,86 @@ internal static class SkateParkLayoutScenarios
         SurfaceRefused(SkateParkKind.LargeQuarterPipe, 4.400001, 0, "outside apron width");
         SurfaceRefused(SkateParkKind.LargeQuarterPipe, 3, 1.400001, "beyond apron back edge");
         SurfaceRefused(SkateParkKind.LargeQuarterPipe, 3, 3, "missing L cell has no surface");
+    }
+
+    private static void QuarterShellContract()
+    {
+        Require(SkateParkLayout.QuarterArcSegments == 30, "quarterpipe uses three-degree circular samples.");
+        foreach (var kind in new[] { SkateParkKind.QuarterPipe, SkateParkKind.MiniQuarterPipe, SkateParkKind.LargeQuarterPipe })
+        {
+            bool mini = kind == SkateParkKind.MiniQuarterPipe;
+            double radius = mini ? 1.2 : 3, end = mini ? 1.4 : 4.4, lip = mini ? 0 : 1.8;
+            double deckHeight = radius;
+            int count = 33;
+            Require(SkateParkLayout.QuarterPointCount(kind) == count, kind + ": explicit entry, circle and deck point count.");
+            Require(SkateParkLayout.QuarterShellPointCount(kind) == count + 2, kind + ": closed back and underside point count.");
+            for (int index = 0; index < count + 2; index++)
+            {
+                double forward, up;
+                Require(SkateParkLayout.TryQuarterShellPoint(kind, index, out forward, out up), kind + ": shell point exists.");
+                double expectedForward, expectedUp;
+                if (index == 0) { expectedForward = -1.4; expectedUp = 0; }
+                else if (index <= 31)
+                {
+                    double angle = (index - 1) * Math.PI / 60;
+                    expectedForward = -1.2 + radius * Math.Sin(angle);
+                    expectedUp = radius * (1 - Math.Cos(angle));
+                    Near(Math.Pow(forward + 1.2, 2) + Math.Pow(up - radius, 2), radius * radius,
+                        kind + ": each circular point lies on the independent radius contract.");
+                }
+                else if (index == count - 1) { expectedForward = end; expectedUp = deckHeight; }
+                else { expectedForward = index == count ? end : -1.4; expectedUp = -0.08; }
+                Near(forward, expectedForward, kind + ": shell forward " + index);
+                Near(up, expectedUp, kind + ": shell height " + index);
+                if (index < count)
+                {
+                    double rideForward, rideUp;
+                    Require(SkateParkLayout.TryQuarterPoint(kind, index, out rideForward, out rideUp), kind + ": riding point exists.");
+                    Near(rideForward, forward, kind + ": shell and riding station agree.");
+                    Near(rideUp, up, kind + ": shell and riding height agree.");
+                    if (index > 0)
+                    {
+                        double priorForward, priorUp;
+                        Require(SkateParkLayout.TryQuarterPoint(kind, index - 1, out priorForward, out priorUp),
+                            kind + ": preceding riding point exists.");
+                        Require(rideForward > priorForward, kind + ": every riding segment advances forward without an extra vertical face.");
+                    }
+                    Require(rideUp >= 0 && rideUp <= radius, kind + ": the riding outline stays within the circular height.");
+                    Require(SkateParkLayout.ContainsQuarterPoint(kind, -1.4, rideUp, rideForward, -0.08, radius + 0.05) &&
+                        SkateParkLayout.ContainsQuarterPoint(kind, 1.4, rideUp, rideForward, -0.08, radius + 0.05),
+                        kind + ": both riding edges fit the reserved mask and vertical envelope.");
+                }
+            }
+            double lastForward, lastUp, previousForward, previousUp;
+            Require(SkateParkLayout.TryQuarterPoint(kind, count - 1, out lastForward, out lastUp), kind + ": deck back exists.");
+            Require(SkateParkLayout.TryQuarterPoint(kind, count - 2, out previousForward, out previousUp), kind + ": deck lip exists.");
+            Near(previousForward, lip, kind + ": the arc lip meets the deck directly.");
+            Near(previousUp, radius, kind + ": the deck meets the circular arc at radius height.");
+            Near(lastUp, previousUp, kind + ": platform is flat.");
+            Require(lastForward - previousForward >= 1.2, kind + ": platform cannot taper into a lip spike.");
+            foreach (int invalid in new[] { -1, count + 2, int.MaxValue })
+            {
+                double forward = 91, up = 92;
+                Require(!SkateParkLayout.TryQuarterShellPoint(kind, invalid, out forward, out up) && forward == 0 && up == 0,
+                    kind + ": invalid shell sample is atomic.");
+            }
+            foreach (int invalid in new[] { -1, count, int.MaxValue })
+            {
+                double forward = 91, up = 92;
+                Require(!SkateParkLayout.TryQuarterPoint(kind, invalid, out forward, out up) && forward == 0 && up == 0,
+                    kind + ": invalid riding sample is atomic.");
+            }
+        }
+        foreach (var kind in new[] { SkateParkKind.Bank, SkateParkKind.Halfpipe, SkateParkKind.MegaHalfpipe, (SkateParkKind)(-1) })
+        {
+            Require(SkateParkLayout.QuarterPointCount(kind) == 0 && SkateParkLayout.QuarterShellPointCount(kind) == 0,
+                "unsupported kind has no quarterpipe shell.");
+            double forward, up;
+            Require(!SkateParkLayout.TryQuarterPoint(kind, 0, out forward, out up) && forward == 0 && up == 0,
+                "unsupported riding profile resets outputs.");
+            Require(!SkateParkLayout.TryQuarterShellPoint(kind, 0, out forward, out up) && forward == 0 && up == 0,
+                "unsupported closed shell resets outputs.");
+        }
     }
 
     private static void Surface(SkateParkKind kind, double right, double forward, double expectedHeight,
@@ -1163,6 +1275,109 @@ internal static class SkateParkLayoutScenarios
             "mini rotated rear wall includes native local-X center offset.");
         Require(!SkateParkLayout.ContainsNativeBounds(SkateParkKind.MiniQuarterPipe, 1, 0, 0.0011, 0.6, 3),
             "mini rotated rear wall includes native local-Z center offset.");
+    }
+
+    private static void SpawnedQuarterBounds()
+    {
+        Near(SkateParkLayout.NativeBoundsTolerance, 0.001, "spawned bounds retain one millimetre baseline.");
+        foreach (double distance in new[] { 0d, 1, 17.375, 4194.304, 10000, 100000 })
+        foreach (int axis in new[] { 0, 1, 2 })
+        {
+            double[] point = { 0, 0, 0 }; point[axis] = -distance;
+            Near(SkateParkLayout.Float32BoundsTolerance(point[0], point[1], point[2]),
+                Math.Max(0.001, distance / 4194304), "spawned bounds float32 scale includes each world axis.");
+        }
+        foreach (var kind in new[] { SkateParkKind.QuarterPipe, SkateParkKind.MiniQuarterPipe, SkateParkKind.LargeQuarterPipe })
+        {
+            SkateParkQuarterProfile profile;
+            Require(SkateParkLayout.TryQuarterProfile(kind, out profile), kind + ": spawned bounds profile exists.");
+            double minUp = -0.2, maxUp = profile.Height + profile.CopingRadius;
+            int cells = SkateParkLayout.CellCount(kind);
+            for (int cell = 0; cell < cells; cell++)
+            {
+                int cellRight, cellForward;
+                Require(SkateParkLayout.TryCell(kind, cell, out cellRight, out cellForward), kind + ": spawned floor cell exists.");
+                foreach (int turn in new[] { 0, 1, 2, 3 })
+                {
+                    Require(QuarterBoxFits(kind, cellRight * 3, 0, cellForward * 3, turn,
+                        3f, 0.20000000298023223876953125f, 3.000000476837158203125f, minUp, maxUp, 0.001),
+                        kind + ": spawned exact floor float32 corners fit at each local yaw.");
+                    Require(!QuarterBoxFits(kind, cellRight * 3, 0, cellForward * 3, turn,
+                        3.0022, 0.2, 3.0022, minUp, maxUp, 0.001),
+                        kind + ": genuinely oversized spawned floor corners still refuse.");
+                }
+            }
+            foreach (double up in new[] { minUp, minUp - 0.001, maxUp, maxUp + 0.001 })
+                Require(SkateParkLayout.ContainsQuarterPoint(kind, 0, up, 0, minUp, maxUp),
+                    kind + ": spawned collider exact vertical envelope and tolerance boundaries fit.");
+            foreach (double up in new[] { minUp - 0.0011, maxUp + 0.0011 })
+                Require(!SkateParkLayout.ContainsQuarterPoint(kind, 0, up, 0, minUp, maxUp),
+                    kind + ": spawned collider real vertical overhang refuses.");
+            foreach (double invalid in new[] { double.NaN, double.NegativeInfinity, double.PositiveInfinity })
+            {
+                Require(!SkateParkLayout.ContainsQuarterPoint(kind, invalid, 0, 0, minUp, maxUp), "nonfinite spawned right fails closed.");
+                Require(!SkateParkLayout.ContainsQuarterPoint(kind, 0, invalid, 0, minUp, maxUp), "nonfinite spawned up fails closed.");
+                Require(!SkateParkLayout.ContainsQuarterPoint(kind, 0, 0, invalid, minUp, maxUp), "nonfinite spawned forward fails closed.");
+                Require(!SkateParkLayout.ContainsQuarterPoint(kind, 0, 0, 0, invalid, maxUp), "nonfinite spawned lower envelope fails closed.");
+                Require(!SkateParkLayout.ContainsQuarterPoint(kind, 0, 0, 0, minUp, invalid), "nonfinite spawned upper envelope fails closed.");
+                Require(!SkateParkLayout.ContainsQuarterPoint(kind, 0, 0, 0, minUp, maxUp, invalid), "nonfinite spawned tolerance fails closed.");
+            }
+            Require(!SkateParkLayout.ContainsQuarterPoint(kind, 0, 0, 0, maxUp, minUp), "reversed spawned vertical envelope fails closed.");
+            Require(!SkateParkLayout.ContainsQuarterPoint(kind, 0, 0, 0, minUp, maxUp, -0.001), "negative spawned tolerance fails closed.");
+        }
+        // A genuine float32 world round trip at a legal distant anchor needs more
+        // than a fixed millimetre, while a meaningful overhang must still refuse.
+        const double anchorX = 99990.125, anchorZ = -99990.125;
+        double cos = Math.Cos(37.25 * Math.PI / 180), sin = Math.Sin(37.25 * Math.PI / 180);
+        double scaledTolerance = SkateParkLayout.Float32BoundsTolerance(anchorX, 2.625, anchorZ);
+        bool fixedToleranceRefused = false;
+        foreach (double right in new[] { -1.5, 1.5 })
+        foreach (double forward in new[] { -(double)3.000000476837158203125f / 2, (double)3.000000476837158203125f / 2 })
+        {
+            double worldX = (float)(anchorX + right * cos + forward * sin);
+            double worldZ = (float)(anchorZ - right * sin + forward * cos);
+            double dx = worldX - anchorX, dz = worldZ - anchorZ;
+            double localRight = dx * cos - dz * sin, localForward = dx * sin + dz * cos;
+            Require(SkateParkLayout.ContainsQuarterPoint(SkateParkKind.MiniQuarterPipe, localRight, 0, localForward,
+                -0.2, 1.25, scaledTolerance), "float32 world-roundtripped native floor corners fit their scaled envelope.");
+            fixedToleranceRefused |= !SkateParkLayout.ContainsQuarterPoint(SkateParkKind.MiniQuarterPipe,
+                localRight, 0, localForward, -0.2, 1.25);
+        }
+        Require(fixedToleranceRefused, "distant rotated float32 fixture reproduces fixed-millimetre collider refusal.");
+        Require(!SkateParkLayout.ContainsQuarterPoint(SkateParkKind.MiniQuarterPipe, 1.55, 0, 0,
+            -0.2, 1.25, scaledTolerance), "float32 scale cannot exempt five-centimetre real collider overhang.");
+        // The native low wall is thin on local X and long on local Z. Its 90 degree
+        // part yaw swaps those axes before testing the park's horizontal footprint.
+        Require(QuarterBoxFits(SkateParkKind.MiniQuarterPipe, 0, 0.5, 1.15, 1,
+            0.20000000298023223876953125f, 1, 3.000000476837158203125f, -0.2, 1.25, 0.001),
+            "spawned mini wall fits when native length is rotated across park width.");
+        Require(!QuarterBoxFits(SkateParkKind.MiniQuarterPipe, 0, 0.5, 1.15, 0,
+            0.20000000298023223876953125f, 1, 3.000000476837158203125f, -0.2, 1.25, 0.001),
+            "spawned mini wall with unswapped axes would exceed its rear cell boundary.");
+        Require(!QuarterBoxFits(SkateParkKind.MiniQuarterPipe, 0, 0.5, 1.15, 1,
+            0.8, 1, 3, -0.2, 1.25, 0.001), "spawned mini wall real thickness overhang refuses.");
+        Require(SkateParkLayout.ContainsQuarterPoint(SkateParkKind.LargeQuarterPipe, 3, 0, 0, -0.2, 3.05),
+            "spawned large right apron is inside its own claimed cell.");
+        Require(!SkateParkLayout.ContainsQuarterPoint(SkateParkKind.LargeQuarterPipe, 3, 0, 3, -0.2, 3.05),
+            "spawned collider cannot occupy the missing L cell.");
+        foreach (var kind in new[] { SkateParkKind.Bank, SkateParkKind.MegaHalfpipe, (SkateParkKind)(-1) })
+            Require(!SkateParkLayout.ContainsQuarterPoint(kind, 0, 0, 0, -0.2, 3.05),
+                "unsupported kind cannot inherit a quarterpipe collider envelope.");
+    }
+
+    private static bool QuarterBoxFits(SkateParkKind kind, double centerRight, double centerUp, double centerForward,
+        int yawTurns, double sizeX, double sizeY, double sizeZ, double minUp, double maxUp, double tolerance)
+    {
+        for (int corner = 0; corner < 8; corner++)
+        {
+            double localX = (corner % 2 == 0 ? -0.5 : 0.5) * sizeX;
+            double localY = (corner / 2 % 2 == 0 ? -0.5 : 0.5) * sizeY;
+            double localZ = (corner / 4 == 0 ? -0.5 : 0.5) * sizeZ;
+            Point horizontal = QuarterTurn(localX, localZ, yawTurns);
+            if (!SkateParkLayout.ContainsQuarterPoint(kind, centerRight + horizontal.X, centerUp + localY,
+                centerForward + horizontal.Z, minUp, maxUp, tolerance)) return false;
+        }
+        return true;
     }
 
     private static void BoxOverlap(bool expected, double x, double z, double yaw, double halfRight, double halfForward,

@@ -4,7 +4,7 @@ The appended [half-wall kicker](../../../docs/RUST-SKATE-HALF-WALL-KICKER.md) us
 
 Development source for [#335](https://github.com/Dj-Shortcut/mw2-rust-skate-rewrite/issues/335) and [#337](https://github.com/Dj-Shortcut/mw2-rust-skate-rewrite/issues/337). This enables scoped movement acceptance; the client integrates the [shared components](../shared/README.md).
 
-Source **0.3.19** handles twelve marked hotbar building items through native placement confirmation (a half-wall target for the attached kicker; a square foundation for the other pieces), with scoped material-bill suppression, verified unsaved-carrier cleanup before park creation, single-item payment and complete paid-group hammer recovery. Pending item-delivery retries require a detached item before transfer; unverified container/world associations remain untouched. Existing updater pins select 0.3.11. Typed placement endpoints remain admin fallbacks. The owner chose an own build picker and hotbar items. Claude reports an offline client implementation; native marker reading, inventory-to-belt selection, ghost agreement and woodless confirmation remain unverified. Claude owns client menu/preview/input. The [building-asset contract](../../../docs/RUST-SKATE-BUILD-ASSETS.md) describes the source and native/inventory/crash limits. This source has not been installed or exercised by Codex on a server.
+Source **0.3.20** handles twelve marked hotbar building items through native placement confirmation (a half-wall target for the attached kicker; a square foundation for the other pieces), with scoped material-bill suppression, verified unsaved-carrier cleanup before park creation, single-item payment and complete paid-group hammer recovery. Pending item-delivery retries require a detached item before transfer; unverified container/world associations remain untouched. Existing updater pins select 0.3.11. Typed placement endpoints remain admin fallbacks. The owner chose an own build picker and hotbar items. Claude reports an offline client implementation; native marker reading, inventory-to-belt selection, ghost agreement and woodless confirmation remain unverified. Claude owns client menu/preview/input. The [building-asset contract](../../../docs/RUST-SKATE-BUILD-ASSETS.md) describes the source and native/inventory/crash limits. This source has not been installed or exercised by Codex on a server.
 
 Each park-item delivery receipt permits one active transfer attempt. An inventory or drop callback that invokes `skate.items` cannot retry or remove that receipt, rebind its player/fallback position or issue additional items for that owner before the active attempt returns. The guard releases in `finally`, including on transfer exceptions, so the same tracked item remains retryable. Completed deliveries retain their existing idempotence. Thirteen private cases compile the exact delivery/command bodies with controlled managed player/item/inventory/authority substitutes and genuine Unity vector math; 58 checks pass. The unchanged production DLL passes seven null/in-flight/empty guard checks without native calls. Full genuine-reference C#7.3 compilation succeeds; comparison of 346 compiled methods changes only the transfer and retry command, plus one receipt field. These checks do not establish native inventory/hook timing, installed-server behavior, duplication prevention in game or gameplay acceptance.
 
@@ -91,9 +91,9 @@ For a server-wide alternative, the operator can use `server.stability false` in 
 
 ## One-cell mini and three-cell L modules
 
-Source 0.3.17 appends `mini-quarterpipe` (kind8, marker`0x534B5009`) and `large-quarterpipe` (kind9, marker`0x534B500A`), available through the existing marked items/native-foundation path and admin fallbacks. The old eight kinds, markers, transforms and Version1 saved layouts remain stable. New default gesture order appends both; an existing configured order is preserved. The full [shared client contract](../shared/README.md#one-cell-mini-and-three-cell-l-quarterpipes) specifies native support members, metre dimensions, datum, curved profiles, rails, masks and rotations.
+Source 0.3.18 appends `mini-quarterpipe` (kind8, marker`0x534B5009`) and `large-quarterpipe` (kind9, marker`0x534B500A`), available through the existing marked items/native-foundation path and admin fallbacks. The old eight kinds, markers, transforms and Version1 saved layouts remain stable. New default gesture order appends both; an existing configured order is preserved. The full [shared client contract](../shared/README.md#one-cell-mini-and-three-cell-l-quarterpipes) specifies native support members, metre dimensions, datum, curved profiles, rails, masks and rotations.
 
-The mini reserves one 3m cell; the large reserves exactly cells(0,0),(1,0),(0,1), leaving(1,1) empty. Each cell reserves the full ramp/deck/rail headroom, checked for privilege, dry terrain, obstruction and saved-module overlap before creation and final registration. Native construction bounds and spawned colliders must remain inside their assigned cells; oversized or unreadable native geometry refuses placement. Paid-item debit, rollback, complete-group hammer recovery and persistence use the existing transaction paths. Partial surviving groups retain their reservation; ungrouped ordinary building is still subject to its normal native rules.
+The mini reserves one 3m cell; the large reserves exactly cells(0,0),(1,0),(0,1), leaving(1,1) empty. Each cell reserves the full ramp/deck/rail headroom, checked for privilege, dry terrain, obstruction and saved-module overlap before creation and final registration. Native construction bounds allow a 1 mm cell-bounds tolerance for exact-size native floors; spawned colliders must remain inside their assigned cells. Oversized or unreadable native geometry refuses placement. Paid-item debit, rollback, complete-group hammer recovery and persistence use the existing transaction paths. Partial surviving groups retain their reservation; ungrouped ordinary building is still subject to its normal native rules.
 
 The native floor/wall supports are not curved riding surfaces. Claude must integrate the shared profiles into client preview, visuals and colliders and verify recognition, native transform agreement, removal/reload and riding. No installation or native acceptance is established by this source change.
 
@@ -201,4 +201,35 @@ Native wheel labels, accepted gesture callbacks, chat/status delivery, non-admin
 
 For removal: demolish unwanted park pieces first, unload the plugin and delete its `.cs`; stored grants/config can then be removed separately. The plugin changes no global anti-hack settings. Saved blocks remain when it is unloaded. Keep park metadata with the matching world save when retaining a park: unsupported authored floors require the plugin's verified grounding restoration after a restart; ordinary stability rules apply without it.
 
-The integrated twelve-kind catalogue passes the existing approved layout scenarios with 64,500 shared-DLL and 65,853 plugin-DLL checks. Build-item scenarios pass 21,931 shared and 22,095 plugin checks, including actual-plugin JSON parsing; gesture selection passes 544 checks. Both genuine-reference C# 7.3/net48 builds have zero warnings/errors. The reservation bridge and periodic attached-member cleanup retry received source review; native collision, callback timing, persistence and riding remain unverified. Client visuals and held-item names require their separate integration.
+The earlier twelve-kind catalogue integration passed the existing approved layout scenarios with 64,500 shared-DLL and 65,853 plugin-DLL checks. Build-item scenarios pass 21,931 shared and 22,095 plugin checks, including actual-plugin JSON parsing; gesture selection passes 544 checks. Both genuine-reference C# 7.3/net48 builds have zero warnings/errors. The reservation bridge and periodic attached-member cleanup retry received source review; native collision, callback timing, persistence and riding remain unverified. Client visuals and held-item names require their separate integration.
+
+## Supported quarterpipe and MEGA placement in 0.3.20
+
+The [supported placement contract](../../../docs/RUST-SKATE-PLACEMENT.md) preserves
+native sockets and adds existing-foundation-top and compatible adjacent-park
+targets with normal native yaw steps. Measured terrain/foundation support seats
+the lowest native floor bounds with no extra gap; explicit command Y is a search
+hint. Support/target identity, pose, permissions and plane are rechecked through
+commit. Existing saved anchors and relative carrier layouts are unchanged.
+
+The three quarterpipe kinds share the [closed circular transition/deck/coping contract](../../../docs/RUST-SKATE-QUARTERPIPES.md). Stable native blocks act as saved recognition carriers. Complete validated groups receive a closed server shell, round coping and the large staging apron; only their own non-trigger carrier colliders are replaced. Rollback, confirmed destruction and unload remove generated geometry and restore previously enabled carriers. Reload regenerates complete verified groups. Claude’s client must use the same mesh, hide carrier rendering and replace their collision before native riding can be accepted.
+
+All three quarterpipe ghosts and generated shapes use the final group anchor plus
+the measured unpitched floor top, with group yaw only and zero `VisualOrigin`
+offsets. The original quarterpipe's pitched native carriers do not pitch the shell
+or supply its former toe offset.
+
+Spawned collider bounds use their own local axes transformed into the group frame, the reserved cell mask and actual profile height. Acceptance allows at least 1 mm, scaled for float32 world-coordinate rounding. Refusals log kind, part index, collider name/layer, local and measured bounds.
+
+Per-part deploy queries filter only the exact placing player, captured selected construction support and current transaction members before applying native flags/entity rules. Other players, buildings, deployables, static colliders and other park modules remain eligible blockers. The selected support is lifetime/pose checked and cannot be a recorded park member. Checks repeat after spawning and after payment callbacks. MEGA command and placement replies also reach `PrintWarning`; collider diagnostics omit player identities and redact long numeric name tokens. Native volume subtypes retain their own rules, and unavailable APIs refuse placement. The owner’s 0.3.18 deploy refusals happened during preflight, before transaction parts spawned; the specific collider cause remains unverified.
+
+Builds and approved managed scenarios establish source/geometry policy only. No deployment, live placement, PhysX mesh cooking, client alignment, unload/reload timing or riding is established by those checks.
+
+The combined 0.3.20 source passes the existing approved park layout/anchor
+scenarios with **130,940 shared / 132,293 plugin** checks, build items with
+**21,931 shared / 22,095 plugin** checks (including actual-plugin metadata
+parsing), and gesture selection with **544** checks: **307,803 total**.
+The genuine cached-reference C#7.3/net48 shared/plugin builds and all five
+approved runner builds report **0 warnings / 0 errors**. These are headless
+source-contract checks; native placement, PhysX geometry, ghost alignment,
+callbacks, payment/refund, persistence and riding remain unverified.
