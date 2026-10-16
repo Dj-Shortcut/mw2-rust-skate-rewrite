@@ -30,9 +30,8 @@ namespace Shortcut.RustMod
 
     public struct SkateParkQuarterProfile
     {
-        // Metres above the measured native floor top. Curved lane runs along +Forward.
         public double Radius, Height, Entry, Deck, StartForward, HalfWidth, EndForward;
-        public double Skin, RailRadius, RailHeight;
+        public double Skin, Vert, CopingRadius, RailRadius, RailHeight;
     }
 
     public struct SkateParkBox
@@ -49,6 +48,8 @@ namespace Shortcut.RustMod
         private const double Degrees = Math.PI / 180;
         public const int KindCount = 12;
         public const double CellSize = 3;
+        public const double NativeBoundsTolerance = 1e-3;
+        public const int QuarterArcSegments = 30;
         public static string Name(SkateParkKind kind)
         {
             switch (kind)
@@ -128,13 +129,15 @@ namespace Shortcut.RustMod
         }
 
         public static int CellCount(SkateParkKind kind)
-        { return kind == SkateParkKind.MiniQuarterPipe ? 1 : kind == SkateParkKind.LargeQuarterPipe ? 3 : 0; }
+        { return kind == SkateParkKind.MiniQuarterPipe ? 1 : kind == SkateParkKind.QuarterPipe ? 2 :
+            kind == SkateParkKind.LargeQuarterPipe ? 3 : 0; }
 
         public static bool TryCell(SkateParkKind kind, int index, out int right, out int forward)
         {
             right = forward = 0;
             if (index < 0 || index >= CellCount(kind)) return false;
-            right = index == 1 ? 1 : 0; forward = index == 2 ? 1 : 0;
+            right = kind == SkateParkKind.LargeQuarterPipe && index == 1 ? 1 : 0;
+            forward = (kind == SkateParkKind.QuarterPipe && index == 1) || index == 2 ? 1 : 0;
             return true;
         }
 
@@ -145,7 +148,47 @@ namespace Shortcut.RustMod
             bool mini = kind == SkateParkKind.MiniQuarterPipe;
             profile = new SkateParkQuarterProfile { Radius = mini ? 1.2 : 3, Height = mini ? 1.2 : 3,
                 Entry = 0.2, Deck = mini ? 1.4 : 2.6, StartForward = -1.4, HalfWidth = 1.4,
-                EndForward = mini ? 1.4 : 4.4, Skin = 0.08, RailRadius = 0.05, RailHeight = 0.8 };
+                EndForward = mini ? 1.4 : 4.4, Skin = 0.08, Vert = 0, CopingRadius = 0.05,
+                RailRadius = 0.05, RailHeight = 0 };
+            return true;
+        }
+
+        public static int QuarterPointCount(SkateParkKind kind)
+        { return CellCount(kind) == 0 ? 0 : QuarterArcSegments + 3; }
+
+        public static bool TryQuarterPoint(SkateParkKind kind, int index, out double forward, out double height)
+        {
+            forward = height = 0;
+            SkateParkQuarterProfile profile;
+            if (!TryQuarterProfile(kind, out profile) || index < 0 || index >= QuarterPointCount(kind)) return false;
+            if (index == 0) { forward = profile.StartForward; return true; }
+            double foot = profile.StartForward + profile.Entry;
+            if (index <= QuarterArcSegments + 1)
+            {
+                double angle = (index - 1) * Math.PI / (2 * QuarterArcSegments);
+                forward = foot + profile.Radius * Math.Sin(angle);
+                height = profile.Radius * (1 - Math.Cos(angle));
+                if (index == QuarterArcSegments + 1) { forward = foot + profile.Radius; height = profile.Radius; }
+                return true;
+            }
+            forward = profile.EndForward;
+            height = profile.Height;
+            return true;
+        }
+
+        public static int QuarterShellPointCount(SkateParkKind kind)
+        { int count = QuarterPointCount(kind); return count == 0 ? 0 : count + 2; }
+
+        public static bool TryQuarterShellPoint(SkateParkKind kind, int index, out double forward, out double height)
+        {
+            forward = height = 0;
+            int count = QuarterPointCount(kind);
+            if (count == 0 || index < 0 || index >= count + 2) return false;
+            if (index < count) return TryQuarterPoint(kind, index, out forward, out height);
+            SkateParkQuarterProfile profile;
+            TryQuarterProfile(kind, out profile);
+            forward = index == count ? profile.EndForward : profile.StartForward;
+            height = -profile.Skin;
             return true;
         }
 
@@ -155,23 +198,48 @@ namespace Shortcut.RustMod
             height = normalUp = normalForward = 0;
             SkateParkQuarterProfile profile;
             if (!TryQuarterProfile(kind, out profile) || !Finite(right) || !Finite(forward)) return false;
-            // The large front-right staging apron meets only the flat entry, not the rising side.
             if (kind == SkateParkKind.LargeQuarterPipe && right > profile.HalfWidth && right <= 4.4 &&
                 forward >= -1.4 && forward <= 1.4)
             { normalUp = 1; return true; }
             if (Math.Abs(right) > profile.HalfWidth || forward < profile.StartForward || forward > profile.EndForward)
                 return false;
-            double run = forward - profile.StartForward - profile.Entry;
+            double foot = profile.StartForward + profile.Entry;
+            double lip = foot + profile.Radius;
+            double run = forward - foot;
             normalUp = 1;
             if (run <= 0) return true;
-            if (run >= profile.Radius) { height = profile.Height; return true; }
+            if (forward > lip) { height = profile.Height; return true; }
+            if (forward == lip) { height = profile.Radius; normalUp = 0; normalForward = -1; return true; }
             double vertical = Math.Sqrt(Math.Max(0, profile.Radius * profile.Radius - run * run));
             height = profile.Radius - vertical;
             normalUp = vertical / profile.Radius; normalForward = -run / profile.Radius;
             return true;
         }
 
-        // Tests every horizontal corner in the part's assigned cell, including rotated wall thickness.
+        public static double Float32BoundsTolerance(double worldX, double worldY, double worldZ)
+        {
+            if (!Finite(worldX) || !Finite(worldY) || !Finite(worldZ)) return double.NaN;
+            return Math.Max(NativeBoundsTolerance,
+                Math.Max(Math.Abs(worldX), Math.Max(Math.Abs(worldY), Math.Abs(worldZ))) / 4194304);
+        }
+
+        public static bool ContainsQuarterPoint(SkateParkKind kind, double right, double up, double forward,
+            double minimumUp, double maximumUp, double tolerance = NativeBoundsTolerance)
+        {
+            if (CellCount(kind) == 0 || !Finite(right) || !Finite(up) || !Finite(forward) ||
+                !Finite(minimumUp) || !Finite(maximumUp) || minimumUp > maximumUp ||
+                !Finite(tolerance) || tolerance < 0 || tolerance > 0.1 ||
+                up < minimumUp - tolerance || up > maximumUp + tolerance) return false;
+            for (int i = 0; i < CellCount(kind); i++)
+            {
+                int cellRight, cellForward;
+                TryCell(kind, i, out cellRight, out cellForward);
+                if (Math.Abs(right - CellSize * cellRight) <= CellSize / 2 + tolerance &&
+                    Math.Abs(forward - CellSize * cellForward) <= CellSize / 2 + tolerance) return true;
+            }
+            return false;
+        }
+
         public static bool ContainsNativeBounds(SkateParkKind kind, int index, double centerRight,
             double centerForward, double sizeRight, double sizeForward)
         {
@@ -188,7 +256,11 @@ namespace Shortcut.RustMod
                 double localX = centerRight + x * sizeRight / 2, localZ = centerForward + z * sizeForward / 2;
                 double r = part.Right + localX * cos + localZ * sin - CellSize * cellRight;
                 double f = part.Forward - localX * sin + localZ * cos - CellSize * cellForward;
-                if (Math.Abs(r) > 1.5 + 1e-3 || Math.Abs(f) > 1.5 + 1e-3) return false;
+                if (kind == SkateParkKind.QuarterPipe)
+                {
+                    if (!ContainsQuarterPoint(kind, r, 0, f, 0, 0)) return false;
+                }
+                else if (Math.Abs(r) > 1.5 + NativeBoundsTolerance || Math.Abs(f) > 1.5 + NativeBoundsTolerance) return false;
             }
             return true;
         }
@@ -404,7 +476,7 @@ namespace Shortcut.RustMod
             if (!TryPart(kind, 0, out first)) return false;
             switch (kind)
             {
-                case SkateParkKind.Bank: case SkateParkKind.Kicker: case SkateParkKind.QuarterPipe:
+                case SkateParkKind.Bank: case SkateParkKind.Kicker:
                     forward = -HalfLength * Math.Cos(first.Pitch * Degrees); break;
                 case SkateParkKind.Halfpipe: right = forward = HalfLength; break;
                 case SkateParkKind.MegaHalfpipe: right = SkateMegaHalfpipe.CenterRight; break;

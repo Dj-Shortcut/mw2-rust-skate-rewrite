@@ -1,13 +1,13 @@
 # Rust park building assets
 
 The owner chose an own build picker and hotbar items; Claude owns the client.
-ShortcutSkate source **0.3.18** has twelve kinds: the eight original types, mini/large quarterpipes, the [half-wall kicker](RUST-SKATE-HALF-WALL-KICKER.md) and the [MEGA kit](RUST-SKATE-MEGA-HALFPIPE.md). The attached kicker targets an existing half-wall; the other kinds use native square foundations. Native construction bounds allow a 1 mm cell-bounds tolerance for exact-size native floors.
+ShortcutSkate source **0.3.19** has twelve kinds: the eight original types, mini/large quarterpipes, the [half-wall kicker](RUST-SKATE-HALF-WALL-KICKER.md) and the [MEGA kit](RUST-SKATE-MEGA-HALFPIPE.md). The attached kicker targets an existing half-wall; the other kinds use native square foundations.
 The stock six belt slots cannot hold the complete catalogue: use an owned item, move/equip it
 natively and wait for actual active-item/planner state. Report missing items or
 full inventory. Native acceptance is open; commands are admin setup/fallback.
 An eligible administrator can request `skate.items all` or `bank`, `kicker`,
 `quarterpipe`, `ledge-low`, `ledge-high`, `long-ledge`, `funbox`, `halfpipe`,
-`mini-quarterpipe`, `large-quarterpipe`, `half-wall-kicker`, `mega-halfpipe` ([profile contract](../mods/rust/shared/README.md#one-cell-mini-and-three-cell-l-quarterpipes)).
+`mini-quarterpipe`, `large-quarterpipe`, `half-wall-kicker`, `mega-halfpipe` ([quarterpipe geometry and client collider contract](RUST-SKATE-QUARTERPIPES.md)).
 Hold the matching item and select the stock square foundation in the build menu. Aim at the existing half-wall for the attached kicker; use native aim, rotation and confirmation for the selected piece. No client console-command submission is required.
 Native client ghost validity and woodless submission still need verification.
 
