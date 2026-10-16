@@ -126,7 +126,7 @@ The runner uses the actual compiled shared DLL, prints its path/SHA-256 and comp
 
 The owner approved two layout scenarios by name for [Task 4](https://github.com/Dj-Shortcut/mw2-rust-skate-rewrite/issues/337#issuecomment-6099499139):
 
-- `skate_park_piece_layouts`: the eight pieces' block positions, orientations, native materials and adjoining nominal square-floor edges, including the complete halfpipe's flat, transitions, decks and railings, plus nominal authored-asset pivot offsets. Native halfpipe walls use thin local X and three-metre local Z; checks cover all twenty wall footprints, joined rail ends and their placement under rotated anchors.
+- `skate_park_piece_layouts`: the ten pieces' block positions, orientations, native materials and adjoining nominal square-floor edges, including the complete halfpipe's flat, transitions, decks and railings, plus nominal authored-asset pivot offsets. Appended mini/large quarterpipe cases check literal cell masks/rotations, quarter-circle surfaces, missing-cell/apron boundaries, native bound containment and reservation-box overlap/touching. Native halfpipe walls use thin local X and three-metre local Z; checks cover all twenty wall footprints, joined rail ends and their placement under rotated anchors.
 - `skate_park_anchor_yaw_and_snap`: translated and rotated layouts preserve the supplied native snapped anchor, including anchors away from the world origin. Inverse and complete known-kind matching cover unordered/wrapped observations, relative noise, ambiguous single-floor kinds, invalid values/counts/prefabs, reflection and atomic finite bounds. The foundation extension supplies abstract construction bounds and independently checks every tilted floor corner above the support, without changing the authored ledge/deck heights.
 
 Build the actual shared library and server plugin using genuine dedicated-server references, then execute the same engine-free scenarios separately against each actual DLL on .NET 8:
@@ -147,7 +147,7 @@ These checks use the layout helpers in the selected DLL, with independent expect
 ## Park build items
 
 The owner approved `skate_park_build_items` by name on 12 October 2026. It checks
-the eight independently specified names/tags, reserved marker gaps, exact stock
+the ten independently specified names/tags, reserved marker gaps, exact stock
 carrier/skin/quantity identity, atomic invalid outputs, verified single debit,
 complete paid-group recovery eligibility, historical/free/interrupted/claimed
 refusals, determinism and warmed allocation. It invokes the actual helper in each
@@ -170,7 +170,7 @@ client/server, Oxide or Shadow starts. See [integration limits](../../../docs/RU
 
 ## Park gesture selection
 
-The owner approved `skate_park_gesture_selection` by name on 11 October 2026. It exercises the actual plugin's pure selection policy: halfpipe-first cycling, a configured order, cancellation, inclusive two-minute expiry, renewal, failed-placement retention, successful consumption and silent refusal for non-admins. Invalid states, clocks, orders and gesture-name catalog matches are checked atomically. It distinguishes an unknown gesture from invalid names, unavailable catalogs and ambiguous aliases, preserves the original lookup overload, and checks one-line catalog names with English/convar fallback, native ordering and case-insensitive deduplication.
+The owner approved `skate_park_gesture_selection` by name on 11 October 2026. It exercises the actual plugin's pure selection policy: legacy eight-kind and appended ten-kind halfpipe-first cycling, a configured order, cancellation, inclusive two-minute expiry, renewal, failed-placement retention, successful consumption and silent refusal for non-admins. Invalid states, clocks, orders and gesture-name catalog matches are checked atomically. It distinguishes an unknown gesture from invalid names, unavailable catalogs and ambiguous aliases, preserves the original lookup overload, and checks one-line catalog names with English/convar fallback, native ordering and case-insensitive deduplication.
 
 ```sh
 dotnet run --project crates/approved_tests/skate/SkateParkGestureScenarios.csproj -p:ActualPluginPath=/absolute/path/to/ShortcutSkate.dll

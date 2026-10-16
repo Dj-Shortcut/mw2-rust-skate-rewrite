@@ -102,6 +102,51 @@ internal static class SkateParkGestureScenarios
         Check(success.Kind == SkateParkKind.Halfpipe, "successful placement resets sequence");
     }
 
+    private static void AppendedParkSelections()
+    {
+        // Keep Sequence's original eight-kind configuration intact; old saved settings
+        // remain valid while a new configuration can append both owner park pieces.
+        var appended = new[] {
+            SkateParkKind.Halfpipe, SkateParkKind.Bank, SkateParkKind.Kicker,
+            SkateParkKind.QuarterPipe, SkateParkKind.LedgeLow, SkateParkKind.LedgeHigh,
+            SkateParkKind.LongLedge, SkateParkKind.Funbox,
+            SkateParkKind.MiniQuarterPipe, SkateParkKind.LargeQuarterPipe
+        };
+        Check(SkateParkSelections.ValidOrder(appended), "ten unique original/appended kinds accepted");
+        Check(SkateParkSelections.ValidOrder(DefaultOrder), "old eight-kind configuration remains valid");
+        var state = default(SkateParkSelectionState);
+        for (int cycle = 0; cycle < 2; cycle++)
+        for (int index = 0; index < appended.Length; index++)
+        {
+            double now = 200 + cycle * appended.Length + index;
+            state = Apply(state, SkateParkSelectionAction.Next, now, appended);
+            Equal(state, new SkateParkSelectionState(true, appended[index], now + 120),
+                "ten-kind cycle keeps original order and appends mini/large");
+        }
+        foreach (var kind in new[] { SkateParkKind.MiniQuarterPipe, SkateParkKind.LargeQuarterPipe })
+        {
+            SkateParkSelectionState selected;
+            Check(SkateParkSelections.TrySelect(kind, true, true, 300, out selected), "new park manual select " + kind);
+            Equal(selected, new SkateParkSelectionState(true, kind, 420), "new park original expiry " + kind);
+            Check(SkateParkSelections.Active(selected, 420), "new park inclusive deadline " + kind);
+            Equal(Apply(selected, SkateParkSelectionAction.PlacementFailed, 419), selected,
+                "new park placement failure keeps original selection " + kind);
+            var consumed = Apply(selected, SkateParkSelectionAction.PlacementSucceeded, 420);
+            Check(!consumed.Selected, "new park successful placement consumes selection " + kind);
+            Refuse(selected, SkateParkSelectionAction.PlacementSucceeded, true, true, 420.001, null,
+                "new park expired success " + kind);
+            Check(!SkateParkSelections.TrySelect(kind, false, true, 300, out selected),
+                "new park still requires administrator " + kind);
+            Check(!SkateParkSelections.TrySelect(kind, true, false, 300, out selected),
+                "new park still requires park readiness " + kind);
+        }
+        var duplicates = (SkateParkKind[])appended.Clone();
+        duplicates[9] = SkateParkKind.MiniQuarterPipe;
+        Check(!SkateParkSelections.ValidOrder(duplicates), "duplicate appended kind refused");
+        duplicates[9] = (SkateParkKind)10;
+        Check(!SkateParkSelections.ValidOrder(duplicates), "future kind 10 is still refused");
+    }
+
     private static void Refusals()
     {
         var selected = new SkateParkSelectionState(true, SkateParkKind.LongLedge, 150);
@@ -274,6 +319,7 @@ internal static class SkateParkGestureScenarios
         using (var sha = SHA256.Create())
             Console.WriteLine("Actual plugin: " + path + "\nSHA-256: " + Convert.ToHexString(sha.ComputeHash(file)).ToLowerInvariant());
         Sequence();
+        AppendedParkSelections();
         LifetimeAndPlacement();
         Refusals();
         GestureNames();

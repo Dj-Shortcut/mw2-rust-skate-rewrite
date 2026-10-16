@@ -11,18 +11,21 @@ internal static class SkateParkBuildItemScenarios
     private static readonly SkateParkKind[] Kinds = {
         SkateParkKind.Bank, SkateParkKind.Kicker, SkateParkKind.QuarterPipe,
         SkateParkKind.LedgeLow, SkateParkKind.LedgeHigh, SkateParkKind.LongLedge,
-        SkateParkKind.Funbox, SkateParkKind.Halfpipe
+        SkateParkKind.Funbox, SkateParkKind.Halfpipe,
+        SkateParkKind.MiniQuarterPipe, SkateParkKind.LargeQuarterPipe
     };
     private static readonly string[] Names = {
         "Skate Bank", "Skate Kicker", "Skate Quarterpipe", "Skate Low Ledge",
-        "Skate High Ledge", "Skate Long Ledge", "Skate Funbox", "Skate Halfpipe"
+        "Skate High Ledge", "Skate Long Ledge", "Skate Funbox", "Skate Halfpipe",
+        "Skate Mini Quarterpipe", "Skate Large Quarterpipe"
     };
     private static readonly int[] Markers = {
         0x534B5001, 0x534B5002, 0x534B5003, 0x534B5004,
-        0x534B5005, 0x534B5006, 0x534B5007, 0x534B5008
+        0x534B5005, 0x534B5006, 0x534B5007, 0x534B5008,
+        0x534B5009, 0x534B500A
     };
-    private static readonly int[] OriginalParts = { 1, 1, 2, 1, 1, 3, 3, 36 };
-    private static readonly int[] InvalidKinds = { int.MinValue, -100, -1, 8, 9, 255, int.MaxValue };
+    private static readonly int[] OriginalParts = { 1, 1, 2, 1, 1, 3, 3, 36, 2, 3 };
+    private static readonly int[] InvalidKinds = { int.MinValue, -100, -1, 10, 11, 255, int.MaxValue };
     private static readonly int[] FarMarkers = { int.MinValue, -1, 0, 1, int.MaxValue };
     private static readonly int[] Amounts = { int.MinValue, -2, -1, 0, 1, 2, 3, 8, int.MaxValue };
 
@@ -45,7 +48,7 @@ internal static class SkateParkBuildItemScenarios
     {
         Check(SkateParkBuildItems.Carrier == "building.planner", "native plan carrier literal");
         Check(SkateParkBuildItems.MarkerBase == 0x534B5000, "reserved marker base literal");
-        Check(SkateParkBuildItems.PieceCount == 8, "eight named build items");
+        Check(SkateParkBuildItems.PieceCount == 10, "eight original and two appended named build items");
         Check(typeof(SkateParkBuildItems).Assembly == typeof(SkateParkLayout).Assembly,
               "item and layout contracts come from the same actual library");
         for (int i = 0; i < Kinds.Length; i++)
@@ -61,14 +64,14 @@ internal static class SkateParkBuildItemScenarios
             Identity(true, Kinds[i], "building.planner", 0, Markers[i], Names[i], 1, "exact item " + i);
         }
 
-        // The whole tag range is reserved, but only markers 1..8 identify pieces.
+        // The whole tag range is reserved, but only markers 1..10 identify pieces.
         // Tagged-but-unrecognized plans must not silently become ordinary vanilla plans.
         for (int marker = 0x534B4FFC; marker <= 0x534B5103; marker++)
         {
             bool tagged = marker >= 0x534B5000 && marker <= 0x534B50FF;
             Check(SkateParkBuildItems.Tagged(marker) == tagged, "tag boundary " + marker);
             var kind = SkateParkKind.Halfpipe;
-            bool valid = marker >= 0x534B5001 && marker <= 0x534B5008;
+            bool valid = marker >= 0x534B5001 && marker <= 0x534B500A;
             Check(SkateParkBuildItems.TryKind(marker, out kind) == valid, "marker gap decision " + marker);
             Check(kind == (valid ? Kinds[marker - 0x534B5001] : default(SkateParkKind)),
                   "marker gap output " + marker);
@@ -210,7 +213,7 @@ internal static class SkateParkBuildItemScenarios
         bool correct = true;
         for (int i = 0; i < iterations; i++)
         {
-            int index = i & 7;
+            int index = i % Kinds.Length;
             var kind = Kinds[index];
             SkateParkKind resolved;
             correct &= SkateParkBuildItems.Name(kind) == Names[index] &&

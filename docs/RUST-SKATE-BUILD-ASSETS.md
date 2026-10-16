@@ -1,18 +1,19 @@
 # Rust park building assets
 
 The owner chose an own build picker and hotbar items; Claude owns the client.
-ShortcutSkate source **0.3.13** handles eight types via native square foundations.
-The stock six belt slots cannot hold all eight: use an owned item, move/equip it
+ShortcutSkate source **0.3.17** handles ten types via native square foundations.
+The stock six belt slots cannot hold all ten: use an owned item, move/equip it
 natively and wait for actual active-item/planner state. Report missing items or
 full inventory. Native acceptance is open; commands are admin setup/fallback.
 An eligible administrator can request `skate.items all` or `bank`, `kicker`,
-`quarterpipe`, `ledge-low`, `ledge-high`, `long-ledge`, `funbox`, `halfpipe`.
+`quarterpipe`, `ledge-low`, `ledge-high`, `long-ledge`, `funbox`, `halfpipe`,
+`mini-quarterpipe`, `large-quarterpipe` ([profile contract](../mods/rust/shared/README.md#one-cell-mini-and-three-cell-l-quarterpipes)).
 Hold the matching item, select the stock square foundation and use native aim,
 rotation and confirmation. No client console-command submission is required.
 Native client ghost validity and woodless submission still need verification.
 
 The stock carrier is `building.planner`, skin0, amount1. Authored
-`instanceData.dataInt` markers `0x534B5001`–`0x534B5008` follow `SkateParkKind`;
+`instanceData.dataInt` markers `0x534B5001`–`0x534B500A` follow `SkateParkKind`;
 the [catalogue](../mods/rust/shared/SkateParkBuildItems.cs) supplies exact names.
 Tagged plans do not stack. Other plans retain ordinary placement and payment.
 The server captures item/planner/world before waiving native affordability.

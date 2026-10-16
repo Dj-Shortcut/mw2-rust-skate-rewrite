@@ -9,7 +9,7 @@ namespace Shortcut.RustMod
     {
         public const string Carrier = "building.planner";
         public const int MarkerBase = 0x534B5000;
-        public const int PieceCount = 8;
+        public const int PieceCount = 10;
 
         public static string Name(SkateParkKind kind)
         {
@@ -23,6 +23,8 @@ namespace Shortcut.RustMod
                 case SkateParkKind.LongLedge: return "Skate Long Ledge";
                 case SkateParkKind.Funbox: return "Skate Funbox";
                 case SkateParkKind.Halfpipe: return "Skate Halfpipe";
+                case SkateParkKind.MiniQuarterPipe: return "Skate Mini Quarterpipe";
+                case SkateParkKind.LargeQuarterPipe: return "Skate Large Quarterpipe";
                 default: return null;
             }
         }
