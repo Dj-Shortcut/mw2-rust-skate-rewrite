@@ -579,49 +579,44 @@ public static class Scenarios
         Enter(phase + 1, "riding up the bank");
     }
 
-    // A ride in a MEGA halfpipe drawn solid around the rider, no server piece. The rider is lifted
-    // onto the back deck a metre from the lip, pushes once over it and is then left alone: the
-    // drop-in, the far wall, the way back. Every quarter second the place across the profile, the
-    // height over the flat, the speed, the mode and the surface's normal are logged, and each
-    // turn's highest point: how far up the transitions the ride goes.
-    public const float MegaRoll = 24f, MegaBack = 1f;
+    // A ride in a MEGA halfpipe drawn solid around the rider, no server piece: pushed along the flat
+    // to MegaPace, then left to pump nothing and roll back and forth. Every quarter second the
+    // place across the profile, the height over the flat, the speed, the mode and the surface's
+    // normal are logged, and each turn's highest point: how far up the transitions the ride goes.
+    public const float MegaPace = 17f, MegaRoll = 24f, MegaStart = 5f;
     private static Vector3 megaAt; private static float megaLog, megaPeak, megaLowNormal = 1f; private static int megaSide;
     private static void Mega(float game, float now)
     {
-        var r = (float)SkateParks.MegaRadius; var lip = 6f + r;
         if (phase == 0)
         {
-            var feet = SkateRig.LocalT.position;
-            megaAt = feet + SkateRide.Dir(yaw0) * (lip + MegaBack) - Vector3.up * (float)SkateParks.MegaLift;
+            SkateRig.MountNow(yaw0);
+            // The rider starts MegaStart behind the flat's middle, for a longer push.
+            megaAt = SkateRig.LocalT.position + SkateRide.Dir(yaw0) * MegaStart - Vector3.up * (float)SkateParks.MegaLift;
             Say("mega " + SkateParks.PreviewAt(SkateParks.Kind.MegaHalfpipe, megaAt, yaw0) + " | " + SkateParks.Line());
-            var deck = feet + Vector3.up * (r + 0.2f);
-            try { SkateRig.Body.position = deck; SkateRig.LocalT.position = deck; } catch (Exception e) { Say("lift threw " + e.Message); }
-            SkateCamera.Fixed = false; SkateCamera.Chase = true;
-            stepAt = game; Enter(1, "on the deck");
+            SkateCamera.Fixed = false; SkateCamera.Chase = true; SkateRide.Frozen = false; SkateRide.Mode = RideMode.Ground;
+            stepAt = game; Enter(1, "push to " + MegaPace + " m/s");
             return;
         }
         var flat = SkateRide.Position - megaAt; var along = Vector3.Dot(flat, SkateRide.Dir(yaw0)); var up = flat.y;
-        if (phase == 1 && game - stepAt > 1f) { SkateRig.MountNow(yaw0); SkateRide.Frozen = false; SkateRide.Mode = RideMode.Ground; stepAt = game; Enter(2, "push over the lip"); }
-        if (phase == 2)
+        if (phase == 1)
         {
-            SkateKeys.Push = game - stepAt < 0.6f;
-            if (game - stepAt >= 0.6f) { SkateKeys.Push = false; stepAt = game; Enter(3, "rolling, no input"); }
+            SkateKeys.Push = SkateRide.Speed < MegaPace && along < 5f;
+            if (SkateRide.Speed >= MegaPace || along >= 5f) { SkateKeys.Push = false; stepAt = game; Enter(2, "rolling, no input"); }
         }
-        if (phase < 2) return;
         if (now >= megaLog)
         {
-            megaLog = now + 0.2f;
-            Say("MEGA at " + along.ToString("F2") + " up " + up.ToString("F2") + " speed " + SkateRide.Speed.ToString("F1") + " v " + SkateRide.ActualV.ToString("F1") + " mode " + SkateRide.Mode + " normal.y " + SkateRide.Normal.y.ToString("F2") + " walls " + SkateRide.WallStops + " bails " + SkateRide.Bails);
+            megaLog = now + 0.25f;
+            Say("MEGA at " + along.ToString("F2") + " up " + up.ToString("F2") + " speed " + SkateRide.Speed.ToString("F1") + " v " + SkateRide.ActualV.ToString("F1") + " mode " + SkateRide.Mode + " normal.y " + SkateRide.Normal.y.ToString("F2") + " walls " + SkateRide.WallStops + " cap " + SkateRide.Cap.ToString("F0"));
         }
         var side = along > 6f ? 1 : along < -6f ? -1 : 0;
         if (side != 0) { megaPeak = Math.Max(megaPeak, up); if (SkateRide.Mode == RideMode.Ground) megaLowNormal = Math.Min(megaLowNormal, SkateRide.Normal.y); }
         if (side == 0 && megaSide != 0)
         {
-            Say("MEGA turn on side " + megaSide + ": highest " + megaPeak.ToString("F2") + " m of " + r.ToString("F2") + ", steepest ground normal.y " + megaLowNormal.ToString("F2"));
+            Say("MEGA turn on side " + megaSide + ": highest " + megaPeak.ToString("F2") + " m of " + SkateParks.MegaRadius.ToString("F2") + ", steepest ground normal.y " + megaLowNormal.ToString("F2"));
             megaPeak = 0f; megaLowNormal = 1f;
         }
         megaSide = side;
-        if (phase == 3 && game - stepAt > MegaRoll) { Say("MEGA done | " + SkateRide.Status()); SkateParks.PreviewClear(); Finish(); }
+        if (phase == 2 && game - stepAt > MegaRoll) { Say("MEGA done | " + SkateRide.Status()); SkateParks.PreviewClear(); Finish(); }
     }
 
     // A command sent to the server by the network, not typed: a chat line that shows on the screen
