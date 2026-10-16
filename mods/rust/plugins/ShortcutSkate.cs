@@ -663,19 +663,15 @@ namespace Shortcut.RustMod
             profile = new SkateParkQuarterProfile();
             if (CellCount(kind) == 0) return false;
             bool mini = kind == SkateParkKind.MiniQuarterPipe;
-            double vert = kind == SkateParkKind.LargeQuarterPipe ? 0.2 : 0;
-            profile = new SkateParkQuarterProfile { Radius = mini ? 1.2 : 3, Height = (mini ? 1.2 : 3) + vert,
+            profile = new SkateParkQuarterProfile { Radius = mini ? 1.2 : 3, Height = mini ? 1.2 : 3,
                 Entry = 0.2, Deck = mini ? 1.4 : 2.6, StartForward = -1.4, HalfWidth = 1.4,
-                EndForward = mini ? 1.4 : 4.4, Skin = 0.08, Vert = vert, CopingRadius = 0.05,
+                EndForward = mini ? 1.4 : 4.4, Skin = 0.08, Vert = 0, CopingRadius = 0.05,
                 RailRadius = 0.05, RailHeight = 0 };
             return true;
         }
 
         public static int QuarterPointCount(SkateParkKind kind)
-        {
-            SkateParkQuarterProfile profile;
-            return TryQuarterProfile(kind, out profile) ? QuarterArcSegments + 3 + (profile.Vert > 0 ? 1 : 0) : 0;
-        }
+        { return CellCount(kind) == 0 ? 0 : QuarterArcSegments + 3; }
 
         public static bool TryQuarterPoint(SkateParkKind kind, int index, out double forward, out double height)
         {
@@ -692,7 +688,7 @@ namespace Shortcut.RustMod
                 if (index == QuarterArcSegments + 1) { forward = foot + profile.Radius; height = profile.Radius; }
                 return true;
             }
-            forward = index == QuarterPointCount(kind) - 1 ? profile.EndForward : foot + profile.Radius;
+            forward = profile.EndForward;
             height = profile.Height;
             return true;
         }

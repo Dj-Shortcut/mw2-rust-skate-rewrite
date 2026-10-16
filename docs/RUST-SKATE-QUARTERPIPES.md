@@ -3,11 +3,12 @@
 Kinds `2` (quarterpipe), `8` (mini) and `9` (large) share one riding and closed-solid contract in `mods/rust/shared/SkatePark.cs`.
 Coordinates are metres: `x=Right`, `y=Up`, `z=Forward`; the ramp rises along `+z`. Apply the group yaw and anchor once.
 The riding datum `y=0` is `group.AnchorY + FloorPrefab Construction.bounds.max.y`, measured before pitching a carrier.
+
 | Kind | Radius r | Height h | Vert | Start z | Curve foot z | Lip z | Back z | Deck depth | Half width | Reserved cells (right,forward) |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
 | 2 original | 3 | 3 | 0 | -1.4 | -1.2 | 1.8 | 4.4 | 2.6 | 1.4 | (0,0), (0,1) |
 | 8 mini | 1.2 | 1.2 | 0 | -1.4 | -1.2 | 0 | 1.4 | 1.4 | 1.4 | (0,0) |
-| 9 large | 3 | 3.2 | 0.2 | -1.4 | -1.2 | 1.8 | 4.4 | 2.6 | 1.4 | (0,0), (1,0), (0,1) |
+| 9 large | 3 | 3 | 0 | -1.4 | -1.2 | 1.8 | 4.4 | 2.6 | 1.4 | (0,0), (1,0), (0,1) |
 
 Each cell is a 3 m square centered at `(3*right,3*forward)`. The missing large `(1,1)` cell stays empty.
 The large staging apron is a separate closed box: `x=[1.4,4.4]`, `z=[-1.4,1.4]`, `y=[-0.08,0]`.
@@ -15,11 +16,11 @@ The large staging apron is a separate closed box: `x=[1.4,4.4]`, `z=[-1.4,1.4]`,
 The entry is level from `z=-1.4` to `-1.2`. The circular transition is exactly
 `z=-1.2+r*sin(theta), y=r*(1-cos(theta))`, `theta=0..pi/2`.
 Its tangent is horizontal at the foot and vertical at `(lip,r)`; its normal is `(0,cos(theta),-sin(theta))`.
-Only the large continues vertically at `z=lip` from `y=r` to `h`. The deck is horizontal at `y=h`, `z=lip..back`, across the full `x=[-1.4,1.4]` width.
+Every kind has `h == r` and `Vert=0`: the circle ends exactly tangent-vertical at `(lip,h)` without an added straight vertical face. The flat deck runs directly from that lip to `z=back`, at `y=h`, across the full `x=[-1.4,1.4]` width.
 
-`QuarterPointCount` / `TryQuarterPoint` return the entry start, 31 arc points at 3 degree intervals, the optional vert top, then the deck back.
-Counts are 33 for original/mini and 34 for large. Both arc endpoints are exact. Use these same vertices for rendering and collision.
-`TryQuarterSurface` returns the arc top and vertical normal at exactly `z=lip`; its single-valued height query cannot represent the large vertical face.
+`QuarterPointCount` / `TryQuarterPoint` return the entry start, 31 arc points at 3 degree intervals, then the deck back; no vert-top point is inserted.
+All three kinds have 33 riding points and 35 shell points. The arc has 30 equal 3-degree segments with exact endpoints. Use these same vertices for rendering and collision.
+`TryQuarterSurface` returns height `r=h` and normal `(0,0,-1)` at exactly `z=lip`; the deck beyond the lip has normal `(0,1,0)`.
 `QuarterShellPointCount` / `TryQuarterShellPoint` append `(back,-0.08)` and `(start,-0.08)`; close the polygon to its first point.
 
 Extrude the shell across `x=[-1.4,1.4]`: riding surface, full-height closed side faces, back, entry front and bottom all exist.
