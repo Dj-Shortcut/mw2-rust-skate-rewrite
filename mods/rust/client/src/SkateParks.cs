@@ -617,7 +617,7 @@ public static class SkateParks
     // deck on top). The authored models are circular and shorter, so they would leave the tiles
     // standing out of them; these are made here instead, on the tiles' tops, with the bends
     // rounded (radius Bend) so the board rolls through them, and the coping edge left sharp.
-    public const double Bend = 3.0, VertBend = 1.6, VertAngle = 82, VertLength = 0.9;
+    public const double Bend = 3.0, VertBend = 1.6, VertAngle = 90, VertLength = 0.9, QuarterDeck = 1.5;
     private const int BendSteps = 8;
 
     // The riding profile, (forward, height) points in the piece's frame. The quarterpipe starts at
@@ -684,11 +684,14 @@ public static class SkateParks
             corners.Add(new Vector2(0f, -1.2f)); radii.Add(0);
             corners.Add(new Vector2(0f, 0f)); radii.Add(Bend);
             corners.Add(new Vector2((float)run1, (float)rise1)); radii.Add(Bend);
-            // Past the top tile the wall goes on up to near vertical, so the board leaves it upward
+            // Past the top tile the wall goes on up to vertical, so the board leaves it upward
             // and comes back down into it, as from a real quarterpipe: seen live, a run up the
             // 35 degree top tile launched the board 12 m on over the deck.
             corners.Add(new Vector2((float)(run1 + run2), (float)(rise1 + rise2))); radii.Add(VertBend);
-            corners.Add(new Vector2((float)(run1 + run2 + VertLength * Math.Cos(VertAngle * Degrees)), (float)(rise1 + rise2 + VertLength * Math.Sin(VertAngle * Degrees)))); radii.Add(0);
+            var lip = new Vector2((float)(run1 + run2 + VertLength * Math.Cos(VertAngle * Degrees)), (float)(rise1 + rise2 + VertLength * Math.Sin(VertAngle * Degrees)));
+            corners.Add(lip); radii.Add(0);
+            // A real quarterpipe ends in vert, the coping and a level deck behind it, not in a point.
+            corners.Add(new Vector2(lip.x + (float)QuarterDeck, lip.y)); radii.Add(0);
             // Points are (forward, height); the first is a run-in on the ground.
             corners[0] = new Vector2(-1.2f, 0f);
         }
@@ -764,6 +767,7 @@ public static class SkateParks
         }
         if (IsGridQuarter(kind)) colliders += Fittings(kind, root, material, solid);
         if (kind == Kind.MegaHalfpipe) MegaFittings(root, material);
+        if (kind == Kind.QuarterPipe) QuarterCoping(root, material, profile, halfWidth);
         return root;
     }
 
@@ -797,6 +801,16 @@ public static class SkateParks
         var floor = new GameObject("COLLISION__apron"); floor.transform.SetParent(plate.transform, false);
         floor.AddComponent<MeshCollider>().sharedMesh = SurfaceMesh(apron, 1.5f); floor.layer = 0;
         return 1;
+    }
+
+    // The plain quarterpipe's coping: a metal pipe along the lip, where the vert meets the deck.
+    private static void QuarterCoping(GameObject root, Material material, List<Vector2> profile, float halfWidth)
+    {
+        var lip = profile[profile.Count - 2];
+        var bars = new List<Vector3[]> { new[] { new Vector3(-halfWidth, lip.y, lip.x), new Vector3(halfWidth, lip.y, lip.x) } };
+        var metal = new GameObject("VISUAL__coping"); metal.transform.SetParent(root.transform, false);
+        metal.AddComponent<MeshFilter>().sharedMesh = Bars(bars, (float)RailRadius);
+        metal.AddComponent<MeshRenderer>().sharedMaterial = material;
     }
 
     // Coping at both lips, and a guard rail 1 m high along the back of each deck; the sides stay open.
