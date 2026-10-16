@@ -631,15 +631,17 @@ public static class SkateParks
     // The riding profile, (forward, height) points in the piece's frame. The quarterpipe starts at
     // its entry (the first tile's low edge); the halfpipe's frame is the middle of its flat.
     // The quarterpipes' profile (Codex's TryQuarterPoint, #470): level from QuarterStart to the foot
-    // at -1.2, a quarter circle of radius r in 30 equal steps up to vertical at the lip, on the large
-    // one 0.2 m more of vert, then the level deck to the back. The same points make the drawn
+    // at -1.2, a quarter circle of radius r in 30 equal 3 degree faces up to the lip, then the level
+    // deck to the back. The same points make the drawn
     // surface and the collider; the closed shell goes down to -QuarterSkin.
     public const double QuarterStart = -1.4, QuarterFoot = -1.2, QuarterHalfWidth = 1.4, QuarterSkin = 0.08, CopingRadius = 0.05, RailRadius = 0.05;
     public const int QuarterSteps = 30;
     public static void QuarterSize(Kind kind, out double radius, out double height, out double back)
     {
         if (kind == Kind.MiniQuarterPipe) { radius = 1.2; height = 1.2; back = 1.4; }
-        else { radius = 3; height = kind == Kind.LargeQuarterPipe ? 3.2 : 3; back = 4.4; }
+        // No straight vert anywhere (owner, 2026-10-16): the large one is a larger circle, not 0.2 m
+        // of wall on top of the plain one's.
+        else { radius = kind == Kind.LargeQuarterPipe ? 3.2 : 3; height = radius; back = 4.4; }
     }
     public static List<Vector2> QuarterProfile(Kind kind)
     {
