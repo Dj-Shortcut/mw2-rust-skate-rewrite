@@ -4,7 +4,7 @@ The server/shared addition for #408 attaches one Stone native square floor to an
 
 ## Identity and building flow
 
-`HalfWallKicker = 10`, layout name `half-wall-kicker`, item name `Skate Half-wall Kicker`, marker `0x534B500B`. The carrier is one stock `building.planner`, skin 0, with genuine item UID and the existing exact metadata/name checks. IDs 0–7, their markers and layouts remain unchanged. IDs 8/9 are reserved for concurrent module work and are invalid in this branch. `PieceCount` counts nine named items; enumerate named enum values rather than assuming dense IDs.
+`HalfWallKicker = 10`, layout name `half-wall-kicker`, item name `Skate Half-wall Kicker`, marker `0x534B500B`. The carrier is one stock `building.planner`, skin 0, with genuine item UID and the existing exact metadata/name checks. IDs 0–7, their markers and layouts remain unchanged. The integrated catalogue assigns mini/large quarterpipes to IDs 8/9 and MEGA to ID 11. `PieceCount` is twelve, with stable IDs 0–11 and markers `0x534B5001`–`0x534B500C`.
 
 An administrator can obtain the item through `skate.items half-wall-kicker`. The build-menu frontend selects a stock square foundation with that item active, aims at a broad half-wall face and confirms. The server intercepts its original affordability/build request, refuses native carrier creation/payment and schedules the attachment after the original hook returns. It replays the complete original wall-target building hook, then checks every actual ramp part through the normal park transaction. A refused or canceled request retains the item; one committed ramp verifies one debit. No native foundation is created or removed by this route.
 

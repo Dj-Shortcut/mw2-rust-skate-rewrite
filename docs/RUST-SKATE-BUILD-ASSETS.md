@@ -8,8 +8,7 @@ full inventory. Native acceptance is open; commands are admin setup/fallback.
 An eligible administrator can request `skate.items all` or `bank`, `kicker`,
 `quarterpipe`, `ledge-low`, `ledge-high`, `long-ledge`, `funbox`, `halfpipe`,
 `mini-quarterpipe`, `large-quarterpipe`, `half-wall-kicker`, `mega-halfpipe` ([profile contract](../mods/rust/shared/README.md#one-cell-mini-and-three-cell-l-quarterpipes)).
-Hold the matching item, select the stock square foundation (or the existing half-wall for the attached kicker) and use native aim,
-rotation and confirmation. No client console-command submission is required.
+Hold the matching item and select the stock square foundation in the build menu. Aim at the existing half-wall for the attached kicker; use native aim, rotation and confirmation for the selected piece. No client console-command submission is required.
 Native client ghost validity and woodless submission still need verification.
 
 The stock carrier is `building.planner`, skin0, amount1. Authored
