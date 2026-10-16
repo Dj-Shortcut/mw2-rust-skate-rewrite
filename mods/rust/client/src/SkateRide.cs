@@ -252,6 +252,13 @@ public static class SkateRide
     public static void Mount(Rigidbody b, float yaw)
     {
         body = b; Yaw = yaw;
+        try
+        {
+            var cap = b.gameObject.GetComponent<CapsuleCollider>();
+            CapsuleReach = cap != null ? Math.Max(0f, cap.radius - WallProbe) : 0.2f;
+            if (!capsuleSaid) { capsuleSaid = true; Out.Say("SKATE capsule " + (cap != null ? "radius " + cap.radius.ToString("F2") + " height " + cap.height.ToString("F2") : "not found") + "; walls are swept " + CapsuleReach.ToString("F2") + " m past the probe"); }
+        }
+        catch (Exception e) { CapsuleReach = 0.2f; if (!capsuleSaid) { capsuleSaid = true; Out.Say("SKATE capsule unreadable: " + e.GetType().Name + ": " + e.Message); } }
         var v = b.linearVelocity; velocity = v; var rise = v.y; v.y = 0f;
         Speed = Vector3.Dot(v, Dir(yaw));
         SkateKeys.EndStep();
@@ -336,6 +343,11 @@ public static class SkateRide
                 Speed *= scale; if (Mode == RideMode.Grind) SkateGrind.Speed = Speed;
                 flat = Flat(velocity); pace = flat.magnitude;
             }
+            if (Mode == RideMode.Ground || Mode == RideMode.Air)
+            {
+                velocity = WallAhead(pos, velocity, dt);
+                flat = Flat(velocity); pace = flat.magnitude;
+            }
             if (pace > Top) Top = pace;
             body.linearVelocity = velocity;
             var sign = Speed < 0f ? -1f : 1f;
@@ -346,6 +358,53 @@ public static class SkateRide
         }
         catch (Exception e) { Dismount("the step threw"); Out.Say("SKATE step threw " + e.GetType().Name + ": " + e.Message); }
     }
+
+    // A wall the next step would reach. The physics engine moves the player's capsule one step at
+    // a time without sweeping it, and a step at riding speed (0.8 m at 25 m/s) carries the capsule
+    // into a thin wall, where it stays wedged: the game's collision then holds it wherever the
+    // board points. An owner's ride into a thatch wall at 26 m/s was held on that spot for more
+    // than 500 steps, with nothing ahead of it. So the step is swept first: what would go into a
+    // steep face is taken out (a glancing hit slides along it), and a hard hit is a bail.
+    public const float WallProbe = 0.3f, WallSkin = 0.1f, WallSlam = 8f, WallFrom = 3f;
+    private static readonly float[] wallHeights = { 0.6f, 1.3f };
+    public static int WallStops, WallSlams;
+    private static Vector3 WallAhead(Vector3 pos, Vector3 v, float dt)
+    {
+        var pace = v.magnitude;
+        if (pace < WallFrom) return v;
+        var dir = v / pace; var reach = pace * dt + CapsuleReach + WallSkin;
+        var found = false; var nearest = float.MaxValue; var normal = Vector3.zero;
+        for (var i = 0; i < wallHeights.Length; i++)
+        {
+            RaycastHit hit;
+            if (Physics.SphereCast(pos + Vector3.up * wallHeights[i], WallProbe, dir, out hit, reach, GroundMask, QueryTriggerInteraction.Ignore)
+                && hit.m_Normal.y < 0.5f && hit.distance < nearest) { found = true; nearest = hit.distance; normal = hit.m_Normal; }
+        }
+        if (!found) return v;
+        var into = -Vector3.Dot(v, normal);
+        if (into <= 0f) return v;
+        var kept = v + normal * into;
+        WallStops++;
+        if (into > WallSlam && Mode == RideMode.Ground)
+        {
+            WallSlams++;
+            Out.Say("SKATE wall: hit at " + into.ToString("F1") + " m/s into it, " + nearest.ToString("F2") + " m ahead at " + Out.V3(pos) + "; bail");
+            Bail(); Speed = 0f;
+            return new Vector3(0f, Math.Min(0f, v.y), 0f);
+        }
+        // Along the ground the speed follows what is left of the step, so the next step does not
+        // ride on into the wall.
+        if (Mode == RideMode.Ground)
+        {
+            var left = Flat(kept).magnitude; var had = Flat(v).magnitude;
+            if (had > 0.0001f) Speed *= left / had;
+        }
+        if (WallStops <= 20 || WallStops % 50 == 0) Out.Say("SKATE wall: " + into.ToString("F1") + " m/s into it taken out (" + WallStops + ") at " + Out.V3(pos));
+        return kept;
+    }
+    // How far the player's capsule reaches past the probe's sphere, read from its collider.
+    private static float CapsuleReach = 0.2f;
+    private static bool capsuleSaid;
 
     private static void Measure(Vector3 pos, float dt)
     {
