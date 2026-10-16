@@ -27,6 +27,8 @@ public class SkateRig : MonoBehaviour
     private static LateDriver late;
     private static float offAt = -99f, lastFrame;
     private static bool wasOn;
+    private float nextHolster, holsterSaidAt = -99f;
+    private string lastHolster = "";
     private float nextTick, nextLog, lateRetryAt, lastJumpTap = -1f, crouchSince = -1f;
     private int standTicks, lyingTicks, lateFailures;
     public const float LyingEye = 0.6f, LyingReach = 0.8f, DownSeconds = 0.5f;
@@ -63,7 +65,14 @@ public class SkateRig : MonoBehaviour
             }
         }
         if (SkateRide.On && now >= nextLog) { nextLog = now + 1f; Say(SkateRide.Status() + " | " + SkateClock.Report()); }
-        if (wasOn && !SkateRide.On) { offAt = now; Say("OFF (" + SkateRide.OffReason + ") top=" + SkateRide.Top.ToString("F1") + " pull-backs=" + SkateRide.Resets + " score=" + SkateRide.Trick.TotalPoints); }
+        if (wasOn && !SkateRide.On) { offAt = now; Say("OFF (" + SkateRide.OffReason + ") top=" + SkateRide.Top.ToString("F1") + " pull-backs=" + SkateRide.Resets + " score=" + SkateRide.Trick.TotalPoints); LevelView(); }
+        // Nothing in the hand while riding, as on a vehicle: no building or swinging from the board.
+        if (SkateRide.On && Local != null && now >= nextHolster)
+        {
+            nextHolster = now + 0.25f;
+            string how;
+            if (SkateHeld.Holster(Local, out how) || how != "") { if (how != lastHolster || now - holsterSaidAt > 10f) { lastHolster = how; holsterSaidAt = now; Say("HOLSTER " + how); } }
+        }
         wasOn = SkateRide.On;
         if (Scenarios.Active && Ready && late != null)
         {
@@ -97,6 +106,45 @@ public class SkateRig : MonoBehaviour
         if (late != null) { UnityEngine.Object.Destroy(late); late = null; }
         Local = null; LocalT = null; Walk = null; Body = null; AwakeAt = -1f; standTicks = lyingTicks = 0; tracking = lateAdded = false; lateFailures = 0;
         downSince = -1f;
+    }
+
+    // Getting off hands the view back to the game looking level, the way the board was going: the
+    // mouse may have taken the game's own pitch far up or down while the chase camera clamped it.
+    // The player's input is told the new view (SetViewVars); the route is logged once.
+    private static bool viewLooked; private static System.Reflection.MethodInfo setView; private static System.Reflection.MemberInfo inputMember;
+    public static void LevelView()
+    {
+        if (Local == null) return;
+        try
+        {
+            const System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
+            if (!viewLooked)
+            {
+                viewLooked = true;
+                // The game's fields come through as properties in this build; both are looked at.
+                for (var at = Local.GetType(); at != null && setView == null; at = at.BaseType)
+                {
+                    foreach (var f in at.GetFields(flags | System.Reflection.BindingFlags.DeclaredOnly))
+                    {
+                        var m = f.FieldType.GetMethod("SetViewVars", flags, null, new[] { typeof(Quaternion) }, null);
+                        if (m != null) { setView = m; inputMember = f; break; }
+                    }
+                    if (setView != null) break;
+                    foreach (var p in at.GetProperties(flags | System.Reflection.BindingFlags.DeclaredOnly))
+                    {
+                        if (p.GetIndexParameters().Length != 0) continue;
+                        var m = p.PropertyType.GetMethod("SetViewVars", flags, null, new[] { typeof(Quaternion) }, null);
+                        if (m != null) { setView = m; inputMember = p; break; }
+                    }
+                }
+                Out.Say("SKATE view route: " + (setView == null ? "none (no member with SetViewVars(Quaternion))" : inputMember.Name + ".SetViewVars"));
+            }
+            if (setView == null) return;
+            var field = inputMember as System.Reflection.FieldInfo;
+            var input = field != null ? field.GetValue(Local) : ((System.Reflection.PropertyInfo)inputMember).GetValue(Local, null);
+            if (input != null) setView.Invoke(input, new object[] { Quaternion.Euler(0f, SkateRide.Yaw + (SkateRide.Speed < -0.5f ? 180f : 0f), 0f) });
+        }
+        catch (Exception e) { Out.Say("SKATE view level threw " + e.GetType().Name + ": " + e.Message); }
     }
 
     public static void MountNow(float yaw)

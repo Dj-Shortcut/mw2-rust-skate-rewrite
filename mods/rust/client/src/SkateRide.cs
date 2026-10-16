@@ -754,7 +754,10 @@ public static class SkateRide
         // A rotation is only started when the arc lasts long enough to finish it: an unfinished one is a bail.
         var left = (float)(TimeToGround() - 0.03);
         var flips = pendFlip + SkateKeys.LateFlip; var lateFlips = SkateKeys.LateFlip != 0 && Jumped && AirTime > LateAfter; pendFlip = 0;
-        if (flips != 0 && (Math.Abs(flipLeft) < 0.001f || Math.Sign(flipLeft) == Math.Sign(flips)))
+        // As in Skate, a flip and a grab never overlap: a flip asked for during a grab is not done,
+        // and a grab held during a flip or shove-it starts once the board has come round.
+        var grabbing = Grab != SkateGrabKind.None;
+        if (flips != 0 && !grabbing && (Math.Abs(flipLeft) < 0.001f || Math.Sign(flipLeft) == Math.Sign(flips)))
         {
             // As in Skate: a flip is started whenever it is asked for. One asked too late does not
             // come round before the ground, and that is a bail, unless the board meets an edge half
@@ -764,7 +767,7 @@ public static class SkateRide
         }
         // A shove asked for in the air goes on top of what is under way, the same way round.
         var lateShove = Jumped ? SkateKeys.LateShove : 0f;
-        if (lateShove != 0f && (Math.Abs(shoveLeft) < 0.001f || Math.Sign(shoveLeft) == Math.Sign(lateShove))) pendShove += lateShove;
+        if (lateShove != 0f && !grabbing && (Math.Abs(shoveLeft) < 0.001f || Math.Sign(shoveLeft) == Math.Sign(lateShove))) pendShove += lateShove;
         if (pendShove != 0f)
         {
             if (left < (Math.Abs(shoveLeft) + Math.Abs(pendShove)) / (float)SkateMotion.ShoveRate) Late("a shove-it", left);
@@ -780,7 +783,7 @@ public static class SkateRide
             bodyLeft = body; TrickAir = true;
         }
         var spinAxis = SpinAxis(left, dt);
-        Grab = TrickAir ? SkateKeys.Grab : SkateGrabKind.None;
+        Grab = TrickAir && Math.Abs(flipLeft) < 0.001f && Math.Abs(shoveLeft) < 0.001f ? SkateKeys.Grab : SkateGrabKind.None;
 
         var flipStep = (float)SkateMotion.FlipRate * dt; var shoveStep = (float)SkateMotion.ShoveRate * dt; var bodyStep = (float)SkateMotion.RotationRate * dt;
         var flipAxis = Clamp(flipLeft / flipStep, -1f, 1f); var shoveAxis = Clamp(shoveLeft / shoveStep, -1f, 1f); var bodyAxis = Clamp(bodyLeft / bodyStep, -1f, 1f);

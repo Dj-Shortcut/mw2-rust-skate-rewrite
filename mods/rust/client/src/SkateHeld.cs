@@ -134,6 +134,28 @@ public static class SkateHeld
         catch (Exception e) { Belt = "belt threw " + e.GetType().Name; return -1; }
     }
 
+    private static void LookForBelt(object player)
+    {
+        const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
+        selectLooked = true;
+        for (var at = player.GetType(); at != null && selectSlot == null; at = at.BaseType)
+        {
+            foreach (var f in at.GetFields(flags | BindingFlags.DeclaredOnly))
+            {
+                var m = f.FieldType.GetMethod("SelectSlot", flags, null, new[] { typeof(int) }, null);
+                if (m != null) { selectSlot = m; selectMember = f; selectOwner = "field " + f.Name; break; }
+            }
+            if (selectSlot != null) break;
+            foreach (var p in at.GetProperties(flags | BindingFlags.DeclaredOnly))
+            {
+                if (p.GetIndexParameters().Length != 0) continue;
+                var m = p.PropertyType.GetMethod("SelectSlot", flags, null, new[] { typeof(int) }, null);
+                if (m != null) { selectSlot = m; selectMember = p; selectOwner = "property " + p.Name; break; }
+            }
+        }
+        Out.Say("HELD belt select route: " + (selectSlot == null ? "none found (no member with SelectSlot(int))" : selectOwner + "." + selectSlot.Name));
+    }
+
     // Makes that belt slot the active one through the game's own belt, the way a number key does,
     // so the game itself tells the server. Looked for by shape: a member of the player whose type has
     // a SelectSlot(int); the route taken is logged once.
@@ -144,27 +166,7 @@ public static class SkateHeld
         try
         {
             object owner = null;
-            const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
-            if (!selectLooked)
-            {
-                selectLooked = true;
-                for (var at = player.GetType(); at != null && selectSlot == null; at = at.BaseType)
-                {
-                    foreach (var f in at.GetFields(flags | BindingFlags.DeclaredOnly))
-                    {
-                        var m = f.FieldType.GetMethod("SelectSlot", flags, null, new[] { typeof(int) }, null);
-                        if (m != null) { selectSlot = m; selectMember = f; selectOwner = "field " + f.Name; break; }
-                    }
-                    if (selectSlot != null) break;
-                    foreach (var p in at.GetProperties(flags | BindingFlags.DeclaredOnly))
-                    {
-                        if (p.GetIndexParameters().Length != 0) continue;
-                        var m = p.PropertyType.GetMethod("SelectSlot", flags, null, new[] { typeof(int) }, null);
-                        if (m != null) { selectSlot = m; selectMember = p; selectOwner = "property " + p.Name; break; }
-                    }
-                }
-                Out.Say("HELD belt select route: " + (selectSlot == null ? "none found (no member with SelectSlot(int))" : selectOwner + "." + selectSlot.Name));
-            }
+            if (!selectLooked) LookForBelt(player);
             if (selectSlot == null) { how = "no belt select in this build"; return false; }
             // The member found, as declared: an inherited private one is not found again by name.
             var field = selectMember as FieldInfo;
@@ -175,6 +177,37 @@ public static class SkateHeld
             return true;
         }
         catch (Exception e) { how = "select threw " + e.GetType().Name + ": " + e.Message; return false; }
+    }
+
+    // Puts away what the hand holds, as on a vehicle: nothing is built, swung or fired while riding.
+    // The game's belt is asked to clear its selection (ClearSelection, else SelectSlot(-1)); the
+    // route is logged once, and what still sits in the hand is logged each time it fails.
+    private static bool clearLooked; private static MethodInfo clearSelection; private static string holsterRoute = "";
+    public static bool Holster(object player, out string how)
+    {
+        how = "";
+        if (player == null || !Read(player) || (Shortname == "" && Name == "")) return false;
+        try
+        {
+            const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
+            if (!selectLooked) LookForBelt(player);
+            if (selectSlot == null) { how = "no belt in this build"; return false; }
+            var field = selectMember as FieldInfo;
+            var owner = field != null ? field.GetValue(player) : ((PropertyInfo)selectMember).GetValue(player, null);
+            if (owner == null) { how = selectOwner + " is empty"; return false; }
+            if (!clearLooked)
+            {
+                clearLooked = true;
+                clearSelection = owner.GetType().GetMethod("ClearSelection", flags, null, Type.EmptyTypes, null);
+                holsterRoute = clearSelection != null ? selectOwner + ".ClearSelection()" : selectOwner + ".SelectSlot(-1)";
+                Out.Say("HELD holster route: " + holsterRoute);
+            }
+            if (clearSelection != null) clearSelection.Invoke(owner, null);
+            else selectSlot.Invoke(owner, new object[] { -1 });
+            how = holsterRoute + " put away " + (Name != "" ? Name : Shortname);
+            return true;
+        }
+        catch (Exception e) { how = "holster threw " + e.GetType().Name + ": " + e.Message; return false; }
     }
 
     // A list the game keeps: walked as a list when it is one, else by Count and its indexer.
