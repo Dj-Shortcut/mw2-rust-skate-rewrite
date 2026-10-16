@@ -521,7 +521,8 @@ namespace Shortcut.RustMod
     }
 
     // BEGIN SHARED SKATE PARK
-    public enum SkateParkKind { Bank, Kicker, QuarterPipe, LedgeLow, LedgeHigh, LongLedge, Funbox, Halfpipe, MegaHalfpipe = 11 }
+    public enum SkateParkKind { Bank, Kicker, QuarterPipe, LedgeLow, LedgeHigh, LongLedge, Funbox, Halfpipe,
+        MiniQuarterPipe, LargeQuarterPipe, MegaHalfpipe = 11 }
     public enum SkateParkMaterial { Stone, Metal, Wood }
 
     public struct SkateParkPart
@@ -544,6 +545,13 @@ namespace Shortcut.RustMod
         { Prefab = prefab; X = x; Y = y; Z = z; Yaw = yaw; Pitch = pitch; }
     }
 
+    public struct SkateParkQuarterProfile
+    {
+        // Metres above the measured native floor top. Curved lane runs along +Forward.
+        public double Radius, Height, Entry, Deck, StartForward, HalfWidth, EndForward;
+        public double Skin, RailRadius, RailHeight;
+    }
+
     public static class SkateParkLayout
     {
         public const string FloorPrefab = "assets/prefabs/building core/floor/floor.prefab";
@@ -551,6 +559,8 @@ namespace Shortcut.RustMod
         public const string HalfWallPrefab = "assets/prefabs/building core/wall.half/wall.half.prefab";
         private const double HalfLength = 1.5;
         private const double Degrees = Math.PI / 180;
+        public const int KindCount = 12;
+        public const double CellSize = 3;
         public static string Name(SkateParkKind kind)
         {
             switch (kind)
@@ -564,6 +574,8 @@ namespace Shortcut.RustMod
                 case SkateParkKind.Funbox: return "funbox";
                 case SkateParkKind.Halfpipe: return "halfpipe";
                 case SkateParkKind.MegaHalfpipe: return "mega-halfpipe";
+                case SkateParkKind.MiniQuarterPipe: return "mini-quarterpipe";
+                case SkateParkKind.LargeQuarterPipe: return "large-quarterpipe";
                 default: return null;
             }
         }
@@ -586,6 +598,8 @@ namespace Shortcut.RustMod
                 case SkateParkKind.LongLedge: case SkateParkKind.Funbox: return 3;
                 case SkateParkKind.Halfpipe: return 36;
                 case SkateParkKind.MegaHalfpipe: return SkateMegaHalfpipe.PartCount;
+                case SkateParkKind.MiniQuarterPipe: return 2;
+                case SkateParkKind.LargeQuarterPipe: return 3;
                 default: return 0;
             }
         }
@@ -611,10 +625,100 @@ namespace Shortcut.RustMod
                     part.Pitch = index == 0 ? 0 : index == 1 ? -15 : 15; break;
                 case SkateParkKind.Halfpipe: HalfpipePart(index, out part); break;
                 case SkateParkKind.MegaHalfpipe: return SkateMegaHalfpipe.TryPart(index, out part);
+                case SkateParkKind.MiniQuarterPipe:
+                    if (index == 1)
+                        part = new SkateParkPart { Prefab = LowWallPrefab, Forward = 1.15, Yaw = 90 };
+                    break;
+                case SkateParkKind.LargeQuarterPipe:
+                    part.Right = index == 1 ? 3 : 0; part.Forward = index == 2 ? 3 : 0; break;
                 default: return false;
             }
             if (part.Prefab == null) part.Prefab = FloorPrefab;
             return true;
+        }
+
+        public static int CellCount(SkateParkKind kind)
+        { return kind == SkateParkKind.MiniQuarterPipe ? 1 : kind == SkateParkKind.LargeQuarterPipe ? 3 : 0; }
+
+        public static bool TryCell(SkateParkKind kind, int index, out int right, out int forward)
+        {
+            right = forward = 0;
+            if (index < 0 || index >= CellCount(kind)) return false;
+            right = index == 1 ? 1 : 0; forward = index == 2 ? 1 : 0;
+            return true;
+        }
+
+        public static bool TryQuarterProfile(SkateParkKind kind, out SkateParkQuarterProfile profile)
+        {
+            profile = new SkateParkQuarterProfile();
+            if (CellCount(kind) == 0) return false;
+            bool mini = kind == SkateParkKind.MiniQuarterPipe;
+            profile = new SkateParkQuarterProfile { Radius = mini ? 1.2 : 3, Height = mini ? 1.2 : 3,
+                Entry = 0.2, Deck = mini ? 1.4 : 2.6, StartForward = -1.4, HalfWidth = 1.4,
+                EndForward = mini ? 1.4 : 4.4, Skin = 0.08, RailRadius = 0.05, RailHeight = 0.8 };
+            return true;
+        }
+
+        public static bool TryQuarterSurface(SkateParkKind kind, double right, double forward,
+            out double height, out double normalUp, out double normalForward)
+        {
+            height = normalUp = normalForward = 0;
+            SkateParkQuarterProfile profile;
+            if (!TryQuarterProfile(kind, out profile) || !Finite(right) || !Finite(forward)) return false;
+            // The large front-right staging apron meets only the flat entry, not the rising side.
+            if (kind == SkateParkKind.LargeQuarterPipe && right > profile.HalfWidth && right <= 4.4 &&
+                forward >= -1.4 && forward <= 1.4)
+            { normalUp = 1; return true; }
+            if (Math.Abs(right) > profile.HalfWidth || forward < profile.StartForward || forward > profile.EndForward)
+                return false;
+            double run = forward - profile.StartForward - profile.Entry;
+            normalUp = 1;
+            if (run <= 0) return true;
+            if (run >= profile.Radius) { height = profile.Height; return true; }
+            double vertical = Math.Sqrt(Math.Max(0, profile.Radius * profile.Radius - run * run));
+            height = profile.Radius - vertical;
+            normalUp = vertical / profile.Radius; normalForward = -run / profile.Radius;
+            return true;
+        }
+
+        // Tests every horizontal corner in the part's assigned cell, including rotated wall thickness.
+        public static bool ContainsNativeBounds(SkateParkKind kind, int index, double centerRight,
+            double centerForward, double sizeRight, double sizeForward)
+        {
+            SkateParkPart part;
+            if (CellCount(kind) == 0 || !TryPart(kind, index, out part) || !Finite(centerRight) ||
+                !Finite(centerForward) || !Finite(sizeRight) || !Finite(sizeForward) || sizeRight <= 0 || sizeForward <= 0)
+                return false;
+            int cellRight = kind == SkateParkKind.LargeQuarterPipe && index == 1 ? 1 : 0;
+            int cellForward = kind == SkateParkKind.LargeQuarterPipe && index == 2 ? 1 : 0;
+            double sin = Math.Sin(part.Yaw * Degrees), cos = Math.Cos(part.Yaw * Degrees);
+            for (int x = -1; x <= 1; x += 2)
+            for (int z = -1; z <= 1; z += 2)
+            {
+                double localX = centerRight + x * sizeRight / 2, localZ = centerForward + z * sizeForward / 2;
+                double r = part.Right + localX * cos + localZ * sin - CellSize * cellRight;
+                double f = part.Forward - localX * sin + localZ * cos - CellSize * cellForward;
+                if (Math.Abs(r) > 1.5 + 1e-9 || Math.Abs(f) > 1.5 + 1e-9) return false;
+            }
+            return true;
+        }
+
+        // Strict overlap of yaw-only boxes; touching cell edges are allowed. Inputs are world metres.
+        public static bool OverlapsBox(double x, double z, double yaw, double halfRight, double halfForward,
+            double otherX, double otherZ, double otherYaw, double otherHalfRight, double otherHalfForward)
+        {
+            if (!Coordinate(x) || !Coordinate(z) || !Angle(yaw) || !Coordinate(otherX) || !Coordinate(otherZ) ||
+                !Angle(otherYaw) || !Finite(halfRight) || !Finite(halfForward) || !Finite(otherHalfRight) ||
+                !Finite(otherHalfForward) || halfRight <= 0 || halfForward <= 0 || otherHalfRight <= 0 || otherHalfForward <= 0)
+                return true;
+            double a = yaw * Degrees, b = otherYaw * Degrees;
+            double ax = Math.Cos(a), az = -Math.Sin(a), bx = Math.Cos(b), bz = -Math.Sin(b);
+            double dx = otherX - x, dz = otherZ - z;
+            double c = Math.Abs(ax * bx + az * bz), s = Math.Abs(ax * -bz + az * bx);
+            return Math.Abs(dx * ax + dz * az) < halfRight + otherHalfRight * c + otherHalfForward * s - 1e-7 &&
+                Math.Abs(dx * -az + dz * ax) < halfForward + otherHalfRight * s + otherHalfForward * c - 1e-7 &&
+                Math.Abs(dx * bx + dz * bz) < otherHalfRight + halfRight * c + halfForward * s - 1e-7 &&
+                Math.Abs(dx * -bz + dz * bx) < otherHalfForward + halfRight * s + halfForward * c - 1e-7;
         }
         private static void HalfpipePart(int index, out SkateParkPart part)
         {
@@ -977,6 +1081,8 @@ namespace Shortcut.RustMod
                 case SkateParkKind.Funbox: return "Skate Funbox";
                 case SkateParkKind.Halfpipe: return "Skate Halfpipe";
                 case SkateParkKind.MegaHalfpipe: return "Skate MEGA Halfpipe";
+                case SkateParkKind.MiniQuarterPipe: return "Skate Mini Quarterpipe";
+                case SkateParkKind.LargeQuarterPipe: return "Skate Large Quarterpipe";
                 default: return null;
             }
         }
@@ -1035,7 +1141,7 @@ namespace Shortcut.RustMod
             if (args == null || (args.Length != 1 && args.Length != 5)) return false;
             SkateParkKind parsed;
             if (!SkateParkLayout.TryKind(args[0], out parsed))
-            { failure = "Unknown park piece. Use bank, kicker, quarterpipe, ledge-low, ledge-high, long-ledge, funbox, halfpipe or mega-halfpipe."; return false; }
+            { failure = "Unknown park piece. Use bank, kicker, quarterpipe, ledge-low, ledge-high, long-ledge, funbox, halfpipe, mini-quarterpipe, large-quarterpipe or mega-halfpipe."; return false; }
             if (args.Length == 1) { kind = parsed; failure = null; return true; }
             var values = new double[4];
             string[] names = { "x", "y", "z", "yaw" };
@@ -1512,7 +1618,8 @@ namespace Oxide.Plugins
             [JsonProperty(Required = Required.DisallowNull)] public string ParkNextGesture = "I need wood";
             [JsonProperty(Required = Required.DisallowNull)] public string ParkCancelGesture = "Thumbs up";
             [JsonProperty(Required = Required.DisallowNull)] public string[] ParkPieceOrder =
-                { "halfpipe", "bank", "kicker", "quarterpipe", "ledge-low", "ledge-high", "long-ledge", "funbox" };
+                { "halfpipe", "bank", "kicker", "quarterpipe", "ledge-low", "ledge-high", "long-ledge", "funbox",
+                    "mini-quarterpipe", "large-quarterpipe" };
         }
 
         private sealed class Session
@@ -2888,7 +2995,7 @@ namespace Oxide.Plugins
             if (player == null || !player.IsAdmin)
             { arg.ReplyWith("Use this command as an in-game administrator."); return; }
             if (arg.Args == null || arg.Args.Length != 1)
-            { arg.ReplyWith("Usage: skate.piece <bank|kicker|quarterpipe|ledge-low|ledge-high|long-ledge|funbox|halfpipe|mega-halfpipe|cancel>."); return; }
+            { arg.ReplyWith("Usage: skate.piece <bank|kicker|quarterpipe|ledge-low|ledge-high|long-ledge|funbox|halfpipe|mini-quarterpipe|large-quarterpipe|mega-halfpipe|cancel>."); return; }
             if (string.Equals(arg.GetString(0), "cancel", StringComparison.OrdinalIgnoreCase))
             {
                 ParkSelection previous;
@@ -2902,7 +3009,7 @@ namespace Oxide.Plugins
             }
             SkateParkKind kind;
             if (!SkateParkLayout.TryKind(arg.GetString(0), out kind))
-            { arg.ReplyWith("Unknown park piece. Use bank, kicker, quarterpipe, ledge-low, ledge-high, long-ledge, funbox, halfpipe or mega-halfpipe."); return; }
+            { arg.ReplyWith("Unknown park piece. Use bank, kicker, quarterpipe, ledge-low, ledge-high, long-ledge, funbox, halfpipe, mini-quarterpipe, large-quarterpipe or mega-halfpipe."); return; }
             string failure;
             if (!Eligible(player))
             { arg.ReplyWith("Park placement is unavailable; be alive, awake, unmounted and on dry land."); return; }
@@ -3219,7 +3326,7 @@ namespace Oxide.Plugins
             if (player == null || !player.IsAdmin || !Eligible(player))
             { arg.ReplyWith("Use this command as an alive, awake, unmounted in-game administrator on dry land."); return; }
             if (arg.Args == null || arg.Args.Length != 1)
-            { arg.ReplyWith("Usage: skate.items <bank|kicker|quarterpipe|ledge-low|ledge-high|long-ledge|funbox|halfpipe|mega-halfpipe|all>."); return; }
+            { arg.ReplyWith("Usage: skate.items <bank|kicker|quarterpipe|ledge-low|ledge-high|long-ledge|funbox|halfpipe|mini-quarterpipe|large-quarterpipe|mega-halfpipe|all>."); return; }
             if (parkBusy || parkClosing || parkNativeRequests.Count != 0 || parkNativeCleaning)
             { arg.ReplyWith("Park placement or removal is busy; try again shortly."); return; }
             SkateParkKind selected = SkateParkKind.Bank;
@@ -3874,8 +3981,132 @@ namespace Oxide.Plugins
                     cache.Add(key, definition);
                 }
                 definitions[i] = definition;
+                if (definition != null && SkateParkLayout.CellCount(kind) != 0)
+                {
+                    Bounds bounds = definition.Construction.bounds;
+                    SkateParkQuarterProfile profile;
+                    SkateParkLayout.TryQuarterProfile(kind, out profile);
+                    if (!SkateParkLayout.ContainsNativeBounds(kind, i, bounds.center.x, bounds.center.z,
+                        bounds.size.x, bounds.size.z) || (part.Prefab != SkateParkLayout.FloorPrefab &&
+                        (definitions[0] == null || bounds.max.y > definitions[0].Construction.bounds.max.y + profile.Height)))
+                        failures.Add("Park module part[" + i.ToString(CultureInfo.InvariantCulture) + "]: native bounds exceed its cell or riding envelope.");
+                }
             }
             return failures.Count == 0;
+        }
+
+        private struct ParkSpace
+        {
+            public Vector3 Position;
+            public Quaternion Rotation;
+            public Bounds Bounds;
+        }
+
+        private static Bounds ParkCellBounds(SkateParkKind kind, Bounds floor)
+        {
+            SkateParkQuarterProfile profile;
+            SkateParkLayout.TryQuarterProfile(kind, out profile);
+            float bottom = Math.Min(floor.min.y, floor.max.y - (float)profile.Skin);
+            float top = floor.max.y + (float)(profile.Height + profile.RailHeight + profile.RailRadius);
+            return new Bounds(new Vector3(0, (bottom + top) / 2, 0), new Vector3(3, top - bottom, 3));
+        }
+
+        private static List<ParkSpace> ParkSpaces(SkateParkKind kind, ParkGroup group, Bounds floor)
+        {
+            var spaces = new List<ParkSpace>();
+            Quaternion rotation = Quaternion.Euler(0, (float)group.AnchorYaw, 0);
+            for (int i = 0; i < SkateParkLayout.CellCount(kind); i++)
+            {
+                int right, forward;
+                SkateParkLayout.TryCell(kind, i, out right, out forward);
+                spaces.Add(new ParkSpace { Position = new Vector3((float)group.AnchorX, (float)group.AnchorY, (float)group.AnchorZ) +
+                    rotation * new Vector3(right * 3, 0, forward * 3), Rotation = rotation, Bounds = ParkCellBounds(kind, floor) });
+            }
+            return spaces;
+        }
+
+        private static bool ParkSpacesOverlap(ParkSpace first, ParkSpace second)
+        {
+            Vector3 a = first.Position + first.Rotation * first.Bounds.center;
+            Vector3 b = second.Position + second.Rotation * second.Bounds.center;
+            Vector3 ae = first.Bounds.extents, be = second.Bounds.extents;
+            // Project pitched native bounds onto their yaw frame before comparison with a cell.
+            double pitch = first.Rotation.eulerAngles.x * Math.PI / 180;
+            double vertical = ae.y * Math.Abs(Math.Cos(pitch)) + ae.z * Math.Abs(Math.Sin(pitch));
+            double forward = ae.z * Math.Abs(Math.Cos(pitch)) + ae.y * Math.Abs(Math.Sin(pitch));
+            return Math.Abs(a.y - b.y) < vertical + be.y - 1e-5 && SkateParkLayout.OverlapsBox(
+                a.x, a.z, first.Rotation.eulerAngles.y, ae.x, forward,
+                b.x, b.z, second.Rotation.eulerAngles.y, be.x, be.z);
+        }
+
+        private bool ParkModuleSpace(ParkPlacementRequest request, SkateParkKind kind, ParkNativePart[] definitions,
+            ParkGroup group, ParkMember[] parts, List<BuildingBlock> created, out string failure)
+        {
+            failure = "The reserved park cells need dry, clear space and building permission through the complete ramp/deck/rail height.";
+            Bounds floor = definitions[0].Construction.bounds;
+            List<ParkSpace> spaces = ParkSpaces(kind, group, floor);
+            bool module = spaces.Count != 0;
+            int mask = LayerMask.GetMask("World", "Construction", "Deployed", "Player (Server)");
+            foreach (ParkSpace space in spaces)
+            {
+                if (!request.Player.CanBuild(space.Position, space.Rotation, space.Bounds, false) ||
+                    !ParkFootprint(space.Position, space.Rotation, space.Bounds, request.Foundation, created, mask, out failure, true))
+                    return false;
+            }
+            // Other park layouts also respect saved module reservations, even where no native collider exists.
+            if (!module)
+                foreach (ParkMember part in parts)
+                    spaces.Add(new ParkSpace { Position = ParkPosition(part), Rotation = ParkRotation(part),
+                        Bounds = definitions[part.Index].Construction.bounds });
+            foreach (ParkGroup existing in request.Data.Groups)
+            {
+                SkateParkKind existingKind;
+                if (ReferenceEquals(existing, group) || !SkateParkLayout.TryKind(existing.Kind, out existingKind) ||
+                    SkateParkLayout.CellCount(existingKind) == 0) continue;
+                foreach (ParkSpace reserved in ParkSpaces(existingKind, existing, floor))
+                foreach (ParkSpace space in spaces)
+                    if (ParkSpacesOverlap(space, reserved))
+                    { failure = "The park assembly overlaps a saved module's reserved cells."; return false; }
+            }
+            if (module && created != null)
+                for (int i = 0; i < created.Count; i++)
+                    if (!ParkModuleColliders(kind, i, created[i], group, floor))
+                    { failure = "A native module collider exceeds its assigned cell or riding envelope."; return false; }
+            return true;
+        }
+
+        private static bool ParkModuleColliders(SkateParkKind kind, int index, BuildingBlock block, ParkGroup group, Bounds floor)
+        {
+            int cellRight = kind == SkateParkKind.LargeQuarterPipe && index == 1 ? 1 : 0;
+            int cellForward = kind == SkateParkKind.LargeQuarterPipe && index == 2 ? 1 : 0;
+            Bounds envelope = ParkCellBounds(kind, floor);
+            Vector3 origin = new Vector3((float)group.AnchorX, (float)group.AnchorY, (float)group.AnchorZ);
+            Quaternion inverse = Quaternion.Inverse(Quaternion.Euler(0, (float)group.AnchorYaw, 0));
+            Collider[] colliders = block.GetComponentsInChildren<Collider>(true);
+            if (colliders == null || colliders.Length == 0) return false;
+            foreach (Collider collider in colliders)
+            {
+                if (collider == null) return false;
+                BoxCollider box = collider as BoxCollider;
+                MeshCollider mesh = collider as MeshCollider;
+                Bounds bounds;
+                Transform frame;
+                if (box != null) { bounds = new Bounds(box.center, box.size); frame = box.transform; }
+                else if (mesh != null && mesh.sharedMesh != null) { bounds = mesh.sharedMesh.bounds; frame = mesh.transform; }
+                else { bounds = collider.bounds; frame = null; }
+                for (int x = -1; x <= 1; x += 2)
+                for (int y = -1; y <= 1; y += 2)
+                for (int z = -1; z <= 1; z += 2)
+                {
+                    Vector3 point = bounds.center + Vector3.Scale(bounds.extents, new Vector3(x, y, z));
+                    point = inverse * ((frame == null ? point : frame.TransformPoint(point)) - origin);
+                    if (!Coordinate(point) || Math.Abs(point.x - cellRight * 3) > 1.50001 ||
+                        Math.Abs(point.z - cellForward * 3) > 1.50001 || point.y < envelope.min.y - 1e-5 ||
+                        point.y > floor.max.y + (kind == SkateParkKind.MiniQuarterPipe ? 1.2 : 3) + 1e-5)
+                        return false;
+                }
+            }
+            return true;
         }
 
         private static bool ParkFoundation(BuildingBlock anchor, List<string> failures, out Construction construction)
@@ -4029,12 +4260,13 @@ namespace Oxide.Plugins
         }
 
         private static bool ParkFootprint(Vector3 position, Quaternion rotation, Bounds bounds, BuildingBlock anchor,
-            List<BuildingBlock> transactionParts, int mask, out string failure)
+            List<BuildingBlock> transactionParts, int mask, out string failure, bool reservedCell = false)
         {
             failure = "The complete park assembly needs dry, clear space.";
             Vector3 extents = bounds.extents;
-            extents.x = Math.Max(0.01f, extents.x - 0.015f);
-            extents.z = Math.Max(0.01f, extents.z - 0.015f);
+            float inset = reservedCell ? 0.00001f : 0.015f;
+            extents.x = Math.Max(0.01f, extents.x - inset);
+            extents.z = Math.Max(0.01f, extents.z - inset);
             foreach (Collider collider in Physics.OverlapBox(position + rotation * bounds.center, extents, rotation,
                 mask, QueryTriggerInteraction.Ignore))
             {
@@ -4159,7 +4391,8 @@ namespace Oxide.Plugins
             parkBusy = true;
             try
             {
-                if (!ParkPreflight(request, kind, anchor, definitions, parts, out failure))
+                if (!ParkPreflight(request, kind, anchor, definitions, parts, out failure) ||
+                    !ParkModuleSpace(request, kind, definitions, group, parts, null, out failure))
                     throw new InvalidDataException(failure);
                 // Native/plugin callbacks can change the actor, planner, world or foundation.
                 if (!CurrentParkRequest(request))
@@ -4232,7 +4465,8 @@ namespace Oxide.Plugins
                             LayerMask.GetMask("World", "Construction", "Deployed", "Player (Server)"), out failure))
                         throw new InvalidDataException("A placement request or park member changed during final permission verification.");
                 }
-                if (!ParkMegaSpace(kind, parts, player, anchor, created, out failure))
+                if (!ParkMegaSpace(kind, parts, player, anchor, created, out failure) ||
+                    !ParkModuleSpace(request, kind, definitions, group, parts, created, out failure))
                     throw new InvalidDataException(failure);
                 group.Members.AddRange(parts);
                 request.Data.Groups.Add(group);

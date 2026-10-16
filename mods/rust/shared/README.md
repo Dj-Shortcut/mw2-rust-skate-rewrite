@@ -55,9 +55,36 @@ This verifies geometric consistency, not park registration, ownership, grade or 
 
 ## Park build-item API
 
-`SkateParkBuildItems` provides the eight exact English names and authored metadata tags for stock `building.planner` items with skin 0 and amount 1. `Name`, `Marker`, `TryKind` and `TryIdentity` share stable `SkateParkKind` order; `Tagged` reserves the complete marker range, including unrecognized tags that must not become ordinary building plans. Invalid lookup outputs are atomic. The plugin embeds the identical marked helper.
+`SkateParkBuildItems` provides ten exact English names and authored metadata tags for stock `building.planner` items with skin 0 and amount 1. `Name`, `Marker`, `TryKind` and `TryIdentity` share stable `SkateParkKind` order; `Tagged` reserves the complete marker range, including unrecognized tags that must not become ordinary building plans. Invalid lookup outputs are atomic. The plugin embeds the identical marked helper.
 
 `VerifiedDebit(before, after, sameItem)` accepts only the original identity changing 1→0. The native adapter must verify its full UID/definition/metadata/name/skin fingerprint and execute actual item consumption. `Recoverable(state, members, kind)` accepts only a complete `Paid` group; `None`, `Preparing`, `RecoveryClaimed` and partial groups refuse. These predicates do not implement inventory, persistence or exactly-once delivery. The [building-asset contract](../../../docs/RUST-SKATE-BUILD-ASSETS.md) records native/client acceptance and crash/recovery limits.
+
+## One-cell mini and three-cell L quarterpipes
+
+| Kind / ID / token | Item name / marker | Native members in index order (right, forward, height, yaw) |
+| --- | --- | --- |
+| `MiniQuarterPipe` / 8 / `mini-quarterpipe` | Skate Mini Quarterpipe / `0x534B5009` | Stone floor (0,0,0,0); Stone low wall (0,1.15,0,90) |
+| `LargeQuarterPipe` / 9 / `large-quarterpipe` | Skate Large Quarterpipe / `0x534B500A` | Stone floors (0,0,0,0), (3,0,0,0), (0,3,0,0) |
+
+All native pitches are zero. These are support/identity assemblies; the client supplies the curved visual and riding collider above them. Recognize the complete known-kind assembly before loose single floors. Replace only its verified native carrier renderers/colliders while the authored module is active and restore them on teardown. An older client does not acquire these modules by updating the server alone. Native placement and riding remain unverified.
+
+`CellCount` / `TryCell(kind,index,out right,out forward)` return integer local grid coordinates: mini (0,0); large (0,0),(1,0),(0,1). Cell centres are (3*right,3*forward), each extending +/-1.5 m; (1,1) is empty. Anchor is the first floor pivot. Transform the mask/profile by `worldX=anchorX+right*cos(yaw)+forward*sin(yaw)`, `worldZ=anchorZ-right*sin(yaw)+forward*cos(yaw)`. At yaw 0/90/180/270 each local centre maps to (r,f),(f,-r),(-r,-f),(-f,r), about the same anchor; native snapped yaw is retained. The L is a straight rising left lane with a front-right staging apron, without a corner-bowl turn.
+
+`VisualOrigin` returns zero offsets for both. The riding datum is **anchorY + the measured native floor bounds.max.y**, not anchorY alone. `TryQuarterProfile` returns these metre values:
+
+| Field | Mini | Large |
+| --- | --- | --- |
+| Radius = Height | 1.2 | 3 |
+| StartForward / Entry | -1.4 / 0.2 | -1.4 / 0.2 |
+| Deck / EndForward | 1.4 / 1.4 | 2.6 / 4.4 |
+| HalfWidth / Skin | 1.4 / 0.08 | 1.4 / 0.08 |
+| RailRadius / RailHeight | 0.05 / 0.8 | 0.05 / 0.8 |
+
+Entry is level from StartForward through -1.2. The quarter-circle is `forward=-1.2+R*sin(theta)`, `height=R*(1-cos(theta))`, theta 0..pi/2; its unit normal is (0,cos(theta),-sin(theta)). Deck is level from -1.2+R through EndForward. `TryQuarterSurface` supplies analytic heights/normals for the lane x=-1.4..1.4; deck/entry endpoints return up. Large also supplies a level apron x=(1.4,4.4], z=[-1.4,1.4]; it meets the lane's flat entry only. Its rising side requires a side face; there is no promised seamless sideways entry into the curve. False returns three zero outputs.
+
+Author visuals/colliders from the **same** profile samples, with skin extending downward by at most 0.08 m. Back rail centreline runs x=-1.4..1.4 at z=EndForward-0.05; side deck rail centrelines run x=+/-1.4 from z=-1.2+R+0.05 to EndForward-0.05. Rail top centreline is deck height+0.8, tube radius0.05; posts share that radius and reach the deck. Coping centreline is at the transition/deck seam, radius0.05, x=-1.4..1.4. Keep end caps, posts, side faces and collider padding inside x=+/-1.45 and z=[-1.45,EndForward+0.05]. The apron is inset 0.1 m from its outer cell edges. No geometry may enter cell(1,1), including rail caps, skirts or collider inflation.
+
+Server preflight reserves each complete 3x3 cell vertically from min(native floor bottom, datum-Skin) through datum+Height+RailHeight+RailRadius. It checks permission, terrain/water, physical obstruction and existing saved module reservations, then repeats before registration; later park placement also respects those reservations. `ContainsNativeBounds` rejects native support bounds beyond their assigned cells; spawned colliders are checked again. Native dimensions that fail these stricter new-kind checks refuse placement without payment. Saved Version1 schema, original layouts/markers and existing single-debit, rollback, complete paid-group refund/removal paths are retained; partial groups retain reservations until removed. Headless layout/item checks do not verify native prefab dimensions, hook timing, persistence callbacks, client replacement, seams or riding.
 
 ## Board mesh API
 

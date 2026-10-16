@@ -4,7 +4,8 @@ using System.Collections.Generic;
 namespace Shortcut.RustMod
 {
     // BEGIN SHARED SKATE PARK
-    public enum SkateParkKind { Bank, Kicker, QuarterPipe, LedgeLow, LedgeHigh, LongLedge, Funbox, Halfpipe, MegaHalfpipe = 11 }
+    public enum SkateParkKind { Bank, Kicker, QuarterPipe, LedgeLow, LedgeHigh, LongLedge, Funbox, Halfpipe,
+        MiniQuarterPipe, LargeQuarterPipe, MegaHalfpipe = 11 }
     public enum SkateParkMaterial { Stone, Metal, Wood }
 
     public struct SkateParkPart
@@ -27,6 +28,13 @@ namespace Shortcut.RustMod
         { Prefab = prefab; X = x; Y = y; Z = z; Yaw = yaw; Pitch = pitch; }
     }
 
+    public struct SkateParkQuarterProfile
+    {
+        // Metres above the measured native floor top. Curved lane runs along +Forward.
+        public double Radius, Height, Entry, Deck, StartForward, HalfWidth, EndForward;
+        public double Skin, RailRadius, RailHeight;
+    }
+
     public static class SkateParkLayout
     {
         public const string FloorPrefab = "assets/prefabs/building core/floor/floor.prefab";
@@ -34,6 +42,8 @@ namespace Shortcut.RustMod
         public const string HalfWallPrefab = "assets/prefabs/building core/wall.half/wall.half.prefab";
         private const double HalfLength = 1.5;
         private const double Degrees = Math.PI / 180;
+        public const int KindCount = 12;
+        public const double CellSize = 3;
         public static string Name(SkateParkKind kind)
         {
             switch (kind)
@@ -47,6 +57,8 @@ namespace Shortcut.RustMod
                 case SkateParkKind.Funbox: return "funbox";
                 case SkateParkKind.Halfpipe: return "halfpipe";
                 case SkateParkKind.MegaHalfpipe: return "mega-halfpipe";
+                case SkateParkKind.MiniQuarterPipe: return "mini-quarterpipe";
+                case SkateParkKind.LargeQuarterPipe: return "large-quarterpipe";
                 default: return null;
             }
         }
@@ -69,6 +81,8 @@ namespace Shortcut.RustMod
                 case SkateParkKind.LongLedge: case SkateParkKind.Funbox: return 3;
                 case SkateParkKind.Halfpipe: return 36;
                 case SkateParkKind.MegaHalfpipe: return SkateMegaHalfpipe.PartCount;
+                case SkateParkKind.MiniQuarterPipe: return 2;
+                case SkateParkKind.LargeQuarterPipe: return 3;
                 default: return 0;
             }
         }
@@ -94,10 +108,100 @@ namespace Shortcut.RustMod
                     part.Pitch = index == 0 ? 0 : index == 1 ? -15 : 15; break;
                 case SkateParkKind.Halfpipe: HalfpipePart(index, out part); break;
                 case SkateParkKind.MegaHalfpipe: return SkateMegaHalfpipe.TryPart(index, out part);
+                case SkateParkKind.MiniQuarterPipe:
+                    if (index == 1)
+                        part = new SkateParkPart { Prefab = LowWallPrefab, Forward = 1.15, Yaw = 90 };
+                    break;
+                case SkateParkKind.LargeQuarterPipe:
+                    part.Right = index == 1 ? 3 : 0; part.Forward = index == 2 ? 3 : 0; break;
                 default: return false;
             }
             if (part.Prefab == null) part.Prefab = FloorPrefab;
             return true;
+        }
+
+        public static int CellCount(SkateParkKind kind)
+        { return kind == SkateParkKind.MiniQuarterPipe ? 1 : kind == SkateParkKind.LargeQuarterPipe ? 3 : 0; }
+
+        public static bool TryCell(SkateParkKind kind, int index, out int right, out int forward)
+        {
+            right = forward = 0;
+            if (index < 0 || index >= CellCount(kind)) return false;
+            right = index == 1 ? 1 : 0; forward = index == 2 ? 1 : 0;
+            return true;
+        }
+
+        public static bool TryQuarterProfile(SkateParkKind kind, out SkateParkQuarterProfile profile)
+        {
+            profile = new SkateParkQuarterProfile();
+            if (CellCount(kind) == 0) return false;
+            bool mini = kind == SkateParkKind.MiniQuarterPipe;
+            profile = new SkateParkQuarterProfile { Radius = mini ? 1.2 : 3, Height = mini ? 1.2 : 3,
+                Entry = 0.2, Deck = mini ? 1.4 : 2.6, StartForward = -1.4, HalfWidth = 1.4,
+                EndForward = mini ? 1.4 : 4.4, Skin = 0.08, RailRadius = 0.05, RailHeight = 0.8 };
+            return true;
+        }
+
+        public static bool TryQuarterSurface(SkateParkKind kind, double right, double forward,
+            out double height, out double normalUp, out double normalForward)
+        {
+            height = normalUp = normalForward = 0;
+            SkateParkQuarterProfile profile;
+            if (!TryQuarterProfile(kind, out profile) || !Finite(right) || !Finite(forward)) return false;
+            // The large front-right staging apron meets only the flat entry, not the rising side.
+            if (kind == SkateParkKind.LargeQuarterPipe && right > profile.HalfWidth && right <= 4.4 &&
+                forward >= -1.4 && forward <= 1.4)
+            { normalUp = 1; return true; }
+            if (Math.Abs(right) > profile.HalfWidth || forward < profile.StartForward || forward > profile.EndForward)
+                return false;
+            double run = forward - profile.StartForward - profile.Entry;
+            normalUp = 1;
+            if (run <= 0) return true;
+            if (run >= profile.Radius) { height = profile.Height; return true; }
+            double vertical = Math.Sqrt(Math.Max(0, profile.Radius * profile.Radius - run * run));
+            height = profile.Radius - vertical;
+            normalUp = vertical / profile.Radius; normalForward = -run / profile.Radius;
+            return true;
+        }
+
+        // Tests every horizontal corner in the part's assigned cell, including rotated wall thickness.
+        public static bool ContainsNativeBounds(SkateParkKind kind, int index, double centerRight,
+            double centerForward, double sizeRight, double sizeForward)
+        {
+            SkateParkPart part;
+            if (CellCount(kind) == 0 || !TryPart(kind, index, out part) || !Finite(centerRight) ||
+                !Finite(centerForward) || !Finite(sizeRight) || !Finite(sizeForward) || sizeRight <= 0 || sizeForward <= 0)
+                return false;
+            int cellRight = kind == SkateParkKind.LargeQuarterPipe && index == 1 ? 1 : 0;
+            int cellForward = kind == SkateParkKind.LargeQuarterPipe && index == 2 ? 1 : 0;
+            double sin = Math.Sin(part.Yaw * Degrees), cos = Math.Cos(part.Yaw * Degrees);
+            for (int x = -1; x <= 1; x += 2)
+            for (int z = -1; z <= 1; z += 2)
+            {
+                double localX = centerRight + x * sizeRight / 2, localZ = centerForward + z * sizeForward / 2;
+                double r = part.Right + localX * cos + localZ * sin - CellSize * cellRight;
+                double f = part.Forward - localX * sin + localZ * cos - CellSize * cellForward;
+                if (Math.Abs(r) > 1.5 + 1e-9 || Math.Abs(f) > 1.5 + 1e-9) return false;
+            }
+            return true;
+        }
+
+        // Strict overlap of yaw-only boxes; touching cell edges are allowed. Inputs are world metres.
+        public static bool OverlapsBox(double x, double z, double yaw, double halfRight, double halfForward,
+            double otherX, double otherZ, double otherYaw, double otherHalfRight, double otherHalfForward)
+        {
+            if (!Coordinate(x) || !Coordinate(z) || !Angle(yaw) || !Coordinate(otherX) || !Coordinate(otherZ) ||
+                !Angle(otherYaw) || !Finite(halfRight) || !Finite(halfForward) || !Finite(otherHalfRight) ||
+                !Finite(otherHalfForward) || halfRight <= 0 || halfForward <= 0 || otherHalfRight <= 0 || otherHalfForward <= 0)
+                return true;
+            double a = yaw * Degrees, b = otherYaw * Degrees;
+            double ax = Math.Cos(a), az = -Math.Sin(a), bx = Math.Cos(b), bz = -Math.Sin(b);
+            double dx = otherX - x, dz = otherZ - z;
+            double c = Math.Abs(ax * bx + az * bz), s = Math.Abs(ax * -bz + az * bx);
+            return Math.Abs(dx * ax + dz * az) < halfRight + otherHalfRight * c + otherHalfForward * s - 1e-7 &&
+                Math.Abs(dx * -az + dz * ax) < halfForward + otherHalfRight * s + otherHalfForward * c - 1e-7 &&
+                Math.Abs(dx * bx + dz * bz) < otherHalfRight + halfRight * c + halfForward * s - 1e-7 &&
+                Math.Abs(dx * -bz + dz * bx) < otherHalfForward + halfRight * s + halfForward * c - 1e-7;
         }
         private static void HalfpipePart(int index, out SkateParkPart part)
         {

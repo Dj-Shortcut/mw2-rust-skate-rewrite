@@ -11,18 +11,21 @@ internal static class SkateParkBuildItemScenarios
     private static readonly SkateParkKind[] Kinds = {
         SkateParkKind.Bank, SkateParkKind.Kicker, SkateParkKind.QuarterPipe,
         SkateParkKind.LedgeLow, SkateParkKind.LedgeHigh, SkateParkKind.LongLedge,
-        SkateParkKind.Funbox, SkateParkKind.Halfpipe, SkateParkKind.MegaHalfpipe
+        SkateParkKind.Funbox, SkateParkKind.Halfpipe,
+        SkateParkKind.MiniQuarterPipe, SkateParkKind.LargeQuarterPipe, SkateParkKind.MegaHalfpipe
     };
     private static readonly string[] Names = {
         "Skate Bank", "Skate Kicker", "Skate Quarterpipe", "Skate Low Ledge",
-        "Skate High Ledge", "Skate Long Ledge", "Skate Funbox", "Skate Halfpipe", "Skate MEGA Halfpipe"
+        "Skate High Ledge", "Skate Long Ledge", "Skate Funbox", "Skate Halfpipe",
+        "Skate Mini Quarterpipe", "Skate Large Quarterpipe", "Skate MEGA Halfpipe"
     };
     private static readonly int[] Markers = {
         0x534B5001, 0x534B5002, 0x534B5003, 0x534B5004,
-        0x534B5005, 0x534B5006, 0x534B5007, 0x534B5008, 0x534B500C
+        0x534B5005, 0x534B5006, 0x534B5007, 0x534B5008,
+        0x534B5009, 0x534B500A, 0x534B500C
     };
-    private static readonly int[] OriginalParts = { 1, 1, 2, 1, 1, 3, 3, 36, 80 };
-    private static readonly int[] InvalidKinds = { int.MinValue, -100, -1, 8, 9, 10, 12, 255, int.MaxValue };
+    private static readonly int[] OriginalParts = { 1, 1, 2, 1, 1, 3, 3, 36, 2, 3, 80 };
+    private static readonly int[] InvalidKinds = { int.MinValue, -100, -1, 10, 12, 255, int.MaxValue };
     private static readonly int[] FarMarkers = { int.MinValue, -1, 0, 1, int.MaxValue };
     private static readonly int[] Amounts = { int.MinValue, -2, -1, 0, 1, 2, 3, 8, int.MaxValue };
 

@@ -94,7 +94,12 @@ internal static class SkateParkLayoutScenarios
             new ExpectedPart(-1.85, -8.35523361173418, 2.4971864443607004, 0, SkateParkMaterial.Metal, HalfWallPrefab, 180),
             new ExpectedPart(4.85, -8.35523361173418, 2.4971864443607004, 0, SkateParkMaterial.Metal, HalfWallPrefab, 0),
             new ExpectedPart(-1.85, 11.35523361173418, 2.4971864443607004, 0, SkateParkMaterial.Metal, HalfWallPrefab, 180),
-            new ExpectedPart(4.85, 11.35523361173418, 2.4971864443607004, 0, SkateParkMaterial.Metal, HalfWallPrefab, 0))
+            new ExpectedPart(4.85, 11.35523361173418, 2.4971864443607004, 0, SkateParkMaterial.Metal, HalfWallPrefab, 0)),
+        new Piece(SkateParkKind.MiniQuarterPipe, "mini-quarterpipe",
+            new ExpectedPart(0, 0, 0, 0),
+            new ExpectedPart(0, 1.15, 0, 0, SkateParkMaterial.Stone, LowWallPrefab, 90)),
+        new Piece(SkateParkKind.LargeQuarterPipe, "large-quarterpipe",
+            new ExpectedPart(0, 0, 0, 0), new ExpectedPart(3, 0, 0, 0), new ExpectedPart(0, 3, 0, 0))
     };
 
     private static int Main(string[] args)
@@ -450,7 +455,7 @@ internal static class SkateParkLayoutScenarios
     private static void VisualOrigins()
     {
         double[] expectedForward = { -1.4672214011007085, -1.3594616805549748,
-            -1.4488887394336025, 0, 0, 0, 0, 1.5 };
+            -1.4488887394336025, 0, 0, 0, 0, 1.5, 0, 0 };
         foreach (Piece piece in Pieces)
         {
             double right, forward, height, yaw;
@@ -514,7 +519,8 @@ internal static class SkateParkLayoutScenarios
         CheckSeams(0, 0, 0, 0);
         HalfpipeBounds();
         VisualOrigins();
-        Console.WriteLine("PASS: skate_park_piece_layouts (8 pieces, 48 parts, " +
+        OwnerParkContracts();
+        Console.WriteLine("PASS: skate_park_piece_layouts (10 pieces, 53 parts, " +
                           (checks - start).ToString(CultureInfo.InvariantCulture) + " checks).");
     }
 
@@ -798,6 +804,265 @@ internal static class SkateParkLayoutScenarios
         Near(maxY, 2.4971864443607004, "halfpipe: deck rise.");
         Near(LocalEdge(SkateParkKind.Halfpipe, 0, -1.5, -1.5).Z, -1.5, "halfpipe: flat begins at snapped tile edge.");
         Near(LocalEdge(SkateParkKind.Halfpipe, 3, 1.5, 1.5).Z, 4.5, "halfpipe: central flat has 6m length.");
+    }
+
+    // These extend the approved layout scenario with independent owner-park fixtures.
+    // Native metadata, Physics queries and the client's collider replacement remain separate checks.
+    private static void OwnerParkContracts()
+    {
+        Require(SkateParkLayout.KindCount == 10, "eight original plus two appended kind IDs.");
+        Near(SkateParkLayout.CellSize, 3, "owner park cell is exactly three metres.");
+        for (int i = 0; i < Pieces.Length; i++)
+            Require((int)Pieces[i].Kind == i, "persisted kind ID remains stable " + i);
+        Require((int)SkateParkKind.MiniQuarterPipe == 8 && (int)SkateParkKind.LargeQuarterPipe == 9,
+            "owner quarterpipes append IDs 8 and 9.");
+        foreach (int raw in new[] { -1, 0, 1, 2, 3, 4, 5, 6, 7, 10, int.MaxValue })
+        {
+            var kind = (SkateParkKind)raw;
+            Require(SkateParkLayout.CellCount(kind) == 0, "only appended parks use the cell contract " + raw);
+            int right = 91, forward = 92;
+            Require(!SkateParkLayout.TryCell(kind, 0, out right, out forward) && right == 0 && forward == 0,
+                "unsupported cell lookup resets outputs " + raw);
+            SkateParkQuarterProfile profile;
+            Require(!SkateParkLayout.TryQuarterProfile(kind, out profile) && EmptyProfile(profile),
+                "unsupported quarter profile resets every field " + raw);
+            SurfaceRefused(kind, 0, 0, "unsupported quarter surface " + raw);
+            Require(!SkateParkLayout.ContainsNativeBounds(kind, 0, 0, 0, 3, 3),
+                "unsupported native-bound contract " + raw);
+        }
+        OwnerParkCells();
+        OwnerQuarterProfiles();
+        OwnerNativeBounds();
+        ReservedBoxOverlaps();
+    }
+
+    private static bool EmptyProfile(SkateParkQuarterProfile value)
+    {
+        return value.Radius == 0 && value.Height == 0 && value.Entry == 0 && value.Deck == 0 &&
+            value.StartForward == 0 && value.HalfWidth == 0 && value.EndForward == 0 &&
+            value.Skin == 0 && value.RailRadius == 0 && value.RailHeight == 0;
+    }
+
+    private static Point QuarterTurn(double right, double forward, int turn)
+    {
+        switch (turn)
+        {
+            case 0: return new Point(right, 0, forward);
+            case 1: return new Point(forward, 0, -right);
+            case 2: return new Point(-right, 0, -forward);
+            default: return new Point(-forward, 0, right);
+        }
+    }
+
+    private static void OwnerParkCells()
+    {
+        foreach (var kind in new[] { SkateParkKind.MiniQuarterPipe, SkateParkKind.LargeQuarterPipe })
+        {
+            int count = kind == SkateParkKind.MiniQuarterPipe ? 1 : 3;
+            Require(SkateParkLayout.CellCount(kind) == count, kind + ": exact occupied cell count.");
+            int[] rights = { 0, 1, 0 }, forwards = { 0, 0, 1 };
+            for (int i = 0; i < count; i++)
+            {
+                int right, forward;
+                Require(SkateParkLayout.TryCell(kind, i, out right, out forward), kind + ": cell exists.");
+                Require(right == rights[i] && forward == forwards[i], kind + ": literal local mask.");
+                Require(!(right == 1 && forward == 1), kind + ": upper-right cell remains empty.");
+                for (int turn = 0; turn < 4; turn++)
+                {
+                    Point expected = QuarterTurn(rights[i] * 3, forwards[i] * 3, turn);
+                    SkateParkTransform actual = Transform(kind, i, 17.25, 2.5, -9.75, turn * 90);
+                    Near(actual.X, 17.25 + expected.X, kind + ": cell quarter-turn X.");
+                    Near(actual.Z, -9.75 + expected.Z, kind + ": cell quarter-turn Z.");
+                    Point empty = QuarterTurn(3, 3, turn);
+                    Require(!SkateParkLayout.OverlapsBox(actual.X, actual.Z, turn * 90, 1.5, 1.5,
+                        17.25 + empty.X, -9.75 + empty.Z, turn * 90, 1.5, 1.5),
+                        kind + ": complete missing cell is available at every quarter-turn.");
+                    Require(!SkateParkLayout.OverlapsBox(actual.X, actual.Z, turn * 90, 1.5, 1.5,
+                        17.25 + empty.X, -9.75 + empty.Z, turn * 90 + 37.25, 0.25, 0.25),
+                        kind + ": rotated small obstruction wholly inside missing cell is available.");
+                }
+            }
+            foreach (int invalid in new[] { -1, count, count + 1, int.MaxValue })
+            {
+                int right = 91, forward = 92;
+                Require(!SkateParkLayout.TryCell(kind, invalid, out right, out forward) && right == 0 && forward == 0,
+                    kind + ": invalid cell index resets both outputs.");
+            }
+        }
+        // A shifted third tile in the missing cell must not be mistaken for the declared L.
+        SkateParkBlock[] wrongL = Observations(Pieces[9], new Point(0, 0, 0), new Angle(0, 0, 1, 0));
+        wrongL[2] = new SkateParkBlock(FloorPrefab, 3, 0, 3, 0, 0);
+        Refused(SkateParkKind.LargeQuarterPipe, wrongL, 0.01, "different three-cell mask accepted.");
+        SkateParkBlock[] mini = Observations(Pieces[8], new Point(0, 0, 0), new Angle(0, 0, 1, 0));
+        Refused(SkateParkKind.QuarterPipe, mini, 0.01, "new mini mistaken for old quarterpipe.");
+    }
+
+    private static void OwnerQuarterProfiles()
+    {
+        foreach (var kind in new[] { SkateParkKind.MiniQuarterPipe, SkateParkKind.LargeQuarterPipe })
+        {
+            bool mini = kind == SkateParkKind.MiniQuarterPipe;
+            double radius = mini ? 1.2 : 3, end = mini ? 1.4 : 4.4;
+            SkateParkQuarterProfile profile;
+            Require(SkateParkLayout.TryQuarterProfile(kind, out profile), kind + ": client profile exists.");
+            Near(profile.Radius, radius, kind + ": transition radius.");
+            Near(profile.Height, radius, kind + ": transition height.");
+            Near(profile.Entry, 0.2, kind + ": flat entry length.");
+            Near(profile.Deck, mini ? 1.4 : 2.6, kind + ": deck length.");
+            Near(profile.StartForward, -1.4, kind + ": entry origin.");
+            Near(profile.EndForward, end, kind + ": complete run ends inside its final cell.");
+            Near(profile.HalfWidth, 1.4, kind + ": transition half width.");
+            Near(profile.Skin, 0.08, kind + ": maximum skin/collider overhang.");
+            Near(profile.RailRadius, 0.05, kind + ": rail radius.");
+            Near(profile.RailHeight, 0.8, kind + ": rail height above deck.");
+            Near(profile.StartForward + profile.Entry + profile.Radius + profile.Deck, end,
+                kind + ": entry, curve and deck consume the declared length.");
+            Require(profile.HalfWidth + profile.Skin <= 1.5 && profile.HalfWidth + profile.RailRadius <= 1.5 &&
+                profile.StartForward - profile.Skin >= -1.5 && end + profile.Skin <= (mini ? 1.5 : 4.5),
+                kind + ": authored skin, rail and collider horizontal limits fit claimed cells.");
+
+            foreach (double right in new[] { -1.4, 0, 1.4 })
+            {
+                Surface(kind, right, -1.4, 0, 1, 0, "entry start");
+                Surface(kind, right, -1.3, 0, 1, 0, "flat entry");
+                Surface(kind, right, -1.2, 0, 1, 0, "transition start");
+                Surface(kind, right, mini ? -0.48 : 0.6, mini ? 0.24 : 0.6, 0.8, -0.6,
+                    "independent 3-4-5 circular point and unit normal");
+                Surface(kind, right, mini ? 0 : 1.8, radius, 1, 0, "deck entry");
+                Surface(kind, right, end, radius, 1, 0, "deck back edge");
+            }
+            SurfaceRefused(kind, -1.400001, 0, "left outer edge");
+            SurfaceRefused(kind, 0, -1.400001, "before entry");
+            SurfaceRefused(kind, 0, end + 0.000001, "behind deck");
+            SurfaceRefused(kind, 1.400001, mini ? 0 : 3, "outside curved lane");
+            foreach (double bad in new[] { double.NaN, double.NegativeInfinity, double.PositiveInfinity })
+            {
+                SurfaceRefused(kind, bad, 0, "nonfinite right");
+                SurfaceRefused(kind, 0, bad, "nonfinite forward");
+            }
+        }
+        Surface(SkateParkKind.LargeQuarterPipe, 1.400001, -1.4, 0, 1, 0, "apron inner edge");
+        Surface(SkateParkKind.LargeQuarterPipe, 3, 0, 0, 1, 0, "front-right apron center");
+        Surface(SkateParkKind.LargeQuarterPipe, 4.4, 1.4, 0, 1, 0, "apron outer corner");
+        SurfaceRefused(SkateParkKind.LargeQuarterPipe, 4.400001, 0, "outside apron width");
+        SurfaceRefused(SkateParkKind.LargeQuarterPipe, 3, 1.400001, "beyond apron back edge");
+        SurfaceRefused(SkateParkKind.LargeQuarterPipe, 3, 3, "missing L cell has no surface");
+    }
+
+    private static void Surface(SkateParkKind kind, double right, double forward, double expectedHeight,
+        double expectedUp, double expectedForward, string label)
+    {
+        double height, up, normalForward;
+        Require(SkateParkLayout.TryQuarterSurface(kind, right, forward, out height, out up, out normalForward),
+            kind + ": surface refused " + label);
+        Near(height, expectedHeight, kind + ": height " + label);
+        Near(up, expectedUp, kind + ": normal up " + label);
+        Near(normalForward, expectedForward, kind + ": normal forward " + label);
+        Near(up * up + normalForward * normalForward, 1, kind + ": unit surface normal " + label);
+    }
+
+    private static void SurfaceRefused(SkateParkKind kind, double right, double forward, string label)
+    {
+        double height = 91, up = 92, normalForward = 93;
+        Require(!SkateParkLayout.TryQuarterSurface(kind, right, forward, out height, out up, out normalForward),
+            kind + ": invalid surface accepted " + label);
+        Require(height == 0 && up == 0 && normalForward == 0, kind + ": surface refuses atomically " + label);
+    }
+
+    private static void OwnerNativeBounds()
+    {
+        foreach (var kind in new[] { SkateParkKind.MiniQuarterPipe, SkateParkKind.LargeQuarterPipe })
+        {
+            int floors = kind == SkateParkKind.MiniQuarterPipe ? 1 : 3;
+            for (int index = 0; index < floors; index++)
+            {
+                Require(SkateParkLayout.ContainsNativeBounds(kind, index, 0, 0, 3, 3), kind + ": exact native floor fits.");
+                Require(SkateParkLayout.ContainsNativeBounds(kind, index, 0.025, -0.025, 2.9, 2.9),
+                    kind + ": inset native bounds with measured center offset fit.");
+                foreach (double size in new[] { 3.000001, 3.1 })
+                {
+                    Require(!SkateParkLayout.ContainsNativeBounds(kind, index, 0, 0, size, 3),
+                        kind + ": native floor width cannot overhang claimed cell.");
+                    Require(!SkateParkLayout.ContainsNativeBounds(kind, index, 0, 0, 3, size),
+                        kind + ": native floor length cannot overhang claimed cell.");
+                }
+                foreach (double offset in new[] { -0.000001, 0.000001 })
+                {
+                    Require(!SkateParkLayout.ContainsNativeBounds(kind, index, offset, 0, 3, 3),
+                        kind + ": native center-right overhang refused.");
+                    Require(!SkateParkLayout.ContainsNativeBounds(kind, index, 0, offset, 3, 3),
+                        kind + ": native center-forward overhang refused.");
+                }
+            }
+            foreach (int index in new[] { -1, SkateParkLayout.PartCount(kind), int.MaxValue })
+                Require(!SkateParkLayout.ContainsNativeBounds(kind, index, 0, 0, 3, 3), kind + ": invalid native part.");
+            foreach (double invalid in new[] { double.NaN, double.PositiveInfinity, double.NegativeInfinity })
+            {
+                Require(!SkateParkLayout.ContainsNativeBounds(kind, 0, invalid, 0, 3, 3), "nonfinite native center-right.");
+                Require(!SkateParkLayout.ContainsNativeBounds(kind, 0, 0, invalid, 3, 3), "nonfinite native center-forward.");
+                Require(!SkateParkLayout.ContainsNativeBounds(kind, 0, 0, 0, invalid, 3), "nonfinite native width.");
+                Require(!SkateParkLayout.ContainsNativeBounds(kind, 0, 0, 0, 3, invalid), "nonfinite native depth.");
+            }
+            foreach (double invalid in new[] { -3d, 0 })
+            {
+                Require(!SkateParkLayout.ContainsNativeBounds(kind, 0, 0, 0, invalid, 3), "nonpositive native width.");
+                Require(!SkateParkLayout.ContainsNativeBounds(kind, 0, 0, 0, 3, invalid), "nonpositive native depth.");
+            }
+        }
+        Require(SkateParkLayout.ContainsNativeBounds(SkateParkKind.MiniQuarterPipe, 1, 0, 0, 0.6, 3),
+            "mini rear wall rotates three-metre local-Z length across width; thickness remains in cell.");
+        Require(!SkateParkLayout.ContainsNativeBounds(SkateParkKind.MiniQuarterPipe, 1, 0, 0, 0.8, 3),
+            "mini rotated rear wall includes thickness overhang.");
+        Require(!SkateParkLayout.ContainsNativeBounds(SkateParkKind.MiniQuarterPipe, 1, -0.1, 0, 0.6, 3),
+            "mini rotated rear wall includes native local-X center offset.");
+        Require(!SkateParkLayout.ContainsNativeBounds(SkateParkKind.MiniQuarterPipe, 1, 0, 0.001, 0.6, 3),
+            "mini rotated rear wall includes native local-Z center offset.");
+    }
+
+    private static void BoxOverlap(bool expected, double x, double z, double yaw, double halfRight, double halfForward,
+        double otherX, double otherZ, double otherYaw, double otherHalfRight, double otherHalfForward, string label)
+    {
+        Require(SkateParkLayout.OverlapsBox(x, z, yaw, halfRight, halfForward,
+            otherX, otherZ, otherYaw, otherHalfRight, otherHalfForward) == expected, "box overlap " + label);
+        Require(SkateParkLayout.OverlapsBox(otherX, otherZ, otherYaw, otherHalfRight, otherHalfForward,
+            x, z, yaw, halfRight, halfForward) == expected, "box overlap symmetric " + label);
+    }
+
+    private static void ReservedBoxOverlaps()
+    {
+        BoxOverlap(true, 0, 0, 0, 1.5, 1.5, 0, 0, 0, 1.5, 1.5, "same cell");
+        BoxOverlap(true, 0, 0, 0, 1.5, 1.5, 2.999, 0, 0, 1.5, 1.5, "small positive overlap");
+        BoxOverlap(false, 0, 0, 0, 1.5, 1.5, 3, 0, 0, 1.5, 1.5, "touching edge");
+        BoxOverlap(false, 0, 0, 0, 1.5, 1.5, 3, 3, 0, 1.5, 1.5, "touching corner");
+        BoxOverlap(false, 0, 0, 0, 1.5, 1.5, 0, 3.001, 0, 1.5, 1.5, "forward gap");
+        BoxOverlap(true, 0, 0, 0, 1.5, 1.5, 0, 0, 37.25, 0.25, 0.5, "rotated contained obstruction");
+        BoxOverlap(true, 0, 0, 0, 1.5, 1.5, 2, 0, 45, 0.5, 0.5, "rotated corner intrudes");
+        BoxOverlap(false, 0, 0, 0, 1.5, 1.5, 2.3, 0, 45, 0.5, 0.5, "rotated corner clears");
+        // Separation exists only on a rotated box's own axis; world-axis AABBs overlap.
+        BoxOverlap(false, 0, 0, 45, 2, 0.1, 0, 0.4, 45, 2, 0.1, "parallel diagonal narrow boxes");
+        for (int turn = 0; turn < 4; turn++)
+        {
+            Point near = QuarterTurn(2, 0, turn), far = QuarterTurn(2.3, 0, turn);
+            BoxOverlap(true, 17.125, -8.5, turn * 90, 1.5, 1.5,
+                17.125 + near.X, -8.5 + near.Z, 45 + turn * 90, 0.5, 0.5, "rotated/transformed overlap");
+            BoxOverlap(false, 17.125, -8.5, turn * 90, 1.5, 1.5,
+                17.125 + far.X, -8.5 + far.Z, 45 + turn * 90, 0.5, 0.5, "rotated/transformed gap");
+        }
+        for (int component = 0; component < 10; component++)
+        foreach (double invalid in new[] { double.NaN, double.PositiveInfinity, double.NegativeInfinity })
+        {
+            double[] values = { 0, 0, 0, 1.5, 1.5, 10, 10, 0, 1.5, 1.5 };
+            values[component] = invalid;
+            BoxOverlap(true, values[0], values[1], values[2], values[3], values[4],
+                values[5], values[6], values[7], values[8], values[9], "nonfinite input fails closed " + component);
+        }
+        foreach (double invalid in new[] { -1d, 0 })
+        {
+            BoxOverlap(true, 0, 0, 0, invalid, 1.5, 10, 10, 0, 1.5, 1.5, "nonpositive width fails closed");
+            BoxOverlap(true, 0, 0, 0, 1.5, invalid, 10, 10, 0, 1.5, 1.5, "nonpositive depth fails closed");
+        }
+        BoxOverlap(true, 100001, 0, 0, 1.5, 1.5, 0, 0, 0, 1.5, 1.5, "out-of-world coordinate fails closed");
+        BoxOverlap(true, 0, 0, 1000001, 1.5, 1.5, 10, 10, 0, 1.5, 1.5, "out-of-range heading fails closed");
     }
 
     private static void FoundationSupport()
