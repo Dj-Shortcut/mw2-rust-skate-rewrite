@@ -2,6 +2,55 @@ using System;
 
 namespace Shortcut.RustMod
 {
+    public struct SkateScanState
+    {
+        public readonly bool Unavailable;
+        public readonly int Failures;
+        public readonly double RetryRemaining;
+        public bool CanScan { get { return !Unavailable && RetryRemaining == 0; } }
+
+        internal SkateScanState(bool unavailable, int failures, double retryRemaining)
+        { Unavailable = unavailable; Failures = failures; RetryRemaining = retryRemaining; }
+    }
+
+    public static class SkateScanRecovery
+    {
+        public const double FirstRetry = 0.5;
+        public const double LongestRetry = 10;
+
+        public static SkateScanState Reset(SkateScanState state)
+        { return new SkateScanState(state.Unavailable, 0, 0); }
+
+        public static SkateScanState Succeeded(SkateScanState state)
+        { return Reset(state); }
+
+        public static bool TryTick(SkateScanState state, double dt, out SkateScanState next, out string error)
+        {
+            next = state;
+            error = null;
+            if (double.IsNaN(dt) || double.IsInfinity(dt) || dt <= 0 || dt > SkateMotion.MaximumStep)
+            { error = "Invalid scan recovery step."; return false; }
+            next = new SkateScanState(state.Unavailable, state.Failures, Math.Max(0, state.RetryRemaining - dt));
+            return true;
+        }
+
+        public static bool TryFail(SkateScanState state, Exception failure, out SkateScanState next, out string error)
+        {
+            next = state;
+            error = null;
+            if (failure == null) { error = "Missing scan failure."; return false; }
+            if (state.Unavailable) return true;
+            while ((failure is System.Reflection.TargetInvocationException || failure is TypeInitializationException) &&
+                   failure.InnerException != null) failure = failure.InnerException;
+            bool unavailable = failure is MissingMemberException || failure is TypeLoadException ||
+                failure is EntryPointNotFoundException || failure is DllNotFoundException || failure is InvalidProgramException;
+            int failures = state.Failures < int.MaxValue ? state.Failures + 1 : int.MaxValue;
+            double wait = unavailable ? 0 : Math.Min(LongestRetry, FirstRetry * Math.Pow(2, Math.Min(5, failures - 1)));
+            next = new SkateScanState(unavailable, failures, wait);
+            return true;
+        }
+    }
+
     public struct SkateHeightGrid
     {
         public readonly SkateVector Origin;
