@@ -4822,8 +4822,9 @@ namespace Oxide.Plugins
                     !SkateParkSelections.TryApply(request.Selection.State, SkateParkSelectionAction.PlacementSucceeded,
                         player.IsAdmin, parkReady, clock.Elapsed.TotalSeconds, null, out consumed)))
                     throw new InvalidDataException("The placement request expired or changed before completion.");
-                if (!ParkMegaSpace(kind, parts, player, anchor, created, out failure, group) || !CurrentParkRequest(request))
-                    throw new InvalidDataException(failure ?? "The placement request changed during final MEGA verification.");
+                if (!ParkMegaSpace(kind, parts, player, anchor, created, out failure, group) ||
+                    !ParkModuleSpace(request, kind, definitions, group, parts, created, out failure) || !CurrentParkRequest(request))
+                    throw new InvalidDataException(failure ?? "The placement request changed during final park-space verification.");
                 foreach (ParkMember part in parts) parkMembers.Add(part.Id, group);
                 foreach (ParkRollbackReceipt receipt in rollbackReceipts) parkRollback.Remove(receipt);
                 if (request.Selection != null)
