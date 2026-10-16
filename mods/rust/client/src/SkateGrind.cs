@@ -21,31 +21,25 @@ public static class SkateGrind
     private static readonly double[] heights = new double[Rows * Cols];
     private static SkateEdge edge;
     private static double cooldown;
-    // A scan that threw: a missing native member is for good (Unavailable, said once, never tried
-    // again); anything else waits a moment that doubles with each failure in a row and is tried
-    // again, and after MostFailures in a row grinding is off until the next mount (Reset).
-    public const int MostFailures = 5;
-    public const float FirstRetry = 0.5f, LongestRetry = 10f;
-    public static bool Unavailable;
-    public static int Failures;
-    private static bool failed;
-    private static float retryAt = -99f;
+    public const float FirstRetry = (float)SkateScanRecovery.FirstRetry, LongestRetry = (float)SkateScanRecovery.LongestRetry;
+    public static bool Unavailable { get { return scan.Unavailable; } }
+    public static int Failures { get { return scan.Failures; } }
+    private static SkateScanState scan;
     private static void Fail(Exception e, string where)
     {
         while (e is System.Reflection.TargetInvocationException && e.InnerException != null) e = e.InnerException;
         var name = e.GetType().Name;
-        // Whatever threw, no edge found before it is trusted any more: the grind or stall in hand ends.
-        edge = stallEdge = default(SkateEdge); Target = default(Vector3); StallCandidate = StallSquare = false; NearAt = -99f;
-        if (e is MissingMemberException || e is TypeLoadException || e is TypeInitializationException || e is EntryPointNotFoundException ||
-            e is DllNotFoundException || e is InvalidProgramException || e is NotSupportedException || e is NotImplementedException)
+        // The caller needs Heading and Speed to leave the grind with its existing momentum.
+        edge = stallEdge = default(SkateEdge); Target = default(Vector3); StallCandidate = StallSquare = false; NearAt = nearSaidAt = -99f;
+        string error;
+        bool wasUnavailable = Unavailable;
+        SkateScanRecovery.TryFail(scan, e, out scan, out error);
+        if (Unavailable)
         {
-            if (!Unavailable) Out.Say("GRIND " + where + " threw " + name + ": " + e.Message + " - the native call is missing; grinding stays off");
-            Unavailable = true; Last = "scanner unavailable"; return;
+            if (!wasUnavailable) Out.Say("GRIND " + where + " threw " + name + ": " + e.Message + " - the native binding is unavailable; grinding stays off");
+            Last = "scanner unavailable"; return;
         }
-        Failures++;
-        if (Failures >= MostFailures) { failed = true; Last = "scanner off until getting on again"; Out.Say("GRIND " + where + " threw " + name + ": " + e.Message + " - " + Failures + " in a row, grinding off until getting on again"); return; }
-        var wait = Math.Min(LongestRetry, FirstRetry * (float)Math.Pow(2, Failures - 1));
-        retryAt = Time.realtimeSinceStartup + wait;
+        var wait = scan.RetryRemaining;
         Last = "scanner retry in " + wait.ToString("F1") + " s";
         Out.Say("GRIND " + where + " threw " + name + ": " + e.Message + " - tried again in " + wait.ToString("F1") + " s");
     }
@@ -60,10 +54,14 @@ public static class SkateGrind
     {
         cooldown = 0; edge = stallEdge = default(SkateEdge); Speed = Heading = 0f; Target = default(Vector3);
         StallCandidate = StallSquare = false; NearAt = nearSaidAt = -99f;
-        failed = false; Failures = 0; retryAt = -99f; Last = Unavailable ? "scanner unavailable" : "";
+        scan = SkateScanRecovery.Reset(scan); Last = Unavailable ? "scanner unavailable" : "";
     }
 
     private static float YawOf(double x, double z) { return (float)(Math.Atan2(x, z) * 180.0 / Math.PI); }
+
+    // The float boundary rounds above the shared double limit.
+    private static double StepSeconds(float dt)
+    { return dt == (float)SkateMotion.MaximumStep ? SkateMotion.MaximumStep : dt; }
 
     private static SkateHeightGrid Sample(Vector3 pos, float yaw)
     {
@@ -98,25 +96,27 @@ public static class SkateGrind
     public static void Tick(float dt)
     {
         string error;
-        if (cooldown > 0) SkateEdges.TryCooldown(cooldown, false, dt, out cooldown, out error);
+        double step = StepSeconds(dt);
+        SkateScanRecovery.TryTick(scan, step, out scan, out error);
+        if (cooldown > 0) SkateEdges.TryCooldown(cooldown, false, step, out cooldown, out error);
     }
 
     public static void Release(float dt)
     {
         string error;
-        if (!SkateEdges.TryCooldown(cooldown, true, dt, out cooldown, out error)) cooldown = SkateMotion.RailRecaptureDelay;
+        if (!SkateEdges.TryCooldown(cooldown, true, StepSeconds(dt), out cooldown, out error)) cooldown = SkateMotion.RailRecaptureDelay;
     }
 
     public static bool TryCapture(Vector3 pos, Vector3 velocity, float noseYaw, float dt)
     {
         StallCandidate = false;
-        if (!Enabled || Unavailable || failed || cooldown > 0 || Time.realtimeSinceStartup < retryAt) return false;
+        if (!Enabled || !scan.CanScan || cooldown > 0) return false;
         try
         {
             double vx = velocity.x, vz = velocity.z;
             if (vx * vx + vz * vz < AlongSpeed * AlongSpeed) return false;
             var grid = Sample(pos, YawOf(vx, vz));
-            Failures = 0;
+            scan = SkateScanRecovery.Succeeded(scan);
             SkateEdge found; string error;
             if (!SkateEdges.TryFind(grid, new SkateVector(vx, 0, vz), out found, out error)) { Last = "find refused: " + error; return false; }
             if (!found.Found) return false;
@@ -160,15 +160,17 @@ public static class SkateGrind
     public static bool TryContinue(Vector3 pos, float dt, out bool ended)
     {
         ended = false;
+        if (!Enabled || !scan.CanScan) { ended = true; return false; }
         try
         {
             var grid = Sample(pos, Heading);
+            scan = SkateScanRecovery.Succeeded(scan);
             bool continues; SkateEdge next; string error;
             if (!SkateEdges.TryContinue(edge, grid, edge.Direction, out continues, out next, out error)) { Last = "continue refused: " + error; return false; }
             if (!continues) { Last = "edge ended"; ended = true; return true; }
             if (next.Found) edge = next;
             double speed; bool grinding;
-            if (!SkateEdges.TryGrindStep(Speed, dt, out speed, out grinding, out error)) { Last = "grind step refused: " + error; return false; }
+            if (!SkateEdges.TryGrindStep(Speed, StepSeconds(dt), out speed, out grinding, out error)) { Last = "grind step refused: " + error; return false; }
             Speed = (float)speed;
             if (!grinding) { Last = "too slow"; ended = true; return true; }
             Heading = YawOf(edge.Direction.X, edge.Direction.Z);
