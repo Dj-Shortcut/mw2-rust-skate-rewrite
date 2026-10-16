@@ -8,6 +8,7 @@ de betreffende issue/PR; zie [docs/AUTONOMY.md](docs/AUTONOMY.md).
 ## Actief: de skate-mod, zo goed mogelijk, voor de eigenaar en zijn vrienden
 
 - #452: ShortcutSkate 0.3.17 bevat een begrensde native stall-uitzondering voor de eerste vijf seconden na join/wake/respawn, met horizontale padlimiet en anonieme correctietellers. De C#7.3/net48-build en vier bestaande approved runners slagen (59.788 checks); native Harmony-gedrag en live join/wake/respawn blijven open. Deze bronwijziging autoriseert geen deployment of merge.
+- [ ] #408 / #438 float-snelheidsgrens: natuurlijke fakie heeft op main al dezelfde 25 m/s-grens als vooruit (#422). De client begrenst nu ook het afgeronde float-eindpunt met gedeelde `TryBoundHorizontal`, na muurprojectie; de strikte serverpadgrens blijft behouden. Echte net48/C#7.3 shared/server-builds en volledige clientbron tegen gecachte IL2CPP/.NET6-referenties compileren zonder waarschuwingen/fouten; bestaande goedgekeurde movement- en rijfysicascenario's controleren de numerieke broncontracten. Native PhysX-eindpunten, de actuele serverbatchtijd en controller-rollback blijven ongeverifieerd; geen installatie of releasewijziging. [Contract](docs/RUST-SKATE-RIDE-PHYSICS.md#units-and-contracts).
 
 **Richting van de eigenaar, 14 oktober 2026:** de MW2-gunplay wordt **geschrapt**. Alles gaat naar de
 skate-mod: zo goed mogelijk maken, en zo dat zijn vrienden het kunnen proberen. Het doel is dus

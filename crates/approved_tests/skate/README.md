@@ -54,10 +54,15 @@ gets the fly exception. These helpers do not attest a board or run native permis
 
 ```sh
 dotnet build mods/rust/plugins/ShortcutSkate.csproj -p:RustManagedPath=/absolute/path/to/managed
-dotnet run --project crates/approved_tests/skate/SkateServerMovementPolicyScenarios.csproj -p:ActualPluginPath=/absolute/path/to/ShortcutSkate.dll -- EXPECTED_SHA256
+dotnet build mods/rust/shared/SkateMotion.csproj -p:RustManagedPath=/absolute/path/to/managed
+dotnet run --project crates/approved_tests/skate/SkateServerMovementPolicyScenarios.csproj -p:ActualPluginPath=/absolute/path/to/ShortcutSkate.dll -p:SkateLibraryPath=/absolute/path/to/SkateMotion.dll -- EXPECTED_PLUGIN_SHA256 EXPECTED_SHARED_SHA256
 ```
 
-The optional argument pins the actual DLL hash; its path/hash are always printed.
+The optional arguments pin the actual plugin/shared DLL hashes; paths/hashes are always printed.
+The same scenario checks authored float32 cap-boundary endpoints against the actual
+shared limiter and unchanged server policy, including mirrored travel, large coordinates,
+lower caps, full out-and-back paths, float step boundaries and atomic rejection.
+These are separate float multiply/add endpoints, not captured native motion or timing.
 Warmed helper loops measure allocation on the executing .NET runtime. Guard fixtures
 exercise production boolean policy, rather than constructing fake native players.
 No Rust/Oxide process, client, Shadow or live server starts. Real cache data, authority

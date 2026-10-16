@@ -115,6 +115,39 @@ namespace Shortcut.RustMod
         private const double HorizontalTolerance = 1e-8;
         private const double DerivedTolerance = 1e-12;
 
+        public static bool TryBoundHorizontal(float x, float z, float velocityX, float velocityZ,
+                                              float dt, double maximumSpeed, out float boundedX, out float boundedZ)
+        {
+            boundedX = velocityX; boundedZ = velocityZ;
+            if (!Scalar(x) || !Scalar(z) || !Finite(velocityX) || !Finite(velocityZ) ||
+                !Finite(dt) || dt <= 0 || dt > (float)MaximumStep ||
+                !Finite(maximumSpeed) || maximumSpeed <= 0 || maximumSpeed > SkateMotion.MaximumGroundSpeed) return false;
+            double speed = Math.Sqrt((double)velocityX * velocityX + (double)velocityZ * velocityZ);
+            if (HorizontalFits(x, z, velocityX, velocityZ, dt, maximumSpeed)) return true;
+            double low = 0, high = Math.Min(1, maximumSpeed / speed);
+            boundedX = boundedZ = 0;
+            for (int i = 0; i < 32; i++)
+            {
+                double scale = (low + high) * 0.5;
+                float candidateX = (float)(velocityX * scale), candidateZ = (float)(velocityZ * scale);
+                if (HorizontalFits(x, z, candidateX, candidateZ, dt, maximumSpeed))
+                { low = scale; boundedX = candidateX; boundedZ = candidateZ; }
+                else high = scale;
+            }
+            return true;
+        }
+
+        private static bool HorizontalFits(float x, float z, float velocityX, float velocityZ, float dt, double maximumSpeed)
+        {
+            if (Math.Sqrt((double)velocityX * velocityX + (double)velocityZ * velocityZ) > maximumSpeed) return false;
+            // Keep the two float32 roundings: the server measures rounded positions in double.
+            float stepX = (float)(velocityX * dt), stepZ = (float)(velocityZ * dt);
+            float nextX = (float)(x + stepX), nextZ = (float)(z + stepZ);
+            if (!Scalar(nextX) || !Scalar(nextZ)) return false;
+            double deltaX = (double)nextX - x, deltaZ = (double)nextZ - z;
+            return Math.Sqrt(deltaX * deltaX + deltaZ * deltaZ) <= maximumSpeed * dt;
+        }
+
         public static bool TrySlope(SkateSlopeInput input, double dt, out SkateSlopeResult result, out string error)
         {
             result = default(SkateSlopeResult); error = null;
