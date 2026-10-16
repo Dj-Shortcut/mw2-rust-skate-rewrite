@@ -969,7 +969,7 @@ namespace Shortcut.RustMod
 
 namespace Oxide.Plugins
 {
-    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.15")]
+    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.16")]
     [Description("Player-scoped skateboard movement bounds and saved park assemblies.")]
     public sealed class ShortcutSkate : RustPlugin
     {
@@ -1437,7 +1437,10 @@ namespace Oxide.Plugins
             public SkateSessionHistory History;
             public SkateSessionObservation Observation;
             public double SaidAt = -99;
+            public double RidingAt = -99;
         }
+
+        public const double RidingSpeed = 7, RidingGraceSeconds = 3;
 
         protected override void LoadDefaultConfig()
         {
@@ -1936,6 +1939,13 @@ namespace Oxide.Plugins
         }
         private void OnEntityMounted(BaseMountable mountable, BasePlayer player) { Stop(player, SkateSessionReason.Mounted); }
         private void OnPlayerWound(BasePlayer player, HitInfo info) { Stop(player, SkateSessionReason.Wounded); }
+        private object OnPlayerLand(BasePlayer player, float amount)
+        {
+            Session session;
+            if (!ready || player == null || !sessions.TryGetValue(player.userID, out session) || !ReferenceEquals(player, session.Player)) return null;
+            if (clock.Elapsed.TotalSeconds - session.RidingAt > RidingGraceSeconds) return null;
+            return true;
+        }
 
         private void Unload()
         {
@@ -4511,6 +4521,7 @@ namespace Oxide.Plugins
                     if (!SkateMovementPolicy.TryAllow(dt, horizontal, settings.MaximumHorizontalSpeed, out allowed, out movementReason))
                     { session.MovementReason = value.Reason = movementReason; Disarm(session, value); continue; }
                     session.MovementAllowed = allowed;
+                    if (allowed && dt > 0 && horizontal > RidingSpeed * dt) session.RidingAt = now;
                     session.MovementSeconds = dt;
                     session.MovementVerticalPath = vertical;
                     session.MovementReason = movementReason;
