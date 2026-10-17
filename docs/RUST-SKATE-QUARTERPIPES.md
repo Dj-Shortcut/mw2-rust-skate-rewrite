@@ -1,6 +1,6 @@
 # Quarterpipe geometry contract
 
-Kinds `2` (quarterpipe), `8` (mini) and `9` (large) share one riding and closed-solid contract in `mods/rust/shared/SkatePark.cs`.
+In source **0.3.20**, kinds `2` (quarterpipe), `8` (mini) and `9` (large) share one riding and closed-solid contract in `mods/rust/shared/SkatePark.cs`.
 Coordinates are metres: `x=Right`, `y=Up`, `z=Forward`; the ramp rises along `+z`. Apply the group yaw and anchor once.
 The riding datum `y=0` is `group.AnchorY + FloorPrefab Construction.bounds.max.y`, measured before pitching a carrier.
 
@@ -44,8 +44,10 @@ Native carriers retain their public identities and transforms (`Right,Forward,He
 Angles in carrier formulas are degrees. These native blocks are saved/networked recognition carriers; their slab/wall colliders do not define the riding shape.
 For each validated quarter group, disable the original non-trigger carrier colliders and install the closed shell, coping and optional apron colliders in the group frame.
 Claude's client must recognize all three kinds with the same stable carrier arrays, hide carrier rendering, disable carrier collision, and build this exact shared mesh/collider contract.
-The original visual origin is the group anchor, with no pitched-floor toe offset. Transform custom children back into their carrier parent's frame if parented there.
+All three `VisualOrigin` offsets are zero. Place ghost, rendering and generated collision at `Anchor + Yaw*(0,measuredFloorTop,0)`, with group yaw only and no pitched-floor toe offset. Transform custom children back into their carrier parent's frame if parented there.
 Restore original collider state when removing generated geometry or unloading; regenerate only for validated complete saved groups.
+
+New placements use the [supported placement contract](RUST-SKATE-PLACEMENT.md): measured terrain/foundation support seats the lowest actual native floor bounds with no extra gap, while native sockets, foundation-top targets and adjacent park cells determine X/Z/yaw. Explicit command Y is a search hint. This support correction moves the complete group and does not pitch or reshape its closed quarterpipe shell; recorded saved anchors are not migrated.
 
 Bounds checks use the complete reserved mask and measured vertical envelope, with at least 1 mm tolerance and additional float32-scale world-coordinate tolerance.
 `ContainsQuarterPoint` accepts mask corners; `Float32BoundsTolerance` returns `max(0.001,max(abs(world coordinates))/4194304)`.

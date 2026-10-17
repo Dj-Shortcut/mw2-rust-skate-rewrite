@@ -37,7 +37,9 @@ Build static colliders explicitly from closed proxies. One convex halfpipe hull 
 its riding opening; moving-body use needs convex decomposition. No external textures
 or transparent collision materials; preview camera/lights are excluded from GLB.
 
-The native build-plan route retains its foundation; `GroundedBuilding` is separate opt-in.
+The gesture fallback retains its foundation; marked items remove their temporary carrier.
+[Supported placement](RUST-SKATE-PLACEMENT.md) determines the final anchor and ghost offset;
+`GroundedBuilding` is separate opt-in.
 Reference heights are nominal floor centre planes, not measured prefab tops. Native
 thickness/support offsets prevent claiming exact top separation or full collider-volume
 identity. Authored backrails differ from native low walls/sixteen Metal side panels.
