@@ -571,6 +571,7 @@ internal static class SkateParkLayoutScenarios
     {
         int start = checks;
         AnchorAndMatch();
+        GhostAnchors();
         Angle[] angles =
         {
             new Angle(0, 0, 1, 0), new Angle(90, 90, 0, 1), new Angle(180, 180, -1, 0),
@@ -1424,6 +1425,37 @@ internal static class SkateParkLayoutScenarios
         }
         BoxOverlap(true, 100001, 0, 0, 1.5, 1.5, 0, 0, 0, 1.5, 1.5, "out-of-world coordinate fails closed");
         BoxOverlap(true, 0, 0, 1000001, 1.5, 1.5, 10, 10, 0, 1.5, 1.5, "out-of-range heading fails closed");
+        NativeFloorContacts();
+    }
+
+    private static void NativeFloorContacts()
+    {
+        double depth = (float)3.0000005 / 2;
+        Require(SkateParkLayout.OverlapsBox(0, 0, 0, 1.5, depth, 0, 3, 0, 1.5, depth),
+            "saved reservations still reject float-rounded positive overlap.");
+        foreach (double yaw in new[] { 0d, 37, 90, 180, 270 })
+        foreach (double world in new[] { 0d, 17.125, 2048.125 })
+        foreach (int axis in new[] { 0, 1 })
+        foreach (int direction in new[] { -1, 1 })
+        {
+            double angle = yaw * Math.PI / 180;
+            double dx = direction * (axis == 0 ? Math.Cos(angle) : Math.Sin(angle));
+            double dz = direction * (axis == 0 ? -Math.Sin(angle) : Math.Cos(angle));
+            double x = (float)world, z = (float)-world;
+            double nx = (float)(world + 3 * dx), nz = (float)(-world + 3 * dz);
+            Require(!SkateParkLayout.OverlapsBoxBeyondContact(x, z, yaw, 1.5, depth,
+                nx, nz, yaw, 1.5, depth, SkateParkLayout.NativeBoundsTolerance),
+                "float-rounded native floor seam remains contact.");
+            Require(!SkateParkLayout.OverlapsBoxBeyondContact(nx, nz, yaw, 1.5, depth,
+                x, z, yaw, 1.5, depth, SkateParkLayout.NativeBoundsTolerance),
+                "native floor contact is symmetric.");
+            Require(SkateParkLayout.OverlapsBoxBeyondContact(x, z, yaw, 1.5, depth,
+                (float)(world + 2.998 * dx), (float)(-world + 2.998 * dz), yaw, 1.5, depth,
+                SkateParkLayout.NativeBoundsTolerance), "two millimetres of real intrusion stays blocked.");
+        }
+        foreach (double invalid in new[] { double.NaN, double.PositiveInfinity, double.NegativeInfinity, -0.001, 0.001001 })
+            Require(SkateParkLayout.OverlapsBoxBeyondContact(0, 0, 0, 1.5, depth, 10, 10, 0, 1.5, depth, invalid),
+                "invalid or expanded native contact tolerance fails closed.");
     }
 
 
@@ -1668,6 +1700,7 @@ internal static class SkateParkLayoutScenarios
             "derived ledge anchor below world range.");
         SupportPlanes();
         SupportSamples();
+        FoundationGridCells();
         Console.WriteLine("PASS: skate_park_anchor_yaw_and_snap foundation-bound extension (" +
                           (checks - start).ToString(CultureInfo.InvariantCulture) + " checks).");
     }
@@ -1753,6 +1786,358 @@ internal static class SkateParkLayoutScenarios
         double top = 92;
         Require(!SkateParkLayout.TrySupportPlane(heights, out top), message);
         Require(top == 0, "support plane: refusal resets output atomically.");
+    }
+
+    private sealed class SupportFootprint
+    {
+        public readonly SkateParkKind Kind;
+        public readonly int MinRight, MinForward;
+        public readonly double Phase;
+        public readonly string[] Rows;
+        public SupportFootprint(SkateParkKind kind, int minRight, int minForward, double phase, params string[] rows)
+        { Kind = kind; MinRight = minRight; MinForward = minForward; Phase = phase; Rows = rows; }
+    }
+
+    private static SupportFootprint[] SupportFootprints()
+    {
+        // Literal owner/layout masks, ordered from the lowest local Forward row.
+        // MEGA's grid is phased to its first flat floor at local Forward=-4.5m.
+        return new[] {
+            new SupportFootprint(SkateParkKind.Bank, 0, 0, 0, "X"),
+            new SupportFootprint(SkateParkKind.Kicker, 0, 0, 0, "X"),
+            new SupportFootprint(SkateParkKind.LedgeLow, 0, 0, 0, "X"),
+            new SupportFootprint(SkateParkKind.LedgeHigh, 0, 0, 0, "X"),
+            new SupportFootprint(SkateParkKind.MiniQuarterPipe, 0, 0, 0, "X"),
+            new SupportFootprint(SkateParkKind.QuarterPipe, 0, 0, 0, "X", "X"),
+            new SupportFootprint(SkateParkKind.LongLedge, -1, 0, 0, "XXX"),
+            new SupportFootprint(SkateParkKind.Funbox, 0, -1, 0, "X", "X", "X"),
+            new SupportFootprint(SkateParkKind.LargeQuarterPipe, 0, 0, 0, "XX", "X."),
+            new SupportFootprint(SkateParkKind.Halfpipe, -1, -3, 0,
+                "XXXX", "XXXX", "XXXX", "XXXX", "XXXX", "XXXX", "XXXX", "XXXX"),
+            new SupportFootprint(SkateParkKind.MegaHalfpipe, -1, -5, -4.5,
+                "XXXXXX", "XXXXXX", "XXXXXX", "XXXXXX", "XXXXXX", "XXXXXX", "XXXXXX",
+                "XXXXXX", "XXXXXX", "XXXXXX", "XXXXXX", "XXXXXX", "XXXXXX", "XXXXXX") };
+    }
+
+    private static void FoundationGridCells()
+    {
+        int start = checks;
+        foreach (SupportFootprint footprint in SupportFootprints())
+        {
+            int expectedCount = 0;
+            foreach (string row in footprint.Rows)
+                foreach (char mark in row) if (mark == 'X') expectedCount++;
+            Require(SkateParkLayout.SupportCellCount(footprint.Kind) == expectedCount,
+                footprint.Kind + ": support count matches the independent reserved-cell mask.");
+            foreach (double yaw in new[] { 0d, 90, 180, 270, -90, 450, 37.25 })
+            {
+                const double gx = 17.375, gz = -8.0625;
+                double radians = yaw * Math.PI / 180, sin = Math.Sin(radians), cos = Math.Cos(radians);
+                double ax, az;
+                Require(SkateParkLayout.TrySupportGridAnchor(footprint.Kind, gx, gz, yaw, out ax, out az),
+                    footprint.Kind + ": valid foundation target must resolve a grid anchor.");
+                Near(ax, gx - footprint.Phase * sin, footprint.Kind + ": target-to-anchor X phase.");
+                Near(az, gz - footprint.Phase * cos, footprint.Kind + ": target-to-anchor Z phase.");
+                int index = 0;
+                for (int row = 0; row < footprint.Rows.Length; row++)
+                for (int column = 0; column < footprint.Rows[row].Length; column++)
+                {
+                    if (footprint.Rows[row][column] != 'X') continue;
+                    int right, forward;
+                    Require(SkateParkLayout.TrySupportCell(footprint.Kind, index, out right, out forward),
+                        footprint.Kind + ": required support cell exists.");
+                    Require(right == footprint.MinRight + column && forward == footprint.MinForward + row,
+                        footprint.Kind + ": support index matches the literal mask and never fills its holes.");
+                    SkateParkTransform cell;
+                    Require(SkateParkLayout.TrySupportCellPose(footprint.Kind, index, ax, az, yaw, out cell),
+                        footprint.Kind + ": required cell has a world pose.");
+                    double expectedRight = 3 * (footprint.MinRight + column);
+                    double expectedForward = 3 * (footprint.MinForward + row);
+                    Near(cell.X, gx + expectedRight * cos + expectedForward * sin,
+                        footprint.Kind + ": rotated cell X follows the selected foundation grid.");
+                    Near(cell.Z, gz - expectedRight * sin + expectedForward * cos,
+                        footprint.Kind + ": rotated cell Z follows the selected foundation grid.");
+                    Near(cell.Yaw, (yaw % 360 + 360) % 360, footprint.Kind + ": cell heading is normalized.");
+                    Require(cell.Y == 0 && cell.Pitch == 0, footprint.Kind + ": support cell pose is horizontal.");
+                    foreach (double symmetry in new[] { -360d, -270, -180, -90, 0, 90, 180, 270, 360 })
+                        Require(SkateParkLayout.FitsSupportCell(cell, cell.X, cell.Z, yaw + symmetry),
+                            footprint.Kind + ": square foundation quarter-turn symmetry preserves the grid.");
+                    index++;
+                }
+                Require(index == expectedCount, footprint.Kind + ": every reserved cell was checked once.");
+                if (footprint.Kind == SkateParkKind.MegaHalfpipe)
+                {
+                    SkateParkTransform floor;
+                    Require(SkateParkLayout.TryTransform(footprint.Kind, 0, ax, 0, az, yaw, out floor),
+                        "MEGA: first native flat floor resolves from the new grid anchor.");
+                    Near(floor.X, gx, "MEGA: first native flat centre sits on the selected foundation X.");
+                    Near(floor.Z, gz, "MEGA: first native flat centre sits on the selected foundation Z.");
+                    Near(floor.Pitch, 0, "MEGA: selected cell belongs to its flat bottom.");
+                }
+            }
+            CellSupportPlaneComposition(footprint, expectedCount);
+            foreach (int index in new[] { -1, expectedCount, int.MinValue, int.MaxValue })
+            {
+                SupportCellRefused(footprint.Kind, index, "support cell: invalid index.");
+                SupportCellPoseRefused(footprint.Kind, index, 0, 0, 0, "support cell pose: invalid index.");
+            }
+        }
+        Require(SkateParkLayout.SupportCellCount(SkateParkKind.LargeQuarterPipe) == 3 &&
+            SkateParkLayout.CellCount(SkateParkKind.LargeQuarterPipe) == 3 &&
+            SkateParkLayout.CellCount(SkateParkKind.MegaHalfpipe) == 0,
+            "support cells extend foundation validation without changing the quarterpipe collision-cell API.");
+        SupportEnvelopeCoverage();
+        SupportCellFits();
+        SupportGridInvalidInputs();
+        Console.WriteLine("PASS: skate_park_anchor_yaw_and_snap multi-foundation grid extension (" +
+            (checks - start).ToString(CultureInfo.InvariantCulture) + " checks).");
+    }
+
+    private static void CellSupportPlaneComposition(SupportFootprint footprint, int count)
+    {
+        // This composes scalar proofs, with an explicit missing sample sentinel.
+        // Native collider queries, cell labels and transaction callbacks are not simulated.
+        var heights = new double[count * 9];
+        for (int i = 0; i < heights.Length; i++) heights[i] = 3.1;
+        double top;
+        Require(SkateParkLayout.TrySupportPlane(heights, out top),
+            footprint.Kind + ": every cell contributes a level, same-height support grid.");
+        Near(top, 3.1, footprint.Kind + ": all-cell plane preserves the measured height.");
+        double anchor;
+        Require(SkateParkLayout.TrySupportedAnchor(footprint.Kind, top, 0, 0, 0.2, 3, out anchor),
+            footprint.Kind + ": complete cell plane produces the actual supported vertical anchor.");
+        int changed = (count / 2) * 9 + 4;
+        heights[changed] = double.NaN;
+        SupportPlaneRefused(heights, footprint.Kind + ": missing interior cell sample cannot be ignored.");
+        heights[changed] = 3.121;
+        SupportPlaneRefused(heights, footprint.Kind + ": uneven interior cell sample refuses the complete piece.");
+        heights[changed] = 3.1;
+        heights[heights.Length - 1] = 3.119;
+        Require(SkateParkLayout.TrySupportPlane(heights, out top),
+            footprint.Kind + ": sub-tolerance cell contact error remains supported.");
+        Near(top, 3.119, footprint.Kind + ": the highest measured cell contact supplies the common top.");
+        if (count > 1)
+        {
+            for (int cell = 0; cell < count; cell++)
+                for (int sample = 0; sample < 9; sample++) heights[cell * 9 + sample] = 0.019 * cell;
+            if (count > 2)
+                SupportPlaneRefused(heights, footprint.Kind + ": individually small adjacent steps cannot accumulate across cells.");
+            heights[0] = -0.1;
+            SupportPlaneRefused(heights, footprint.Kind + ": a lower first support cell cannot be skipped.");
+        }
+    }
+
+    private static void SupportEnvelopeCoverage()
+    {
+        // Independently authored rectangle limits, including MEGA's 0.65m reserved
+        // margin; its 84 cells include the two end rows beyond the riding decks.
+        foreach (double yaw in new[] { 0d, 90, 180, 270, 37.25 })
+        foreach (double right in new[] { -2.15, 0, 4.5, 9, 11.15 })
+        foreach (double forward in new[] { -19.238679832249493, -18.588679832249493,
+            -4.5, 0, 4.5, 18.588679832249493, 19.238679832249493 })
+        {
+            double radians = yaw * Math.PI / 180;
+            double px = 17.375 + right * Math.Cos(radians) + forward * Math.Sin(radians);
+            double pz = -8.0625 - right * Math.Sin(radians) + forward * Math.Cos(radians);
+            int matches = 0;
+            for (int i = 0; i < 84; i++)
+            {
+                SkateParkTransform cell;
+                Require(SkateParkLayout.TrySupportCellPose(SkateParkKind.MegaHalfpipe, i, 17.375, -8.0625,
+                    yaw, out cell), "MEGA: envelope support cell pose exists.");
+                double dx = px - cell.X, dz = pz - cell.Z;
+                double localRight = dx * Math.Cos(radians) - dz * Math.Sin(radians);
+                double localForward = dx * Math.Sin(radians) + dz * Math.Cos(radians);
+                if (Math.Abs(localRight) <= 1.5 + Tolerance && Math.Abs(localForward) <= 1.5 + Tolerance) matches++;
+            }
+            Require(matches > 0, "MEGA: the whole reserved envelope, including corners and deck margins, has foundation cells.");
+        }
+        foreach (double yaw in new[] { 0d, 90, 180, 270 })
+        {
+            double radians = yaw * Math.PI / 180;
+            double holeX = 3 * Math.Cos(radians) + 3 * Math.Sin(radians);
+            double holeZ = -3 * Math.Sin(radians) + 3 * Math.Cos(radians);
+            for (int i = 0; i < 3; i++)
+            {
+                SkateParkTransform cell;
+                Require(SkateParkLayout.TrySupportCellPose(SkateParkKind.LargeQuarterPipe, i, 0, 0,
+                    yaw, out cell), "L quarterpipe: rotated support cell exists.");
+                Require(!SkateParkLayout.FitsSupportCell(cell, holeX, holeZ, yaw),
+                    "L quarterpipe: missing (1,1) square remains outside support/debit requirements after rotation.");
+            }
+        }
+    }
+
+    private static void SupportCellFits()
+    {
+        var origin = new SkateParkTransform();
+        foreach (double offset in new[] { -0.02, 0, 0.02 })
+        {
+            Require(SkateParkLayout.FitsSupportCell(origin, offset, 0, 0), "support cell: X contact tolerance includes its boundary.");
+            Require(SkateParkLayout.FitsSupportCell(origin, 0, offset, 0), "support cell: Z contact tolerance includes its boundary.");
+        }
+        foreach (double offset in new[] { -0.020001, 0.020001, -3d, 3 })
+        {
+            Require(!SkateParkLayout.FitsSupportCell(origin, offset, 0, 0), "support cell: shifted X cannot borrow another cell's foundation.");
+            Require(!SkateParkLayout.FitsSupportCell(origin, 0, offset, 0), "support cell: shifted Z cannot borrow another cell's foundation.");
+        }
+        foreach (double yaw in new[] { -0.0099, 0d, 0.0099, 89.9901, 90, 90.0099, 359.9901, 360.0099 })
+            Require(SkateParkLayout.FitsSupportCell(origin, 0, 0, yaw), "support cell: square grid yaw accepts native contact tolerance.");
+        foreach (double yaw in new[] { -0.0101, 0.0101, 45, 89.9899, 90.0101, 359.9899, 360.0101 })
+            Require(!SkateParkLayout.FitsSupportCell(origin, 0, 0, yaw), "support cell: incompatible foundation yaw is refused.");
+        var rotated = new SkateParkTransform { X = 17.375, Z = -8.0625, Yaw = 37.25 };
+        Require(SkateParkLayout.FitsSupportCell(rotated, rotated.X, rotated.Z, 127.25),
+            "support cell: an arbitrary world grid keeps square rotational symmetry.");
+        Require(!SkateParkLayout.FitsSupportCell(rotated, rotated.X, rotated.Z, 90),
+            "support cell: world-cardinal foundation cannot stand in for a rotated foundation grid.");
+    }
+
+    private static void SupportGridInvalidInputs()
+    {
+        foreach (SkateParkKind kind in new[] { (SkateParkKind)(-1), (SkateParkKind)99, SkateParkKind.HalfWallKicker })
+        {
+            Require(SkateParkLayout.SupportCellCount(kind) == 0, "unsupported kinds have no generic foundation cells.");
+            SupportCellRefused(kind, 0, "unsupported generic support-cell kind.");
+            SupportGridAnchorRefused(kind, 0, 0, 0, "unsupported generic grid-anchor kind.");
+            SupportCellPoseRefused(kind, 0, 0, 0, 0, "unsupported generic cell-pose kind.");
+        }
+        foreach (double bad in new[] { double.NaN, double.NegativeInfinity, double.PositiveInfinity, -100001d, 100001 })
+        {
+            SupportGridAnchorRefused(SkateParkKind.MegaHalfpipe, bad, 0, 0, "invalid target grid X.");
+            SupportGridAnchorRefused(SkateParkKind.MegaHalfpipe, 0, bad, 0, "invalid target grid Z.");
+            SupportCellPoseRefused(SkateParkKind.LargeQuarterPipe, 0, bad, 0, 0, "invalid support anchor X.");
+            SupportCellPoseRefused(SkateParkKind.LargeQuarterPipe, 0, 0, bad, 0, "invalid support anchor Z.");
+            Require(!SkateParkLayout.FitsSupportCell(new SkateParkTransform { X = bad }, 0, 0, 0), "invalid cell X cannot fit.");
+            Require(!SkateParkLayout.FitsSupportCell(new SkateParkTransform { Z = bad }, 0, 0, 0), "invalid cell Z cannot fit.");
+            Require(!SkateParkLayout.FitsSupportCell(new SkateParkTransform(), bad, 0, 0), "invalid foundation X cannot fit.");
+            Require(!SkateParkLayout.FitsSupportCell(new SkateParkTransform(), 0, bad, 0), "invalid foundation Z cannot fit.");
+        }
+        foreach (double bad in new[] { double.NaN, double.NegativeInfinity, double.PositiveInfinity, -1000001d, 1000001 })
+        {
+            SupportGridAnchorRefused(SkateParkKind.MegaHalfpipe, 0, 0, bad, "invalid target grid yaw.");
+            SupportCellPoseRefused(SkateParkKind.LargeQuarterPipe, 0, 0, 0, bad, "invalid support anchor yaw.");
+            Require(!SkateParkLayout.FitsSupportCell(new SkateParkTransform { Yaw = bad }, 0, 0, 0), "invalid cell yaw cannot fit.");
+            Require(!SkateParkLayout.FitsSupportCell(new SkateParkTransform(), 0, 0, bad), "invalid foundation yaw cannot fit.");
+        }
+        SupportGridAnchorRefused(SkateParkKind.MegaHalfpipe, 100000, 0, 90, "MEGA phase cannot push X beyond world bounds.");
+        SupportGridAnchorRefused(SkateParkKind.MegaHalfpipe, 0, 100000, 0, "MEGA phase cannot push Z beyond world bounds.");
+        SupportCellPoseRefused(SkateParkKind.LargeQuarterPipe, 1, 100000, 0, 0, "derived support cell X exceeds world bounds.");
+        SupportCellPoseRefused(SkateParkKind.LargeQuarterPipe, 2, 0, 100000, 0, "derived support cell Z exceeds world bounds.");
+    }
+
+    private static void GhostAnchors()
+    {
+        var floor = new SkateParkBox { Y = -0.1, SizeX = 3.0000005, SizeY = 0.2, SizeZ = 3.0000005 };
+        SkateParkTransform frame, anchor;
+        double top;
+        string failure;
+        Require(SkateParkLayout.TryGhostFrame(SkateParkKind.MiniQuarterPipe, false, 10, 20, 0, 10, 20,
+            45, true, 90, out frame) && frame.X == 10 && frame.Z == 20 && frame.Yaw == 90,
+            "ghost: positive half-step uses server midpoint-away rounding.");
+        Require(SkateParkLayout.TryGhostFrame(SkateParkKind.MiniQuarterPipe, false, 10, 20, 0, 10, 20,
+            -45, true, 90, out frame) && frame.Yaw == 270, "ghost: negative half-step rounds away.");
+        Require(SkateParkLayout.TryGhostFrame(SkateParkKind.LargeQuarterPipe, true, 10, 20, 90, 10, 20,
+            0, true, 90, out frame) && frame.X == 10 && frame.Z == 17 && frame.Yaw == 90,
+            "ghost: centre hit chooses the rotated right-hand adjacent cell.");
+        Require(SkateParkLayout.TryGhostFrame(SkateParkKind.MegaHalfpipe, false, 10, 20, 90, 10, 20,
+            0, true, 90, out frame) && frame.X == 14.5 && Math.Abs(frame.Z - 20) < Tolerance,
+            "ghost: MEGA support-cell phase matches the server.");
+        foreach (SkateParkKind kind in Enum.GetValues(typeof(SkateParkKind)))
+        {
+            if (kind == SkateParkKind.HalfWallKicker) continue;
+            foreach (double yaw in new[] { 0.0, 90, 37.25 })
+            {
+                var hint = new SkateParkTransform { X = 100, Y = 10, Z = -100, Yaw = yaw };
+                int calls = 0, cells = 0;
+                SkateParkSupportReader dry = delegate(SkateParkSupportProbe probe, out SkateParkSupportHit hit, out string why)
+                {
+                    calls++; if (probe.RequireCell) cells++;
+                    Require(probe.Sample >= 0 && probe.Sample < 9 && probe.Point.Y == 12,
+                        "ghost: exact nine-point, two-metre search-origin contract.");
+                    hit = new SkateParkSupportHit { Height = 10 }; why = null; return true;
+                };
+                Require(SkateParkLayout.TryGhostAnchor(kind, floor, hint, 10, dry, out anchor, out top, out failure) &&
+                    failure == null && top == 10 && anchor.X == 100 && anchor.Z == -100 && anchor.Yaw == yaw,
+                    "ghost: complete level support resolves atomically for every ground kind and yaw.");
+                Require(cells == 9 * SkateParkLayout.SupportCellCount(kind) && calls > cells,
+                    "ghost: all reserved cells and native lowest contacts are queried.");
+                if (kind == SkateParkKind.MiniQuarterPipe) Near(anchor.Y, 10.2, "ghost: measured native underside seats exactly.");
+                for (int bad = 1; bad <= calls; bad++)
+                {
+                    int at = 0;
+                    SkateParkSupportReader missing = delegate(SkateParkSupportProbe probe, out SkateParkSupportHit hit, out string why)
+                    { at++; hit = new SkateParkSupportHit { Height = 10 }; why = "unreadable first hit"; return at != bad; };
+                    Require(!SkateParkLayout.TryGhostAnchor(kind, floor, hint, 10, missing, out anchor, out top, out failure) &&
+                        anchor.X == 0 && anchor.Y == 0 && anchor.Z == 0 && top == 0 && failure == "unreadable first hit" && at == bad,
+                        "ghost: every missing cell/contact refuses immediately without exposing a partial anchor.");
+                }
+            }
+        }
+        var origin = new SkateParkTransform();
+        SkateParkSupportReader mixed = delegate(SkateParkSupportProbe probe, out SkateParkSupportHit hit, out string why)
+        { hit = new SkateParkSupportHit { Height = 10, FoundationId = probe.Sample == 8 ? 2UL : 1UL }; why = null; return true; };
+        Require(!SkateParkLayout.TryGhostAnchor(SkateParkKind.MiniQuarterPipe, floor, origin, null, mixed,
+            out anchor, out top, out failure) && failure.Contains("single foundation"), "ghost: a split cell cannot borrow two foundations.");
+        foreach (double height in new[] { double.NaN, double.PositiveInfinity, 10.020001, 9.979999 })
+        {
+            SkateParkSupportReader uneven = delegate(SkateParkSupportProbe probe, out SkateParkSupportHit hit, out string why)
+            { hit = new SkateParkSupportHit { Height = height }; why = null; return true; };
+            Require(!SkateParkLayout.TryGhostAnchor(SkateParkKind.MiniQuarterPipe, floor, origin, 10, uneven,
+                out anchor, out top, out failure) && top == 0 && failure != null, "ghost: unknown or mismatched selected support never succeeds.");
+        }
+        SkateParkSupportReader outside = delegate(SkateParkSupportProbe probe, out SkateParkSupportHit hit, out string why)
+        { hit = new SkateParkSupportHit { Height = 10, FoundationId = probe.RequireCell ? 1UL : 2UL }; why = null; return true; };
+        Require(!SkateParkLayout.TryGhostAnchor(SkateParkKind.MiniQuarterPipe, floor, origin, 10, outside,
+            out anchor, out top, out failure) && failure.Contains("outside"), "ghost: lowest contacts cannot borrow an uncaptured foundation.");
+        SkateParkSupportReader foundation = delegate(SkateParkSupportProbe probe, out SkateParkSupportHit hit, out string why)
+        { hit = new SkateParkSupportHit { Height = 10, FoundationId = 1 }; why = null; return true; };
+        Require(SkateParkLayout.TryGhostAnchor(SkateParkKind.MiniQuarterPipe, floor, origin, 10, foundation,
+            out anchor, out top, out failure) && top == 10, "ghost: one completely observed foundation supports a mini.");
+        SkateParkSupportReader span = delegate(SkateParkSupportProbe probe, out SkateParkSupportHit hit, out string why)
+        { hit = new SkateParkSupportHit { Height = probe.Sample == 0 ? 9.985 : 10.015 }; why = null; return true; };
+        Require(!SkateParkLayout.TryGhostAnchor(SkateParkKind.MiniQuarterPipe, floor, origin, 10, span,
+            out anchor, out top, out failure), "ghost: individually close heights cannot hide an excessive total plane span.");
+        foreach (double bad in new[] { double.NaN, double.PositiveInfinity, -100001, 100001 })
+        {
+            var invalid = new SkateParkTransform { X = bad };
+            Require(!SkateParkLayout.TryGhostAnchor(SkateParkKind.MiniQuarterPipe, floor, invalid, null, foundation,
+                out anchor, out top, out failure) && anchor.X == 0 && top == 0 && failure != null,
+                "ghost: invalid anchor hints refuse atomically.");
+        }
+        foreach (double bad in new[] { double.NaN, double.PositiveInfinity, -1000001, 1000001 })
+            Require(!SkateParkLayout.TryGhostFrame(SkateParkKind.MiniQuarterPipe, false, 0, 0, 0, 0, 0,
+                bad, true, 90, out frame), "ghost: invalid rotation input refuses.");
+        SkateParkSupportReader boundary = delegate(SkateParkSupportProbe probe, out SkateParkSupportHit hit, out string why)
+        { hit = new SkateParkSupportHit { Height = probe.RequireCell ? 10 : 9.998 }; why = null; return true; };
+        Require(SkateParkLayout.TryGhostAnchor(SkateParkKind.MiniQuarterPipe, floor, origin, 10.019, boundary,
+            out anchor, out top, out failure) && top == 10, "ghost: selected cell/final plane checks retain their original boundary semantics.");
+        Require(!SkateParkLayout.TryGhostAnchor(SkateParkKind.MiniQuarterPipe, new SkateParkBox(), origin, null, foundation,
+            out anchor, out top, out failure), "ghost: guessed or missing native bounds never succeed.");
+        Require(!SkateParkLayout.TryGhostAnchor(SkateParkKind.MiniQuarterPipe, floor, origin, null, null,
+            out anchor, out top, out failure), "ghost: missing world observations are not a valid placement.");
+        Require(!SkateParkLayout.TryGhostAnchor(SkateParkKind.HalfWallKicker, floor, origin, null, outside,
+            out anchor, out top, out failure), "ghost: half-wall placement keeps its separate join contract.");
+    }
+
+    private static void SupportCellRefused(SkateParkKind kind, int index, string message)
+    {
+        int right = 91, forward = 92;
+        Require(!SkateParkLayout.TrySupportCell(kind, index, out right, out forward), message);
+        Require(right == 0 && forward == 0, "support cell: refusal resets both cell coordinates atomically.");
+    }
+
+    private static void SupportGridAnchorRefused(SkateParkKind kind, double gx, double gz, double yaw, string message)
+    {
+        double x = 91, z = 92;
+        Require(!SkateParkLayout.TrySupportGridAnchor(kind, gx, gz, yaw, out x, out z), message);
+        Require(x == 0 && z == 0, "support grid anchor: refusal resets both coordinates atomically.");
+    }
+
+    private static void SupportCellPoseRefused(SkateParkKind kind, int index, double x, double z, double yaw, string message)
+    {
+        var cell = new SkateParkTransform { X = 91, Y = 92, Z = 93, Yaw = 94, Pitch = 95 };
+        Require(!SkateParkLayout.TrySupportCellPose(kind, index, x, z, yaw, out cell), message);
+        Require(EmptyTransform(cell), "support cell pose: refusal resets the complete transform atomically.");
     }
 
     private static void SupportSamples()

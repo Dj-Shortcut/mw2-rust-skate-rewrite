@@ -556,6 +556,22 @@ namespace Shortcut.RustMod
         public double X, Y, Z, SizeX, SizeY, SizeZ;
     }
 
+    public struct SkateParkSupportProbe
+    {
+        public SkateParkTransform Point, Cell;
+        public int Right, Forward, Sample;
+        public bool RequireCell;
+    }
+
+    public struct SkateParkSupportHit
+    {
+        public double Height;
+        public ulong FoundationId;
+    }
+
+    public delegate bool SkateParkSupportReader(SkateParkSupportProbe probe,
+        out SkateParkSupportHit hit, out string failure);
+
     public static class SkateParkLayout
     {
         public const string FloorPrefab = "assets/prefabs/building core/floor/floor.prefab";
@@ -792,7 +808,15 @@ namespace Shortcut.RustMod
         public static bool OverlapsBox(double x, double z, double yaw, double halfRight, double halfForward,
             double otherX, double otherZ, double otherYaw, double otherHalfRight, double otherHalfForward)
         {
-            if (!Coordinate(x) || !Coordinate(z) || !Angle(yaw) || !Coordinate(otherX) || !Coordinate(otherZ) ||
+            return OverlapsBoxBeyondContact(x, z, yaw, halfRight, halfForward,
+                otherX, otherZ, otherYaw, otherHalfRight, otherHalfForward, 0);
+        }
+
+        public static bool OverlapsBoxBeyondContact(double x, double z, double yaw, double halfRight, double halfForward,
+            double otherX, double otherZ, double otherYaw, double otherHalfRight, double otherHalfForward, double contactTolerance)
+        {
+            if (!Finite(contactTolerance) || contactTolerance < 0 || contactTolerance > NativeBoundsTolerance ||
+                !Coordinate(x) || !Coordinate(z) || !Angle(yaw) || !Coordinate(otherX) || !Coordinate(otherZ) ||
                 !Angle(otherYaw) || !Finite(halfRight) || !Finite(halfForward) || !Finite(otherHalfRight) ||
                 !Finite(otherHalfForward) || halfRight <= 0 || halfForward <= 0 || otherHalfRight <= 0 || otherHalfForward <= 0)
                 return true;
@@ -800,10 +824,10 @@ namespace Shortcut.RustMod
             double ax = Math.Cos(a), az = -Math.Sin(a), bx = Math.Cos(b), bz = -Math.Sin(b);
             double dx = otherX - x, dz = otherZ - z;
             double c = Math.Abs(ax * bx + az * bz), s = Math.Abs(ax * -bz + az * bx);
-            return Math.Abs(dx * ax + dz * az) < halfRight + otherHalfRight * c + otherHalfForward * s - 1e-7 &&
-                Math.Abs(dx * -az + dz * ax) < halfForward + otherHalfRight * s + otherHalfForward * c - 1e-7 &&
-                Math.Abs(dx * bx + dz * bz) < otherHalfRight + halfRight * c + halfForward * s - 1e-7 &&
-                Math.Abs(dx * -bz + dz * bx) < otherHalfForward + halfRight * s + halfForward * c - 1e-7;
+            return Math.Abs(dx * ax + dz * az) < halfRight + otherHalfRight * c + otherHalfForward * s - 1e-7 - contactTolerance &&
+                Math.Abs(dx * -az + dz * ax) < halfForward + otherHalfRight * s + otherHalfForward * c - 1e-7 - contactTolerance &&
+                Math.Abs(dx * bx + dz * bz) < otherHalfRight + halfRight * c + halfForward * s - 1e-7 - contactTolerance &&
+                Math.Abs(dx * -bz + dz * bx) < otherHalfForward + halfRight * s + halfForward * c - 1e-7 - contactTolerance;
         }
         private static void HalfpipePart(int index, out SkateParkPart part)
         {
@@ -935,6 +959,71 @@ namespace Shortcut.RustMod
             return true;
         }
 
+        public static int SupportCellCount(SkateParkKind kind)
+        {
+            switch (kind)
+            {
+                case SkateParkKind.Bank: case SkateParkKind.Kicker: case SkateParkKind.LedgeLow:
+                case SkateParkKind.LedgeHigh: case SkateParkKind.MiniQuarterPipe: return 1;
+                case SkateParkKind.QuarterPipe: return 2;
+                case SkateParkKind.LongLedge: case SkateParkKind.Funbox: case SkateParkKind.LargeQuarterPipe: return 3;
+                case SkateParkKind.Halfpipe: return 32;
+                case SkateParkKind.MegaHalfpipe: return 84;
+                default: return 0;
+            }
+        }
+
+        public static bool TrySupportCell(SkateParkKind kind, int index, out int right, out int forward)
+        {
+            right = forward = 0;
+            if (index < 0 || index >= SupportCellCount(kind)) return false;
+            switch (kind)
+            {
+                case SkateParkKind.QuarterPipe: forward = index; break;
+                case SkateParkKind.LongLedge: right = index - 1; break;
+                case SkateParkKind.Funbox: forward = index - 1; break;
+                case SkateParkKind.LargeQuarterPipe: right = index == 1 ? 1 : 0; forward = index == 2 ? 1 : 0; break;
+                case SkateParkKind.Halfpipe: right = index % 4 - 1; forward = index / 4 - 3; break;
+                case SkateParkKind.MegaHalfpipe: right = index % 6 - 1; forward = index / 6 - 5; break;
+            }
+            return true;
+        }
+
+        public static bool TrySupportGridAnchor(SkateParkKind kind, double gridX, double gridZ, double yaw,
+            out double x, out double z)
+        {
+            x = z = 0;
+            if (SupportCellCount(kind) == 0 || !Coordinate(gridX) || !Coordinate(gridZ) || !Angle(yaw)) return false;
+            double phase = kind == SkateParkKind.MegaHalfpipe ? -4.5 : 0;
+            double px = gridX - phase * Math.Sin(yaw * Degrees), pz = gridZ - phase * Math.Cos(yaw * Degrees);
+            if (!Coordinate(px) || !Coordinate(pz)) return false;
+            x = px; z = pz;
+            return true;
+        }
+
+        public static bool TrySupportCellPose(SkateParkKind kind, int index, double x, double z, double yaw,
+            out SkateParkTransform cell)
+        {
+            cell = new SkateParkTransform();
+            int right, forward;
+            if (!TrySupportCell(kind, index, out right, out forward) || !Coordinate(x) || !Coordinate(z) || !Angle(yaw)) return false;
+            double r = right * CellSize, f = forward * CellSize + (kind == SkateParkKind.MegaHalfpipe ? -4.5 : 0);
+            double px = x + r * Math.Cos(yaw * Degrees) + f * Math.Sin(yaw * Degrees);
+            double pz = z - r * Math.Sin(yaw * Degrees) + f * Math.Cos(yaw * Degrees);
+            if (!Coordinate(px) || !Coordinate(pz)) return false;
+            cell = new SkateParkTransform { X = px, Z = pz, Yaw = Normalize(yaw) };
+            return true;
+        }
+
+        public static bool FitsSupportCell(SkateParkTransform cell, double foundationX, double foundationZ, double foundationYaw)
+        {
+            double snapped;
+            if (!Coordinate(cell.X) || !Coordinate(cell.Z) || !Angle(cell.Yaw) || !Coordinate(foundationX) ||
+                !Coordinate(foundationZ) || !TrySnapYaw(foundationYaw, cell.Yaw, 90, out snapped)) return false;
+            return Math.Abs(cell.X - foundationX) <= SupportTolerance && Math.Abs(cell.Z - foundationZ) <= SupportTolerance &&
+                Math.Abs(Normalize(foundationYaw - snapped + 180) - 180) <= 0.01;
+        }
+
         public static bool TrySupportPlane(IReadOnlyList<double> heights, out double top)
         {
             top = 0;
@@ -949,6 +1038,107 @@ namespace Shortcut.RustMod
             top = high;
             return true;
         }
+
+        public static bool TryGhostFrame(SkateParkKind kind, bool adjacent, double hostX, double hostZ,
+            double hostYaw, double hitX, double hitZ, double requestedYaw, bool relativeYaw, double step,
+            out SkateParkTransform frame)
+        {
+            frame = new SkateParkTransform();
+            double x = hostX, z = hostZ, yaw;
+            if (adjacent && !TryAdjacentCell(hostX, hostZ, hostYaw, hitX, hitZ, out x, out z)) return false;
+            if (!TrySnapYaw(relativeYaw ? hostYaw + requestedYaw : requestedYaw, hostYaw, step, out yaw) ||
+                !TrySupportGridAnchor(kind, x, z, yaw, out x, out z)) return false;
+            frame = new SkateParkTransform { X = x, Z = z, Yaw = yaw };
+            return true;
+        }
+
+        public static bool TryGhostAnchor(SkateParkKind kind, SkateParkBox floor, SkateParkTransform hint,
+            double? selectedTop, SkateParkSupportReader read, out SkateParkTransform anchor,
+            out double supportTop, out string failure)
+        {
+            anchor = new SkateParkTransform(); supportTop = 0;
+            failure = "No valid support: measured floor bounds and a complete support query are required.";
+            if (!Box(floor) || SupportCellCount(kind) == 0 || !Coordinate(hint.X) || !Coordinate(hint.Y) ||
+                !Coordinate(hint.Z) || !Angle(hint.Yaw) || !Coordinate(hint.Y + 2) || read == null ||
+                (selectedTop.HasValue && !Coordinate(selectedTop.Value))) return false;
+            var foundations = new List<ulong>();
+            double low = double.PositiveInfinity, high = double.NegativeInfinity;
+            for (int i = 0; i < SupportCellCount(kind); i++)
+            {
+                int right, forward;
+                SkateParkTransform cell;
+                if (!TrySupportCell(kind, i, out right, out forward) ||
+                    !TrySupportCellPose(kind, i, hint.X, hint.Z, hint.Yaw, out cell))
+                { failure = "A required support cell is outside world bounds."; return false; }
+                ulong first = 0;
+                for (int sample = 0; sample < 9; sample++)
+                {
+                    double r = (sample % 3 - 1) * 1.49, f = (sample / 3 - 1) * 1.49;
+                    double angle = cell.Yaw * Degrees;
+                    var probe = new SkateParkSupportProbe { RequireCell = true, Cell = cell,
+                        Right = right, Forward = forward, Sample = sample,
+                        Point = new SkateParkTransform { X = cell.X + r * Math.Cos(angle) + f * Math.Sin(angle),
+                            Y = hint.Y + 2, Z = cell.Z - r * Math.Sin(angle) + f * Math.Cos(angle) } };
+                    SkateParkSupportHit hit;
+                    if (!ReadGhostSupport(probe, selectedTop, read, ref low, ref high, out hit, out failure)) return false;
+                    if (sample != 0 && first != hit.FoundationId)
+                    { failure = SupportLabel(probe) + ": the cell must have its own single foundation or continuous dry terrain."; return false; }
+                    first = hit.FoundationId;
+                    if (first != 0 && !foundations.Contains(first)) foundations.Add(first);
+                }
+            }
+            for (int i = 0; i < PartCount(kind); i++)
+            for (int sample = 0; sample < 9; sample++)
+            {
+                SkateParkTransform point, pose;
+                if (!TrySupportSample(kind, i, sample, floor, hint.X, hint.Z, hint.Yaw, out point)) continue;
+                if (!TryTransform(kind, i, hint.X, 0, hint.Z, hint.Yaw, out pose))
+                { failure = "A native contact is outside world bounds."; return false; }
+                double angle = pose.Yaw * Degrees, frame = hint.Yaw * Degrees;
+                double lateral = (point.X - pose.X) * Math.Cos(angle) - (point.Z - pose.Z) * Math.Sin(angle);
+                double longitudinal = (point.X - pose.X) * Math.Sin(angle) + (point.Z - pose.Z) * Math.Cos(angle);
+                double insetRight = Math.Sign(lateral) * Math.Min(Math.Abs(lateral), 0.01);
+                double insetForward = Math.Abs(pose.Pitch) < 0.001 ? Math.Sign(longitudinal) * Math.Min(Math.Abs(longitudinal), 0.01) : 0;
+                var probe = new SkateParkSupportProbe { Sample = sample,
+                    Right = (int)Math.Floor(((point.X - hint.X) * Math.Cos(frame) -
+                        (point.Z - hint.Z) * Math.Sin(frame) + 1.5) / 3),
+                    Forward = (int)Math.Floor(((point.X - hint.X) * Math.Sin(frame) +
+                        (point.Z - hint.Z) * Math.Cos(frame) + (kind == SkateParkKind.MegaHalfpipe ? 4.5 : 0) + 1.5) / 3),
+                    Point = new SkateParkTransform { X = point.X - insetRight * Math.Cos(angle) - insetForward * Math.Sin(angle),
+                        Y = hint.Y + 2, Z = point.Z + insetRight * Math.Sin(angle) - insetForward * Math.Cos(angle) } };
+                SkateParkSupportHit hit;
+                if (!ReadGhostSupport(probe, selectedTop, read, ref low, ref high, out hit, out failure)) return false;
+                if (hit.FoundationId != 0 && !foundations.Contains(hit.FoundationId))
+                { failure = SupportLabel(probe) + ": native contact is outside its verified foundation cells."; return false; }
+            }
+            double y;
+            if ((selectedTop.HasValue && Math.Abs(high - selectedTop.Value) > SupportTolerance) ||
+                !TrySupportedAnchor(kind, high, floor.Y, floor.Z, floor.SizeY, floor.SizeZ, out y))
+            { failure = "The supported anchor is outside world bounds."; return false; }
+            anchor = new SkateParkTransform { X = hint.X, Y = y, Z = hint.Z, Yaw = Normalize(hint.Yaw) };
+            supportTop = high; failure = null;
+            return true;
+        }
+
+        private static bool ReadGhostSupport(SkateParkSupportProbe probe, double? selectedTop,
+            SkateParkSupportReader read, ref double low, ref double high, out SkateParkSupportHit hit, out string failure)
+        {
+            hit = new SkateParkSupportHit();
+            failure = SupportLabel(probe) + ": missing, blocked or unknown support.";
+            if (!Coordinate(probe.Point.X) || !Coordinate(probe.Point.Y) || !Coordinate(probe.Point.Z)) return false;
+            string reason;
+            if (!read(probe, out hit, out reason))
+            { if (!string.IsNullOrEmpty(reason)) failure = reason; return false; }
+            if (!Coordinate(hit.Height)) return false;
+            low = Math.Min(low, hit.Height); high = Math.Max(high, hit.Height);
+            if (high - low > SupportTolerance || (probe.RequireCell && selectedTop.HasValue && Math.Abs(hit.Height - selectedTop.Value) > SupportTolerance))
+            { failure = SupportLabel(probe) + ": uneven support; all cells must share the selected support height within 0.02 m."; return false; }
+            failure = null;
+            return true;
+        }
+
+        public static string SupportLabel(SkateParkSupportProbe probe)
+        { return "Park cell (" + probe.Right + "," + probe.Forward + ")"; }
 
         public static bool TrySupportSample(SkateParkKind kind, int index, int sample, SkateParkBox floor,
             double x, double z, double yaw, out SkateParkTransform point)
@@ -1356,7 +1546,7 @@ namespace Shortcut.RustMod
 
 namespace Oxide.Plugins
 {
-    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.20")]
+    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.22")]
     [Description("Player-scoped skateboard movement bounds and saved park assemblies.")]
     public sealed class ShortcutSkate : RustPlugin
     {
@@ -1651,6 +1841,8 @@ namespace Oxide.Plugins
             public BuildingGrade.Enum Grade;
             public Construction Construction;
             public Vector3 Point;
+            public Collider Collider;
+            public string Cell;
         }
 
         private sealed class ParkNativePart
@@ -1682,6 +1874,7 @@ namespace Oxide.Plugins
             public ParkSelection Selection;
             public List<ParkSupport> Supports;
             public double SupportTop;
+            public string SupportFailure;
             public BuildingBlock SnapBlock;
             public ulong SnapId;
             public ParkAnchorSnapshot SnapSnapshot;
@@ -3682,7 +3875,6 @@ namespace Oxide.Plugins
                     return false;
             }
             if (request.SnapSnapshot != null && !ParkSnapCurrent(request)) return false;
-            if (request.Supports != null && !ParkSupportsCurrent(request)) return false;
             if (request.BuildItem && request.ItemSpent)
                 return SameParkPaymentItem(request) && request.PlannerItem.amount == 0;
             if (request.Planner == null || request.Planner.IsDestroyed ||
@@ -3700,6 +3892,11 @@ namespace Oxide.Plugins
                 return CurrentParkSelection(request.Player, request.Selection) &&
                     ParkFoundationMatches(request.Foundation, request.FoundationId, request.Snapshot);
             return ParkPlannerItem(request.Player, request.Belt, request.PlannerItem, request.Planner);
+        }
+
+        private bool CurrentParkPhase(ParkPlacementRequest request)
+        {
+            return CurrentParkRequest(request) && (request.Supports == null || ParkSupportsCurrent(request));
         }
 
         [ConsoleCommand("skate.placeitem")]
@@ -4164,9 +4361,13 @@ namespace Oxide.Plugins
                 if (!Coordinate(eye) || !Coordinate(pending.Position) ||
                     Vector3.Distance(eye, pending.Position) > MaximumParkPlacementDistance)
                 { failure = "The resolved native park frame is outside the 25-metre placement range; the build item was retained."; return; }
+                double x, z;
+                if (!SkateParkLayout.TrySupportGridAnchor(request.ItemKind, pending.Position.x, pending.Position.z,
+                    pending.Rotation.eulerAngles.y, out x, out z))
+                { failure = "The native foundation grid anchor is outside world bounds."; return; }
                 var group = new ParkGroup { Id = Guid.NewGuid().ToString("N"), Owner = request.Owner,
-                    Kind = SkateParkLayout.Name(request.ItemKind), AnchorX = pending.Position.x, AnchorY = pending.Position.y,
-                    AnchorZ = pending.Position.z, AnchorYaw = pending.Rotation.eulerAngles.y,
+                    Kind = SkateParkLayout.Name(request.ItemKind), AnchorX = x, AnchorY = pending.Position.y,
+                    AnchorZ = z, AnchorYaw = pending.Rotation.eulerAngles.y,
                     Members = new List<ParkMember>(), BuildItemState = SkateParkBuildItemState.Preparing };
                 if (!ResolveParkSupport(request, request.ItemKind, definitions, group, out failure)) return;
                 if (!BuildParkAssembly(request, request.ItemKind, definitions, group, out failure)) return;
@@ -4409,12 +4610,25 @@ namespace Oxide.Plugins
             return construction == null ? double.NaN : construction.rotationAmount.y;
         }
 
+        private static bool ParkSupportFoundationCurrent(ParkSupport support)
+        {
+            BuildingBlock block = support.Block;
+            return block != null && ReferenceEquals(FindParkBlock(support.Id), block) &&
+                ParkFoundationMatches(block, support.Id, support.Snapshot) && block.grade == support.Grade &&
+                ReferenceEquals(block.blockDefinition, support.Construction) && support.Collider != null &&
+                support.Collider.enabled && ReferenceEquals(support.Collider.ToBaseEntity(), block);
+        }
+
         private static bool ParkSupportBlock(ParkPlacementRequest request, BuildingBlock block)
         {
-            return request != null && request.Supports != null && request.Supports.Any(s =>
-                ReferenceEquals(s.Block, block) && block != null && ReferenceEquals(FindParkBlock(s.Id), block) &&
-                ParkFoundationMatches(block, s.Id, s.Snapshot) &&
-                block.grade == s.Grade && ReferenceEquals(block.blockDefinition, s.Construction));
+            return request != null && request.Supports != null && block != null && request.Supports.Any(s =>
+                ReferenceEquals(s.Block, block) && ParkSupportFoundationCurrent(s));
+        }
+
+        private static bool ParkSupportCollider(ParkPlacementRequest request, Collider collider)
+        {
+            return request != null && collider != null && ParkSupportBlock(request, collider.ToBaseEntity() as BuildingBlock) &&
+                collider.bounds.max.y <= request.SupportTop + SkateParkLayout.SupportTolerance;
         }
 
         private static bool ParkSupportHeight(double height, double plane)
@@ -4425,23 +4639,66 @@ namespace Oxide.Plugins
 
         private static bool ParkSupportsCurrent(ParkPlacementRequest request)
         {
+            request.SupportFailure = null;
+            double low = double.PositiveInfinity, high = double.NegativeInfinity;
             foreach (ParkSupport support in request.Supports)
             {
+                double height;
+                request.SupportFailure = support.Cell + ": support changed, disappeared or is uneven.";
                 if (support.Block != null)
                 {
-                    if (!ParkSupportBlock(request, support.Block) ||
-                        !ParkSupportHeight(ParkFoundationTop(support.Block, support.Construction.bounds), request.SupportTop))
-                        return false;
+                    height = ParkFoundationTop(support.Block, support.Construction.bounds);
+                    if (!ParkSupportFoundationCurrent(support) || !WallPermission(request.Player, support.Block) ||
+                        !ParkSupportHeight(height, request.SupportTop)) return false;
                 }
                 else
                 {
-                    if (!ReferenceEquals(support.Block, null) || TerrainMeta.HeightMap == null ||
-                        !ParkSupportHeight(TerrainMeta.HeightMap.GetHeight(support.Point), support.Point.y) ||
-                        !ParkSupportHeight(support.Point.y, request.SupportTop) ||
+                    height = TerrainMeta.HeightMap == null ? double.NaN : TerrainMeta.HeightMap.GetHeight(support.Point);
+                    if (!ReferenceEquals(support.Block, null) || support.Collider == null || !support.Collider.enabled ||
+                        support.Collider.gameObject.layer != LayerMask.NameToLayer("Terrain") || TerrainMeta.HeightMap == null ||
+                        !ParkSupportHeight(height, support.Point.y) || !ParkSupportHeight(height, request.SupportTop) ||
                         WaterLevel.Test(support.Point + Vector3.up * 0.1f, true, false)) return false;
                 }
+                low = Math.Min(low, height); high = Math.Max(high, height);
+                if (high - low > SkateParkLayout.SupportTolerance) return false;
             }
+            request.SupportFailure = null;
             return request.Supports.Count != 0;
+        }
+
+        private bool ReadParkSupport(ParkPlacementRequest request, Vector3 probe, int mask,
+            SkateParkTransform? cell, string label, out ParkSupport support, out double height, out string failure)
+        {
+            support = null; height = 0;
+            failure = label + ": missing, blocked or uneven support; use a level existing square foundation or dry terrain.";
+            RaycastHit hit;
+            if (!Coordinate(probe) || !Physics.Raycast(probe, Vector3.down, out hit,
+                MaximumParkPlacementDistance + 2, mask, QueryTriggerInteraction.Ignore) || hit.collider == null ||
+                !Coordinate(hit.point) || !Coordinate(hit.normal) || hit.normal.y < 0.5f) return false;
+            BaseEntity entity = hit.collider.ToBaseEntity();
+            BuildingBlock block = entity as BuildingBlock;
+            height = hit.point.y;
+            support = new ParkSupport { Point = hit.point, Collider = hit.collider, Cell = label };
+            if (block != null)
+            {
+                if (!HorizontalParkFoundation(block) || !NativeParkConstruction(block.blockDefinition) ||
+                    !ReferenceEquals(FindParkBlock(ParkId(block)), block) || parkMembers.ContainsKey(ParkId(block)) ||
+                    !WallPermission(request.Player, block) || hit.normal.y < 0.98f) return false;
+                Bounds bounds = block.blockDefinition.bounds;
+                if (cell.HasValue && (!SkateParkLayout.FitsSupportCell(cell.Value, block.transform.position.x,
+                    block.transform.position.z, block.transform.rotation.eulerAngles.y) || bounds.size.x < 2.9f ||
+                    bounds.size.x > 3.1f || bounds.size.z < 2.9f || bounds.size.z > 3.1f))
+                { failure = label + ": foundation is off the selected 3 m grid or rotation."; return false; }
+                height = ParkFoundationTop(block, bounds);
+                if (!ParkSupportHeight(height, hit.point.y)) return false;
+                support.Block = block; support.Id = ParkId(block); support.Snapshot = CaptureParkAnchor(block);
+                support.Grade = block.grade; support.Construction = block.blockDefinition;
+            }
+            else if (entity != null || hit.collider.gameObject.layer != LayerMask.NameToLayer("Terrain") ||
+                TerrainMeta.HeightMap == null || !ParkSupportHeight(TerrainMeta.HeightMap.GetHeight(hit.point), height)) return false;
+            if (WaterLevel.Test(hit.point + Vector3.up * 0.1f, true, false)) return false;
+            failure = null;
+            return true;
         }
 
         private bool ResolveParkSupport(ParkPlacementRequest request, SkateParkKind kind, ParkNativePart[] definitions,
@@ -4451,61 +4708,33 @@ namespace Oxide.Plugins
             request.Supports = null;
             Bounds floor = definitions[0].Construction.bounds;
             var supports = new List<ParkSupport>();
-            var heights = new List<double>();
-            double top;
             int mask = LayerMask.GetMask("Terrain", "World", "Construction", "Deployed");
             if (mask == 0) return false;
-            for (int i = 0; i < SkateParkLayout.PartCount(kind); i++)
-            for (int sample = 0; sample < 9; sample++)
+            SkateParkSupportReader read = delegate(SkateParkSupportProbe probe, out SkateParkSupportHit hit, out string reason)
             {
-                SkateParkTransform point;
-                if (!SkateParkLayout.TrySupportSample(kind, i, sample, ParkBox(floor),
-                    group.AnchorX, group.AnchorZ, group.AnchorYaw, out point)) continue;
-                SkateParkTransform pose;
-                SkateParkLayout.TryTransform(kind, i, group.AnchorX, 0, group.AnchorZ, group.AnchorYaw, out pose);
-                double angle = pose.Yaw * Math.PI / 180;
-                double lateral = (point.X - pose.X) * Math.Cos(angle) - (point.Z - pose.Z) * Math.Sin(angle);
-                double longitudinal = (point.X - pose.X) * Math.Sin(angle) + (point.Z - pose.Z) * Math.Cos(angle);
-                double insetRight = Math.Sign(lateral) * Math.Min(Math.Abs(lateral), 0.01);
-                double insetForward = Math.Abs(pose.Pitch) < 0.001 ? Math.Sign(longitudinal) * Math.Min(Math.Abs(longitudinal), 0.01) : 0;
-                Vector3 probe = new Vector3((float)(point.X - insetRight * Math.Cos(angle) - insetForward * Math.Sin(angle)),
-                    (float)group.AnchorY + 2, (float)(point.Z + insetRight * Math.Sin(angle) - insetForward * Math.Cos(angle)));
-                RaycastHit hit;
-                if (!Coordinate(probe) || !Physics.Raycast(probe, Vector3.down, out hit,
-                    MaximumParkPlacementDistance + 2, mask, QueryTriggerInteraction.Ignore) || hit.collider == null ||
-                    !Coordinate(hit.point) || !Coordinate(hit.normal) || hit.normal.y < 0.5f) return false;
-                BaseEntity entity = hit.collider.ToBaseEntity();
-                BuildingBlock block = entity as BuildingBlock;
-                double height = hit.point.y;
-                var support = new ParkSupport { Point = hit.point };
-                if (block != null)
-                {
-                    if (!HorizontalParkFoundation(block) || !NativeParkConstruction(block.blockDefinition) ||
-                        !ReferenceEquals(FindParkBlock(ParkId(block)), block) || parkMembers.ContainsKey(ParkId(block)) ||
-                        !WallPermission(request.Player, block)) return false;
-                    height = ParkFoundationTop(block, block.blockDefinition.bounds);
-                    if (double.IsNaN(height) || double.IsInfinity(height) || Math.Abs(height) > 100000 || Math.Abs(height - hit.point.y) > SkateParkLayout.SupportTolerance)
-                        return false;
-                    support.Block = block; support.Id = ParkId(block); support.Snapshot = CaptureParkAnchor(block);
-                    support.Grade = block.grade; support.Construction = block.blockDefinition;
-                }
-                else if (entity != null || hit.collider.gameObject.layer != LayerMask.NameToLayer("Terrain") ||
-                    TerrainMeta.HeightMap == null || Math.Abs(TerrainMeta.HeightMap.GetHeight(hit.point) - height) > SkateParkLayout.SupportTolerance)
-                    return false;
-                if (WaterLevel.Test(hit.point + Vector3.up * 0.1f, true, false)) return false;
-                heights.Add(height);
-                supports.Add(support);
-            }
-            double baseline;
-            if (!SkateParkLayout.TrySupportPlane(heights, out top) || !SkateParkLayout.TrySupportedAnchor(kind, top, floor.center.y, floor.center.z,
-                floor.size.y, floor.size.z, out baseline) || request.Player.eyes == null ||
-                Vector3.Distance(request.Player.eyes.position, new Vector3((float)group.AnchorX, (float)baseline,
-                    (float)group.AnchorZ)) > MaximumParkPlacementDistance) return false;
-            if (request.SnapSnapshot != null && !ParkSupportHeight(top, request.SnapSupportTop))
-            { failure = "No valid support at the selected socket height; the adjacent park or foundation would leave a step."; return false; }
+                hit = new SkateParkSupportHit();
+                ParkSupport support;
+                double height;
+                if (!ReadParkSupport(request, new Vector3((float)probe.Point.X, (float)probe.Point.Y, (float)probe.Point.Z),
+                    mask, probe.RequireCell ? (SkateParkTransform?)probe.Cell : null, SkateParkLayout.SupportLabel(probe),
+                    out support, out height, out reason)) return false;
+                hit = new SkateParkSupportHit { Height = height, FoundationId = support.Id };
+                if (support.Block == null || (probe.RequireCell && probe.Sample == 0)) supports.Add(support);
+                return true;
+            };
+            SkateParkTransform anchor;
+            double top;
+            if (!SkateParkLayout.TryGhostAnchor(kind, ParkBox(floor),
+                new SkateParkTransform { X = group.AnchorX, Y = group.AnchorY, Z = group.AnchorZ, Yaw = group.AnchorYaw },
+                request.SnapSnapshot != null ? (double?)request.SnapSupportTop : null, read,
+                out anchor, out top, out failure)) return false;
+            double baseline = anchor.Y;
+            if (request.Player.eyes == null || Vector3.Distance(request.Player.eyes.position,
+                new Vector3((float)anchor.X, (float)anchor.Y, (float)anchor.Z)) > MaximumParkPlacementDistance)
+            { failure = "The supported assembly anchor is outside the placement range or world bounds."; return false; }
             group.AnchorY = baseline;
             request.SupportTop = top; request.Supports = supports;
-            if (!ParkSupportsCurrent(request)) { request.Supports = null; return false; }
+            if (!ParkSupportsCurrent(request)) { failure = request.SupportFailure; request.Supports = null; return false; }
             failure = null;
             return true;
         }
@@ -4519,7 +4748,7 @@ namespace Oxide.Plugins
                     neighbour.blockDefinition.bounds.min.y, request.SupportTop) &&
                 !ParkSpacesOverlap(new ParkSpace { Position = position, Rotation = rotation, Bounds = bounds },
                     new ParkSpace { Position = neighbour.transform.position, Rotation = neighbour.transform.rotation,
-                        Bounds = neighbour.blockDefinition.bounds });
+                        Bounds = neighbour.blockDefinition.bounds }, SkateParkLayout.NativeBoundsTolerance);
         }
 
         private static bool ParkSupportedDeployVolume(ParkPlacementRequest request, Vector3 position,
@@ -4586,17 +4815,18 @@ namespace Oxide.Plugins
                     member.Prefab != StringPool.Get(SkateParkLayout.FloorPrefab) ||
                     !SkateParkLayout.TrySupportedAnchor(hostKind, 0, floor.center.y, floor.center.z,
                         floor.size.y, floor.size.z, out resting) ||
-                    Math.Abs(member.Y - existing.AnchorY + floor.min.y + resting) > 0.001 ||
-                    !SkateParkLayout.TryAdjacentCell(px, pz, frame, hit.point.x, hit.point.z, out px, out pz)) return false;
+                    Math.Abs(member.Y - existing.AnchorY + floor.min.y + resting) > 0.001) return false;
             }
             else if (!HorizontalParkFoundation(host) || !WallPermission(request.Player, host)) return false;
-            if (!SkateParkLayout.TrySnapYaw(relativeYaw ? frame + requestedYaw : requestedYaw, frame, ParkRotationStep(), out yaw))
-                return false;
+            SkateParkTransform targetFrame;
+            if (!SkateParkLayout.TryGhostFrame(request.ItemKind, existing != null, px, pz, frame,
+                hit.point.x, hit.point.z, requestedYaw, relativeYaw, ParkRotationStep(), out targetFrame)) return false;
             request.SnapBlock = host; request.SnapId = ParkId(host); request.SnapSnapshot = CaptureParkAnchor(host);
             request.SnapSupportTop = existing != null ? host.transform.position.y + host.blockDefinition.bounds.min.y :
                 ParkFoundationTop(host, host.blockDefinition.bounds);
             if (!ParkSnapCurrent(request)) return false;
-            x = px; z = pz; failure = null;
+            x = targetFrame.X; z = targetFrame.Z; yaw = targetFrame.Yaw;
+            failure = null;
             return true;
         }
 
@@ -4635,7 +4865,7 @@ namespace Oxide.Plugins
                     try
                     {
                         if (!CurrentParkRequest(request) || parkBusy || parkRefreshing || parkNativeRequests.Count != 0)
-                        { ReplyParkTarget(request, "The support, item or world changed; the build item was retained."); return; }
+                        { ReplyParkTarget(request, (request.SupportFailure ?? "The support, item or world changed.") + " The build item was retained."); return; }
                         bool permitted;
                         parkBusy = true;
                         try { permitted = ParkBuildingHook(request, construction, target); }
@@ -4967,7 +5197,7 @@ namespace Oxide.Plugins
             return spaces;
         }
 
-        private static bool ParkSpacesOverlap(ParkSpace first, ParkSpace second)
+        private static bool ParkSpacesOverlap(ParkSpace first, ParkSpace second, double contactTolerance = 0)
         {
             Vector3 a = first.Position + first.Rotation * first.Bounds.center;
             Vector3 b = second.Position + second.Rotation * second.Bounds.center;
@@ -4976,9 +5206,9 @@ namespace Oxide.Plugins
             double pitch = first.Rotation.eulerAngles.x * Math.PI / 180;
             double vertical = ae.y * Math.Abs(Math.Cos(pitch)) + ae.z * Math.Abs(Math.Sin(pitch));
             double forward = ae.z * Math.Abs(Math.Cos(pitch)) + ae.y * Math.Abs(Math.Sin(pitch));
-            return Math.Abs(a.y - b.y) < vertical + be.y - 1e-5 && SkateParkLayout.OverlapsBox(
+            return Math.Abs(a.y - b.y) < vertical + be.y - 1e-5 && SkateParkLayout.OverlapsBoxBeyondContact(
                 a.x, a.z, first.Rotation.eulerAngles.y, ae.x, forward,
-                b.x, b.z, second.Rotation.eulerAngles.y, be.x, be.z);
+                b.x, b.z, second.Rotation.eulerAngles.y, be.x, be.z, contactTolerance);
         }
 
         private bool ParkModuleSpace(ParkPlacementRequest request, SkateParkKind kind, ParkNativePart[] definitions,
@@ -4993,7 +5223,7 @@ namespace Oxide.Plugins
             {
                 if (!ParkReservedBounds(space.Position, space.Rotation, space.Bounds, out failure, group) ||
                     !request.Player.CanBuild(space.Position, space.Rotation, space.Bounds, false) ||
-                    !ParkFootprint(space.Position, space.Rotation, space.Bounds, request.Foundation ?? request.Support, created, mask, out failure, true, request.Player, request))
+                    !ParkFootprint(space.Position, space.Rotation, space.Bounds, request.Foundation, created, mask, out failure, true, request.Player, request))
                     return false;
             }
             // Other park layouts also respect saved module reservations, even where no native collider exists.
@@ -5362,7 +5592,7 @@ namespace Oxide.Plugins
             failure = "The complete park assembly needs dry, clear space and building permission.";
             int mask = LayerMask.GetMask("World", "Construction", "Deployed", "Player (Server)");
             if (mask == 0 || TerrainMeta.HeightMap == null) return false;
-            if (!ParkMegaSpace(kind, parts, player, anchor, null, out failure)) return false;
+            if (!ParkMegaSpace(kind, parts, player, anchor, null, out failure, null, request)) return false;
             foreach (ParkMember member in parts)
             {
                 Construction construction = definitions[member.Index].Construction;
@@ -5450,7 +5680,8 @@ namespace Oxide.Plugins
         }
 
         private bool ParkMegaSpace(SkateParkKind kind, ParkMember[] parts, BasePlayer player,
-            BuildingBlock anchor, List<BuildingBlock> created, out string failure, ParkGroup current = null)
+            BuildingBlock anchor, List<BuildingBlock> created, out string failure, ParkGroup current = null,
+            ParkPlacementRequest request = null)
         {
             failure = null;
             if (kind != SkateParkKind.MegaHalfpipe) return true;
@@ -5471,7 +5702,7 @@ namespace Oxide.Plugins
             {
                 if (collider == null) continue;
                 BaseEntity entity = collider.ToBaseEntity();
-                if (SkateParkLayout.BlocksMegaSpace(entity, player, anchor,
+                if (!ParkSupportCollider(request, collider) && SkateParkLayout.BlocksMegaSpace(entity, player, anchor,
                     created != null && created.Any(candidatePart => ReferenceEquals(candidatePart, entity))))
                 {
                     failure += " kind=mega-halfpipe part=assembly " + ParkColliderDescription(collider) + ".";
@@ -5569,9 +5800,13 @@ namespace Oxide.Plugins
             if (!SkateParkLayout.TrySupportedAnchor(selection.Kind, ParkFoundationTop(anchor, foundation.bounds),
                 floorBounds.center.y, floorBounds.center.z, floorBounds.size.y, floorBounds.size.z, out baseline))
             { ReportParkFailures(player, new[] { "Park foundation top or supported layout height is invalid or outside world-coordinate bounds." }); return; }
+            double x, z;
+            if (!SkateParkLayout.TrySupportGridAnchor(selection.Kind, snapshot.Position.x, snapshot.Position.z,
+                snapshot.Rotation.eulerAngles.y, out x, out z))
+            { ReportParkFailures(player, new[] { "The foundation grid anchor is outside world bounds." }); return; }
             var group = new ParkGroup { Id = Guid.NewGuid().ToString("N"), Owner = player.userID,
-                Kind = SkateParkLayout.Name(selection.Kind), AnchorX = snapshot.Position.x, AnchorY = baseline,
-                AnchorZ = snapshot.Position.z, AnchorYaw = snapshot.Rotation.eulerAngles.y, Members = new List<ParkMember>() };
+                Kind = SkateParkLayout.Name(selection.Kind), AnchorX = x, AnchorY = baseline,
+                AnchorZ = z, AnchorYaw = snapshot.Rotation.eulerAngles.y, Members = new List<ParkMember>() };
             var request = new ParkPlacementRequest { Player = player, Planner = planner, Data = parkData,
                 Foundation = anchor, FoundationId = anchorId, Snapshot = snapshot, Selection = selection,
                 Building = snapshot.Building, Owner = player.userID };
@@ -5588,7 +5823,8 @@ namespace Oxide.Plugins
                 request == null ? null : request.Planner);
             if (parkBusy || parkRefreshing || parkNativeCleaning || !CurrentParkRequest(request) ||
                 (parkNativeRequests.Count != 0 && (native == null || !ReferenceEquals(native.Placement, request) ||
-                    !native.Removed || native.Failure != null))) return false;
+                    !native.Removed || native.Failure != null)))
+            { failure = request == null ? failure : request.SupportFailure ?? failure; return false; }
             CleanupNativeParkCarriers();
             if (parkNativeCleanup.Count != 0)
             { failure = "Previous native carrier cleanup is incomplete; new park placement is disabled until removal is verified."; return false; }
@@ -5601,7 +5837,7 @@ namespace Oxide.Plugins
             }
             if (parkRollback.Count != 0)
             { failure = "Previous unsaved park cleanup is incomplete; new placement is disabled until those parts are removed."; return false; }
-            if (!CurrentParkRequest(request)) return false;
+            if (!CurrentParkPhase(request)) { failure = request.SupportFailure ?? failure; return false; }
             if (request.Data.Groups.Count >= MaximumParkGroups)
             { failure = "Park group limit reached: 256."; return false; }
             BasePlayer player = request.Player;
@@ -5630,8 +5866,8 @@ namespace Oxide.Plugins
                 if (!ParkPreflight(request, kind, anchor, definitions, parts, out failure) ||
                     !ParkModuleSpace(request, kind, definitions, group, parts, null, out failure))
                     throw new InvalidDataException(failure);
-                // Native/plugin callbacks can change the actor, planner, world or foundation.
-                if (!CurrentParkRequest(request))
+                // Full support scans belong at phase boundaries, outside per-part callback guards.
+                if (!CurrentParkPhase(request))
                     throw new InvalidDataException("The administrator, building plan, save/world or placement request changed during preflight.");
                 for (int i = 0; i < parts.Length; i++)
                 {
@@ -5677,6 +5913,8 @@ namespace Oxide.Plugins
                     block.StartBeingDemolishable();
                     RefreshParkBlock(block, ParkWorldBounds(block));
                 }
+                if (!CurrentParkPhase(request))
+                    throw new InvalidDataException(request.SupportFailure ?? "The placement support changed during creation.");
                 foreach (ParkMember part in parts)
                 {
                     if (!CurrentParkRequest(request)) throw new InvalidDataException("The placement request changed before final building-hook checks.");
@@ -5687,6 +5925,8 @@ namespace Oxide.Plugins
                     if (!ParkBuildingHook(request, construction, target))
                         throw new InvalidDataException("A building hook rejected final park registration.");
                 }
+                if (!CurrentParkPhase(request))
+                    throw new InvalidDataException(request.SupportFailure ?? "The placement support changed during building-hook checks.");
                 foreach (ParkMember part in parts)
                 {
                     BuildingBlock block = created[part.Index];
@@ -5702,10 +5942,12 @@ namespace Oxide.Plugins
                         throw new InvalidDataException("A placement request or park member changed during final permission verification.");
                 }
                 if (!ParkFinalDeployVolumes(request, kind, parts, definitions, anchor, created, out failure) ||
-                    !ParkMegaSpace(kind, parts, player, anchor, created, out failure) ||
+                    !ParkMegaSpace(kind, parts, player, anchor, created, out failure, null, request) ||
                     !ParkModuleSpace(request, kind, definitions, group, parts, created, out failure))
                     throw new InvalidDataException(failure);
                 EnsureParkQuarterCollision(kind, group, parts, definitions[0].Construction.bounds);
+                if (!CurrentParkPhase(request))
+                    throw new InvalidDataException(request.SupportFailure ?? "The placement support changed during final permission verification.");
                 group.Members.AddRange(parts);
                 request.Data.Groups.Add(group);
                 recorded = true;
@@ -5723,12 +5965,14 @@ namespace Oxide.Plugins
                         !block.enableSaving || !block.grounded || block.buildingID != request.Building)
                         throw new InvalidDataException("A placement request or park member changed during save registration.");
                 }
+                if (!CurrentParkPhase(request))
+                    throw new InvalidDataException(request.SupportFailure ?? "The placement support changed during save registration.");
                 if (request.BuildItem)
                 {
                     if (!ConsumeParkItem(request))
                         throw new InvalidDataException("Build-item payment was refused or its exact one-item debit could not be verified.");
-                    if (!CurrentParkRequest(request))
-                        throw new InvalidDataException("The administrator, item receipt or save/world changed during build-item payment.");
+                    if (!CurrentParkPhase(request))
+                        throw new InvalidDataException(request.SupportFailure ?? "The administrator, item receipt or save/world changed during build-item payment.");
                     // Preparing is deliberately not recoverable if interrupted before a verified native debit.
                     group.BuildItemState = SkateParkBuildItemState.Paid;
                     SaveParkData();
@@ -5743,13 +5987,13 @@ namespace Oxide.Plugins
                     }
                 }
                 SkateParkSelectionState consumed = new SkateParkSelectionState();
-                if (!CurrentParkRequest(request) || rollbackReceipts.Any(receipt => !ParkRollbackMatches(receipt)) || (request.Selection != null &&
+                if (!CurrentParkPhase(request) || rollbackReceipts.Any(receipt => !ParkRollbackMatches(receipt)) || (request.Selection != null &&
                     !SkateParkSelections.TryApply(request.Selection.State, SkateParkSelectionAction.PlacementSucceeded,
                         player.IsAdmin, parkReady, clock.Elapsed.TotalSeconds, null, out consumed)))
                     throw new InvalidDataException("The placement request expired or changed before completion.");
                 if (!ParkFinalDeployVolumes(request, kind, parts, definitions, anchor, created, out failure) ||
-                    !ParkMegaSpace(kind, parts, player, anchor, created, out failure, group) ||
-                    !ParkModuleSpace(request, kind, definitions, group, parts, created, out failure) || !CurrentParkRequest(request))
+                    !ParkMegaSpace(kind, parts, player, anchor, created, out failure, group, request) ||
+                    !ParkModuleSpace(request, kind, definitions, group, parts, created, out failure) || !CurrentParkPhase(request))
                     throw new InvalidDataException(failure ?? "The placement request changed during final park-space verification.");
                 foreach (ParkMember part in parts) parkMembers.Add(part.Id, group);
                 foreach (ParkRollbackReceipt receipt in rollbackReceipts) parkRollback.Remove(receipt);
@@ -5797,7 +6041,7 @@ namespace Oxide.Plugins
                     }
                     else recovery = " Verified debit recovery is withheld until part cleanup, metadata and world identity are safe; no replacement item was minted.";
                 }
-                failure = error.Message + recovery + (parkRollback.Count == 0 ? "" :
+                failure = (request.SupportFailure == null ? error.Message : request.SupportFailure) + recovery + (parkRollback.Count == 0 ? "" :
                     " Part cleanup is incomplete; new placement is disabled until cleanup succeeds.");
                 return false;
             }

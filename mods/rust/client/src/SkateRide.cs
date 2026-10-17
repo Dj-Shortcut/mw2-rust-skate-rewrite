@@ -393,7 +393,7 @@ public static class SkateRide
         {
             RaycastHit hit;
             if (SkateParks.Sphere(pos + Vector3.up * wallHeights[i], WallProbe, dir, out hit, reach, GroundMask)
-                && hit.m_Normal.y < 0.5f && hit.distance < nearest) { found = true; nearest = hit.distance; normal = hit.m_Normal; }
+                && hit.m_Normal.y < 0.5f && hit.distance < nearest && !SkateParks.IsRamp(hit)) { found = true; nearest = hit.distance; normal = hit.m_Normal; }
         }
         if (!found) return v;
         var into = -Vector3.Dot(v, normal);
@@ -492,9 +492,19 @@ public static class SkateRide
         var slack = got && hit.m_Normal.y > 0.2f && hit.m_Normal.y < 0.999f ? Math.Min(CapsuleSlackMost, CapsuleRadius * (1f / hit.m_Normal.y - 1f)) : 0f;
         Clearance = got ? hit.m_Distance - RayLift - slack : 99f;
         Grounded = got && Clearance <= FeetProbe;
+        OnRamp = got && SkateParks.IsRamp(hit);
         Normal = Grounded && hit.m_Normal.y > 0.3f ? hit.m_Normal : Vector3.up;
         if (got && hit.m_Normal.y > 0.3f) ContactNormal = hit.m_Normal;
     }
+
+    // On a transition's drawn surface (Sense): its faces are ground, not walls (WallAhead).
+    public static bool OnRamp;
+    // Up a transition past VertDegrees the board goes vert: all its pace turns straight up, so the
+    // rider rises along the face and over the coping and comes straight back down onto the
+    // transition, rolling back fakie. The shared physics takes no ground steeper than 72 degrees, and
+    // a body leaving the face there would fly onto the deck or over it.
+    public const float VertDegrees = 68f;
+    public static int Verts;
 
     private static void GroundStep(float dt)
     {
@@ -536,6 +546,26 @@ public static class SkateRide
         }
         else { Speed += Vector3.Dot(Physics.gravity, tangent) * SlopeGain * dt; Physics_(error); }
         Tangent = tangent; Braking = SkateKeys.Brake;
+        if (OnRamp && SlopeDegrees >= VertDegrees)
+        {
+            // A pop asked for on the way up adds to the rise and makes the flight a trick.
+            var popped = now - jumpWanted < 0.12f;
+            var up = Math.Abs(Speed);
+            if (popped)
+            {
+                Pops++; jumpWanted = -99f;
+                if (SkateTricks.IsPlant(wantKind)) PlantedUntil = now + PlantSeconds;
+                up += OlliePop * wantScale * PopHeight(wantKind);
+            }
+            Verts++;
+            Out.Say("SKATE vert at " + SlopeDegrees.ToString("F0") + " deg, " + Math.Abs(Speed).ToString("F1") + " m/s up" + (popped ? ", popped" : "") + ", at " + Out.V3(Position));
+            var nose = NoseYaw; var deck = DeckYaw;
+            Speed = 0f;
+            TakeOff(popped, up + AirGravity * dt);
+            KeepAirPose(nose, deck);
+            AirStep(Position, dt);
+            return;
+        }
         // A press up to a moment before touch-down still counts, so tricks can be chained.
         if (now - jumpWanted < 0.12f)
         {
