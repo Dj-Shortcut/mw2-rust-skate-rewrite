@@ -1100,6 +1100,10 @@ namespace Shortcut.RustMod
             return true;
         }
 
+        // How a kind is turned when it is placed, on top of the player's own turn: the halfpipe's
+        // 21 m run goes across the view instead of back over the player who places it.
+        public static double PlacementYaw(SkateParkKind kind)
+        { return kind == SkateParkKind.Halfpipe ? 90 : 0; }
         public static bool TryGhostFrame(SkateParkKind kind, bool adjacent, double hostX, double hostZ,
             double hostYaw, double hitX, double hitZ, double requestedYaw, bool relativeYaw, double step,
             out SkateParkTransform frame)
@@ -1107,7 +1111,7 @@ namespace Shortcut.RustMod
             frame = new SkateParkTransform();
             double x = hostX, z = hostZ, yaw;
             if (adjacent && !TryAdjacentCell(hostX, hostZ, hostYaw, hitX, hitZ, out x, out z)) return false;
-            if (!TrySnapYaw(relativeYaw ? hostYaw + requestedYaw : requestedYaw, hostYaw, step, out yaw) ||
+            if (!TrySnapYaw((relativeYaw ? hostYaw + requestedYaw : requestedYaw) + PlacementYaw(kind), hostYaw, step, out yaw) ||
                 !TrySupportGridAnchor(kind, x, z, yaw, out x, out z)) return false;
             frame = new SkateParkTransform { X = x, Z = z, Yaw = yaw };
             return true;

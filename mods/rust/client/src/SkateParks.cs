@@ -582,6 +582,11 @@ public static class SkateParks
     // with a ray down, as the server reads it. Origin is where the model is drawn; Valid only when
     // the whole support is found, and Why says what is missing when it is not.
     public const float GhostStep = 90f;
+    // The halfpipe is placed across the view, not back over the player: the server adds the same
+    // quarter turn in SkateParkLayout.PlacementYaw. The shared file this client compiles is pinned
+    // (sources.txt) at a commit without that function, so the turn is added here; when the pin
+    // moves to a commit that has it, this goes and TryGhostFrame adds it itself.
+    public static float PlacementYaw(SkateParkKind kind) { return kind == SkateParkKind.Halfpipe ? 90f : 0f; }
     public static bool Ghost(Kind kind, RaycastHit aim, float lookYaw, float turn, out Vector3 origin, out float yaw, out bool onHost, out string why)
     {
         onHost = false; why = "";
@@ -600,7 +605,7 @@ public static class SkateParks
             {
                 var t = host.transform;
                 SkateParkTransform frame;
-                if (SkateParkLayout.TryGhostFrame(shared, adjacent, t.position.x, t.position.z, t.eulerAngles.y, aim.point.x, aim.point.z, turn, true, GhostStep, out frame))
+                if (SkateParkLayout.TryGhostFrame(shared, adjacent, t.position.x, t.position.z, t.eulerAngles.y, aim.point.x, aim.point.z, turn + PlacementYaw(shared), true, GhostStep, out frame))
                 {
                     onHost = true;
                     hint = new SkateParkTransform { X = frame.X, Y = aim.point.y, Z = frame.Z, Yaw = frame.Yaw };
