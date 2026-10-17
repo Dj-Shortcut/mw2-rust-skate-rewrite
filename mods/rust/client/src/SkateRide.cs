@@ -385,7 +385,9 @@ public static class SkateRide
     // ground, or falling onto it from the air. Its slabs' riding faces look up; their undersides
     // (met from behind) and their side edges do not, and stay walls, as does any face met while
     // rising. A sphere sweep's normal points at the sphere, not out of the face (round on an edge
-    // or the coping), so the face is read again with a ray to the contact.
+    // or the coping), so the face is read again with a ray to the contact. On the face itself the
+    // two agree; on a transition's open side edge (the drawn surface has no side face) the ray
+    // still finds the upward face, but the sweep's normal turns out sideways, and that stays a wall.
     private static bool RampFaceAhead(Vector3 from, RaycastHit hit)
     {
         if (Mode != RideMode.Ground && VSpeed >= 0f) return false;
@@ -393,7 +395,7 @@ public static class SkateRide
         var to = hit.m_Point - from; var reach = to.magnitude;
         RaycastHit face;
         if (reach < 0.001f || !SkateParks.Ray(from, to / reach, out face, reach + WallProbe, GroundMask) || face.collider != hit.collider) return false;
-        return face.m_Normal.y > 0.05f;
+        return face.m_Normal.y > 0.05f && Vector3.Dot(face.m_Normal, hit.m_Normal) > 0.9f;
     }
     // The whole measured pace of the last step, along the path the body took (for the checks' logs).
     public static float PathSpeed;
