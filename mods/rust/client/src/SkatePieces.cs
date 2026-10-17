@@ -45,7 +45,7 @@ public static class SkatePieces
         if ((padDown & SkatePad.DpadUp) != 0 || (padDown & SkatePad.DpadLeft) != 0) Chosen = (Chosen + Names.Length - 1) % Names.Length;
         if ((padDown & SkatePad.LeftBumper) != 0) Turn -= TurnStep;
         if ((padDown & SkatePad.RightBumper) != 0) Turn += TurnStep;
-        if ((padDown & SkatePad.A) != 0) Place(now);
+        if ((padDown & SkatePad.A) != 0) Place(now, true);
         if ((padDown & SkatePad.B) != 0) Close();
         SkateRide.StanceHold(ref stanceSince, (SkatePad.Buttons & SkatePad.Y) != 0, now);
         return padDown & ~(SkatePad.DpadUp | SkatePad.DpadDown | SkatePad.DpadLeft | SkatePad.DpadRight | SkatePad.A | SkatePad.B | SkatePad.X | SkatePad.Y | SkatePad.LeftBumper | SkatePad.RightBumper);
@@ -65,7 +65,7 @@ public static class SkatePieces
         {
             if (q && !wasQ) Turn -= TurnStep;
             if (e && !wasE) Turn += TurnStep;
-            if (o && !wasO) Place(Time.realtimeSinceStartup);
+            if (o && !wasO) Place(Time.realtimeSinceStartup, false);
             if (back && !wasBack) Close();
         }
         wasP = p; wasQ = q; wasE = e; wasO = o; wasBack = back;
@@ -170,7 +170,7 @@ public static class SkatePieces
 
     // The chosen piece's park item put in the player's hand, the way a number key would; the
     // player then places it with the building controls. Without one in the belt, the screen says so.
-    public static void Place(float now)
+    public static void Place(float now, bool pad)
     {
         SaidAt = now;
         var player = SkateRig.Local;
@@ -179,21 +179,27 @@ public static class SkatePieces
         var slot = SkateHeld.FindInBelt(player, Chosen);
         Out.Say("PIECES take " + SkateHeld.ItemNames[Chosen] + ": belt" + (SkateHeld.Belt == "" ? " empty" : SkateHeld.Belt) + " -> slot " + slot);
         // Shown in the open menu too, which the keyboard picker leaves open.
-        // Where the belt cannot be read at all, the player picks the item's number key.
+        // Where the belt cannot be read at all, the player picks the item's number key; the
+        // server is not asked, since the item may well be there already.
         if (slot < 0 && SkateHeld.Belt == "belt not readable")
         {
             Close();
-            Said = AskItem(Chosen, now) ? "Asked the server for a " + SkateHeld.ItemNames[Chosen] + ": press its number key, then place it like a square foundation (left click, R turns it)"
-                : "Press the number key of your " + SkateHeld.ItemNames[Chosen] + ", then place it like a square foundation (left click, R turns it)";
+            Said = "Press the number key of your " + SkateHeld.ItemNames[Chosen] + ", then place it like a square foundation (left click, R turns it). None yet? An admin types skate.items " + Names[Chosen];
             return;
         }
         if (slot < 0)
         {
-            Said = Status = AskItem(Chosen, now) ? "Asked the server for a " + SkateHeld.ItemNames[Chosen] + "; press O again once it is in your belt"
-                : "No " + SkateHeld.ItemNames[Chosen] + " in your belt (an admin gives the park items: skate.items all)";
+            // Only an item seen nowhere in the inventory is asked from the server, so none is issued twice.
+            var held = SkateHeld.InMain(player, Chosen);
+            if (held != 0)
+            {
+                Said = Status = "Move your " + SkateHeld.ItemNames[Chosen] + " from inventory to a belt slot, then select it" + (held < 0 ? " (an admin gives the park items: skate.items " + Names[Chosen] + ")" : "");
+                return;
+            }
+            Said = Status = AskItem(Chosen, now) ? "Asked the server for a " + SkateHeld.ItemNames[Chosen] + "; take it again (" + (pad ? "A" : "O") + ") once it is in your belt"
+                : "No " + SkateHeld.ItemNames[Chosen] + " in your inventory (an admin gives the park items: skate.items " + Names[Chosen] + ")";
             return;
         }
-        if (slot < 0) { Said = Status = "Move your " + SkateHeld.ItemNames[Chosen] + " from inventory to a belt slot, then select it"; return; }
         string how;
         if (SkateHeld.SelectSlot(player, slot, out how))
         {

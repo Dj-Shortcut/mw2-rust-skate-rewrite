@@ -136,25 +136,54 @@ public static class SkateHeld
             foreach (var it in Walk(list))
             {
                 if (it == null) continue;
-                var name = Get(it, "name") as string ?? "";
-                var data = Get(it, "instanceData");
-                var m = data == null ? null : Get(data, "dataInt");
-                var marker = m is int ? (int)m : 0;
-                var pos = Get(it, "position");
-                var slot = pos is int ? (int)pos : -1;
-                Belt += " " + slot + ":" + (name != "" ? name : "?") + (marker != 0 ? "#" + marker.ToString("X") : "");
-                var info = Get(it, "info");
-                var carrier = info == null ? null : Get(info, "shortname") as string;
-                var itemSkin = Get(it, "skin");
-                var itemAmount = Get(it, "amount");
-                SkateParkKind observed;
-                if (found < 0 && slot >= 0 && slot < 6 && itemSkin is ulong && itemAmount is int &&
-                    SkateParkBuildItems.TryIdentity(carrier, (ulong)itemSkin, marker, name, (int)itemAmount, out observed) &&
-                    (int)observed == kind) found = slot;
+                int slot; string seen;
+                var match = IsKind(it, kind, out slot, out seen);
+                Belt += " " + seen;
+                if (found < 0 && match && slot >= 0 && slot < 6) found = slot;
             }
             return found;
         }
         catch (Exception e) { Belt = "belt threw " + e.GetType().Name; return -1; }
+    }
+
+    // One inventory item read as a park build item of this kind (by the shared identity rules).
+    private static bool IsKind(object it, int kind, out int slot, out string seen)
+    {
+        var name = Get(it, "name") as string ?? "";
+        var data = Get(it, "instanceData");
+        var m = data == null ? null : Get(data, "dataInt");
+        var marker = m is int ? (int)m : 0;
+        var pos = Get(it, "position");
+        slot = pos is int ? (int)pos : -1;
+        seen = slot + ":" + (name != "" ? name : "?") + (marker != 0 ? "#" + marker.ToString("X") : "");
+        var info = Get(it, "info");
+        var carrier = info == null ? null : Get(info, "shortname") as string;
+        var itemSkin = Get(it, "skin");
+        var itemAmount = Get(it, "amount");
+        SkateParkKind observed;
+        return itemSkin is ulong && itemAmount is int &&
+            SkateParkBuildItems.TryIdentity(carrier, (ulong)itemSkin, marker, name, (int)itemAmount, out observed) &&
+            (int)observed == kind;
+    }
+
+    // Whether the main inventory (outside the belt) holds this park item: 1 yes, 0 no, -1 not readable.
+    public static int InMain(object player, int kind)
+    {
+        if (player == null || kind < 0 || kind >= SkateParkBuildItems.PieceCount) return -1;
+        try
+        {
+            var inv = Get(player, "inventory") ?? OfType(player, "PlayerInventory");
+            var main = inv == null ? null : Get(inv, "containerMain");
+            var list = main == null ? null : Get(main, "itemList");
+            if (list == null) return -1;
+            foreach (var it in Walk(list))
+            {
+                int slot; string seen;
+                if (it != null && IsKind(it, kind, out slot, out seen)) return 1;
+            }
+            return 0;
+        }
+        catch (Exception) { return -1; }
     }
 
     private static void LookForBelt(object player)
