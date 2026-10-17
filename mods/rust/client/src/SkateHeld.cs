@@ -157,6 +157,40 @@ public static class SkateHeld
         catch (Exception e) { Belt = "belt threw " + e.GetType().Name; return -1; }
     }
 
+    public static bool TryOwnsParkItem(object player, int kind, out bool owned)
+    {
+        owned = false;
+        if (player == null || kind < 0 || kind >= SkateParkBuildItems.PieceCount) return false;
+        try
+        {
+            var inventory = Get(player, "inventory") ?? OfType(player, "PlayerInventory");
+            if (inventory == null) return false;
+            var complete = true;
+            foreach (var name in new[] { "containerBelt", "containerMain", "containerWear" })
+            {
+                var container = Get(inventory, name);
+                var list = container == null ? null : Get(container, "itemList") ?? OfType(container, "List");
+                if (list == null) { complete = false; continue; }
+                foreach (var item in Walk(list))
+                {
+                    if (item == null) continue;
+                    var info = Get(item, "info");
+                    var carrier = info == null ? null : Get(info, "shortname") as string;
+                    var itemSkin = Get(item, "skin"); var itemAmount = Get(item, "amount");
+                    if (carrier == null || !(itemSkin is ulong) || !(itemAmount is int)) { complete = false; continue; }
+                    var data = Get(item, "instanceData");
+                    var marker = data == null ? null : Get(data, "dataInt");
+                    SkateParkKind observed;
+                    if (SkateParkBuildItems.TryIdentity(carrier, (ulong)itemSkin, marker is int ? (int)marker : 0,
+                        Get(item, "name") as string ?? "", (int)itemAmount, out observed) && (int)observed == kind)
+                    { owned = true; return true; }
+                }
+            }
+            return complete;
+        }
+        catch (Exception) { return false; }
+    }
+
     private static void LookForBelt(object player)
     {
         const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;

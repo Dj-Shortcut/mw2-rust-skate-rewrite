@@ -152,6 +152,7 @@ internal static class SkateParkBuildItemScenarios
     {
         public ContainerObservation containerBelt = new ContainerObservation();
         public ContainerObservation containerMain = new ContainerObservation();
+        public ContainerObservation containerWear = new ContainerObservation();
     }
     private sealed class PlayerObservation
     {
@@ -168,6 +169,10 @@ internal static class SkateParkBuildItemScenarios
             var item = new ItemObservation { name = Names[i], position = i };
             item.instanceData.dataInt = Markers[i];
             player.inventory.containerMain.itemList.Add(item);
+            bool owned;
+            for (int press = 0; press < 8; press++)
+                Check(SkateHeld.TryOwnsParkItem(player, i, out owned) && owned,
+                    "repeated picker requests see the existing main item " + i + "/" + press);
             player.Active = null;
             Check(SkateHeld.FindInBelt(player, i) == -1, "main inventory does not equip item " + i);
             Check(!SkateHeld.Read(player) && SkateHeld.HeldKind() == -1, "main item is not held " + i);
@@ -217,8 +222,24 @@ internal static class SkateParkBuildItemScenarios
             player.Active = null;
             Check(!SkateHeld.Read(player) && SkateHeld.HeldKind() == -1, "unequip clears held identity " + i);
         }
+        bool present;
+        Check(SkateHeld.TryOwnsParkItem(player, 0, out present) && !present, "complete empty inventory confirms absence");
+        var worn = new ItemObservation { name = Names[0] }; worn.instanceData.dataInt = Markers[0];
+        player.inventory.containerWear.itemList.Add(worn);
+        Check(SkateHeld.TryOwnsParkItem(player, 0, out present) && present, "wear item also prevents another request");
+        player.inventory.containerWear.itemList.Clear();
+        player.inventory.containerMain = null;
+        Check(!SkateHeld.TryOwnsParkItem(player, 0, out present) && !present, "missing inventory cannot justify issuance");
+        player.inventory.containerMain = new ContainerObservation();
+        player.inventory.containerMain.itemList.Add(new object());
+        Check(!SkateHeld.TryOwnsParkItem(player, 0, out present) && !present, "unreadable item metadata cannot justify issuance");
+        player.inventory.containerMain.itemList.Clear();
+        Check(!SkateHeld.TryOwnsParkItem(null, 0, out present), "missing player cannot justify issuance");
         foreach (int kind in new[] { int.MinValue, -1, 12, int.MaxValue })
+        {
+            Check(!SkateHeld.TryOwnsParkItem(player, kind, out present), "invalid ownership query refuses " + kind);
             Check(SkateHeld.FindInBelt(player, kind) == -1, "invalid picker kind refuses " + kind);
+        }
         Check(SkateHeld.FindInBelt(null, 0) == -1, "missing player refuses picker");
         Check(!SkateHeld.Read(null) && SkateHeld.HeldKind() == -1, "missing player clears held identity");
         Console.WriteLine("Production client identity reader passed scalar main/belt/active observations for all twelve kinds and six slots; native moves were not executed.");

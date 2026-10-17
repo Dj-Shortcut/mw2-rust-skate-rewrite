@@ -194,6 +194,14 @@ internal static class SkateRidePhysicsScenarios
         Check(SkateRidePhysics.TryLaunch(new SkateLaunchInput(uphillVelocity, 6), out launch, out error), "ramp pop");
         Vector(launch.Velocity, new SkateVector(0, 9.441458618106276, 4.914912265733951), "vertical pop retains ramp rise");
         Near(launch.Velocity.Y * launch.Velocity.Y / 32, 2.785660651169165, "ramp pop ideal apex");
+        foreach (int sign in new[] { -1, 1 })
+        foreach (double pop in new[] { 0d, 6 })
+        {
+            var steep = new SkateVector(0, 9.271838545667875, sign * 3.74606593415912);
+            Check(SkateRidePhysics.TryLaunch(new SkateLaunchInput(steep, pop), out launch, out error), "68 degree transition exit");
+            Near(launch.Velocity.Z, sign * 3.74606593415912, "steep exit retains forward/reverse tangent travel");
+            Near(launch.Velocity.Y, 9.271838545667875 + pop, "steep exit retains tangent rise plus pop");
+        }
         Check(SkateRidePhysics.TryLaunch(new SkateLaunchInput(new SkateVector(0, 0, 6), 6), out launch, out error), "flat pop");
         Vector(launch.Velocity, new SkateVector(0, 6, 6), "flat pop");
         Near(2 * launch.Velocity.Y / 16, 0.75, "flat ideal flight time");

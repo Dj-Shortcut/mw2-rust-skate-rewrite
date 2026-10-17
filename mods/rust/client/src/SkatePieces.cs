@@ -183,17 +183,20 @@ public static class SkatePieces
         if (slot < 0 && SkateHeld.Belt == "belt not readable")
         {
             Close();
-            Said = AskItem(Chosen, now) ? "Asked the server for a " + SkateHeld.ItemNames[Chosen] + ": press its number key, then place it like a square foundation (left click, R turns it)"
-                : "Press the number key of your " + SkateHeld.ItemNames[Chosen] + ", then place it like a square foundation (left click, R turns it)";
+            Said = "Press the number key of your " + SkateHeld.ItemNames[Chosen] + ", then place it like a square foundation (left click, R turns it)";
             return;
         }
         if (slot < 0)
         {
-            Said = Status = AskItem(Chosen, now) ? "Asked the server for a " + SkateHeld.ItemNames[Chosen] + "; press O again once it is in your belt"
-                : "No " + SkateHeld.ItemNames[Chosen] + " in your belt (an admin gives the park items: skate.items all)";
+            bool owned;
+            if (!SkateHeld.TryOwnsParkItem(player, Chosen, out owned))
+                Said = Status = "Inventory not readable; check your park items before requesting another one";
+            else if (owned)
+                Said = Status = "Move your " + SkateHeld.ItemNames[Chosen] + " from inventory to a belt slot, then select it";
+            else Said = Status = AskItem(Chosen, now) ? "Asked the server for a " + SkateHeld.ItemNames[Chosen] + "; select this piece again once it is in your belt"
+                : "Waiting for your " + SkateHeld.ItemNames[Chosen] + "; check inventory and select this piece again";
             return;
         }
-        if (slot < 0) { Said = Status = "Move your " + SkateHeld.ItemNames[Chosen] + " from inventory to a belt slot, then select it"; return; }
         string how;
         if (SkateHeld.SelectSlot(player, slot, out how))
         {
@@ -213,6 +216,8 @@ public static class SkatePieces
     public static int ItemsAsked;
     private static bool AskItem(int kind, float now)
     {
+        bool owned;
+        if (!SkateHeld.TryOwnsParkItem(SkateRig.Local, kind, out owned) || owned) return false;
         if (itemAskedAt[kind] > 0f && now - itemAskedAt[kind] < 5f) return false;
         if (!SkateConsole.CanSend) { Out.Say("PIECES item ask cannot send: " + SkateConsole.SendState); return false; }
         var line = "skate.items " + Names[kind];

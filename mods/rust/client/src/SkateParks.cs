@@ -1208,8 +1208,6 @@ public static class SkateParks
         return false;
     }
 
-    // The drawn riding surface and coping of a transition, by collider ID: the ride takes them as
-    // ground up to near vertical and never as a wall, so a quarterpipe is ridden up to its lip.
     public static readonly HashSet<int> RampIds = new HashSet<int>();
     public static bool IsRamp(RaycastHit hit)
     {

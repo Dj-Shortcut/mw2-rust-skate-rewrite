@@ -23,7 +23,10 @@ both current shared park files; keep them with `SkateHeld.cs`. Missing fields fa
 closed. Each held preview reads the current active item; switching or unequipping
 clears an invalid preview immediately. The half-wall kicker uses its wall-target
 preview after actual equip. The picker scans current belt positions 0–5 and tells
-the player to move an inventory item into the belt when it cannot select one.
+the player to move an inventory item into the belt when it cannot select one. Before automatically requesting a missing item, it checks the belt,
+main inventory and wear containers with the same exact identity contract. An
+owned item or incomplete inventory observation suppresses the request; retry
+instructions work for both keyboard and controller selection.
 
 Native inventory movement can recreate the held Planner while retaining the
 item UID and marked metadata. Never bind future placement to an issuance slot or

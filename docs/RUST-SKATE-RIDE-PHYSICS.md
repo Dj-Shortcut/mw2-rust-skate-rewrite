@@ -208,3 +208,13 @@ this Mac checkout; it has not been compiled here.
    travel, signed along-nose speed, rider Switch and deck reversal distinct.
    Validate native contact, control timing, server acceptance and ride feel in
    the adapter before describing gameplay as verified.
+
+## Transition exit and wall contact
+
+The client leaves a steep supported transition through the existing `Launch`
+adapter, preserving the tangent's horizontal and vertical velocity before adding
+a requested pop. The wall sweep exempts only the same current grounded ramp
+collider while moving uphill toward its rideable face. Airborne, downhill,
+unrelated-collider and opposite-face hits retain the wall response. The cached
+interop client compile and approved launch fixtures do not establish native
+contact timing, coping interaction or gameplay acceptance.

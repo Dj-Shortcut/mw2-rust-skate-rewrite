@@ -372,6 +372,16 @@ public static class SkateRide
         catch (Exception e) { Dismount("the step threw"); Out.Say("SKATE step threw " + e.GetType().Name + ": " + e.Message); }
     }
 
+    private static int rampSupportId;
+    private static bool SupportedRampContact(RaycastHit hit, Vector3 movement)
+    {
+        if (Mode != RideMode.Ground || !Grounded || !OnRamp || rampSupportId == 0 ||
+            movement.y <= 0f || Tangent.y * Speed <= 0f || hit.m_Normal.y <= 0f ||
+            Vector3.Dot(hit.m_Normal, ContactNormal) <= 0f || !SkateParks.IsRamp(hit)) return false;
+        var collider = hit.collider;
+        return collider != null && collider.GetInstanceID() == rampSupportId;
+    }
+
     // A wall the next step would reach. The physics engine moves the player's capsule one step at
     // a time without sweeping it, and a step at riding speed (0.8 m at 25 m/s) carries the capsule
     // into a thin wall, where it stays wedged: the game's collision then holds it wherever the
@@ -393,7 +403,7 @@ public static class SkateRide
         {
             RaycastHit hit;
             if (SkateParks.Sphere(pos + Vector3.up * wallHeights[i], WallProbe, dir, out hit, reach, GroundMask)
-                && hit.m_Normal.y < 0.5f && hit.distance < nearest && !SkateParks.IsRamp(hit)) { found = true; nearest = hit.distance; normal = hit.m_Normal; }
+                && hit.m_Normal.y < 0.5f && hit.distance < nearest && !SupportedRampContact(hit, v)) { found = true; nearest = hit.distance; normal = hit.m_Normal; }
         }
         if (!found) return v;
         var into = -Vector3.Dot(v, normal);
@@ -492,17 +502,13 @@ public static class SkateRide
         var slack = got && hit.m_Normal.y > 0.2f && hit.m_Normal.y < 0.999f ? Math.Min(CapsuleSlackMost, CapsuleRadius * (1f / hit.m_Normal.y - 1f)) : 0f;
         Clearance = got ? hit.m_Distance - RayLift - slack : 99f;
         Grounded = got && Clearance <= FeetProbe;
-        OnRamp = got && SkateParks.IsRamp(hit);
+        OnRamp = Grounded && hit.m_Normal.y > 0.3f && SkateParks.IsRamp(hit);
+        rampSupportId = OnRamp ? hit.collider.GetInstanceID() : 0;
         Normal = Grounded && hit.m_Normal.y > 0.3f ? hit.m_Normal : Vector3.up;
         if (got && hit.m_Normal.y > 0.3f) ContactNormal = hit.m_Normal;
     }
 
-    // On a transition's drawn surface (Sense): its faces are ground, not walls (WallAhead).
     public static bool OnRamp;
-    // Up a transition past VertDegrees the board goes vert: all its pace turns straight up, so the
-    // rider rises along the face and over the coping and comes straight back down onto the
-    // transition, rolling back fakie. The shared physics takes no ground steeper than 72 degrees, and
-    // a body leaving the face there would fly onto the deck or over it.
     public const float VertDegrees = 68f;
     public static int Verts;
 
@@ -550,19 +556,16 @@ public static class SkateRide
         {
             // A pop asked for on the way up adds to the rise and makes the flight a trick.
             var popped = now - jumpWanted < 0.12f;
-            var up = Math.Abs(Speed);
+            var pop = 0f;
             if (popped)
             {
                 Pops++; jumpWanted = -99f;
                 if (SkateTricks.IsPlant(wantKind)) PlantedUntil = now + PlantSeconds;
-                up += OlliePop * wantScale * PopHeight(wantKind);
+                pop = OlliePop * wantScale * PopHeight(wantKind);
             }
             Verts++;
-            Out.Say("SKATE vert at " + SlopeDegrees.ToString("F0") + " deg, " + Math.Abs(Speed).ToString("F1") + " m/s up" + (popped ? ", popped" : "") + ", at " + Out.V3(Position));
-            var nose = NoseYaw; var deck = DeckYaw;
-            Speed = 0f;
-            TakeOff(popped, up + AirGravity * dt);
-            KeepAirPose(nose, deck);
+            Out.Say("SKATE vert at " + SlopeDegrees.ToString("F0") + " deg, " + (tangent.y * Speed).ToString("F1") + " m/s up" + (popped ? ", popped" : "") + ", at " + Out.V3(Position));
+            Launch(tangent, pop, dt);
             AirStep(Position, dt);
             return;
         }
