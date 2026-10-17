@@ -263,7 +263,7 @@ public static class SkateRide
         var v = b.linearVelocity; velocity = v; var rise = v.y; v.y = 0f;
         Speed = Vector3.Dot(v, Dir(yaw));
         SkateKeys.EndStep();
-        hasLast = false; Steps = 0; Resets = 0; Top = 0f; Lean = 0f; SteerRate = 0f; Powerslide = 0f; PowerslideSide = 1f; lastPull = mountAt = Time.realtimeSinceStartup;
+        hasLast = false; pastCount = 0; Steps = 0; Resets = 0; Top = 0f; Lean = 0f; SteerRate = 0f; Powerslide = 0f; PowerslideSide = 1f; lastPull = mountAt = Time.realtimeSinceStartup;
         // A cap from a ride a while ago says nothing about this one.
         if (mountAt - putBackAt > CapForget) ForgetServer();
         VSpeed = 0f; AirTime = 0f; flipLeft = shoveLeft = pendShove = bodyLeft = 0f; pendFlip = 0; SpinDeg = FlipDeg = ShoveDeg = BodyDeg = 0; LateTrick = false; Jumped = TrickAir = Braking = Manual = NoseManual = spinning = DeckReversed = false; PushPhase = 0f; stuck = 0; heldSteps = 0; Held = false;
@@ -313,7 +313,7 @@ public static class SkateRide
         try
         {
             if (body == null) { Dismount("the movement body is gone"); return; }
-            if (Frozen) { hasLast = false; return; }
+            if (Frozen) { hasLast = false; pastCount = 0; return; }
             var dt = Time.fixedDeltaTime;
             if (!(dt > 0.001f && dt <= 0.05f)) dt = 0.03125f;
             now = Time.realtimeSinceStartup;
@@ -365,6 +365,7 @@ public static class SkateRide
             body.linearVelocity = velocity;
             var sign = Speed < 0f ? -1f : 1f;
             lastPos = pos; lastDir = pace > 0.0001f ? flat / pace * sign : Dir(Yaw); lastSpeed = pace * sign; hasLast = true; Steps++;
+            pastPos[pastNext] = pos; pastAt[pastNext] = now; pastNext = (pastNext + 1) % PastSteps; if (pastCount < PastSteps) pastCount++;
             var target = Mode == RideMode.Ground ? Normal : Vector3.up;
             ViewNormal = (ViewNormal + (target - ViewNormal) * 0.3f).normalized;
             SkateKeys.EndStep();
@@ -441,6 +442,26 @@ public static class SkateRide
     private const float CapsuleSlackMost = 2f;
     private static bool capsuleSaid;
 
+    // Where the body was over the last steps (#487). A server that puts a player back sets it on a
+    // position it had before, so a put-back landing on one of these, a few steps old, is the
+    // server's; one landing nowhere the body has been is the client's own physics.
+    private const int PastSteps = 64;
+    private static readonly Vector3[] pastPos = new Vector3[PastSteps];
+    private static readonly float[] pastAt = new float[PastSteps];
+    private static int pastNext, pastCount;
+
+    private static string NearestPast(Vector3 pos)
+    {
+        var best = float.MaxValue; var age = 0f;
+        for (var i = 0; i < pastCount; i++)
+        {
+            var d = (pastPos[i] - pos).magnitude;
+            if (d < best) { best = d; age = now - pastAt[i]; }
+        }
+        if (pastCount == 0) return "no earlier steps";
+        return "nearest earlier step " + best.ToString("F2") + " m away, " + age.ToString("F2") + " s old" + (best < 0.1f ? " (back where it was)" : " (nowhere it was)");
+    }
+
     private static void Measure(Vector3 pos, float dt)
     {
         if (!hasLast) return;
@@ -459,7 +480,7 @@ public static class SkateRide
             // slows itself down for the server. A server that refuses skate speed has to allow it
             // (the ShortcutSkate plugin, or its own speed checks turned off by the admin).
             Resets++; ResetsAll++;
-            Out.Say("SKATE put back #" + Resets + ", " + (now - mountAt).ToString("F2") + " s after getting on: moved " + Out.V3(pos - lastPos) + " in a step at speed " + lastSpeed.ToString("F1"));
+            Out.Say("SKATE put back #" + Resets + ", " + (now - mountAt).ToString("F2") + " s after getting on: moved " + Out.V3(pos - lastPos) + " in a step at speed " + lastSpeed.ToString("F1") + "; " + NearestPast(pos));
             return;
         }
         if (now - steppedAt < StepGrace) { heldSteps = 0; return; }
