@@ -4501,6 +4501,18 @@ namespace Oxide.Plugins
                     .Append(group.Members.Count.ToString(CultureInfo.InvariantCulture)).Append('/')
                     .Append(SkateParkLayout.PartCount(kind).ToString(CultureInfo.InvariantCulture));
                 if (group.Members.Count != SkateParkLayout.PartCount(kind)) text.Append(" (partial)");
+                if (kind == SkateParkKind.MegaHalfpipe)
+                {
+                    ParkProfileCollision collision;
+                    bool healthy = false;
+                    try
+                    {
+                        healthy = parkProfileCollisions.TryGetValue(group, out collision) &&
+                            ParkMegaCollisionHealthy(group, collision);
+                    }
+                    catch (Exception) { }
+                    text.Append("; collision=").Append(healthy ? "smooth-verified" : "native-or-unverified");
+                }
             }
             arg.ReplyWith(text.ToString());
         }
@@ -5763,11 +5775,19 @@ namespace Oxide.Plugins
             ParkQuarterQuad(vertices, triangles, new Vector3(left, (float)y0, (float)z0), new Vector3(left, bottom, (float)z0),
                 new Vector3(right, bottom, (float)z0), new Vector3(right, (float)y0, (float)z0));
             var mesh = new Mesh { name = "ShortcutSkate MEGA closed shell" };
-            mesh.vertices = vertices.ToArray();
-            mesh.triangles = triangles.ToArray();
-            mesh.RecalculateNormals();
-            mesh.RecalculateBounds();
-            return mesh;
+            try
+            {
+                mesh.vertices = vertices.ToArray();
+                mesh.triangles = triangles.ToArray();
+                mesh.RecalculateNormals();
+                mesh.RecalculateBounds();
+                return mesh;
+            }
+            catch
+            {
+                UnityEngine.Object.Destroy(mesh);
+                throw;
+            }
         }
 
         private void EnsureParkProfileCollision(SkateParkKind kind, ParkGroup group, IEnumerable<ParkMember> members, Bounds floor)
