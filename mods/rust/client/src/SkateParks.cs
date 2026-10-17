@@ -196,6 +196,7 @@ public static class SkateParks
         public Kind Kind; public int[] Ids; public GameObject Root; public Vector3 Origin; public float Yaw;
         public readonly List<Renderer> Hidden = new List<Renderer>();
         public readonly List<Collider> Backing = new List<Collider>();
+        public readonly List<int> Ramp = new List<int>();
     }
 
     public static void Frame(float now)
@@ -456,6 +457,7 @@ public static class SkateParks
         if (root == null) return;
         Colliders += colliders;
         p.Root = root;
+        if (IsTransition(kind)) KeepRamp(p, root);
         if (kind == Kind.Bank || kind == Kind.Kicker) Colliders += Entry(root, 0f, -1f);
         if (IsQuarter(kind)) Colliders += Entry(root, (float)QuarterStart, -1f);
         if (kind == Kind.HalfWallKicker) Colliders += Entry(root, (float)KickerRunIn, -1f);
@@ -1206,8 +1208,36 @@ public static class SkateParks
         return false;
     }
 
+    // The drawn riding surface and coping of a transition, by collider ID: the ride takes them as
+    // ground up to near vertical and never as a wall, so a quarterpipe is ridden up to its lip.
+    public static readonly HashSet<int> RampIds = new HashSet<int>();
+    public static bool IsRamp(RaycastHit hit)
+    {
+        if (RampIds.Count == 0) return false;
+        try { var c = hit.collider; return c != null && RampIds.Contains(c.GetInstanceID()); } catch (Exception) { return false; }
+    }
+    private static void KeepRamp(Placed p, GameObject root)
+    {
+        try
+        {
+            var cols = root.GetComponentsInChildren<Collider>(true);
+            for (var i = 0; i < cols.Length; i++)
+            {
+                var c = cols[i];
+                if (c == null) continue;
+                var name = c.gameObject.name;
+                if (name != "COLLISION__transition" && name != "COLLISION__coping") continue;
+                var id = c.GetInstanceID();
+                p.Ramp.Add(id); RampIds.Add(id);
+            }
+        }
+        catch (Exception e) { Status = "ramp colliders not read: " + e.Message; }
+    }
+
     private static void Remove(Placed p)
     {
+        foreach (var id in p.Ramp) RampIds.Remove(id);
+        p.Ramp.Clear();
         if (p.Backing.Count > 0)
         {
             foreach (var c in p.Backing) { try { if (c != null) BackingIds.Remove(c.GetInstanceID()); } catch (Exception) { } }
