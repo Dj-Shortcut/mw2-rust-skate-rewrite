@@ -338,3 +338,13 @@ The three loops use warmed filtered noise, wrapped friction grains and short dam
 Genuine Mono-reference net48/C#7.3 compilation passes with zero warnings/errors. Private Mac net8 execution of the actual net48 library passes 266,150 assertions: flat push to max, coasting distance, braking, downhill gain/uphill stall, wall block, jump/landing and stale support, steering rates, gravity, 360 headings, deterministic sampled steps and board-normal reconstruction. Valid and invalid 100,000-call loops each allocate zero measured bytes after warm-up.
 The board passes 31,323 private assertions covering bounds, indices, normal length, deterministic independent arrays, wheel diameter/contact, truck attachment, manifold solids and every triangle facing outward relative to its own component. A software top/underside preview confirms projected clockwise front faces; this is no Rust render.
 These checks do not prove Unity physics/materials, IL2CPP/Mono runtime allocation, controller feel, network movement acceptance or Rust client gameplay. Probes, logs and binaries stay in ignored `context/`.
+
+The reported #480 twig floor collider has local min `(-1.541687,-0.00000024586916,-1.55486429)`
+and max `(1.54439974,0.100000769,1.54002917)` metres. `MatchesMeasuredTwigBounds`
+recognises that exact floor.twig identity and geometry within the existing 1 mm
+measurement tolerance. The native adapter also verifies the owning floor and unit
+scale. `ContainsQuarterColliderPoint` permits its known horizontal overhang;
+vertical bounds, generic construction metadata and saved reservation overlap stay
+unchanged. Other collider names/shapes, including unmeasured foundations, do not
+inherit this allowance. These are reported live bounds and offline fixtures, not
+an independent new native measurement.

@@ -1281,6 +1281,7 @@ internal static class SkateParkLayoutScenarios
     private static void SpawnedQuarterBounds()
     {
         Near(SkateParkLayout.NativeBoundsTolerance, 0.001, "spawned bounds retain one millimetre baseline.");
+        MeasuredTwigBounds();
         foreach (double distance in new[] { 0d, 1, 17.375, 4194.304, 10000, 100000 })
         foreach (int axis in new[] { 0, 1, 2 })
         {
@@ -1364,6 +1365,55 @@ internal static class SkateParkLayoutScenarios
         foreach (var kind in new[] { SkateParkKind.Bank, SkateParkKind.MegaHalfpipe, (SkateParkKind)(-1) })
             Require(!SkateParkLayout.ContainsQuarterPoint(kind, 0, 0, 0, -0.2, 3.05),
                 "unsupported kind cannot inherit a quarterpipe collider envelope.");
+    }
+
+    private static void MeasuredTwigBounds()
+    {
+        double[] low = { -1.541687, -0.00000024586916, -1.55486429 };
+        double[] high = { 1.54439974, 0.100000769, 1.54002917 };
+        Require(SkateParkLayout.MatchesMeasuredTwigBounds(SkateParkLayout.TwigFloorCollider,
+            low[0], low[1], low[2], high[0], high[1], high[2]), "reported twig collider geometry is identified exactly.");
+        foreach (string name in new[] { null, "", SkateParkLayout.FloorPrefab,
+            "assets/prefabs/building core/foundation/foundation.twig.prefab", SkateParkLayout.TwigFloorCollider.ToUpperInvariant() })
+            Require(!SkateParkLayout.MatchesMeasuredTwigBounds(name, low[0], low[1], low[2], high[0], high[1], high[2]),
+                "unmeasured collider identity keeps the baseline.");
+        for (int component = 0; component < 6; component++)
+        foreach (double change in new[] { double.NaN, double.PositiveInfinity, 0.0021, -0.0021 })
+        {
+            double[] values = { low[0], low[1], low[2], high[0], high[1], high[2] };
+            values[component] = double.IsNaN(change) || double.IsInfinity(change) ? change : values[component] + change;
+            Require(!SkateParkLayout.MatchesMeasuredTwigBounds(SkateParkLayout.TwigFloorCollider,
+                values[0], values[1], values[2], values[3], values[4], values[5]), "changed twig geometry is not allowlisted.");
+        }
+        foreach (var kind in new[] { SkateParkKind.QuarterPipe, SkateParkKind.MiniQuarterPipe, SkateParkKind.LargeQuarterPipe })
+        {
+            SkateParkQuarterProfile profile; SkateParkLayout.TryQuarterProfile(kind, out profile);
+            double bottom = -0.2, top = profile.Height + profile.CopingRadius;
+            for (int cell = 0; cell < SkateParkLayout.CellCount(kind); cell++)
+            {
+                int r, f; SkateParkLayout.TryCell(kind, cell, out r, out f);
+                for (int turn = 0; turn < 4; turn++)
+                foreach (int x in new[] { 0, 1 })
+                foreach (int z in new[] { 0, 1 })
+                {
+                    Point point = QuarterTurn(x == 0 ? low[0] : high[0], z == 0 ? low[2] : high[2], turn);
+                    point.X += r * 3; point.Z += f * 3;
+                    if (kind == SkateParkKind.MiniQuarterPipe)
+                        Require(!SkateParkLayout.ContainsQuarterPoint(kind, point.X, 0.05, point.Z, bottom, top),
+                            "generic collider retains the 1 mm cell boundary.");
+                    Require(SkateParkLayout.ContainsQuarterColliderPoint(kind, point.X, 0.05, point.Z,
+                        bottom, top, 0.001, true), "measured twig corner fits only its known horizontal overhang.");
+                    Require(!SkateParkLayout.ContainsQuarterColliderPoint(kind, point.X, bottom - 0.0011, point.Z,
+                        bottom, top, 0.001, true), "twig allowance does not expand the vertical floor boundary.");
+                }
+            }
+        }
+        Require(!SkateParkLayout.ContainsQuarterPoint(SkateParkKind.QuarterPipe, 1.5444386, -0.0142002106, -1.52779186, -0.2, 3.15),
+            "reported pitched quarterpipe twig corner reproduces the baseline refusal.");
+        Require(SkateParkLayout.ContainsQuarterColliderPoint(SkateParkKind.QuarterPipe, 1.5444386, -0.0142002106, -1.52779186,
+            -0.2, 3.15, 0.001, true), "reported pitched quarterpipe twig corner is inside the grade envelope.");
+        Require(!SkateParkLayout.ContainsQuarterColliderPoint(SkateParkKind.MiniQuarterPipe, 1.555965, 0.05, 0,
+            -0.2, 1.35, 0.001, true), "geometry beyond measured twig overhang remains blocked.");
     }
 
     private static bool QuarterBoxFits(SkateParkKind kind, double centerRight, double centerUp, double centerForward,

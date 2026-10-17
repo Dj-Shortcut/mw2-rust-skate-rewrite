@@ -65,6 +65,8 @@ namespace Shortcut.RustMod
         public const int KindCount = 12;
         public const double CellSize = 3;
         public const double NativeBoundsTolerance = 1e-3;
+        public const string TwigFloorCollider = "assets/prefabs/building core/floor/floor.twig.prefab";
+        public const double TwigFloorOverhang = 0.05486429;
         public const int QuarterArcSegments = 30;
         public static string Name(SkateParkKind kind)
         {
@@ -239,19 +241,39 @@ namespace Shortcut.RustMod
                 Math.Max(Math.Abs(worldX), Math.Max(Math.Abs(worldY), Math.Abs(worldZ))) / 4194304);
         }
 
+        public static bool MatchesMeasuredTwigBounds(string colliderName, double minRight, double minUp, double minForward,
+            double maxRight, double maxUp, double maxForward)
+        {
+            return string.Equals(colliderName, TwigFloorCollider, StringComparison.Ordinal) &&
+                Finite(minRight) && Finite(minUp) && Finite(minForward) && Finite(maxRight) && Finite(maxUp) && Finite(maxForward) &&
+                Math.Abs(minRight - -1.541687) <= NativeBoundsTolerance &&
+                Math.Abs(minUp - -0.00000024586916) <= NativeBoundsTolerance &&
+                Math.Abs(minForward - -1.55486429) <= NativeBoundsTolerance &&
+                Math.Abs(maxRight - 1.54439974) <= NativeBoundsTolerance &&
+                Math.Abs(maxUp - 0.100000769) <= NativeBoundsTolerance &&
+                Math.Abs(maxForward - 1.54002917) <= NativeBoundsTolerance;
+        }
+
         public static bool ContainsQuarterPoint(SkateParkKind kind, double right, double up, double forward,
             double minimumUp, double maximumUp, double tolerance = NativeBoundsTolerance)
         {
+            return ContainsQuarterColliderPoint(kind, right, up, forward, minimumUp, maximumUp, tolerance, false);
+        }
+
+        public static bool ContainsQuarterColliderPoint(SkateParkKind kind, double right, double up, double forward,
+            double minimumUp, double maximumUp, double tolerance, bool measuredTwig)
+        {
+            double horizontalTolerance = tolerance + (measuredTwig ? TwigFloorOverhang : 0);
             if (CellCount(kind) == 0 || !Finite(right) || !Finite(up) || !Finite(forward) ||
                 !Finite(minimumUp) || !Finite(maximumUp) || minimumUp > maximumUp ||
-                !Finite(tolerance) || tolerance < 0 || tolerance > 0.1 ||
+                !Finite(tolerance) || tolerance < 0 || tolerance > 0.1 || horizontalTolerance > 0.1 ||
                 up < minimumUp - tolerance || up > maximumUp + tolerance) return false;
             for (int i = 0; i < CellCount(kind); i++)
             {
                 int cellRight, cellForward;
                 TryCell(kind, i, out cellRight, out cellForward);
-                if (Math.Abs(right - CellSize * cellRight) <= CellSize / 2 + tolerance &&
-                    Math.Abs(forward - CellSize * cellForward) <= CellSize / 2 + tolerance) return true;
+                if (Math.Abs(right - CellSize * cellRight) <= CellSize / 2 + horizontalTolerance &&
+                    Math.Abs(forward - CellSize * cellForward) <= CellSize / 2 + horizontalTolerance) return true;
             }
             return false;
         }
