@@ -50,6 +50,12 @@ The complete buffered horizontal path plus the incoming segment must stay within
 
 ## Session diagnostics
 
+An administrator can arm `skate.trace <SteamID64> [seconds]` for one connected player (default 60 seconds, maximum 120), then stop it with `skate.trace stop`. It installs separate observational patches on demand; installation failure leaves movement patches and native checks unchanged. The capture expires automatically, stops on disconnect/unload, and stores at most 512 event records. An anonymous run token and millisecond UTC timestamps correlate the private server output with a recorded client climb. No permission, configuration, security convar or movement result is changed.
+
+`rejected` records read the completed native movement result and distinguish observed noclip, effective speed/fly and excessive-delta conditions. A noclip record includes the blocking collider's prefab/grade, instance, layer and bounds. Missing reason evidence is explicitly `unobserved-reason`. `native-check` records classify tick-distance/overflow calls independently of ordinary antihack log verbosity. `correction-send` records are emitted only after the native send method returns normally for a position-correction RPC; they prove server send-path invocation, not client receipt. Destination coordinates retain the native RPC's world or parent-offset space. The last validation decision is context, not a claim that every correction came from that validation.
+
+The stop summary includes observed validation/rejection/send totals, dropped records and diagnostic errors. Any dropped records or errors limit conclusions from missing events. Native buffers are read only after their jobs complete, copied immediately, and never retained; buffered records are printed by the main-thread timer. Keep traces private. A client's nearest-earlier-path distance remains geometric evidence and cannot by itself identify the source of a position change.
+
 The client bounds its final float32 horizontal velocity and predicted rounded endpoint after wall projection, using the same rule forward and fakie. The server still compares the full double-measured cached X/Z path with saved speed×authoritative batch time, without numerical slack. A client fixed step does not establish that server interval. See the [client arithmetic and integration contract](../../../docs/RUST-SKATE-RIDE-PHYSICS.md#units-and-contracts); native cap-boundary endpoints and timing remain unverified under #438.
 
 The owner-approved `skate_server_movement_policy` passes 30,147 checks on the actual
