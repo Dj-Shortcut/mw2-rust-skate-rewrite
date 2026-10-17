@@ -861,6 +861,17 @@ namespace Shortcut.RustMod
                 Math.Abs(dx * bx + dz * bz) < otherHalfRight + halfRight * c + halfForward * s - 1e-7 - contactTolerance &&
                 Math.Abs(dx * -bz + dz * bx) < otherHalfForward + halfRight * s + halfForward * c - 1e-7 - contactTolerance;
         }
+        public static bool SharesNominalEdge(SkateParkTransform pose, SkateParkBox bounds,
+            SkateParkTransform otherPose, SkateParkBox otherBounds)
+        {
+            double a = pose.Yaw * Degrees, b = otherPose.Yaw * Degrees;
+            return SharesBoxEdge(pose.X + bounds.X * Math.Cos(a) + bounds.Z * Math.Sin(a),
+                pose.Z - bounds.X * Math.Sin(a) + bounds.Z * Math.Cos(a), pose.Yaw, bounds.SizeX / 2, bounds.SizeZ / 2,
+                otherPose.X + otherBounds.X * Math.Cos(b) + otherBounds.Z * Math.Sin(b),
+                otherPose.Z - otherBounds.X * Math.Sin(b) + otherBounds.Z * Math.Cos(b), otherPose.Yaw,
+                otherBounds.SizeX / 2, otherBounds.SizeZ / 2);
+        }
+
         // A neighboring floor must share an edge, not merely have disjoint nominal bounds.
         public static bool SharesBoxEdge(double x, double z, double yaw, double halfRight, double halfForward,
             double otherX, double otherZ, double otherYaw, double otherHalfRight, double otherHalfForward)
@@ -5319,13 +5330,11 @@ namespace Oxide.Plugins
 
         private static bool ParkSpacesShareEdge(ParkSpace first, ParkSpace second)
         {
-            Vector3 a = first.Position + first.Rotation * first.Bounds.center;
-            Vector3 b = second.Position + second.Rotation * second.Bounds.center;
-            Vector3 ae = first.Bounds.extents, be = second.Bounds.extents;
-            double pitch = first.Rotation.eulerAngles.x * Math.PI / 180;
-            double forward = ae.z * Math.Abs(Math.Cos(pitch)) + ae.y * Math.Abs(Math.Sin(pitch));
-            return SkateParkLayout.SharesBoxEdge(a.x, a.z, first.Rotation.eulerAngles.y, ae.x, forward,
-                b.x, b.z, second.Rotation.eulerAngles.y, be.x, be.z);
+            return SkateParkLayout.SharesNominalEdge(
+                new SkateParkTransform { X = first.Position.x, Z = first.Position.z, Yaw = first.Rotation.eulerAngles.y },
+                ParkBox(first.Bounds),
+                new SkateParkTransform { X = second.Position.x, Z = second.Position.z, Yaw = second.Rotation.eulerAngles.y },
+                ParkBox(second.Bounds));
         }
 
         private bool ParkModuleSpace(ParkPlacementRequest request, SkateParkKind kind, ParkNativePart[] definitions,
@@ -5678,7 +5687,8 @@ namespace Oxide.Plugins
                         { unavailable = "native deploy-volume returned an unavailable collider"; return true; }
                         BaseEntity entity = candidate.ToBaseEntity();
                         if (!SkateParkLayout.BlocksMegaSpace(entity, player, anchor,
-                            transactionParts != null && transactionParts.Any(candidatePart => ReferenceEquals(candidatePart, entity))))
+                            transactionParts != null && transactionParts.Any(candidatePart => ReferenceEquals(candidatePart, entity))) ||
+                            ParkAdjacentContact(request, position, rotation, bounds, entity as BuildingBlock))
                             candidates.RemoveAt(i);
                     }
                     DeployVolume.LastDeployHit = null;

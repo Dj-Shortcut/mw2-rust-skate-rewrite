@@ -188,7 +188,10 @@ its pitched quarterpipe corner, translated cell rotations, unchanged vertical
 bounds, wrong prefab names, altered geometry and refusal beyond the measured
 horizontal allowance. Block-frame cases reject unchanged raw boxes translated
 by 1.1 mm, 10 mm or 100 mm, quarter-turned or scaled, while preserving the 1 mm
-measurement budget. The fixture uses the reported numbers; it does not create
+measurement budget. Pitched-carrier cases use the production nominal-edge helper
+across five pitches, five yaws and two anchors, retaining true 3 m seams while
+refusing 2 mm gaps, intrusions and corner contact. The fixture uses the reported
+numbers; it does not create
 native colliders or prove live placement.
 
 ## Park build items

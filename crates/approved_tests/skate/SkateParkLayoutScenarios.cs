@@ -1503,6 +1503,7 @@ internal static class SkateParkLayoutScenarios
 
     private static void NativeFloorContacts()
     {
+        NominalPitchedFloorContacts();
         double depth = (float)3.0000005 / 2;
         Require(SkateParkLayout.OverlapsBox(0, 0, 0, 1.5, depth, 0, 3, 0, 1.5, depth),
             "saved reservations still reject float-rounded positive overlap.");
@@ -1552,6 +1553,39 @@ internal static class SkateParkLayoutScenarios
         foreach (double invalid in new[] { double.NaN, double.PositiveInfinity, double.NegativeInfinity, -0.001, 0.001001 })
             Require(SkateParkLayout.OverlapsBoxBeyondContact(0, 0, 0, 1.5, depth, 10, 10, 0, 1.5, depth, invalid),
                 "invalid or expanded native contact tolerance fails closed.");
+    }
+
+    private static void NominalPitchedFloorContacts()
+    {
+        SkateParkBox floor = Box(0, -0.1, 0, 3, 0.2, (float)3.0000005);
+        foreach (double pitch in new[] { -35d, -30, -15, 15, 35 })
+        foreach (double yaw in new[] { 0d, 37, 90, 180, 270 })
+        foreach (double world in new[] { 0d, 2048.125 })
+        {
+            double angle = yaw * Math.PI / 180, tilt = pitch * Math.PI / 180;
+            double side = Math.Sign(pitch);
+            var part = new SkateParkTransform { X = world, Y = 0.3882285676537811, Z = -world, Yaw = yaw, Pitch = pitch };
+            var neighbour = new SkateParkTransform { X = world + side * 3 * Math.Sin(angle),
+                Z = -world + side * 3 * Math.Cos(angle), Yaw = yaw };
+            Require(SkateParkLayout.SharesNominalEdge(part, floor, neighbour, floor),
+                "pitched carrier retains its true nominal three-metre floor seam.");
+            double projectedCenter = floor.Y * Math.Sin(tilt);
+            double projectedDepth = floor.SizeZ / 2 * Math.Abs(Math.Cos(tilt)) + floor.SizeY / 2 * Math.Abs(Math.Sin(tilt));
+            Require(!SkateParkLayout.SharesBoxEdge(part.X + projectedCenter * Math.Sin(angle),
+                part.Z + projectedCenter * Math.Cos(angle), yaw, floor.SizeX / 2, projectedDepth,
+                neighbour.X, neighbour.Z, yaw, floor.SizeX / 2, floor.SizeZ / 2),
+                "pitched physical projection reproduces refusal of a true nominal seam.");
+            foreach (double offset in new[] { -0.002, 0.002 })
+            {
+                var shifted = neighbour;
+                shifted.X += side * offset * Math.Sin(angle); shifted.Z += side * offset * Math.Cos(angle);
+                Require(!SkateParkLayout.SharesNominalEdge(part, floor, shifted, floor),
+                    "nominal seam still refuses two millimetres of intrusion or gap.");
+            }
+            var corner = neighbour; corner.X += 3 * Math.Cos(angle); corner.Z -= 3 * Math.Sin(angle);
+            Require(!SkateParkLayout.SharesNominalEdge(part, floor, corner, floor),
+                "pitched carrier cannot exempt a corner-only neighbor.");
+        }
     }
 
 

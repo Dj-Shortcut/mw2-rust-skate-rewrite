@@ -238,3 +238,8 @@ strict. A non-selected floor must share a nominal edge within 1 mm; a gap, corne
 The five other generic overlap refusals in that receipt are not independently
 attributed to twig overhang. Native reload, all-twelve placement/refusal outcomes
 and riding still need actual runtime evidence.
+
+Qualified adjacent twig floors use nominal unpitched cell edges, including the
+yaw-only bounds center. The same validated adjacency predicate filters ordinary
+OBB, capsule, sphere and entity-bounds deploy candidates before native flags.
+Unknown special deploy-volume types retain their native checks.

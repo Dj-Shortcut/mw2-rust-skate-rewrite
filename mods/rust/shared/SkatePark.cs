@@ -344,6 +344,17 @@ namespace Shortcut.RustMod
                 Math.Abs(dx * bx + dz * bz) < otherHalfRight + halfRight * c + halfForward * s - 1e-7 - contactTolerance &&
                 Math.Abs(dx * -bz + dz * bx) < otherHalfForward + halfRight * s + halfForward * c - 1e-7 - contactTolerance;
         }
+        public static bool SharesNominalEdge(SkateParkTransform pose, SkateParkBox bounds,
+            SkateParkTransform otherPose, SkateParkBox otherBounds)
+        {
+            double a = pose.Yaw * Degrees, b = otherPose.Yaw * Degrees;
+            return SharesBoxEdge(pose.X + bounds.X * Math.Cos(a) + bounds.Z * Math.Sin(a),
+                pose.Z - bounds.X * Math.Sin(a) + bounds.Z * Math.Cos(a), pose.Yaw, bounds.SizeX / 2, bounds.SizeZ / 2,
+                otherPose.X + otherBounds.X * Math.Cos(b) + otherBounds.Z * Math.Sin(b),
+                otherPose.Z - otherBounds.X * Math.Sin(b) + otherBounds.Z * Math.Cos(b), otherPose.Yaw,
+                otherBounds.SizeX / 2, otherBounds.SizeZ / 2);
+        }
+
         // A neighboring floor must share an edge, not merely have disjoint nominal bounds.
         public static bool SharesBoxEdge(double x, double z, double yaw, double halfRight, double halfForward,
             double otherX, double otherZ, double otherYaw, double otherHalfRight, double otherHalfForward)

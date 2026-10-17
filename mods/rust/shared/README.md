@@ -351,3 +351,7 @@ vertical bounds, generic construction metadata and saved reservation overlap sta
 unchanged. Other collider names/shapes, including unmeasured foundations, do not
 inherit this allowance. These are reported live bounds and offline fixtures, not
 an independent new native measurement.
+
+`SharesNominalEdge` classifies floor seams from yaw-only centers and unpitched X/Z extents.
+A carrier pitch or its bounds-center Y does not shrink or shift its nominal cell.
+Physical overlap detection remains separate and uses the pitched bounds.
