@@ -792,7 +792,15 @@ namespace Shortcut.RustMod
         public static bool OverlapsBox(double x, double z, double yaw, double halfRight, double halfForward,
             double otherX, double otherZ, double otherYaw, double otherHalfRight, double otherHalfForward)
         {
-            if (!Coordinate(x) || !Coordinate(z) || !Angle(yaw) || !Coordinate(otherX) || !Coordinate(otherZ) ||
+            return OverlapsBoxBeyondContact(x, z, yaw, halfRight, halfForward,
+                otherX, otherZ, otherYaw, otherHalfRight, otherHalfForward, 0);
+        }
+
+        public static bool OverlapsBoxBeyondContact(double x, double z, double yaw, double halfRight, double halfForward,
+            double otherX, double otherZ, double otherYaw, double otherHalfRight, double otherHalfForward, double contactTolerance)
+        {
+            if (!Finite(contactTolerance) || contactTolerance < 0 || contactTolerance > NativeBoundsTolerance ||
+                !Coordinate(x) || !Coordinate(z) || !Angle(yaw) || !Coordinate(otherX) || !Coordinate(otherZ) ||
                 !Angle(otherYaw) || !Finite(halfRight) || !Finite(halfForward) || !Finite(otherHalfRight) ||
                 !Finite(otherHalfForward) || halfRight <= 0 || halfForward <= 0 || otherHalfRight <= 0 || otherHalfForward <= 0)
                 return true;
@@ -800,10 +808,10 @@ namespace Shortcut.RustMod
             double ax = Math.Cos(a), az = -Math.Sin(a), bx = Math.Cos(b), bz = -Math.Sin(b);
             double dx = otherX - x, dz = otherZ - z;
             double c = Math.Abs(ax * bx + az * bz), s = Math.Abs(ax * -bz + az * bx);
-            return Math.Abs(dx * ax + dz * az) < halfRight + otherHalfRight * c + otherHalfForward * s - 1e-7 &&
-                Math.Abs(dx * -az + dz * ax) < halfForward + otherHalfRight * s + otherHalfForward * c - 1e-7 &&
-                Math.Abs(dx * bx + dz * bz) < otherHalfRight + halfRight * c + halfForward * s - 1e-7 &&
-                Math.Abs(dx * -bz + dz * bx) < otherHalfForward + halfRight * s + halfForward * c - 1e-7;
+            return Math.Abs(dx * ax + dz * az) < halfRight + otherHalfRight * c + otherHalfForward * s - 1e-7 - contactTolerance &&
+                Math.Abs(dx * -az + dz * ax) < halfForward + otherHalfRight * s + otherHalfForward * c - 1e-7 - contactTolerance &&
+                Math.Abs(dx * bx + dz * bz) < otherHalfRight + halfRight * c + halfForward * s - 1e-7 - contactTolerance &&
+                Math.Abs(dx * -bz + dz * bx) < otherHalfForward + halfRight * s + halfForward * c - 1e-7 - contactTolerance;
         }
         private static void HalfpipePart(int index, out SkateParkPart part)
         {
@@ -1421,7 +1429,7 @@ namespace Shortcut.RustMod
 
 namespace Oxide.Plugins
 {
-    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.20")]
+    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.21")]
     [Description("Player-scoped skateboard movement bounds and saved park assemblies.")]
     public sealed class ShortcutSkate : RustPlugin
     {
@@ -3750,7 +3758,6 @@ namespace Oxide.Plugins
                     return false;
             }
             if (request.SnapSnapshot != null && !ParkSnapCurrent(request)) return false;
-            if (request.Supports != null && !ParkSupportsCurrent(request)) return false;
             if (request.BuildItem && request.ItemSpent)
                 return SameParkPaymentItem(request) && request.PlannerItem.amount == 0;
             if (request.Planner == null || request.Planner.IsDestroyed ||
@@ -3768,6 +3775,11 @@ namespace Oxide.Plugins
                 return CurrentParkSelection(request.Player, request.Selection) &&
                     ParkFoundationMatches(request.Foundation, request.FoundationId, request.Snapshot);
             return ParkPlannerItem(request.Player, request.Belt, request.PlannerItem, request.Planner);
+        }
+
+        private bool CurrentParkPhase(ParkPlacementRequest request)
+        {
+            return CurrentParkRequest(request) && (request.Supports == null || ParkSupportsCurrent(request));
         }
 
         [ConsoleCommand("skate.placeitem")]
@@ -4667,7 +4679,7 @@ namespace Oxide.Plugins
                     neighbour.blockDefinition.bounds.min.y, request.SupportTop) &&
                 !ParkSpacesOverlap(new ParkSpace { Position = position, Rotation = rotation, Bounds = bounds },
                     new ParkSpace { Position = neighbour.transform.position, Rotation = neighbour.transform.rotation,
-                        Bounds = neighbour.blockDefinition.bounds });
+                        Bounds = neighbour.blockDefinition.bounds }, SkateParkLayout.NativeBoundsTolerance);
         }
 
         private static bool ParkSupportedDeployVolume(ParkPlacementRequest request, Vector3 position,
@@ -5116,7 +5128,7 @@ namespace Oxide.Plugins
             return spaces;
         }
 
-        private static bool ParkSpacesOverlap(ParkSpace first, ParkSpace second)
+        private static bool ParkSpacesOverlap(ParkSpace first, ParkSpace second, double contactTolerance = 0)
         {
             Vector3 a = first.Position + first.Rotation * first.Bounds.center;
             Vector3 b = second.Position + second.Rotation * second.Bounds.center;
@@ -5125,9 +5137,9 @@ namespace Oxide.Plugins
             double pitch = first.Rotation.eulerAngles.x * Math.PI / 180;
             double vertical = ae.y * Math.Abs(Math.Cos(pitch)) + ae.z * Math.Abs(Math.Sin(pitch));
             double forward = ae.z * Math.Abs(Math.Cos(pitch)) + ae.y * Math.Abs(Math.Sin(pitch));
-            return Math.Abs(a.y - b.y) < vertical + be.y - 1e-5 && SkateParkLayout.OverlapsBox(
+            return Math.Abs(a.y - b.y) < vertical + be.y - 1e-5 && SkateParkLayout.OverlapsBoxBeyondContact(
                 a.x, a.z, first.Rotation.eulerAngles.y, ae.x, forward,
-                b.x, b.z, second.Rotation.eulerAngles.y, be.x, be.z);
+                b.x, b.z, second.Rotation.eulerAngles.y, be.x, be.z, contactTolerance);
         }
 
         private bool ParkModuleSpace(ParkPlacementRequest request, SkateParkKind kind, ParkNativePart[] definitions,
@@ -5756,7 +5768,7 @@ namespace Oxide.Plugins
             }
             if (parkRollback.Count != 0)
             { failure = "Previous unsaved park cleanup is incomplete; new placement is disabled until those parts are removed."; return false; }
-            if (!CurrentParkRequest(request)) { failure = request.SupportFailure ?? failure; return false; }
+            if (!CurrentParkPhase(request)) { failure = request.SupportFailure ?? failure; return false; }
             if (request.Data.Groups.Count >= MaximumParkGroups)
             { failure = "Park group limit reached: 256."; return false; }
             BasePlayer player = request.Player;
@@ -5785,8 +5797,8 @@ namespace Oxide.Plugins
                 if (!ParkPreflight(request, kind, anchor, definitions, parts, out failure) ||
                     !ParkModuleSpace(request, kind, definitions, group, parts, null, out failure))
                     throw new InvalidDataException(failure);
-                // Native/plugin callbacks can change the actor, planner, world or foundation.
-                if (!CurrentParkRequest(request))
+                // Full support scans belong at phase boundaries, outside per-part callback guards.
+                if (!CurrentParkPhase(request))
                     throw new InvalidDataException("The administrator, building plan, save/world or placement request changed during preflight.");
                 for (int i = 0; i < parts.Length; i++)
                 {
@@ -5832,6 +5844,8 @@ namespace Oxide.Plugins
                     block.StartBeingDemolishable();
                     RefreshParkBlock(block, ParkWorldBounds(block));
                 }
+                if (!CurrentParkPhase(request))
+                    throw new InvalidDataException(request.SupportFailure ?? "The placement support changed during creation.");
                 foreach (ParkMember part in parts)
                 {
                     if (!CurrentParkRequest(request)) throw new InvalidDataException("The placement request changed before final building-hook checks.");
@@ -5842,6 +5856,8 @@ namespace Oxide.Plugins
                     if (!ParkBuildingHook(request, construction, target))
                         throw new InvalidDataException("A building hook rejected final park registration.");
                 }
+                if (!CurrentParkPhase(request))
+                    throw new InvalidDataException(request.SupportFailure ?? "The placement support changed during building-hook checks.");
                 foreach (ParkMember part in parts)
                 {
                     BuildingBlock block = created[part.Index];
@@ -5861,6 +5877,8 @@ namespace Oxide.Plugins
                     !ParkModuleSpace(request, kind, definitions, group, parts, created, out failure))
                     throw new InvalidDataException(failure);
                 EnsureParkQuarterCollision(kind, group, parts, definitions[0].Construction.bounds);
+                if (!CurrentParkPhase(request))
+                    throw new InvalidDataException(request.SupportFailure ?? "The placement support changed during final permission verification.");
                 group.Members.AddRange(parts);
                 request.Data.Groups.Add(group);
                 recorded = true;
@@ -5878,12 +5896,14 @@ namespace Oxide.Plugins
                         !block.enableSaving || !block.grounded || block.buildingID != request.Building)
                         throw new InvalidDataException("A placement request or park member changed during save registration.");
                 }
+                if (!CurrentParkPhase(request))
+                    throw new InvalidDataException(request.SupportFailure ?? "The placement support changed during save registration.");
                 if (request.BuildItem)
                 {
                     if (!ConsumeParkItem(request))
                         throw new InvalidDataException("Build-item payment was refused or its exact one-item debit could not be verified.");
-                    if (!CurrentParkRequest(request))
-                        throw new InvalidDataException("The administrator, item receipt or save/world changed during build-item payment.");
+                    if (!CurrentParkPhase(request))
+                        throw new InvalidDataException(request.SupportFailure ?? "The administrator, item receipt or save/world changed during build-item payment.");
                     // Preparing is deliberately not recoverable if interrupted before a verified native debit.
                     group.BuildItemState = SkateParkBuildItemState.Paid;
                     SaveParkData();
@@ -5898,13 +5918,13 @@ namespace Oxide.Plugins
                     }
                 }
                 SkateParkSelectionState consumed = new SkateParkSelectionState();
-                if (!CurrentParkRequest(request) || rollbackReceipts.Any(receipt => !ParkRollbackMatches(receipt)) || (request.Selection != null &&
+                if (!CurrentParkPhase(request) || rollbackReceipts.Any(receipt => !ParkRollbackMatches(receipt)) || (request.Selection != null &&
                     !SkateParkSelections.TryApply(request.Selection.State, SkateParkSelectionAction.PlacementSucceeded,
                         player.IsAdmin, parkReady, clock.Elapsed.TotalSeconds, null, out consumed)))
                     throw new InvalidDataException("The placement request expired or changed before completion.");
                 if (!ParkFinalDeployVolumes(request, kind, parts, definitions, anchor, created, out failure) ||
                     !ParkMegaSpace(kind, parts, player, anchor, created, out failure, group, request) ||
-                    !ParkModuleSpace(request, kind, definitions, group, parts, created, out failure) || !CurrentParkRequest(request))
+                    !ParkModuleSpace(request, kind, definitions, group, parts, created, out failure) || !CurrentParkPhase(request))
                     throw new InvalidDataException(failure ?? "The placement request changed during final park-space verification.");
                 foreach (ParkMember part in parts) parkMembers.Add(part.Id, group);
                 foreach (ParkRollbackReceipt receipt in rollbackReceipts) parkRollback.Remove(receipt);

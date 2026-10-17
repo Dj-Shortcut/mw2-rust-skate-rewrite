@@ -1,6 +1,6 @@
 # Supported park placement
 
-In source **0.3.20**, marked plans use native square-foundation confirmation. The server owns the final
+In source **0.3.21**, marked plans use native square-foundation confirmation. The server owns the final
 pose and item debit. The [item contract](RUST-SKATE-BUILD-ASSETS.md) and
 [shared helpers](../mods/rust/shared/SkatePark.cs) apply to both client frontends.
 Half-wall kickers retain their separate wall/side/join contract.
@@ -132,11 +132,18 @@ This tolerance covers native float/contact error, not a lift.
 The final anchor and all parts retain coordinate/range/privilege/occupancy checks.
 Only captured foundation colliders whose maximum Y is at/below the support plane
 plus contact tolerance, and the exact selected flat park floor
-when its native bounds have no positive overlap, are exempted from proximity/deploy
+when its native bounds overlap by at most the 1 mm native-bounds contact tolerance, are exempted from proximity/deploy
 contact rejection. Permission checks still run; physical footprint overlap still
 rejects the park neighbour. Unrelated entities remain blockers.
-Captured support identities/poses/grades and terrain heights are rechecked through
-final registration, including after payment. Support removal after commit retains
+Saved park reservations retain strict overlap checks; the contact tolerance applies
+only to the exact current selected neighbour floor.
+Captured support identities/poses/grades and terrain heights are rechecked after
+cleanup, preflight, creation, building hooks, permission/collision checks, save
+registration and payment, and before/after final space verification. Per-part
+callback guards still check the actor, planner/item, selected target and world,
+without rescanning every terrain/support witness. Any failed phase rolls back
+the assembly before completion; a verified debit follows the existing guarded
+recovery path. Support removal after commit retains
 the existing park demolition/stability lifecycle; no new persistent dependency is added.
 
 ## Ghost and placed visual contract

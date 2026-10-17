@@ -181,6 +181,8 @@ effect; terrain/world colliders gain no broad exemption.
 
 These checks use the layout helpers in the selected DLL, with independent expected positions and seams. Matching tolerance is relative to the deterministic observed-part-derived anchor, rather than an ideal common-anchor fit; the opposing ±0.004/±0.009 m quarter fixtures distinguish acceptance and refusal at tolerance 0.01. Matching does not prove registered park identity or infer the kind of a single floor. The scenarios do not verify native floor dimensions/colliders, building privilege, stability, save/load callbacks, demolition or gameplay, and they do not start the Rust client or server.
 
+The existing park layout/anchor scenarios also cover the 3.0000005 m native floor seam at 3 m spacing, rotated/translated float32 centres, symmetric contact, real 2 mm intrusion and invalid contact tolerances. Saved reservations retain strict overlap. These are geometry checks; native collider queries and placement timing remain unverified.
+
 ## Park build items
 
 The same approved layout/build-item scenarios also cover appended half-wall kicker kind 10, both-side measured wall joins and item accounting. For the actual plugin parser extension, set `SKATE_PARK_PARSER_REFERENCES=/absolute/path/to/genuine/managed` when executing the plugin build-item runner. It uses the plugin's own JSON attribute assembly for round-trips of old records and rejection of malformed/conflicting wall dependencies. Without that variable, the runner explicitly skips parser checks; native callbacks and gameplay remain separate.

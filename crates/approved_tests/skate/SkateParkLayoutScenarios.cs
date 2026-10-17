@@ -1424,6 +1424,37 @@ internal static class SkateParkLayoutScenarios
         }
         BoxOverlap(true, 100001, 0, 0, 1.5, 1.5, 0, 0, 0, 1.5, 1.5, "out-of-world coordinate fails closed");
         BoxOverlap(true, 0, 0, 1000001, 1.5, 1.5, 10, 10, 0, 1.5, 1.5, "out-of-range heading fails closed");
+        NativeFloorContacts();
+    }
+
+    private static void NativeFloorContacts()
+    {
+        double depth = (float)3.0000005 / 2;
+        Require(SkateParkLayout.OverlapsBox(0, 0, 0, 1.5, depth, 0, 3, 0, 1.5, depth),
+            "saved reservations still reject float-rounded positive overlap.");
+        foreach (double yaw in new[] { 0d, 37, 90, 180, 270 })
+        foreach (double world in new[] { 0d, 17.125, 2048.125 })
+        foreach (int axis in new[] { 0, 1 })
+        foreach (int direction in new[] { -1, 1 })
+        {
+            double angle = yaw * Math.PI / 180;
+            double dx = direction * (axis == 0 ? Math.Cos(angle) : Math.Sin(angle));
+            double dz = direction * (axis == 0 ? -Math.Sin(angle) : Math.Cos(angle));
+            double x = (float)world, z = (float)-world;
+            double nx = (float)(world + 3 * dx), nz = (float)(-world + 3 * dz);
+            Require(!SkateParkLayout.OverlapsBoxBeyondContact(x, z, yaw, 1.5, depth,
+                nx, nz, yaw, 1.5, depth, SkateParkLayout.NativeBoundsTolerance),
+                "float-rounded native floor seam remains contact.");
+            Require(!SkateParkLayout.OverlapsBoxBeyondContact(nx, nz, yaw, 1.5, depth,
+                x, z, yaw, 1.5, depth, SkateParkLayout.NativeBoundsTolerance),
+                "native floor contact is symmetric.");
+            Require(SkateParkLayout.OverlapsBoxBeyondContact(x, z, yaw, 1.5, depth,
+                (float)(world + 2.998 * dx), (float)(-world + 2.998 * dz), yaw, 1.5, depth,
+                SkateParkLayout.NativeBoundsTolerance), "two millimetres of real intrusion stays blocked.");
+        }
+        foreach (double invalid in new[] { double.NaN, double.PositiveInfinity, double.NegativeInfinity, -0.001, 0.001001 })
+            Require(SkateParkLayout.OverlapsBoxBeyondContact(0, 0, 0, 1.5, depth, 10, 10, 0, 1.5, depth, invalid),
+                "invalid or expanded native contact tolerance fails closed.");
     }
 
 
