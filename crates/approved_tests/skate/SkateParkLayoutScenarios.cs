@@ -1499,10 +1499,33 @@ internal static class SkateParkLayoutScenarios
             Require(!SkateParkLayout.OverlapsBoxBeyondContact(nx, nz, yaw, 1.5, depth,
                 x, z, yaw, 1.5, depth, SkateParkLayout.NativeBoundsTolerance),
                 "native floor contact is symmetric.");
+            Require(SkateParkLayout.SharesBoxEdge(x, z, yaw, 1.5, depth, nx, nz, yaw, 1.5, depth),
+                "float-rounded native floors share a true edge.");
+            Require(SkateParkLayout.SharesBoxEdge(nx, nz, yaw + 90, depth, 1.5, x, z, yaw, 1.5, depth),
+                "native edge contact is symmetric across quarter turns.");
+            foreach (double gap in new[] { 0.002, 0.01, 0.05 })
+            {
+                double gx = (float)(world + (3 + gap) * dx), gz = (float)(-world + (3 + gap) * dz);
+                Require(!SkateParkLayout.OverlapsBoxBeyondContact(x, z, yaw, 1.5, depth,
+                    gx, gz, yaw, 1.5, depth, SkateParkLayout.NativeBoundsTolerance),
+                    "gapped nominal floors reproduce the overly broad disjoint predicate.");
+                Require(!SkateParkLayout.SharesBoxEdge(x, z, yaw, 1.5, depth, gx, gz, yaw, 1.5, depth),
+                    "gapped twig floors remain obstructions despite collider overhang.");
+            }
             Require(SkateParkLayout.OverlapsBoxBeyondContact(x, z, yaw, 1.5, depth,
                 (float)(world + 2.998 * dx), (float)(-world + 2.998 * dz), yaw, 1.5, depth,
                 SkateParkLayout.NativeBoundsTolerance), "two millimetres of real intrusion stays blocked.");
+            Require(!SkateParkLayout.SharesBoxEdge(x, z, yaw, 1.5, depth,
+                (float)(world + 2.998 * dx), (float)(-world + 2.998 * dz), yaw, 1.5, depth),
+                "intrusion is not edge contact.");
         }
+        Require(!SkateParkLayout.SharesBoxEdge(0, 0, 0, 1.5, depth, 3, 3, 0, 1.5, depth),
+            "corner contact does not share an edge.");
+        Require(!SkateParkLayout.SharesBoxEdge(0, 0, 0, 1.5, depth, 1.5 + Math.Sqrt(2), 0, 45, 1, 1),
+            "rotated point contact does not share an edge.");
+        foreach (double invalid in new[] { double.NaN, double.PositiveInfinity, double.NegativeInfinity })
+            Require(!SkateParkLayout.SharesBoxEdge(0, 0, 0, 1.5, depth, invalid, 0, 0, 1.5, depth),
+                "unreadable neighboring floor fails closed.");
         foreach (double invalid in new[] { double.NaN, double.PositiveInfinity, double.NegativeInfinity, -0.001, 0.001001 })
             Require(SkateParkLayout.OverlapsBoxBeyondContact(0, 0, 0, 1.5, depth, 10, 10, 0, 1.5, depth, invalid),
                 "invalid or expanded native contact tolerance fails closed.");

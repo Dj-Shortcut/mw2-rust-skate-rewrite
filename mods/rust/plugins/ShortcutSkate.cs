@@ -851,6 +851,24 @@ namespace Shortcut.RustMod
                 Math.Abs(dx * bx + dz * bz) < otherHalfRight + halfRight * c + halfForward * s - 1e-7 - contactTolerance &&
                 Math.Abs(dx * -bz + dz * bx) < otherHalfForward + halfRight * s + halfForward * c - 1e-7 - contactTolerance;
         }
+        // A neighboring floor must share an edge, not merely have disjoint nominal bounds.
+        public static bool SharesBoxEdge(double x, double z, double yaw, double halfRight, double halfForward,
+            double otherX, double otherZ, double otherYaw, double otherHalfRight, double otherHalfForward)
+        {
+            if (!Coordinate(x) || !Coordinate(z) || !Angle(yaw) || !Coordinate(otherX) || !Coordinate(otherZ) ||
+                !Angle(otherYaw) || !Finite(halfRight) || !Finite(halfForward) || !Finite(otherHalfRight) ||
+                !Finite(otherHalfForward) || halfRight <= 0 || halfForward <= 0 || otherHalfRight <= 0 || otherHalfForward <= 0)
+                return false;
+            double a = yaw * Degrees, relative = (otherYaw - yaw) * Degrees;
+            double c = Math.Abs(Math.Cos(relative)), s = Math.Abs(Math.Sin(relative));
+            if (c > 1e-6 && s > 1e-6) return false;
+            double dx = otherX - x, dz = otherZ - z;
+            double rightGap = Math.Abs(dx * Math.Cos(a) - dz * Math.Sin(a)) - halfRight - otherHalfRight * c - otherHalfForward * s;
+            double forwardGap = Math.Abs(dx * Math.Sin(a) + dz * Math.Cos(a)) - halfForward - otherHalfRight * s - otherHalfForward * c;
+            return (Math.Abs(rightGap) <= NativeBoundsTolerance && forwardGap < -NativeBoundsTolerance) ||
+                (Math.Abs(forwardGap) <= NativeBoundsTolerance && rightGap < -NativeBoundsTolerance);
+        }
+
         private static void HalfpipePart(int index, out SkateParkPart part)
         {
             part = new SkateParkPart { Prefab = FloorPrefab };
@@ -4805,7 +4823,10 @@ namespace Oxide.Plugins
                     neighbour.blockDefinition.bounds.min.y, request.SupportTop) &&
                 !ParkSpacesOverlap(new ParkSpace { Position = position, Rotation = rotation, Bounds = bounds },
                     new ParkSpace { Position = neighbour.transform.position, Rotation = neighbour.transform.rotation,
-                        Bounds = neighbour.blockDefinition.bounds }, SkateParkLayout.NativeBoundsTolerance);
+                        Bounds = neighbour.blockDefinition.bounds }, SkateParkLayout.NativeBoundsTolerance) &&
+                (selected || ParkSpacesShareEdge(new ParkSpace { Position = position, Rotation = rotation, Bounds = bounds },
+                    new ParkSpace { Position = neighbour.transform.position, Rotation = neighbour.transform.rotation,
+                        Bounds = neighbour.blockDefinition.bounds }));
         }
 
         private static bool ParkSupportedDeployVolume(ParkPlacementRequest request, Vector3 position,
@@ -5266,6 +5287,17 @@ namespace Oxide.Plugins
             return Math.Abs(a.y - b.y) < vertical + be.y - 1e-5 && SkateParkLayout.OverlapsBoxBeyondContact(
                 a.x, a.z, first.Rotation.eulerAngles.y, ae.x, forward,
                 b.x, b.z, second.Rotation.eulerAngles.y, be.x, be.z, contactTolerance);
+        }
+
+        private static bool ParkSpacesShareEdge(ParkSpace first, ParkSpace second)
+        {
+            Vector3 a = first.Position + first.Rotation * first.Bounds.center;
+            Vector3 b = second.Position + second.Rotation * second.Bounds.center;
+            Vector3 ae = first.Bounds.extents, be = second.Bounds.extents;
+            double pitch = first.Rotation.eulerAngles.x * Math.PI / 180;
+            double forward = ae.z * Math.Abs(Math.Cos(pitch)) + ae.y * Math.Abs(Math.Sin(pitch));
+            return SkateParkLayout.SharesBoxEdge(a.x, a.z, first.Rotation.eulerAngles.y, ae.x, forward,
+                b.x, b.z, second.Rotation.eulerAngles.y, be.x, be.z);
         }
 
         private bool ParkModuleSpace(ParkPlacementRequest request, SkateParkKind kind, ParkNativePart[] definitions,

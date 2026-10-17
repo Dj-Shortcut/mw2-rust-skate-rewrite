@@ -233,7 +233,7 @@ vertical bounds retain their existing tolerance. An adjacent non-selected floor
 can share only a nominal seam when every active physical collider matches that
 reported twig box, the native floor is current and horizontal, building permission
 holds and its bottom meets the captured support plane. Saved reservations remain
-strict. Other geometry is not exempted based on a twig name alone.
+strict. A non-selected floor must share a nominal edge within 1 mm; a gap, corner-only contact or rotated point contact stays obstructing. Other geometry is not exempted based on a twig name alone.
 
 The five other generic overlap refusals in that receipt are not independently
 attributed to twig overhang. Native reload, all-twelve placement/refusal outcomes

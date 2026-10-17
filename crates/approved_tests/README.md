@@ -27,7 +27,7 @@ workspace.
 | `skate_surface_landing` | board-yaw roll retention, full surface-normal impact bail and downhill fall-to-roll conversion |
 | `skate_server_movement_policy` | complete finite batch paths, horizontal cap, fresh authorization guards and independence from diagnostic airtime/support/rearm history |
 | `skate_park_piece_layouts` | original eight layouts, mini/large quarterpipe profiles and cell reservations, half-wall attachment joins, and MEGA module poses and profile |
-| `skate_park_anchor_yaw_and_snap` | translate and rotate each layout from an existing native snapped building anchor |
+| `skate_park_anchor_yaw_and_snap` | translate and rotate each layout from an existing native snapped building anchor; reported twig bounds and true nominal-edge contact, with gapped and corner-only neighbors refused |
 | `skate_park_gesture_selection` | admin-only configurable park-piece cycling, cancel, expiry and retained pending selection |
 | `skate_park_build_items` | twelve exact item identities with stable original IDs/markers, single verified debit, complete paid-group recovery eligibility and half-wall metadata validation; invalid and historical free groups refuse |
 | `skate_audio_surfaces_and_events` | authored wheel, truck/deck contact and event PCM: duration, peak/DC, determinism, loop seams and invalid requests |

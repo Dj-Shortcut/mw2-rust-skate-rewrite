@@ -334,6 +334,24 @@ namespace Shortcut.RustMod
                 Math.Abs(dx * bx + dz * bz) < otherHalfRight + halfRight * c + halfForward * s - 1e-7 - contactTolerance &&
                 Math.Abs(dx * -bz + dz * bx) < otherHalfForward + halfRight * s + halfForward * c - 1e-7 - contactTolerance;
         }
+        // A neighboring floor must share an edge, not merely have disjoint nominal bounds.
+        public static bool SharesBoxEdge(double x, double z, double yaw, double halfRight, double halfForward,
+            double otherX, double otherZ, double otherYaw, double otherHalfRight, double otherHalfForward)
+        {
+            if (!Coordinate(x) || !Coordinate(z) || !Angle(yaw) || !Coordinate(otherX) || !Coordinate(otherZ) ||
+                !Angle(otherYaw) || !Finite(halfRight) || !Finite(halfForward) || !Finite(otherHalfRight) ||
+                !Finite(otherHalfForward) || halfRight <= 0 || halfForward <= 0 || otherHalfRight <= 0 || otherHalfForward <= 0)
+                return false;
+            double a = yaw * Degrees, relative = (otherYaw - yaw) * Degrees;
+            double c = Math.Abs(Math.Cos(relative)), s = Math.Abs(Math.Sin(relative));
+            if (c > 1e-6 && s > 1e-6) return false;
+            double dx = otherX - x, dz = otherZ - z;
+            double rightGap = Math.Abs(dx * Math.Cos(a) - dz * Math.Sin(a)) - halfRight - otherHalfRight * c - otherHalfForward * s;
+            double forwardGap = Math.Abs(dx * Math.Sin(a) + dz * Math.Cos(a)) - halfForward - otherHalfRight * s - otherHalfForward * c;
+            return (Math.Abs(rightGap) <= NativeBoundsTolerance && forwardGap < -NativeBoundsTolerance) ||
+                (Math.Abs(forwardGap) <= NativeBoundsTolerance && rightGap < -NativeBoundsTolerance);
+        }
+
         private static void HalfpipePart(int index, out SkateParkPart part)
         {
             part = new SkateParkPart { Prefab = FloorPrefab };
