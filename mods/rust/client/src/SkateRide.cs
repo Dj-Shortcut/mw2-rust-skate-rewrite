@@ -381,6 +381,13 @@ public static class SkateRide
     public const float WallProbe = 0.3f, WallSkin = 0.1f, WallSlam = 8f, WallFrom = 3f;
     private static readonly float[] wallHeights = { 0.6f, 1.3f };
     public static int WallStops, WallSlams;
+    // A transition's riding face, met from the ground, is ground to roll up, not a wall. Its
+    // slabs' riding faces look up; their undersides (met from behind) and their side edges do
+    // not, and stay walls, as does any face met in the air.
+    private static bool RampFaceAhead(RaycastHit hit)
+    {
+        return Mode == RideMode.Ground && hit.m_Normal.y > 0.05f && SkateParks.IsRamp(hit);
+    }
     // The whole measured pace of the last step, along the path the body took (for the checks' logs).
     public static float PathSpeed;
     private static Vector3 WallAhead(Vector3 pos, Vector3 v, float dt)
@@ -393,7 +400,7 @@ public static class SkateRide
         {
             RaycastHit hit;
             if (SkateParks.Sphere(pos + Vector3.up * wallHeights[i], WallProbe, dir, out hit, reach, GroundMask)
-                && hit.m_Normal.y < 0.5f && hit.distance < nearest && !SkateParks.IsRamp(hit)) { found = true; nearest = hit.distance; normal = hit.m_Normal; }
+                && hit.m_Normal.y < 0.5f && hit.distance < nearest && !RampFaceAhead(hit)) { found = true; nearest = hit.distance; normal = hit.m_Normal; }
         }
         if (!found) return v;
         var into = -Vector3.Dot(v, normal);
@@ -559,8 +566,15 @@ public static class SkateRide
             }
             Verts++;
             Out.Say("SKATE vert at " + SlopeDegrees.ToString("F0") + " deg, " + Math.Abs(Speed).ToString("F1") + " m/s up" + (popped ? ", popped" : "") + ", at " + Out.V3(Position));
+            // The pace into the face turns up; the pace along the coping stays, so a carve up the
+            // wall carries on sideways the way it came.
             var nose = NoseYaw; var deck = DeckYaw;
-            Speed = 0f;
+            var face = Flat(Normal);
+            var along = Flat(tangent * Speed);
+            if (face.sqrMagnitude > 0.0001f) { face = face.normalized; along -= face * Vector3.Dot(along, face); }
+            var sign = Speed < 0f ? -1f : 1f;
+            if (along.sqrMagnitude > 0.0001f) Yaw = (float)(Math.Atan2(along.x * sign, along.z * sign) * 180.0 / Math.PI);
+            Speed = along.magnitude * sign;
             TakeOff(popped, up + AirGravity * dt);
             KeepAirPose(nose, deck);
             AirStep(Position, dt);
