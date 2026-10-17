@@ -218,13 +218,19 @@ seven generated wheel/truck/deck and event profiles, preserving the original six
 both overloads and default durations. It checks quantized lengths, finite/nonzero unclipped
 samples, DC, exact seed reproduction, different seeds, periodic seam slopes, silent/decaying
 one-shots, contact-profile roughness and invalid requests. Rates include 8,000 and 192,000 Hz;
-odd/even counts and the ten-second maximum are covered. The shared DLL supplies every sample.
+odd/even counts and the ten-second maximum are covered. The shared DLL supplies those samples.
+The same approved scenario compiles the actual engine-free client `SkateFoley` generator
+and checks its rebuilt two-second Hollow loop, seed reproduction, peak/DC and ordinary wrap.
+FFT checks bound source energy above Nyquist/max-pitch to one percent for the three shared
+loops (including client seeds) and wood layer at 44.1 kHz; wheel texture decorrelates at 20 ms.
+Wrapped friction/ring contacts in 20–30 ms buffers must equal the full longer event
+folded modulo that buffer, including seed consumption; non-wrapped events stay truncated.
 
 ```sh
 dotnet run --project crates/approved_tests/skate/SkateAudioScenarios.csproj -p:SkateLibraryPath=/absolute/path/to/SkateMotion.dll
 ```
 
-An optional single runner argument names a local directory for seven original WAV previews.
+An optional single runner argument names a local directory for eight original WAV previews.
 Keep exports in ignored `context/`. These are waveform/source checks; the runner uses no Rust
 client/server or Shadow PC, and does not test native sound mixing, audibility or listener preference.
 See the [audio contract](../../../docs/RUST-SKATE-AUDIO.md).

@@ -1,5 +1,7 @@
 using System;
 using System.IO;
+using System.Numerics;
+using System.Reflection;
 using System.Security.Cryptography;
 using Shortcut.RustMod;
 
@@ -42,6 +44,9 @@ internal static class SkateAudioScenarios
         }
         Check(finite, "finite samples " + sound);
         Check(peak > 0.05 && peak < 0.9, "nonzero unclipped peak " + sound);
+        double limit = sound == SkateSound.Rolling ? 0.45 : sound == SkateSound.Grind ? 0.65 :
+                       sound == SkateSound.DeckSlide ? 0.55 : 0.8;
+        Check(Math.Abs(peak - limit) < 0.000001, "existing individual peak contract " + sound);
         Check(square / data.Length > 0.00001, "nonzero energy " + sound);
         Check(Math.Abs(sum / data.Length) < 0.0000001, "zero DC " + sound);
         if (Loop(sound))
@@ -79,6 +84,88 @@ internal static class SkateAudioScenarios
         return Math.Sqrt(difference / energy);
     }
 
+    private static double Correlation(float[] data, int lag)
+    {
+        double cross = 0, energy = 0;
+        for (var i = lag; i < data.Length; i++)
+        {
+            cross += data[i] * (double)data[i - lag];
+            energy += data[i] * (double)data[i];
+        }
+        return cross / energy;
+    }
+
+    private static double UpperBand(float[] data, int rate, double pitch)
+    {
+        int count = 1;
+        while (count < data.Length) count *= 2;
+        var bins = new Complex[count];
+        for (int i = 0; i < data.Length; i++) bins[i] = new Complex(data[i], 0);
+        for (int i = 1, j = 0; i < count; i++)
+        {
+            int bit = count / 2;
+            while ((j & bit) != 0) { j ^= bit; bit /= 2; }
+            j ^= bit;
+            if (i < j) { var swap = bins[i]; bins[i] = bins[j]; bins[j] = swap; }
+        }
+        for (int width = 2; width <= count; width *= 2)
+        {
+            var step = Complex.FromPolarCoordinates(1, -2 * Math.PI / width);
+            for (int at = 0; at < count; at += width)
+            {
+                var phase = Complex.One;
+                for (int j = 0; j < width / 2; j++)
+                {
+                    var odd = bins[at + j + width / 2] * phase;
+                    var even = bins[at + j];
+                    bins[at + j] = even + odd; bins[at + j + width / 2] = even - odd;
+                    phase *= step;
+                }
+            }
+        }
+        double upper = 0, total = 0;
+        for (int i = 1; i <= count / 2; i++)
+        {
+            double power = bins[i].Real * bins[i].Real + bins[i].Imaginary * bins[i].Imaginary;
+            total += power;
+            if (i * (double)rate / count >= rate / (2 * pitch)) upper += power;
+        }
+        return upper / total;
+    }
+
+    private static void WoodLayer(string directory)
+    {
+        foreach (var rate in new[] { 8000, 44100, 48000, 192000 })
+            foreach (var seed in new[] { 0u, 31u, uint.MaxValue })
+            {
+                var data = SkateFoley.Create(SkateFoleySound.Hollow, rate, seed);
+                var repeat = SkateFoley.Create(SkateFoleySound.Hollow, rate, seed);
+                clips += 2;
+                Check(SkateFoley.IsLoop(SkateFoleySound.Hollow) && SkateFoley.Seconds(SkateFoleySound.Hollow) == 2 && data.Length == rate * 2, "wood layer loop duration");
+                Check(Equal(data, repeat) && !ReferenceEquals(data, repeat), "wood layer seed reproduction and ownership");
+                double peak = 0, sum = 0, energy = 0, step = 0;
+                bool finite = true;
+                for (int i = 0; i < data.Length; i++)
+                {
+                    finite &= !float.IsNaN(data[i]) && !float.IsInfinity(data[i]);
+                    peak = Math.Max(peak, Math.Abs(data[i])); sum += data[i]; energy += data[i] * (double)data[i];
+                    if (i > 0) step = Math.Max(step, Math.Abs(data[i] - data[i - 1]));
+                }
+                Check(finite && Math.Abs(peak - 0.5) < 0.000001 && energy / data.Length > 0.00001, "wood layer finite energy and existing peak");
+                Check(Math.Abs(sum / data.Length) < 0.0000001, "wood layer zero DC");
+                Check(Math.Abs(data[0] - data[data.Length - 1]) <= step, "wood layer loop join is an ordinary step");
+                if (rate == 44100 && seed == 31)
+                {
+                    double upper = UpperBand(data, rate, 1.15);
+                    Check(upper < 0.01, "wood layer source energy above pitch-safe band is below one percent");
+                    Console.WriteLine("Wood layer upper-band fraction: " + upper.ToString("F6"));
+                    if (directory != null) Preview(directory, "Hollow", data);
+                }
+            }
+        Check(!Equal(SkateFoley.Create(SkateFoleySound.Hollow, 44100, 31), SkateFoley.Create(SkateFoleySound.Hollow, 44100, 32)), "wood layer seed changes texture");
+        clips += 2;
+    }
+
     private static void Reject(SkateSound sound, int rate, double duration)
     {
         float[] samples; string error;
@@ -86,7 +173,44 @@ internal static class SkateAudioScenarios
         Check(samples == null && !string.IsNullOrEmpty(error), "invalid request has no samples");
     }
 
-    private static void Preview(string directory, SkateSound sound, float[] data)
+    private static void WrappedContacts()
+    {
+        foreach (var rate in new[] { 8000, 44100, 192000 })
+            foreach (var duration in new[] { 0.02, 0.0200625, 0.03 })
+                foreach (var name in new[] { "Friction", "Ring" })
+                {
+                    int length = (int)Math.Round(rate * duration, MidpointRounding.AwayFromZero);
+                    int at = length - 3;
+                    var wrapped = new float[length];
+                    var full = new float[rate / 4];
+                    var method = typeof(SkateAudio).GetMethod(name, BindingFlags.NonPublic | BindingFlags.Static);
+                    Check(method != null, "actual contact generator " + name);
+                    object[] shortArgs = name == "Friction"
+                        ? new object[] { wrapped, rate, at, 200.0, 2700.0, 0.009, 0.2, true, 11u }
+                        : new object[] { wrapped, rate, at, 185.0, 0.012, 0.2, true };
+                    var fullArgs = (object[])shortArgs.Clone();
+                    fullArgs[0] = full;
+                    fullArgs[fullArgs.Length - (name == "Friction" ? 2 : 1)] = false;
+                    method.Invoke(null, fullArgs);
+                    method.Invoke(null, shortArgs);
+                    var folded = new float[length];
+                    for (int i = 0; i < full.Length; i++) folded[i % length] += full[i];
+                    Check(Equal(wrapped, folded), "short wrapped contact retains the full decay " + name);
+                    if (name == "Friction")
+                        Check((uint)shortArgs[8] == (uint)fullArgs[8], "wrapped friction consumes the full seeded event");
+                    var shot = new float[length];
+                    var shotArgs = (object[])shortArgs.Clone();
+                    shotArgs[0] = shot;
+                    shotArgs[shotArgs.Length - (name == "Friction" ? 2 : 1)] = false;
+                    if (name == "Friction") shotArgs[8] = 11u;
+                    method.Invoke(null, shotArgs);
+                    bool confined = true;
+                    for (int i = 0; i < length; i++) confined &= shot[i] == full[i];
+                    Check(confined, "one-shot contact stays inside its buffer " + name);
+                }
+    }
+
+    private static void Preview(string directory, string sound, float[] data)
     {
         Directory.CreateDirectory(directory);
         using (var w = new BinaryWriter(File.Create(Path.Combine(directory, sound + ".wav"))))
@@ -109,6 +233,7 @@ internal static class SkateAudioScenarios
             Check((int)SkateSound.Rolling == 0 && (int)SkateSound.Grind == 1 && (int)SkateSound.Push == 2 &&
                   (int)SkateSound.Ollie == 3 && (int)SkateSound.Landing == 4 && (int)SkateSound.Bail == 5 && (int)SkateSound.DeckSlide == 6,
                   "additive enum compatibility");
+            WrappedContacts();
             for (var kind = 0; kind < defaults.Length; kind++)
             {
                 var sound = (SkateSound)kind;
@@ -117,7 +242,7 @@ internal static class SkateAudioScenarios
                 clips++;
                 Check(Equal(standard, Create(sound, 44100, defaults[kind], 11)), "default duration contract " + sound);
                 Signal(sound, standard);
-                if (args.Length == 1) Preview(args[0], sound, standard);
+                if (args.Length == 1) Preview(args[0], sound.ToString(), standard);
                 foreach (var rate in new[] { 8000, 44100, 48000 })
                     foreach (var duration in new[] { 0.02, 0.0200625, 0.17, 1.0 })
                         foreach (var seed in new[] { 0u, 11u, uint.MaxValue })
@@ -135,6 +260,19 @@ internal static class SkateAudioScenarios
             Check(Roughness(metal) > Roughness(wood), "metal contact has greater sample roughness than deck contact");
             Check(Roughness(metal) > Roughness(rolling), "metal rasp differs from wheels");
             Check(!Equal(metal, wood) && !Equal(rolling, wood), "distinct surface/contact profiles");
+            foreach (var seed in new[] { 0u, 11u, uint.MaxValue })
+            {
+                var wheels = Create(SkateSound.Rolling, 44100, 1, seed);
+                Check(Math.Abs(Correlation(wheels, 882)) < 0.1, "wheel friction decorrelates over 20ms");
+            }
+            foreach (var sound in new[] { SkateSound.Rolling, SkateSound.Grind, SkateSound.DeckSlide })
+                foreach (var seed in new[] { 0u, sound == SkateSound.Rolling ? 11u : sound == SkateSound.Grind ? 12u : 17u, uint.MaxValue })
+                {
+                    double upper = UpperBand(Create(sound, 44100, 1, seed), 44100, sound == SkateSound.Rolling ? 1.3 : 1.25);
+                    Check(upper < 0.01, "source loop energy above pitch-safe band is below one percent " + sound);
+                    Console.WriteLine(sound + " seed " + seed + " upper-band fraction: " + upper.ToString("F6"));
+                }
+            WoodLayer(args.Length == 1 ? args[0] : null);
             Console.WriteLine("Contact roughness: wheels=" + Roughness(rolling).ToString("F4") + " metal=" + Roughness(metal).ToString("F4") + " deck=" + Roughness(wood).ToString("F4"));
             Signal(SkateSound.Rolling, Create(SkateSound.Rolling, 192000, 10, 0));
             foreach (var sound in new[] { (SkateSound)(-1), (SkateSound)7, (SkateSound)int.MaxValue }) Reject(sound, 44100, 1);
