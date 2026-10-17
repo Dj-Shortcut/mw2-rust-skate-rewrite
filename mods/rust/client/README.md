@@ -197,6 +197,13 @@ Actual device/reader reconnection and controller feel still require in-game veri
   that sends keys and mouse (Steam's "Keyboard (WASD) and Mouse" template): with the layout
   "Gamepad" the controller does nothing in Rust. On the board the plugin ignores those keys while
   the controller rides; the game still gets them.
+- The right stick reaches the game as the mouse, so a flick turns the game's own view. While the
+  controller rides, the plugin puts that view back every frame, level and the way the camera
+  looks (behind the rider: the way the chase camera looks; otherwise the way the board goes), so
+  the game's compass follows the board rather than the flicks, and the view is not left far up
+  or down for the step-off. The keyboard's view is left alone: there the mouse steers. Whether the
+  compass follows has not been seen in the game yet; the log's `the game's view turned …` line
+  is the measure.
 - While the camera is behind the rider, the item in the player's hands is kept out of its way.
 - The reader's block is named `ShortcutSkatePad2`; its layout is in `SkatePad.cs` and in
   `sticks.ps1` and has to be the same in both.
