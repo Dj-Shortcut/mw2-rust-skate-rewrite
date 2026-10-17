@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Numerics;
+using System.Reflection;
 using System.Security.Cryptography;
 using Shortcut.RustMod;
 
@@ -172,6 +173,43 @@ internal static class SkateAudioScenarios
         Check(samples == null && !string.IsNullOrEmpty(error), "invalid request has no samples");
     }
 
+    private static void WrappedContacts()
+    {
+        foreach (var rate in new[] { 8000, 44100, 192000 })
+            foreach (var duration in new[] { 0.02, 0.0200625, 0.03 })
+                foreach (var name in new[] { "Friction", "Ring" })
+                {
+                    int length = (int)Math.Round(rate * duration, MidpointRounding.AwayFromZero);
+                    int at = length - 3;
+                    var wrapped = new float[length];
+                    var full = new float[rate / 4];
+                    var method = typeof(SkateAudio).GetMethod(name, BindingFlags.NonPublic | BindingFlags.Static);
+                    Check(method != null, "actual contact generator " + name);
+                    object[] shortArgs = name == "Friction"
+                        ? new object[] { wrapped, rate, at, 200.0, 2700.0, 0.009, 0.2, true, 11u }
+                        : new object[] { wrapped, rate, at, 185.0, 0.012, 0.2, true };
+                    var fullArgs = (object[])shortArgs.Clone();
+                    fullArgs[0] = full;
+                    fullArgs[fullArgs.Length - (name == "Friction" ? 2 : 1)] = false;
+                    method.Invoke(null, fullArgs);
+                    method.Invoke(null, shortArgs);
+                    var folded = new float[length];
+                    for (int i = 0; i < full.Length; i++) folded[i % length] += full[i];
+                    Check(Equal(wrapped, folded), "short wrapped contact retains the full decay " + name);
+                    if (name == "Friction")
+                        Check((uint)shortArgs[8] == (uint)fullArgs[8], "wrapped friction consumes the full seeded event");
+                    var shot = new float[length];
+                    var shotArgs = (object[])shortArgs.Clone();
+                    shotArgs[0] = shot;
+                    shotArgs[shotArgs.Length - (name == "Friction" ? 2 : 1)] = false;
+                    if (name == "Friction") shotArgs[8] = 11u;
+                    method.Invoke(null, shotArgs);
+                    bool confined = true;
+                    for (int i = 0; i < length; i++) confined &= shot[i] == full[i];
+                    Check(confined, "one-shot contact stays inside its buffer " + name);
+                }
+    }
+
     private static void Preview(string directory, string sound, float[] data)
     {
         Directory.CreateDirectory(directory);
@@ -195,6 +233,7 @@ internal static class SkateAudioScenarios
             Check((int)SkateSound.Rolling == 0 && (int)SkateSound.Grind == 1 && (int)SkateSound.Push == 2 &&
                   (int)SkateSound.Ollie == 3 && (int)SkateSound.Landing == 4 && (int)SkateSound.Bail == 5 && (int)SkateSound.DeckSlide == 6,
                   "additive enum compatibility");
+            WrappedContacts();
             for (var kind = 0; kind < defaults.Length; kind++)
             {
                 var sound = (SkateSound)kind;

@@ -209,6 +209,8 @@ The same approved scenario compiles the actual engine-free client `SkateFoley` g
 and checks its rebuilt two-second Hollow loop, seed reproduction, peak/DC and ordinary wrap.
 FFT checks bound source energy above Nyquist/max-pitch to one percent for the three shared
 loops (including client seeds) and wood layer at 44.1 kHz; wheel texture decorrelates at 20 ms.
+Wrapped friction/ring contacts in 20–30 ms buffers must equal the full longer event
+folded modulo that buffer, including seed consumption; non-wrapped events stay truncated.
 
 ```sh
 dotnet run --project crates/approved_tests/skate/SkateAudioScenarios.csproj -p:SkateLibraryPath=/absolute/path/to/SkateMotion.dll

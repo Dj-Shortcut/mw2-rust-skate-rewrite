@@ -1,7 +1,7 @@
 {
   "format_version": 1,
   "generator": "scripts/generate_authored_audio.py",
-  "algorithm_version": 2,
+  "algorithm_version": 1,
   "base_seed": 731031,
   "license": "CC0-1.0",
   "encoding": "signed 16-bit little-endian PCM WAV",
@@ -46,26 +46,26 @@
     {
       "file": "ollie.wav",
       "seed": 731334,
-      "sha256": "8f6f3ed3b9c1edac551e2bbafcbf4a466aea5f5fb095a5ebe4b8f7eab6faa8a2",
+      "sha256": "6402289365ff31fd5e92b06e8bf13e458d319a6d0541abc7f26111efc938a237",
       "frames": 16320,
       "sample_rate_hz": 48000,
       "channels": 1,
       "bits_per_sample": 16,
       "duration_seconds": 0.34,
       "peak_amplitude": 0.5,
-      "rms_amplitude": 0.028944
+      "rms_amplitude": 0.047875
     },
     {
       "file": "land.wav",
       "seed": 731435,
-      "sha256": "77fa24a2ecda99055079e75c4883ce958dc812011f6ef5de00169aabd98775f5",
+      "sha256": "517614752abd4828a639e5c400af6425dd033ea7e244923a986c1ac0557a666d",
       "frames": 19200,
       "sample_rate_hz": 48000,
       "channels": 1,
       "bits_per_sample": 16,
       "duration_seconds": 0.4,
       "peak_amplitude": 0.549988,
-      "rms_amplitude": 0.055894
+      "rms_amplitude": 0.05917
     },
     {
       "file": "gather.wav",

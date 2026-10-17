@@ -28,6 +28,8 @@ away from zero. Invalid requests return false/null samples with an English error
 Arrays belong to the caller; equal requests reproduce float samples on the same runtime.
 Cross-platform math is not promised byte-identical. Generate/cache only during setup.
 Shared loops use warmed filtered noise, wrapped friction grains and damped modes.
+Wrapped contacts accumulate their full seven-decay envelope modulo the buffer,
+including multiple revolutions for short loops; one-shots stop at the buffer end.
 A smooth join window of at most 2 ms per edge gives silent, equal-slope boundaries;
 weighted DC removal preserves them. The fixed one-second pattern still repeats.
 Metal has an additional low-pass stage to reduce the high-frequency tail when pitched.
@@ -35,16 +37,19 @@ One-shots have silent endpoints, damped fixed-frequency modes and endpoint-zero 
 Peak normalization retains existing limits; combined sources still require mix-level checks.
 
 `scripts/generate_authored_audio.py` regenerates [the seven-file WAV pack](../assets/authored/audio/README.md).
-Algorithm 2 changes only `ollie.wav`/`land.wav`: 48 kHz mono signed 16-bit PCM, 0.34/0.40 s,
-peak targets 0.50/0.55. Names, formats, seed schedule and the other five WAV bytes remain.
-New manifest hashes/RMS describe this parked standalone-runtime pack.
+That generator, its manifest and all WAVs remain unchanged: this pack serves the
+parked standalone runtime and is separate from the existing-Rust client synthesis.
 
 The [existing approved audio scenario](../crates/approved_tests/skate/README.md#authored-audio)
-checks the actual shared DLL and actual Foley source: 4,453 checks / 588 generated clips.
-Genuine-reference C#7.3/net48 shared, approved runner and full 34-source cached-interop/.NET6 client compile: zero warnings/errors.
+checks the actual shared DLL and actual Foley source: 4,516 checks / 588 generated clips.
+Genuine-reference C#7.3/net48 shared and approved runner: zero warnings/errors.
+The earlier full 34-source cached-interop/.NET6 client compile passed; it was not
+repeated after the bounded wrapped-contact correction.
 It covers durations, finite/peak/DC properties, seeds, seams, decay, contact separation and
 source energy above Nyquist/max-pitch below 1% at 44.1 kHz. This measures bandwidth risk.
-WAV regeneration/manifest, asset and publication gates pass; previews stay in ignored `context/`.
+Short-loop contacts equal complete longer events folded into 20–30 ms buffers at
+8,000, 44,100 and 192,000 Hz; non-wrapped contacts retain their endpoint truncation.
+Asset and publication gates pass; previews stay in ignored `context/`.
 
 Native sample upload, mixing, surface detection, speed/impact/event timing, teardown,
 performance, repeated-loop artifacts and heard quality versus skate. remain unverified.

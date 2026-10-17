@@ -254,7 +254,8 @@ namespace Shortcut.RustMod
         private static void Friction(float[] samples, int rate, int at, double low, double high,
                                      double decay, double gain, bool wrap, ref uint random)
         {
-            int count = Math.Min(samples.Length, Math.Max(2, (int)(rate * decay * 7)));
+            int count = Math.Max(2, (int)(rate * decay * 7));
+            if (!wrap) count = Math.Min(samples.Length, count);
             double a = 1 - Math.Exp(-2 * Math.PI * Math.Min(low, rate * 0.2) / rate);
             double b = 1 - Math.Exp(-2 * Math.PI * Math.Min(high, rate * 0.32) / rate);
             double slow = 0, fast = 0, slow2 = 0, fast2 = 0, envelope = gain;
@@ -274,7 +275,8 @@ namespace Shortcut.RustMod
         {
             var oscillator = new Oscillator(2 * Math.PI * Math.Min(frequency, rate * 0.32) / rate,
                 gain, Math.Exp(-1 / (rate * decay)));
-            int count = Math.Min(samples.Length, Math.Max(2, (int)(rate * decay * 7)));
+            int count = Math.Max(2, (int)(rate * decay * 7));
+            if (!wrap) count = Math.Min(samples.Length, count);
             for (int i = 0; i < count; i++)
             {
                 int target = at + i;
