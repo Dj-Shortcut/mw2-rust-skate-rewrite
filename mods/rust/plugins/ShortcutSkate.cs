@@ -1,3 +1,4 @@
+// Reference: Unity.Collections
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -1611,7 +1612,7 @@ namespace Shortcut.RustMod
 
 namespace Oxide.Plugins
 {
-    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.24")]
+    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.25")]
     [Description("Player-scoped skateboard movement bounds and saved park assemblies.")]
     public sealed class ShortcutSkate : RustPlugin
     {

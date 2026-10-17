@@ -9,7 +9,7 @@ de betreffende issue/PR; zie [docs/AUTONOMY.md](docs/AUTONOMY.md).
 
 ## Actief: de skate-mod, zo goed mogelijk, voor de eigenaar en zijn vrienden
 
-- [ ] #487 bron 0.3.24: expliciete admintrace voor één verbonden speler, maximaal 120 seconden/512 records; observeert native afwijzingen, noclip-collider, tickredenen en werkelijk aangeroepen correctieverzending. Native resultaten, rijbeleid en beveiligingsinstellingen blijven gelijk. Echte referentiecompiles en bestaande parkfixtures slagen; bronreview, observerinstallatie en één gecorreleerde klim moeten de oorzaak nog aantonen. Geen gameplayfix geclaimd.
+- [ ] #487 bron 0.3.25: expliciete admintrace voor één verbonden speler, maximaal 120 seconden/512 records; observeert native afwijzingen, noclip-collider, tickredenen en werkelijk aangeroepen correctieverzending. De bron declareert Unity.Collections expliciet voor Oxides NativeList-referentie. Native resultaten, rijbeleid en beveiligingsinstellingen blijven gelijk. Echte referentiecompiles en bestaande parkfixtures slagen; observerinstallatie en één gecorreleerde klim moeten de oorzaak nog aantonen. Geen gameplayfix geclaimd.
 
 - [ ] #480 bron 0.3.23: herkent de gerapporteerde twig-floor-box op exacte prefabnaam, native eigenaar, schaal en gemeten bounds. Alleen die box krijgt de bekende horizontale overhang; verticaal en voor andere colliders blijft de bestaande 1 mm/float32-grens. De aangrenzende vloeruitzondering behoudt nominale seam-/permission-/steunvlakcontroles en vereist alle fysieke twig-colliders. Echte cached-reference C#7.3/net48 shared/pluginbuilds: 0 waarschuwingen/fouten; bestaande approved layouts:171539/172892 controles. Reload en alle twaalf native plaatsingsuitkomsten volgen na bronintegratie; geen native succes geclaimd.
 
