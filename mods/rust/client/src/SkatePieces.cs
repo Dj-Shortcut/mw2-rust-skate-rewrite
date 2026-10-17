@@ -222,7 +222,7 @@ public static class SkatePieces
     private static bool AskItem(int kind, float now)
     {
         if (itemAskedAt[kind] > 0f && now - itemAskedAt[kind] < 5f) return false;
-        if (!SkateConsole.CanSend) return false;
+        if (!SkateConsole.CanSend) { Out.Say("PIECES item ask cannot send: " + SkateConsole.SendState); return false; }
         var line = "skate.items " + Names[kind];
         if (!SkateConsole.Send(line)) { Out.Say("PIECES item ask not sent: " + SkateConsole.SendState); return false; }
         itemAskedAt[kind] = now; ItemsAsked++;

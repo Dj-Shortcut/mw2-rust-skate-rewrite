@@ -116,10 +116,19 @@ public static class SkateHeld
         Belt = "";
         try
         {
-            var inv = Get(player, "inventory");
-            var belt = inv == null ? null : Get(inv, "containerBelt");
-            var list = belt == null ? null : Get(belt, "itemList");
-            if (list == null) { Belt = "belt not readable"; return -1; }
+            var inv = Get(player, "inventory") ?? OfType(player, "PlayerInventory");
+            var belt = inv == null ? null : Get(inv, "containerBelt") ?? BeltByShape(inv);
+            var list = belt == null ? null : Get(belt, "itemList") ?? OfType(belt, "List");
+            if (list == null)
+            {
+                Belt = "belt not readable";
+                if (!beltSaid)
+                {
+                    beltSaid = true;
+                    Out.Say("HELD belt not readable: inventory " + (inv == null ? "missing; player " + Members(player) : "found, belt " + (belt == null ? "missing; inventory " + Members(inv) : "found, list missing; belt " + Members(belt))));
+                }
+                return -1;
+            }
             var found = -1;
             foreach (var it in Walk(list))
             {
@@ -240,6 +249,44 @@ public static class SkateHeld
         if (count == null || item == null) yield break;
         var n = (int)count.GetValue(list, null);
         for (var i = 0; i < n; i++) yield return item.Invoke(list, new object[] { i });
+    }
+
+    private static bool beltSaid;
+
+    // The first member of o whose type name starts with that name: the way in when a build renames it.
+    private static object OfType(object o, string typeName)
+    {
+        const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
+        for (var t = o.GetType(); t != null; t = t.BaseType)
+        {
+            foreach (var p in t.GetProperties(flags | BindingFlags.DeclaredOnly))
+                if (p.GetIndexParameters().Length == 0 && p.PropertyType.Name.StartsWith(typeName)) { try { var v = p.GetValue(o, null); if (v != null) return v; } catch (Exception) { } }
+            foreach (var f in t.GetFields(flags | BindingFlags.DeclaredOnly))
+                if (f.FieldType.Name.StartsWith(typeName)) { var v = f.GetValue(o); if (v != null) return v; }
+        }
+        return null;
+    }
+
+    // The belt among the inventory's item containers: the one six items wide.
+    private static object BeltByShape(object inv)
+    {
+        const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
+        foreach (var p in inv.GetType().GetProperties(flags))
+        {
+            if (p.GetIndexParameters().Length != 0 || p.PropertyType.Name != "ItemContainer") continue;
+            object c; try { c = p.GetValue(inv, null); } catch (Exception) { continue; }
+            if (c != null && Get(c, "capacity") is int && (int)Get(c, "capacity") == 6) return c;
+        }
+        return null;
+    }
+
+    // What o holds, for the log: member name and type, at most forty.
+    private static string Members(object o)
+    {
+        const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
+        var s = o.GetType().Name + ":"; var n = 0;
+        foreach (var p in o.GetType().GetProperties(flags)) { if (n++ >= 40) break; s += " " + p.Name + ":" + p.PropertyType.Name; }
+        return s;
     }
 
     private static object Get(object o, string name)
