@@ -452,14 +452,27 @@ public static class SkateRide
 
     private static string NearestPast(Vector3 pos)
     {
-        var best = float.MaxValue; var age = 0f;
-        for (var i = 0; i < pastCount; i++)
-        {
-            var d = (pastPos[i] - pos).magnitude;
-            if (d < best) { best = d; age = now - pastAt[i]; }
-        }
         if (pastCount == 0) return "no earlier steps";
-        return "nearest earlier step " + best.ToString("F2") + " m away, " + age.ToString("F2") + " s old" + (best < 0.1f ? " (back where it was)" : " (nowhere it was)");
+        // Along the path between two kept steps, so the spacing of the steps (0.3 m at 9 m/s) does
+        // not count as a miss.
+        var best = float.MaxValue; var age = 0f;
+        var newest = (pastNext - 1 + PastSteps) % PastSteps;
+        for (var n = 0; n < pastCount; n++)
+        {
+            var i = (newest - n + PastSteps) % PastSteps;
+            var a = pastPos[i]; var d = (a - pos).magnitude; var t = pastAt[i];
+            if (n + 1 < pastCount)
+            {
+                var j = (i - 1 + PastSteps) % PastSteps; var ab = pastPos[j] - a; var len = ab.sqrMagnitude;
+                if (len > 0.000001f)
+                {
+                    var f = Clamp(Vector3.Dot(pos - a, ab) / len, 0f, 1f);
+                    d = (a + ab * f - pos).magnitude; t = pastAt[i] + (pastAt[j] - pastAt[i]) * f;
+                }
+            }
+            if (d < best) { best = d; age = now - t; }
+        }
+        return "nearest earlier path " + best.ToString("F2") + " m away, " + age.ToString("F2") + " s old" + (best < 0.1f ? " (back where it was)" : " (nowhere it was)");
     }
 
     private static void Measure(Vector3 pos, float dt)
