@@ -192,10 +192,16 @@ public static class SkatePieces
         if (slot < 0 && SkateHeld.Belt == "belt not readable")
         {
             Close();
-            Said = "Press the number key of your " + SkateHeld.ItemNames[Chosen] + ", then place it like a square foundation (left click, R turns it)";
+            Said = AskItem(Chosen, now) ? "Asked the server for a " + SkateHeld.ItemNames[Chosen] + ": press its number key, then place it like a square foundation (left click, R turns it)"
+                : "Press the number key of your " + SkateHeld.ItemNames[Chosen] + ", then place it like a square foundation (left click, R turns it)";
             return;
         }
-        if (slot < 0) { Said = Status = "No " + SkateHeld.ItemNames[Chosen] + " in your belt (an admin gives the park items: skate.items all)"; return; }
+        if (slot < 0)
+        {
+            Said = Status = AskItem(Chosen, now) ? "Asked the server for a " + SkateHeld.ItemNames[Chosen] + "; press O again once it is in your belt"
+                : "No " + SkateHeld.ItemNames[Chosen] + " in your belt (an admin gives the park items: skate.items all)";
+            return;
+        }
         string how;
         if (SkateHeld.SelectSlot(player, slot, out how))
         {
@@ -207,6 +213,21 @@ public static class SkatePieces
         Out.Say("PIECES could not select: " + how);
         Close();
         Said = Status = "Press " + (slot + 1) + " to hold the " + SkateHeld.ItemNames[Chosen] + ", then place it like a square foundation";
+    }
+
+    // Without the item at hand the server is asked for one, at most once per piece every few
+    // seconds: ShortcutSkate's skate.items gives it to an administrator and refuses anyone else.
+    private static readonly float[] itemAskedAt = new float[Names.Length];
+    public static int ItemsAsked;
+    private static bool AskItem(int kind, float now)
+    {
+        if (itemAskedAt[kind] > 0f && now - itemAskedAt[kind] < 5f) return false;
+        if (!SkateConsole.CanSend) return false;
+        var line = "skate.items " + Names[kind];
+        if (!SkateConsole.Send(line)) { Out.Say("PIECES item ask not sent: " + SkateConsole.SendState); return false; }
+        itemAskedAt[kind] = now; ItemsAsked++;
+        Out.Say("PIECES item asked: " + line);
+        return true;
     }
 
     // The piece asked for by name alone, the way a server with ShortcutSkate 0.3.5 takes it: the
