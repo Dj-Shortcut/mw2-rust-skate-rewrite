@@ -1,6 +1,6 @@
 # Supported park placement
 
-In source **0.3.21**, marked plans use native square-foundation confirmation. The server owns the final
+In source **0.3.22**, marked plans use native square-foundation confirmation. The server owns the final
 pose and item debit. The [item contract](RUST-SKATE-BUILD-ASSETS.md) and
 [shared helpers](../mods/rust/shared/SkatePark.cs) apply to both client frontends.
 Half-wall kickers retain their separate wall/side/join contract.
@@ -145,6 +145,54 @@ without rescanning every terrain/support witness. Any failed phase rolls back
 the assembly before completion; a verified debit follows the existing guarded
 recovery path. Support removal after commit retains
 the existing park demolition/stability lifecycle; no new persistent dependency is added.
+
+## Shared server/ghost decision
+
+`SkateParkLayout.TryGhostFrame` is the single custom-target frame rule. Pass the
+eligible host's actual centre/yaw, whether it is a registered lowest flat park
+floor, the genuine hit X/Z, the native rotation delta (`relativeYaw=true`) and
+the measured native rotation step. It selects the adjacent cell when requested,
+rounds with midpoint away from zero and applies the MEGA support-grid phase.
+For admin world-yaw input use `relativeYaw=false`. Native sockets keep their
+already resolved native frame. Host identity, socket eligibility and the eye ray
+must be validated by the adapter before this calculation.
+
+`TryGhostAnchor(kind, floor, hint, selectedTop, read, out anchor, out supportTop,
+out failure)` then resolves support. The server's `ResolveParkSupport` calls this
+same helper; the client must compile the same `SkatePark.cs` source. `floor` is
+the actual local native floor box, including centre and all three sizes; absent
+measurements are invalid. `hint` is the resolved X/Z/yaw plus the native support
+search Y. `selectedTop` is the selected foundation top or neighbouring lowest
+floor underside; pass null only for a free/native-socket placement without that
+additional plane constraint. Half-wall kickers keep their separate wall join.
+
+The helper calls `SkateParkSupportReader` for all nine samples of every reserved
+cell and every lowest native contact. `SkateParkSupportProbe.Point` is the world
+down-ray origin, including the two-metre search lift. `RequireCell` distinguishes
+whole-cell probes from lowest contacts; `Cell` supplies the expected foundation
+pose for `FitsSupportCell`. `Right`, `Forward` and `Sample` identify the failing
+cell/sample. The adapter casts down27m with no triggers, classifies the first hit
+and checks the native foundation/terrain, dimensions, pose, permission, dry state
+and height rules above. Return false for any unknown or failed observation;
+never skip a missing probe. A successful `SkateParkSupportHit` carries its measured
+`Height` and stable nonzero `FoundationId`, or zero only for verified dry terrain.
+No Unity object, operation, player or persistent save is owned by this helper.
+
+One cell cannot mix foundations or terrain/foundation hits. Lowest contacts may
+use only foundations captured by complete cell probes. The common plane uses
+the total max-minus-min span, as well as the optional selected-plane tolerance.
+Failure returns a zero anchor/top and an English reason. Success returns the
+final assembly anchor with zero extra clearance; do not seat that result again.
+Feed it directly to `TryTransform`, then use the same placed/ghost model origin.
+
+This is a support decision, not a server acceptance receipt. A green ghost also
+requires current target/item identity, permission and native occupancy results.
+Unknown checks must remain unconfirmed. The server still performs its existing
+range, privilege, space, hooks and transaction revalidation; a world/permission
+change between preview and confirmation can refuse placement. The shared helper
+does not bypass those checks or guarantee an earlier preview against later world
+changes. Client integration and native ghost/confirmation agreement still need
+the actual Shadow/server flow; source checks do not establish that acceptance.
 
 ## Ghost and placed visual contract
 
