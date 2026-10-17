@@ -582,6 +582,8 @@ namespace Shortcut.RustMod
         public const int KindCount = 12;
         public const double CellSize = 3;
         public const double NativeBoundsTolerance = 1e-3;
+        public const string TwigFloorCollider = "assets/prefabs/building core/floor/floor.twig.prefab";
+        public const double TwigFloorOverhang = 0.05486429;
         public const int QuarterArcSegments = 30;
         public static string Name(SkateParkKind kind)
         {
@@ -756,19 +758,49 @@ namespace Shortcut.RustMod
                 Math.Max(Math.Abs(worldX), Math.Max(Math.Abs(worldY), Math.Abs(worldZ))) / 4194304);
         }
 
+        public static bool MatchesMeasuredTwigBounds(string colliderName, double minRight, double minUp, double minForward,
+            double maxRight, double maxUp, double maxForward)
+        {
+            return string.Equals(colliderName, TwigFloorCollider, StringComparison.Ordinal) &&
+                Finite(minRight) && Finite(minUp) && Finite(minForward) && Finite(maxRight) && Finite(maxUp) && Finite(maxForward) &&
+                Math.Abs(minRight - -1.541687) <= NativeBoundsTolerance &&
+                Math.Abs(minUp - -0.00000024586916) <= NativeBoundsTolerance &&
+                Math.Abs(minForward - -1.55486429) <= NativeBoundsTolerance &&
+                Math.Abs(maxRight - 1.54439974) <= NativeBoundsTolerance &&
+                Math.Abs(maxUp - 0.100000769) <= NativeBoundsTolerance &&
+                Math.Abs(maxForward - 1.54002917) <= NativeBoundsTolerance;
+        }
+
+        public static bool MatchesMeasuredTwigCollider(string colliderName, SkateParkBox local, SkateParkBox block)
+        {
+            return MatchesMeasuredTwigBounds(colliderName,
+                local.X - local.SizeX / 2, local.Y - local.SizeY / 2, local.Z - local.SizeZ / 2,
+                local.X + local.SizeX / 2, local.Y + local.SizeY / 2, local.Z + local.SizeZ / 2) &&
+                MatchesMeasuredTwigBounds(colliderName,
+                block.X - block.SizeX / 2, block.Y - block.SizeY / 2, block.Z - block.SizeZ / 2,
+                block.X + block.SizeX / 2, block.Y + block.SizeY / 2, block.Z + block.SizeZ / 2);
+        }
+
         public static bool ContainsQuarterPoint(SkateParkKind kind, double right, double up, double forward,
             double minimumUp, double maximumUp, double tolerance = NativeBoundsTolerance)
         {
+            return ContainsQuarterColliderPoint(kind, right, up, forward, minimumUp, maximumUp, tolerance, false);
+        }
+
+        public static bool ContainsQuarterColliderPoint(SkateParkKind kind, double right, double up, double forward,
+            double minimumUp, double maximumUp, double tolerance, bool measuredTwig)
+        {
+            double horizontalTolerance = tolerance + (measuredTwig ? TwigFloorOverhang : 0);
             if (CellCount(kind) == 0 || !Finite(right) || !Finite(up) || !Finite(forward) ||
                 !Finite(minimumUp) || !Finite(maximumUp) || minimumUp > maximumUp ||
-                !Finite(tolerance) || tolerance < 0 || tolerance > 0.1 ||
+                !Finite(tolerance) || tolerance < 0 || tolerance > 0.1 || horizontalTolerance > 0.1 ||
                 up < minimumUp - tolerance || up > maximumUp + tolerance) return false;
             for (int i = 0; i < CellCount(kind); i++)
             {
                 int cellRight, cellForward;
                 TryCell(kind, i, out cellRight, out cellForward);
-                if (Math.Abs(right - CellSize * cellRight) <= CellSize / 2 + tolerance &&
-                    Math.Abs(forward - CellSize * cellForward) <= CellSize / 2 + tolerance) return true;
+                if (Math.Abs(right - CellSize * cellRight) <= CellSize / 2 + horizontalTolerance &&
+                    Math.Abs(forward - CellSize * cellForward) <= CellSize / 2 + horizontalTolerance) return true;
             }
             return false;
         }
@@ -829,6 +861,35 @@ namespace Shortcut.RustMod
                 Math.Abs(dx * bx + dz * bz) < otherHalfRight + halfRight * c + halfForward * s - 1e-7 - contactTolerance &&
                 Math.Abs(dx * -bz + dz * bx) < otherHalfForward + halfRight * s + halfForward * c - 1e-7 - contactTolerance;
         }
+        public static bool SharesNominalEdge(SkateParkTransform pose, SkateParkBox bounds,
+            SkateParkTransform otherPose, SkateParkBox otherBounds)
+        {
+            double a = pose.Yaw * Degrees, b = otherPose.Yaw * Degrees;
+            return SharesBoxEdge(pose.X + bounds.X * Math.Cos(a) + bounds.Z * Math.Sin(a),
+                pose.Z - bounds.X * Math.Sin(a) + bounds.Z * Math.Cos(a), pose.Yaw, bounds.SizeX / 2, bounds.SizeZ / 2,
+                otherPose.X + otherBounds.X * Math.Cos(b) + otherBounds.Z * Math.Sin(b),
+                otherPose.Z - otherBounds.X * Math.Sin(b) + otherBounds.Z * Math.Cos(b), otherPose.Yaw,
+                otherBounds.SizeX / 2, otherBounds.SizeZ / 2);
+        }
+
+        // A neighboring floor must share an edge, not merely have disjoint nominal bounds.
+        public static bool SharesBoxEdge(double x, double z, double yaw, double halfRight, double halfForward,
+            double otherX, double otherZ, double otherYaw, double otherHalfRight, double otherHalfForward)
+        {
+            if (!Coordinate(x) || !Coordinate(z) || !Angle(yaw) || !Coordinate(otherX) || !Coordinate(otherZ) ||
+                !Angle(otherYaw) || !Finite(halfRight) || !Finite(halfForward) || !Finite(otherHalfRight) ||
+                !Finite(otherHalfForward) || halfRight <= 0 || halfForward <= 0 || otherHalfRight <= 0 || otherHalfForward <= 0)
+                return false;
+            double a = yaw * Degrees, relative = (otherYaw - yaw) * Degrees;
+            double c = Math.Abs(Math.Cos(relative)), s = Math.Abs(Math.Sin(relative));
+            if (c > 1e-6 && s > 1e-6) return false;
+            double dx = otherX - x, dz = otherZ - z;
+            double rightGap = Math.Abs(dx * Math.Cos(a) - dz * Math.Sin(a)) - halfRight - otherHalfRight * c - otherHalfForward * s;
+            double forwardGap = Math.Abs(dx * Math.Sin(a) + dz * Math.Cos(a)) - halfForward - otherHalfRight * s - otherHalfForward * c;
+            return (Math.Abs(rightGap) <= NativeBoundsTolerance && forwardGap < -NativeBoundsTolerance) ||
+                (Math.Abs(forwardGap) <= NativeBoundsTolerance && rightGap < -NativeBoundsTolerance);
+        }
+
         private static void HalfpipePart(int index, out SkateParkPart part)
         {
             part = new SkateParkPart { Prefab = FloorPrefab };
@@ -1546,7 +1607,7 @@ namespace Shortcut.RustMod
 
 namespace Oxide.Plugins
 {
-    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.22")]
+    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.23")]
     [Description("Player-scoped skateboard movement bounds and saved park assemblies.")]
     public sealed class ShortcutSkate : RustPlugin
     {
@@ -4739,16 +4800,72 @@ namespace Oxide.Plugins
             return true;
         }
 
+        private static bool ParkMeasuredTwigCollider(BuildingBlock block, Collider collider)
+        {
+            BoxCollider box = collider as BoxCollider;
+            if (block == null || block.IsDestroyed || block.PrefabName != SkateParkLayout.FloorPrefab || box == null ||
+                !ReferenceEquals(collider.ToBaseEntity(), block)) return false;
+            Vector3 scale = box.transform.lossyScale;
+            if (!Coordinate(scale) || Math.Abs(scale.x - 1) > SkateParkLayout.NativeBoundsTolerance ||
+                Math.Abs(scale.y - 1) > SkateParkLayout.NativeBoundsTolerance ||
+                Math.Abs(scale.z - 1) > SkateParkLayout.NativeBoundsTolerance) return false;
+            Bounds bounds = new Bounds(box.center, box.size);
+            Matrix4x4 toBlock = Matrix4x4.identity;
+            Transform frame = box.transform;
+            while (frame != block.transform)
+            {
+                if (frame == null) return false;
+                toBlock = Matrix4x4.TRS(frame.localPosition, frame.localRotation, frame.localScale) * toBlock;
+                frame = frame.parent;
+            }
+            Bounds physical = new Bounds();
+            bool first = true;
+            for (int x = -1; x <= 1; x += 2)
+            for (int y = -1; y <= 1; y += 2)
+            for (int z = -1; z <= 1; z += 2)
+            {
+                Vector3 point = toBlock.MultiplyPoint3x4(bounds.center + Vector3.Scale(bounds.extents, new Vector3(x, y, z)));
+                if (!Coordinate(point)) return false;
+                if (first) { physical = new Bounds(point, Vector3.zero); first = false; }
+                else physical.Encapsulate(point);
+            }
+            return SkateParkLayout.MatchesMeasuredTwigCollider(collider.name, ParkBox(bounds), ParkBox(physical));
+        }
+
+        private static bool ParkMeasuredTwigFloor(BuildingBlock block)
+        {
+            if (block == null || block.IsDestroyed || block.PrefabName != SkateParkLayout.FloorPrefab) return false;
+            Collider[] colliders = block.GetComponentsInChildren<Collider>(true);
+            if (colliders == null) return false;
+            int physical = 0;
+            foreach (Collider collider in colliders)
+            {
+                if (collider == null) return false;
+                if (!collider.enabled || collider.isTrigger || !collider.gameObject.activeInHierarchy) continue;
+                if (!ParkMeasuredTwigCollider(block, collider)) return false;
+                physical++;
+            }
+            return physical != 0;
+        }
+
         private static bool ParkAdjacentContact(ParkPlacementRequest request, Vector3 position,
             Quaternion rotation, Bounds bounds, BuildingBlock neighbour)
         {
-            return request != null && request.SnapSnapshot != null && ReferenceEquals(request.SnapBlock, neighbour) &&
-                ParkSnapCurrent(request) && neighbour.PrefabName == SkateParkLayout.FloorPrefab &&
+            if (request == null || neighbour == null) return false;
+            bool selected = request.SnapSnapshot != null && ReferenceEquals(request.SnapBlock, neighbour);
+            if (selected ? !ParkSnapCurrent(request) : request.Supports == null || !ParkMeasuredTwigFloor(neighbour) ||
+                !ReferenceEquals(FindParkBlock(ParkId(neighbour)), neighbour)) return false;
+            return Coordinate(neighbour.transform.position) && WallPermission(request.Player, neighbour) &&
+                neighbour.PrefabName == SkateParkLayout.FloorPrefab &&
+                Quaternion.Angle(neighbour.transform.rotation, Quaternion.Euler(0, neighbour.transform.rotation.eulerAngles.y, 0)) < 0.1f &&
                 neighbour.blockDefinition != null && ParkSupportHeight(neighbour.transform.position.y +
                     neighbour.blockDefinition.bounds.min.y, request.SupportTop) &&
                 !ParkSpacesOverlap(new ParkSpace { Position = position, Rotation = rotation, Bounds = bounds },
                     new ParkSpace { Position = neighbour.transform.position, Rotation = neighbour.transform.rotation,
-                        Bounds = neighbour.blockDefinition.bounds }, SkateParkLayout.NativeBoundsTolerance);
+                        Bounds = neighbour.blockDefinition.bounds }, SkateParkLayout.NativeBoundsTolerance) &&
+                (selected || ParkSpacesShareEdge(new ParkSpace { Position = position, Rotation = rotation, Bounds = bounds },
+                    new ParkSpace { Position = neighbour.transform.position, Rotation = neighbour.transform.rotation,
+                        Bounds = neighbour.blockDefinition.bounds }));
         }
 
         private static bool ParkSupportedDeployVolume(ParkPlacementRequest request, Vector3 position,
@@ -5211,6 +5328,15 @@ namespace Oxide.Plugins
                 b.x, b.z, second.Rotation.eulerAngles.y, be.x, be.z, contactTolerance);
         }
 
+        private static bool ParkSpacesShareEdge(ParkSpace first, ParkSpace second)
+        {
+            return SkateParkLayout.SharesNominalEdge(
+                new SkateParkTransform { X = first.Position.x, Z = first.Position.z, Yaw = first.Rotation.eulerAngles.y },
+                ParkBox(first.Bounds),
+                new SkateParkTransform { X = second.Position.x, Z = second.Position.z, Yaw = second.Rotation.eulerAngles.y },
+                ParkBox(second.Bounds));
+        }
+
         private bool ParkModuleSpace(ParkPlacementRequest request, SkateParkKind kind, ParkNativePart[] definitions,
             ParkGroup group, ParkMember[] parts, List<BuildingBlock> created, out string failure)
         {
@@ -5320,6 +5446,7 @@ namespace Oxide.Plugins
                     bounds = new Bounds(capsule.center, size);
                 }
                 else { bounds = collider.bounds; frame = null; }
+                bool measuredTwig = ParkMeasuredTwigCollider(block, collider);
                 Bounds measured = new Bounds();
                 bool first = true, contained = true;
                 for (int x = -1; x <= 1; x += 2)
@@ -5330,8 +5457,8 @@ namespace Oxide.Plugins
                     point = inverse * ((frame == null ? point : frame.TransformPoint(point)) - origin);
                     if (first) { measured = new Bounds(point, Vector3.zero); first = false; }
                     else measured.Encapsulate(point);
-                    if (!SkateParkLayout.ContainsQuarterPoint(kind, point.x, point.y, point.z,
-                        envelope.min.y, floor.max.y + profile.Height + profile.CopingRadius, tolerance)) contained = false;
+                    if (!SkateParkLayout.ContainsQuarterColliderPoint(kind, point.x, point.y, point.z,
+                        envelope.min.y, floor.max.y + profile.Height + profile.CopingRadius, tolerance, measuredTwig)) contained = false;
                 }
                 if (contained) continue;
                 failure = "Park kind=" + SkateParkLayout.Name(kind) + " part=" + index.ToString(CultureInfo.InvariantCulture) +
@@ -5560,7 +5687,8 @@ namespace Oxide.Plugins
                         { unavailable = "native deploy-volume returned an unavailable collider"; return true; }
                         BaseEntity entity = candidate.ToBaseEntity();
                         if (!SkateParkLayout.BlocksMegaSpace(entity, player, anchor,
-                            transactionParts != null && transactionParts.Any(candidatePart => ReferenceEquals(candidatePart, entity))))
+                            transactionParts != null && transactionParts.Any(candidatePart => ReferenceEquals(candidatePart, entity))) ||
+                            ParkAdjacentContact(request, position, rotation, bounds, entity as BuildingBlock))
                             candidates.RemoveAt(i);
                     }
                     DeployVolume.LastDeployHit = null;

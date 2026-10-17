@@ -183,6 +183,17 @@ These checks use the layout helpers in the selected DLL, with independent expect
 
 The existing park layout/anchor scenarios also cover the 3.0000005 m native floor seam at 3 m spacing, rotated/translated float32 centres, symmetric contact, real 2 mm intrusion and invalid contact tolerances. Saved reservations retain strict overlap. These are geometry checks; native collider queries and placement timing remain unverified.
 
+The existing layout scenarios also cover the reported #480 twig-box min/max,
+its pitched quarterpipe corner, translated cell rotations, unchanged vertical
+bounds, wrong prefab names, altered geometry and refusal beyond the measured
+horizontal allowance. Block-frame cases reject unchanged raw boxes translated
+by 1.1 mm, 10 mm or 100 mm, quarter-turned or scaled, while preserving the 1 mm
+measurement budget. Pitched-carrier cases use the production nominal-edge helper
+across five pitches, five yaws and two anchors, retaining true 3 m seams while
+refusing 2 mm gaps, intrusions and corner contact. The fixture uses the reported
+numbers; it does not create
+native colliders or prove live placement.
+
 ## Park build items
 
 The existing item scenario also compiles the production `SkateHeld.cs` adapter

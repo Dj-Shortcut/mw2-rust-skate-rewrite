@@ -1,6 +1,6 @@
 # Supported park placement
 
-In source **0.3.22**, marked plans use native square-foundation confirmation. The server owns the final
+In source **0.3.23**, marked plans use native square-foundation confirmation. The server owns the final
 pose and item debit. The [item contract](RUST-SKATE-BUILD-ASSETS.md) and
 [shared helpers](../mods/rust/shared/SkatePark.cs) apply to both client frontends.
 Half-wall kickers retain their separate wall/side/join contract.
@@ -223,3 +223,23 @@ including the complete support masks, rotated cell poses, grid phase, fit tolera
 and plane refusals. They do not execute the server's Unity raycasts or transactions.
 Native ghost submission, collider queries, hook timing, payment/refund delivery,
 save/reload, support demolition and riding still require in-game acceptance.
+
+## Reported twig floor geometry
+
+The #480 receipt reports a spawned floor.twig box about 3.08609 by 3.09489 m,
+with an off-centre footprint. Source 0.3.23 recognises its exact local bounds and
+permits the known horizontal overhang when validating quarterpipe cells. The
+vertical bounds retain their existing tolerance. An adjacent non-selected floor
+can share only a nominal seam when every active physical collider matches that
+reported twig box, the native floor is current and horizontal, building permission
+holds and its bottom meets the captured support plane. Saved reservations remain
+strict. A non-selected floor must share a nominal edge within 1 mm; a gap, corner-only contact or rotated point contact stays obstructing. Other geometry is not exempted based on a twig name alone.
+
+The five other generic overlap refusals in that receipt are not independently
+attributed to twig overhang. Native reload, all-twelve placement/refusal outcomes
+and riding still need actual runtime evidence.
+
+Qualified adjacent twig floors use nominal unpitched cell edges, including the
+yaw-only bounds center. The same validated adjacency predicate filters ordinary
+OBB, capsule, sphere and entity-bounds deploy candidates before native flags.
+Unknown special deploy-volume types retain their native checks.

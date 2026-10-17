@@ -1281,6 +1281,7 @@ internal static class SkateParkLayoutScenarios
     private static void SpawnedQuarterBounds()
     {
         Near(SkateParkLayout.NativeBoundsTolerance, 0.001, "spawned bounds retain one millimetre baseline.");
+        MeasuredTwigBounds();
         foreach (double distance in new[] { 0d, 1, 17.375, 4194.304, 10000, 100000 })
         foreach (int axis in new[] { 0, 1, 2 })
         {
@@ -1366,6 +1367,78 @@ internal static class SkateParkLayoutScenarios
                 "unsupported kind cannot inherit a quarterpipe collider envelope.");
     }
 
+    private static void MeasuredTwigBounds()
+    {
+        double[] low = { -1.541687, -0.00000024586916, -1.55486429 };
+        double[] high = { 1.54439974, 0.100000769, 1.54002917 };
+        Require(SkateParkLayout.MatchesMeasuredTwigBounds(SkateParkLayout.TwigFloorCollider,
+            low[0], low[1], low[2], high[0], high[1], high[2]), "reported twig collider geometry is identified exactly.");
+        SkateParkBox raw = Box((low[0] + high[0]) / 2, (low[1] + high[1]) / 2, (low[2] + high[2]) / 2,
+            high[0] - low[0], high[1] - low[1], high[2] - low[2]);
+        Require(SkateParkLayout.MatchesMeasuredTwigCollider(SkateParkLayout.TwigFloorCollider, raw, raw),
+            "reported twig box in the native block frame is recognized.");
+        foreach (int axis in new[] { 0, 1, 2 })
+        foreach (double shift in new[] { -0.1, -0.01, -0.0011, 0.0011, 0.01, 0.1 })
+        {
+            SkateParkBox moved = raw;
+            if (axis == 0) moved.X += shift;
+            else if (axis == 1) moved.Y += shift;
+            else moved.Z += shift;
+            Require(!SkateParkLayout.MatchesMeasuredTwigCollider(SkateParkLayout.TwigFloorCollider, raw, moved),
+                "unchanged raw twig size cannot exempt a collider shifted within its block.");
+        }
+        SkateParkBox rotated = Box(raw.Z, raw.Y, -raw.X, raw.SizeZ, raw.SizeY, raw.SizeX);
+        Require(!SkateParkLayout.MatchesMeasuredTwigCollider(SkateParkLayout.TwigFloorCollider, raw, rotated),
+            "unchanged raw twig size cannot exempt a quarter-turned collider child.");
+        SkateParkBox scaled = Box(raw.X * 1.01, raw.Y, raw.Z, raw.SizeX * 1.01, raw.SizeY, raw.SizeZ);
+        Require(!SkateParkLayout.MatchesMeasuredTwigCollider(SkateParkLayout.TwigFloorCollider, raw, scaled),
+            "unchanged raw twig size cannot exempt a scaled collider frame.");
+        SkateParkBox rounded = raw; rounded.X += 0.0005;
+        Require(SkateParkLayout.MatchesMeasuredTwigCollider(SkateParkLayout.TwigFloorCollider, raw, rounded),
+            "block-frame measurement keeps the existing millimetre budget.");
+        foreach (string name in new[] { null, "", SkateParkLayout.FloorPrefab,
+            "assets/prefabs/building core/foundation/foundation.twig.prefab", SkateParkLayout.TwigFloorCollider.ToUpperInvariant() })
+            Require(!SkateParkLayout.MatchesMeasuredTwigBounds(name, low[0], low[1], low[2], high[0], high[1], high[2]),
+                "unmeasured collider identity keeps the baseline.");
+        for (int component = 0; component < 6; component++)
+        foreach (double change in new[] { double.NaN, double.PositiveInfinity, 0.0021, -0.0021 })
+        {
+            double[] values = { low[0], low[1], low[2], high[0], high[1], high[2] };
+            values[component] = double.IsNaN(change) || double.IsInfinity(change) ? change : values[component] + change;
+            Require(!SkateParkLayout.MatchesMeasuredTwigBounds(SkateParkLayout.TwigFloorCollider,
+                values[0], values[1], values[2], values[3], values[4], values[5]), "changed twig geometry is not allowlisted.");
+        }
+        foreach (var kind in new[] { SkateParkKind.QuarterPipe, SkateParkKind.MiniQuarterPipe, SkateParkKind.LargeQuarterPipe })
+        {
+            SkateParkQuarterProfile profile; SkateParkLayout.TryQuarterProfile(kind, out profile);
+            double bottom = -0.2, top = profile.Height + profile.CopingRadius;
+            for (int cell = 0; cell < SkateParkLayout.CellCount(kind); cell++)
+            {
+                int r, f; SkateParkLayout.TryCell(kind, cell, out r, out f);
+                for (int turn = 0; turn < 4; turn++)
+                foreach (int x in new[] { 0, 1 })
+                foreach (int z in new[] { 0, 1 })
+                {
+                    Point point = QuarterTurn(x == 0 ? low[0] : high[0], z == 0 ? low[2] : high[2], turn);
+                    point.X += r * 3; point.Z += f * 3;
+                    if (kind == SkateParkKind.MiniQuarterPipe)
+                        Require(!SkateParkLayout.ContainsQuarterPoint(kind, point.X, 0.05, point.Z, bottom, top),
+                            "generic collider retains the 1 mm cell boundary.");
+                    Require(SkateParkLayout.ContainsQuarterColliderPoint(kind, point.X, 0.05, point.Z,
+                        bottom, top, 0.001, true), "measured twig corner fits only its known horizontal overhang.");
+                    Require(!SkateParkLayout.ContainsQuarterColliderPoint(kind, point.X, bottom - 0.0011, point.Z,
+                        bottom, top, 0.001, true), "twig allowance does not expand the vertical floor boundary.");
+                }
+            }
+        }
+        Require(!SkateParkLayout.ContainsQuarterPoint(SkateParkKind.QuarterPipe, 1.5444386, -0.0142002106, -1.52779186, -0.2, 3.15),
+            "reported pitched quarterpipe twig corner reproduces the baseline refusal.");
+        Require(SkateParkLayout.ContainsQuarterColliderPoint(SkateParkKind.QuarterPipe, 1.5444386, -0.0142002106, -1.52779186,
+            -0.2, 3.15, 0.001, true), "reported pitched quarterpipe twig corner is inside the grade envelope.");
+        Require(!SkateParkLayout.ContainsQuarterColliderPoint(SkateParkKind.MiniQuarterPipe, 1.555965, 0.05, 0,
+            -0.2, 1.35, 0.001, true), "geometry beyond measured twig overhang remains blocked.");
+    }
+
     private static bool QuarterBoxFits(SkateParkKind kind, double centerRight, double centerUp, double centerForward,
         int yawTurns, double sizeX, double sizeY, double sizeZ, double minUp, double maxUp, double tolerance)
     {
@@ -1430,6 +1503,7 @@ internal static class SkateParkLayoutScenarios
 
     private static void NativeFloorContacts()
     {
+        NominalPitchedFloorContacts();
         double depth = (float)3.0000005 / 2;
         Require(SkateParkLayout.OverlapsBox(0, 0, 0, 1.5, depth, 0, 3, 0, 1.5, depth),
             "saved reservations still reject float-rounded positive overlap.");
@@ -1449,13 +1523,69 @@ internal static class SkateParkLayoutScenarios
             Require(!SkateParkLayout.OverlapsBoxBeyondContact(nx, nz, yaw, 1.5, depth,
                 x, z, yaw, 1.5, depth, SkateParkLayout.NativeBoundsTolerance),
                 "native floor contact is symmetric.");
+            Require(SkateParkLayout.SharesBoxEdge(x, z, yaw, 1.5, depth, nx, nz, yaw, 1.5, depth),
+                "float-rounded native floors share a true edge.");
+            Require(SkateParkLayout.SharesBoxEdge(nx, nz, yaw + 90, depth, 1.5, x, z, yaw, 1.5, depth),
+                "native edge contact is symmetric across quarter turns.");
+            foreach (double gap in new[] { 0.002, 0.01, 0.05 })
+            {
+                double gx = (float)(world + (3 + gap) * dx), gz = (float)(-world + (3 + gap) * dz);
+                Require(!SkateParkLayout.OverlapsBoxBeyondContact(x, z, yaw, 1.5, depth,
+                    gx, gz, yaw, 1.5, depth, SkateParkLayout.NativeBoundsTolerance),
+                    "gapped nominal floors reproduce the overly broad disjoint predicate.");
+                Require(!SkateParkLayout.SharesBoxEdge(x, z, yaw, 1.5, depth, gx, gz, yaw, 1.5, depth),
+                    "gapped twig floors remain obstructions despite collider overhang.");
+            }
             Require(SkateParkLayout.OverlapsBoxBeyondContact(x, z, yaw, 1.5, depth,
                 (float)(world + 2.998 * dx), (float)(-world + 2.998 * dz), yaw, 1.5, depth,
                 SkateParkLayout.NativeBoundsTolerance), "two millimetres of real intrusion stays blocked.");
+            Require(!SkateParkLayout.SharesBoxEdge(x, z, yaw, 1.5, depth,
+                (float)(world + 2.998 * dx), (float)(-world + 2.998 * dz), yaw, 1.5, depth),
+                "intrusion is not edge contact.");
         }
+        Require(!SkateParkLayout.SharesBoxEdge(0, 0, 0, 1.5, depth, 3, 3, 0, 1.5, depth),
+            "corner contact does not share an edge.");
+        Require(!SkateParkLayout.SharesBoxEdge(0, 0, 0, 1.5, depth, 1.5 + Math.Sqrt(2), 0, 45, 1, 1),
+            "rotated point contact does not share an edge.");
+        foreach (double invalid in new[] { double.NaN, double.PositiveInfinity, double.NegativeInfinity })
+            Require(!SkateParkLayout.SharesBoxEdge(0, 0, 0, 1.5, depth, invalid, 0, 0, 1.5, depth),
+                "unreadable neighboring floor fails closed.");
         foreach (double invalid in new[] { double.NaN, double.PositiveInfinity, double.NegativeInfinity, -0.001, 0.001001 })
             Require(SkateParkLayout.OverlapsBoxBeyondContact(0, 0, 0, 1.5, depth, 10, 10, 0, 1.5, depth, invalid),
                 "invalid or expanded native contact tolerance fails closed.");
+    }
+
+    private static void NominalPitchedFloorContacts()
+    {
+        SkateParkBox floor = Box(0, -0.1, 0, 3, 0.2, (float)3.0000005);
+        foreach (double pitch in new[] { -35d, -30, -15, 15, 35 })
+        foreach (double yaw in new[] { 0d, 37, 90, 180, 270 })
+        foreach (double world in new[] { 0d, 2048.125 })
+        {
+            double angle = yaw * Math.PI / 180, tilt = pitch * Math.PI / 180;
+            double side = Math.Sign(pitch);
+            var part = new SkateParkTransform { X = world, Y = 0.3882285676537811, Z = -world, Yaw = yaw, Pitch = pitch };
+            var neighbour = new SkateParkTransform { X = world + side * 3 * Math.Sin(angle),
+                Z = -world + side * 3 * Math.Cos(angle), Yaw = yaw };
+            Require(SkateParkLayout.SharesNominalEdge(part, floor, neighbour, floor),
+                "pitched carrier retains its true nominal three-metre floor seam.");
+            double projectedCenter = floor.Y * Math.Sin(tilt);
+            double projectedDepth = floor.SizeZ / 2 * Math.Abs(Math.Cos(tilt)) + floor.SizeY / 2 * Math.Abs(Math.Sin(tilt));
+            Require(!SkateParkLayout.SharesBoxEdge(part.X + projectedCenter * Math.Sin(angle),
+                part.Z + projectedCenter * Math.Cos(angle), yaw, floor.SizeX / 2, projectedDepth,
+                neighbour.X, neighbour.Z, yaw, floor.SizeX / 2, floor.SizeZ / 2),
+                "pitched physical projection reproduces refusal of a true nominal seam.");
+            foreach (double offset in new[] { -0.002, 0.002 })
+            {
+                var shifted = neighbour;
+                shifted.X += side * offset * Math.Sin(angle); shifted.Z += side * offset * Math.Cos(angle);
+                Require(!SkateParkLayout.SharesNominalEdge(part, floor, shifted, floor),
+                    "nominal seam still refuses two millimetres of intrusion or gap.");
+            }
+            var corner = neighbour; corner.X += 3 * Math.Cos(angle); corner.Z -= 3 * Math.Sin(angle);
+            Require(!SkateParkLayout.SharesNominalEdge(part, floor, corner, floor),
+                "pitched carrier cannot exempt a corner-only neighbor.");
+        }
     }
 
 
