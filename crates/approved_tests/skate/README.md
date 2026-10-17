@@ -132,7 +132,7 @@ The runner uses the actual compiled shared DLL, prints its path/SHA-256 and comp
 The owner approved two layout scenarios by name for [Task 4](https://github.com/Dj-Shortcut/mw2-rust-skate-rewrite/issues/337#issuecomment-6099499139):
 
 - `skate_park_piece_layouts`: the twelve pieces' block positions, orientations, native materials and adjoining nominal square-floor edges, including the complete halfpipe's flat, transitions, decks and railings, plus nominal authored-asset pivot offsets. Appended mini/large quarterpipe cases check literal cell masks/rotations, quarter-circle surfaces, missing-cell/apron boundaries, native bound containment and reservation-box overlap/touching. Native halfpipe walls use thin local X and three-metre local Z; checks cover all twenty wall footprints, joined rail ends and their placement under rotated anchors.
-- `skate_park_anchor_yaw_and_snap`: translated and rotated layouts preserve the supplied native snapped anchor, including anchors away from the world origin. Inverse and complete known-kind matching cover unordered/wrapped observations, relative noise, ambiguous single-floor kinds, invalid values/counts/prefabs, reflection and atomic finite bounds. The foundation extension supplies abstract construction bounds and independently checks every tilted floor corner above the support, without changing the authored ledge/deck heights.
+- `skate_park_anchor_yaw_and_snap`: translated and rotated layouts preserve the supplied native snapped anchor, including anchors away from the world origin. Inverse and complete known-kind matching cover unordered/wrapped observations, relative noise, ambiguous single-floor kinds, invalid values/counts/prefabs, reflection and atomic finite bounds. The foundation extension supplies abstract construction bounds and independently checks exact lowest-corner contact, all other corners above support, native yaw steps, adjacent 3m cells, lowest-only support samples and complete support-plane agreement. Relative layouts remain stable; ledge anchors compensate for their absent legs.
 
 Build the actual shared library and server plugin using genuine dedicated-server references, then execute the same engine-free scenarios separately against each actual DLL on .NET 8:
 
@@ -147,8 +147,8 @@ dotnet context/skate-approved-park/bin/ShortcutSkate/net8.0/SkateParkLayoutScena
 
 The legacy `ActualPluginPath` remains a fallback when `SkateParkLibraryPath` is omitted. Reference only one DLL in each run. Intermediate/output directories under ignored `context/` are separated by the selected DLL's filename. Execute the emitted runner directly: SDK `dotnet run` can choose its default target despite the library property passed to its build. The runner prints its loaded DLL path and SHA-256 and accepts that expected hash as an optional argument.
 
-The quarterpipe profile cases cover original, mini and large: independent
-circular coordinates and the vertical lip tangent, large-only 0.2 m vert,
+The source 0.3.20 quarterpipe profile cases cover original, mini and large: independent
+circular coordinates, the exact vertical lip tangent and `h == r` / `Vert=0` for all three kinds,
 full-width flat decks at least 1.2 m deep, 0.05 m round coping dimensions and
 closed back/underside shell samples. Original native carrier transforms remain
 literal compatibility fixtures; they no longer define the riding surface.

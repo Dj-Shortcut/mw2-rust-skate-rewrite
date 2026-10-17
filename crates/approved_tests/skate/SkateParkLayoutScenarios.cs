@@ -610,8 +610,113 @@ internal static class SkateParkLayoutScenarios
         }
         PlacementRequests();
         HalfWallSnap();
-        Console.WriteLine("PASS: skate_park_anchor_yaw_and_snap (20 translated/yaw anchors plus half-wall attachment, " +
+        NativeRotationAndAdjacentCells();
+        Console.WriteLine("PASS: skate_park_anchor_yaw_and_snap (20 translated/yaw anchors, native socket/rotation steps and half-wall attachment, " +
                           (checks - start).ToString(CultureInfo.InvariantCulture) + " checks).");
+    }
+
+    private static void NativeRotationAndAdjacentCells()
+    {
+        double[] offsets = { -136, -135, -134, -46, -45, -44, 0, 44, 45, 46, 134, 135, 136 };
+        double[] snapped = { -180, -180, -90, -90, -90, 0, 0, 0, 90, 90, 90, 180, 180 };
+        foreach (double reference in new[] { 0d, 90, 180, 270, 37.25, -90, 450, -720 })
+        for (int i = 0; i < offsets.Length; i++)
+        {
+            double yaw;
+            Require(SkateParkLayout.TrySnapYaw(reference + offsets[i], reference, 90, out yaw),
+                "native rotation: valid relative heading refused.");
+            double expected = (reference + snapped[i]) % 360;
+            if (expected < 0) expected += 360;
+            Near(yaw, expected, "native rotation: nearest quarter turn in support frame, ties away from zero.");
+            Require(yaw >= 0 && yaw < 360, "native rotation: normalized result.");
+        }
+        foreach (double step in new[] { 30d, 45, 60, 120, 180, 360 })
+        {
+            double yaw;
+            Require(SkateParkLayout.TrySnapYaw(37.25 + step, 37.25, step, out yaw),
+                "native rotation: integral full-turn subdivision refused.");
+            Near(yaw, (37.25 + step) % 360, "native rotation: configured step retained.");
+        }
+        foreach (double bad in new[] { double.NaN, double.NegativeInfinity, double.PositiveInfinity, -1000001d, 1000001 })
+        {
+            SnapYawRefused(bad, 0, 90, "native rotation: invalid requested heading.");
+            SnapYawRefused(0, bad, 90, "native rotation: invalid reference heading.");
+        }
+        foreach (double bad in new[] { double.NaN, double.NegativeInfinity, double.PositiveInfinity,
+            -90d, 0, 361, 70, double.Epsilon })
+            SnapYawRefused(45, 0, bad, "native rotation: invalid step.");
+        SnapYawRefused(1000000, -1000000, 1e-305,
+            "native rotation: overflowing relative step count refuses a nonfinite result.");
+
+        Near(SkateParkLayout.SupportTolerance, 0.02, "support: shared two-centimetre contact tolerance.");
+        Angle[] angles = { new Angle(0, 0, 1, 0), new Angle(90, 90, 0, 1), new Angle(180, 180, -1, 0),
+            new Angle(270, 270, 0, -1), new Angle(37.25, 37.25, 0.796002002534622, 0.6052939880428944) };
+        Point[] hits = { new Point(1.49, 0, 0.2), new Point(-1.49, 0, 0.2),
+            new Point(0.2, 0, 1.49), new Point(0.2, 0, -1.49), new Point(0, 0, 0),
+            new Point(1.519999, 0, 0), new Point(0, 0, -1.519999) };
+        Point[] cells = { new Point(3, 0, 0), new Point(-3, 0, 0), new Point(0, 0, 3),
+            new Point(0, 0, -3), new Point(3, 0, 0), new Point(3, 0, 0), new Point(0, 0, -3) };
+        foreach (Angle angle in angles)
+        for (int i = 0; i < hits.Length; i++)
+        {
+            const double rx = 17.375, rz = -8.0625;
+            Point hit = hits[i], cell = cells[i];
+            double x, z;
+            Require(SkateParkLayout.TryAdjacentCell(rx, rz, angle.Input,
+                rx + hit.X * angle.Cos + hit.Z * angle.Sin,
+                rz - hit.X * angle.Sin + hit.Z * angle.Cos, out x, out z),
+                "foundation socket: valid hit within the reference cell refused.");
+            Near(x, rx + cell.X * angle.Cos + cell.Z * angle.Sin, "foundation socket: one cell in local X.");
+            Near(z, rz - cell.X * angle.Sin + cell.Z * angle.Cos, "foundation socket: one cell in local Z.");
+            Near(Math.Sqrt((x - rx) * (x - rx) + (z - rz) * (z - rz)), 3,
+                "foundation socket: exactly three metres from reference centre.");
+        }
+        foreach (double side in new[] { -1d, 1 })
+        {
+            double x, z;
+            Require(SkateParkLayout.TryAdjacentCell(0, 0, 0, side, side, out x, out z),
+                "foundation socket: diagonal tie accepted.");
+            Near(x, side * 3, "foundation socket: equal local axes choose right.");
+            Near(z, 0, "foundation socket: tie is not diagonal adjacency.");
+            Require(SkateParkLayout.TryAdjacentCell(0, 0, 0, side * 1.52, 0, out x, out z),
+                "foundation socket: contact tolerance boundary accepted.");
+            Near(x, side * 3, "foundation socket: boundary keeps nearest side.");
+        }
+        foreach (Angle angle in angles)
+        foreach (Point hit in new[] { new Point(1.520001, 0, 0), new Point(-1.520001, 0, 0),
+            new Point(0, 0, 1.520001), new Point(0, 0, -1.520001), new Point(3, 0, 3) })
+            AdjacentCellRefused(0, 0, angle.Input, hit.X * angle.Cos + hit.Z * angle.Sin,
+                -hit.X * angle.Sin + hit.Z * angle.Cos, "foundation socket: hit beyond the reference cell.");
+        foreach (double bad in new[] { double.NaN, double.NegativeInfinity, double.PositiveInfinity, -100001d, 100001 })
+        {
+            AdjacentCellRefused(bad, 0, 0, 0, 0, "foundation socket: invalid reference X.");
+            AdjacentCellRefused(0, bad, 0, 0, 0, "foundation socket: invalid reference Z.");
+            AdjacentCellRefused(0, 0, 0, bad, 0, "foundation socket: invalid hit X.");
+            AdjacentCellRefused(0, 0, 0, 0, bad, "foundation socket: invalid hit Z.");
+        }
+        foreach (double bad in new[] { double.NaN, double.NegativeInfinity, double.PositiveInfinity, -1000001d, 1000001 })
+            AdjacentCellRefused(0, 0, bad, 0, 0, "foundation socket: invalid reference yaw.");
+        AdjacentCellRefused(99999, 0, 0, 99999, 0, "foundation socket: derived X outside world bounds.");
+        AdjacentCellRefused(0, 99999, 0, 0, 100000, "foundation socket: derived Z outside world bounds.");
+        double edgeX, edgeZ;
+        Require(SkateParkLayout.TryAdjacentCell(99997, 0, 0, 99998, 0, out edgeX, out edgeZ),
+            "foundation socket: exact world boundary remains valid.");
+        Near(edgeX, 100000, "foundation socket: exact world boundary X.");
+        Near(edgeZ, 0, "foundation socket: exact world boundary Z.");
+    }
+
+    private static void SnapYawRefused(double requested, double reference, double step, string message)
+    {
+        double yaw = 123;
+        Require(!SkateParkLayout.TrySnapYaw(requested, reference, step, out yaw), message);
+        Require(yaw == 0, "native rotation: refusal resets output atomically.");
+    }
+
+    private static void AdjacentCellRefused(double rx, double rz, double yaw, double hx, double hz, string message)
+    {
+        double x = 91, z = 93;
+        Require(!SkateParkLayout.TryAdjacentCell(rx, rz, yaw, hx, hz, out x, out z), message);
+        Require(x == 0 && z == 0, "foundation socket: refusal resets both outputs atomically.");
     }
 
     private static void PlacementRequests()
@@ -1505,7 +1610,7 @@ internal static class SkateParkLayoutScenarios
     private static void FoundationSupport()
     {
         int start = checks;
-        foreach (Piece piece in Pieces)
+        foreach (Piece piece in SupportedPieces())
         foreach (double top in new[] { -17.25, 0.5, 123.875 })
         foreach (double centerY in new[] { -0.05, 0.1 })
         foreach (double centerZ in new[] { -0.025, 0.025 })
@@ -1515,8 +1620,7 @@ internal static class SkateParkLayoutScenarios
             double baseY;
             Require(SkateParkLayout.TrySupportedAnchor(piece.Kind, top, centerY, centerZ, thickness, depth, out baseY),
                     piece.Name + ": foundation bounds refused.");
-            Require(baseY >= top - centerY + thickness / 2 + 0.025 - Tolerance,
-                    piece.Name + ": upright floor base is below support.");
+            double lowest = double.PositiveInfinity;
             foreach (ExpectedPart part in piece.Parts)
             {
                 if (part.Prefab != FloorPrefab) continue;
@@ -1525,22 +1629,225 @@ internal static class SkateParkLayoutScenarios
                 foreach (double localZ in new[] { centerZ - depth / 2, centerZ + depth / 2 })
                 {
                     double worldY = baseY + part.Height + localY * Math.Cos(pitch) - localZ * Math.Sin(pitch);
-                    Require(worldY >= top + 0.025 - Tolerance, piece.Name + ": tilted floor corner intersects support.");
+                    Require(worldY >= top - Tolerance, piece.Name + ": actual floor corner intersects support.");
+                    lowest = Math.Min(lowest, worldY);
                 }
             }
+            Near(lowest, top, piece.Name + ": lowest actual floor corner meets support exactly, with no hover gap.");
             double shifted;
             Require(SkateParkLayout.TrySupportedAnchor(piece.Kind, top + 7.25, centerY, centerZ, thickness, depth, out shifted),
                     piece.Name + ": translated support refused.");
             Near(shifted - baseY, 7.25, piece.Name + ": support height translation.");
         }
-        double y;
-        Require(!SkateParkLayout.TrySupportedAnchor((SkateParkKind)99, 0, 0, 0, 0.2, 3, out y), "unknown support kind.");
-        foreach (double bad in new[] { double.NaN, double.NegativeInfinity, double.PositiveInfinity, 100001 })
-            Require(!SkateParkLayout.TrySupportedAnchor(SkateParkKind.Halfpipe, bad, 0, 0, 0.2, 3, out y), "invalid support top.");
-        Require(!SkateParkLayout.TrySupportedAnchor(SkateParkKind.Bank, 0, 0, 0, 0, 3, out y), "zero floor thickness.");
-        Require(!SkateParkLayout.TrySupportedAnchor(SkateParkKind.Bank, 0, 0, 0, 0.2, -3, out y), "negative floor depth.");
+        foreach (SkateParkKind kind in new[] { SkateParkKind.LedgeLow, SkateParkKind.LedgeHigh, SkateParkKind.LongLedge })
+        {
+            double y;
+            Require(SkateParkLayout.TrySupportedAnchor(kind, 0, 0, 0, 0.2, 3, out y), "ledge: nominal support refused.");
+            Near(y, kind == SkateParkKind.LedgeHigh ? -0.7 : -0.3,
+                "ledge: authored 0.4/0.8m height is compensated instead of hovering over a phantom upright floor.");
+        }
+        SupportedAnchorRefused((SkateParkKind)99, 0, 0, 0, 0.2, 3, "unknown support kind.");
+        SupportedAnchorRefused(SkateParkKind.HalfWallKicker, 0, 0, 0, 0.2, 3,
+            "half-wall: generic support cannot bypass wall attachment.");
+        foreach (double bad in new[] { double.NaN, double.NegativeInfinity, double.PositiveInfinity, -100001d, 100001 })
+        {
+            SupportedAnchorRefused(SkateParkKind.Halfpipe, bad, 0, 0, 0.2, 3, "invalid support top.");
+            SupportedAnchorRefused(SkateParkKind.Halfpipe, 0, bad, 0, 0.2, 3, "invalid native floor centre Y.");
+            SupportedAnchorRefused(SkateParkKind.Halfpipe, 0, 0, bad, 0.2, 3, "invalid native floor centre Z.");
+            SupportedAnchorRefused(SkateParkKind.Halfpipe, 0, 0, 0, bad, 3, "invalid native floor thickness.");
+            SupportedAnchorRefused(SkateParkKind.Halfpipe, 0, 0, 0, 0.2, bad, "invalid native floor depth.");
+        }
+        foreach (double bad in new[] { 0d, -0.2 })
+        {
+            SupportedAnchorRefused(SkateParkKind.Bank, 0, 0, 0, bad, 3, "nonpositive floor thickness.");
+            SupportedAnchorRefused(SkateParkKind.Bank, 0, 0, 0, 0.2, bad, "nonpositive floor depth.");
+        }
+        SupportedAnchorRefused(SkateParkKind.Bank, 100000, 0, 0, 0.2, 3,
+            "derived support anchor above world range.");
+        SupportedAnchorRefused(SkateParkKind.LedgeLow, -100000, 0, 0, 0.2, 3,
+            "derived ledge anchor below world range.");
+        SupportPlanes();
+        SupportSamples();
         Console.WriteLine("PASS: skate_park_anchor_yaw_and_snap foundation-bound extension (" +
                           (checks - start).ToString(CultureInfo.InvariantCulture) + " checks).");
+    }
+
+    private static Piece[] SupportedPieces()
+    {
+        // The MEGA fixture lists its 64 actual floor members. Its sixteen wall/rail
+        // members are not horizontal supports and are separately refused below.
+        double[] run = { 0, 2.963065021785413, 5.636084594350517, 7.757404937910159, 9.119376437128798, 9.588679832249493 };
+        double[] rise = { 0, 0.46930339512069297, 1.8312748943393327, 3.9525952378989753, 6.625614810464081, 9.588679832249493 };
+        var floors = new ExpectedPart[64];
+        for (int i = 0; i < 16; i++) floors[i] = new ExpectedPart(i % 4 * 3, -4.5 + i / 4 * 3, 0, 0);
+        for (int i = 16; i < 56; i++)
+        {
+            int segment = (i - 16) % 20 / 4, side = i < 36 ? -1 : 1;
+            floors[i] = new ExpectedPart(i % 4 * 3, side * (6 + (run[segment] + run[segment + 1]) / 2),
+                (rise[segment] + rise[segment + 1]) / 2, -side * (9 + 18 * segment), SkateParkMaterial.Metal);
+        }
+        for (int i = 56; i < 64; i++)
+            floors[i] = new ExpectedPart(i % 4 * 3, (i < 60 ? -1 : 1) * 17.088679832249493,
+                9.588679832249493, 0, SkateParkMaterial.Metal);
+        var pieces = new Piece[Pieces.Length + 1];
+        Array.Copy(Pieces, pieces, Pieces.Length);
+        pieces[Pieces.Length] = new Piece(SkateParkKind.MegaHalfpipe, "mega-halfpipe", floors);
+        return pieces;
+    }
+
+    private static void SupportedAnchorRefused(SkateParkKind kind, double top, double cy, double cz,
+        double sy, double sz, string message)
+    {
+        double y = 92;
+        Require(!SkateParkLayout.TrySupportedAnchor(kind, top, cy, cz, sy, sz, out y), message);
+        Require(y == 0, "support: invalid input resets anchor atomically.");
+    }
+
+    private static void SupportPlanes()
+    {
+        foreach (double translation in new[] { -17.25, 0, 123.875 })
+        foreach (double[] offsets in new[] { new[] { 0d }, new[] { 0d, 0, 0 },
+            new[] { 0d, 0.009, 0.019 }, new[] { 0.019, 0d, 0.009 } })
+        {
+            var heights = new double[offsets.Length];
+            double expectedTop = double.NegativeInfinity;
+            for (int i = 0; i < heights.Length; i++)
+            {
+                heights[i] = translation + offsets[i];
+                expectedTop = Math.Max(expectedTop, heights[i]);
+            }
+            double top;
+            Require(SkateParkLayout.TrySupportPlane(heights, out top), "support plane: coplanar contacts refused.");
+            Near(top, expectedTop, "support plane: highest actual contact determines top independently of order.");
+            Array.Reverse(heights);
+            double reversed;
+            Require(SkateParkLayout.TrySupportPlane(heights, out reversed), "support plane: reversed contacts refused.");
+            Near(reversed, top, "support plane: permutation leaves top unchanged.");
+        }
+        double boundary;
+        Require(SkateParkLayout.TrySupportPlane(new[] { 0d, 0.02 }, out boundary),
+            "support plane: exact two-centimetre span accepted.");
+        Near(boundary, 0.02, "support plane: boundary chooses upper contact.");
+        foreach (double bound in new[] { -100000d, 100000 })
+        {
+            Require(SkateParkLayout.TrySupportPlane(new[] { bound }, out boundary),
+                "support plane: exact world boundary contact accepted.");
+            Near(boundary, bound, "support plane: world boundary contact preserved.");
+        }
+        SupportPlaneRefused(null, "support plane: missing contact collection.");
+        SupportPlaneRefused(new double[0], "support plane: no contacts cannot support an assembly.");
+        foreach (double[] heights in new[] { new[] { 0d, 0.019, 0.038 }, new[] { 0.038, 0.019, 0d },
+            new[] { 0.019, 0d, 0.038 }, new[] { 0d, 0.020001 }, new[] { -0.020001, 0d },
+            new[] { 0d, 0.4 }, new[] { 0d, 3.1 } })
+            SupportPlaneRefused(heights,
+                "support plane: total height span fails even when each consecutive step could pass.");
+        foreach (double bad in new[] { double.NaN, double.NegativeInfinity, double.PositiveInfinity, -100001d, 100001 })
+        {
+            SupportPlaneRefused(new[] { bad }, "support plane: invalid single contact.");
+            SupportPlaneRefused(new[] { 0d, bad, 0d }, "support plane: missing or invalid contact among valid supports.");
+        }
+    }
+
+    private static void SupportPlaneRefused(double[] heights, string message)
+    {
+        double top = 92;
+        Require(!SkateParkLayout.TrySupportPlane(heights, out top), message);
+        Require(top == 0, "support plane: refusal resets output atomically.");
+    }
+
+    private static void SupportSamples()
+    {
+        SkateParkBox nominal = Box(0, 0, 0, 3, 0.2, 3);
+        foreach (Piece piece in SupportedPieces())
+        foreach (SkateParkBox floor in new[] { nominal, Box(0.025, 0.1, -0.025, 2.9, 0.25, 3.1),
+            Box(-0.025, -0.05, 0.025, 3.1, 0.1, 2.9) })
+        foreach (double yaw in new[] { 0d, 90, 180, 270, 37.25 })
+        {
+            double minimum = double.PositiveInfinity;
+            foreach (ExpectedPart part in piece.Parts)
+            {
+                if (part.Prefab != FloorPrefab) continue;
+                var localPose = new SkateParkTransform { Y = part.Height, Pitch = part.Pitch };
+                foreach (double up in new[] { floor.Y - floor.SizeY / 2, floor.Y + floor.SizeY / 2 })
+                foreach (double forward in new[] { floor.Z - floor.SizeZ / 2, floor.Z + floor.SizeZ / 2 })
+                    minimum = Math.Min(minimum, SurfacePoint(localPose, floor.X, up, forward).Y);
+            }
+            double radians = yaw * Math.PI / 180, sin = Math.Sin(radians), cos = Math.Cos(radians);
+            const double ax = 17.375, az = -8.0625, supportTop = 2.625;
+            double anchorY;
+            Require(SkateParkLayout.TrySupportedAnchor(piece.Kind, supportTop, floor.Y, floor.Z,
+                floor.SizeY, floor.SizeZ, out anchorY), piece.Name + ": sample fixture support refused.");
+            int contacts = 0;
+            for (int i = 0; i < piece.Parts.Length; i++)
+            for (int sample = 0; sample < 9; sample++)
+            {
+                ExpectedPart part = piece.Parts[i];
+                var pose = new SkateParkTransform {
+                    X = ax + part.Right * cos + part.Forward * sin,
+                    Y = part.Height, Z = az - part.Right * sin + part.Forward * cos,
+                    Yaw = yaw + part.Yaw, Pitch = part.Pitch };
+                Point expected = SurfacePoint(pose, floor.X + (sample % 3 - 1) * floor.SizeX / 2,
+                    floor.Y - floor.SizeY / 2, floor.Z + (sample / 3 - 1) * floor.SizeZ / 2);
+                bool contact = part.Prefab == FloorPrefab && Math.Abs(expected.Y - minimum) <= 1e-6;
+                SkateParkTransform point = new SkateParkTransform { X = 91, Y = 92, Z = 93, Yaw = 94, Pitch = 95 };
+                bool accepted = SkateParkLayout.TrySupportSample(piece.Kind, i, sample, floor, ax, az, yaw, out point);
+                Require(accepted == contact, piece.Name + ": only actual global-lowest floor samples can claim contact.");
+                if (!contact)
+                {
+                    Require(EmptyTransform(point), piece.Name + ": noncontact sample refuses atomically.");
+                    continue;
+                }
+                contacts++;
+                Same(new Point(point.X, point.Y, point.Z), expected,
+                    piece.Name + ": support sample world XZ and local underside Y match the independent geometry.");
+                Near(anchorY + point.Y, supportTop, piece.Name + ": returned local underside meets support after translation.");
+                Require(point.Yaw == 0 && point.Pitch == 0, piece.Name + ": a support sample is a point, without orientation.");
+            }
+            Require(contacts > 0, piece.Name + ": every supported assembly exposes at least one real contact sample.");
+        }
+        foreach (int index in new[] { 64, 65, 70, 71, 72, 79 })
+            SupportSampleRefused(SkateParkKind.MegaHalfpipe, index, 4, nominal, 0, 0, 0,
+                "MEGA walls and rails cannot masquerade as floor supports.");
+        foreach (SkateParkKind kind in new[] { (SkateParkKind)(-1), (SkateParkKind)99, SkateParkKind.HalfWallKicker })
+            SupportSampleRefused(kind, 0, 0, nominal, 0, 0, 0, "unsupported generic sample kind.");
+        foreach (int index in new[] { -1, 1, int.MinValue, int.MaxValue })
+            SupportSampleRefused(SkateParkKind.LedgeLow, index, 0, nominal, 0, 0, 0, "invalid support part index.");
+        foreach (int sample in new[] { -1, 9, int.MinValue, int.MaxValue })
+            SupportSampleRefused(SkateParkKind.LedgeLow, 0, sample, nominal, 0, 0, 0, "invalid support grid index.");
+        for (int field = 0; field < 6; field++)
+        foreach (double bad in new[] { double.NaN, double.NegativeInfinity, double.PositiveInfinity })
+            SupportSampleRefused(SkateParkKind.LedgeLow, 0, 4, ChangedBox(nominal, field, bad), 0, 0, 0,
+                "nonfinite support sample bounds field " + field);
+        for (int field = 0; field < 3; field++)
+        foreach (double bad in new[] { -100001d, 100001 })
+            SupportSampleRefused(SkateParkKind.LedgeLow, 0, 4, ChangedBox(nominal, field, bad), 0, 0, 0,
+                "out-of-range support sample bounds centre " + field);
+        for (int field = 3; field < 6; field++)
+        foreach (double bad in new[] { 0d, -0.1 })
+            SupportSampleRefused(SkateParkKind.LedgeLow, 0, 4, ChangedBox(nominal, field, bad), 0, 0, 0,
+                "nonpositive support sample bounds size " + field);
+        foreach (double bad in new[] { double.NaN, double.NegativeInfinity, double.PositiveInfinity, -100001d, 100001 })
+        {
+            SupportSampleRefused(SkateParkKind.LedgeLow, 0, 4, nominal, bad, 0, 0, "invalid support sample X.");
+            SupportSampleRefused(SkateParkKind.LedgeLow, 0, 4, nominal, 0, bad, 0, "invalid support sample Z.");
+        }
+        foreach (double bad in new[] { double.NaN, double.NegativeInfinity, double.PositiveInfinity, -1000001d, 1000001 })
+            SupportSampleRefused(SkateParkKind.LedgeLow, 0, 4, nominal, 0, 0, bad, "invalid support sample yaw.");
+        SupportSampleRefused(SkateParkKind.LedgeLow, 0, 8, nominal, 100000, 0, 0,
+            "support sample derived X exceeds world range.");
+        SupportSampleRefused(SkateParkKind.LedgeLow, 0, 8, nominal, 0, 100000, 0,
+            "support sample derived Z exceeds world range.");
+    }
+
+    private static bool EmptyTransform(SkateParkTransform value)
+    { return value.X == 0 && value.Y == 0 && value.Z == 0 && value.Yaw == 0 && value.Pitch == 0; }
+
+    private static void SupportSampleRefused(SkateParkKind kind, int index, int sample, SkateParkBox floor,
+        double x, double z, double yaw, string message)
+    {
+        var point = new SkateParkTransform { X = 91, Y = 92, Z = 93, Yaw = 94, Pitch = 95 };
+        Require(!SkateParkLayout.TrySupportSample(kind, index, sample, floor, x, z, yaw, out point), message);
+        Require(EmptyTransform(point), "support: refusal resets the whole sample atomically.");
     }
 
     private static Point Centre(SkateParkKind kind, int index, double x, double y, double z, double yaw)

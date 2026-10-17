@@ -1,7 +1,7 @@
 # Rust park building assets
 
 The owner chose an own build picker and hotbar items; Claude owns the client.
-ShortcutSkate source **0.3.19** has twelve kinds: the eight original types, mini/large quarterpipes, the [half-wall kicker](RUST-SKATE-HALF-WALL-KICKER.md) and the [MEGA kit](RUST-SKATE-MEGA-HALFPIPE.md). The attached kicker targets an existing half-wall; the other kinds use native square foundations.
+ShortcutSkate source **0.3.20** has twelve kinds: the eight original types, mini/large quarterpipes, the [half-wall kicker](RUST-SKATE-HALF-WALL-KICKER.md) and the [MEGA kit](RUST-SKATE-MEGA-HALFPIPE.md). The attached kicker targets an existing half-wall; the other kinds use native square foundations.
 The stock six belt slots cannot hold the complete catalogue: use an owned item, move/equip it
 natively and wait for actual active-item/planner state. Report missing items or
 full inventory. Native acceptance is open; commands are admin setup/fallback.
@@ -17,8 +17,9 @@ the [catalogue](../mods/rust/shared/SkateParkBuildItems.cs) supplies exact names
 Tagged plans do not stack. Other plans retain ordinary placement and payment.
 The server captures item/planner/world before waiving native affordability.
 CanBuild consumes that receipt once; changed identity refuses placement. Only
-its native material bill is suppressed. The spawned foundation is unsaved and
-removed next tick, with exact captured-identity/destruction checks, before the
+its native material bill is suppressed. A temporary foundation spawned by native
+socket/terrain placement is unsaved and removed next tick, with exact
+captured-identity/destruction checks, before the
 park transaction. A kill veto or uncertain cleanup refuses the park/item debit
 and blocks further park creation. Each distinct object/entity/network-ID observation
 retains its own receipt; exact repeats preserve the first. Additional or unknown
@@ -26,12 +27,20 @@ carriers stay untouched and block placement until every removal is proved.
 Tracking is instance-local, so interrupted callbacks/unload may need private cleanup.
 The temporary carrier can be visible. Only one marked transaction is admitted;
 no crafting recipe, material price or global building override is added.
-The final native foundation origin supplies X/Z/yaw and its Y is the support
-plane. Actual first-floor bounds determine the park baseline; no guessed top
-height is added. Client ghost agreement remains unverified. Full prefab/material,
-privilege, terrain/water, occupancy, range25m, save identity and assembly guards
-remain. Typed `skate.placeitem [x y z yaw]` / `skate.place <kind> [pose]` are admin
-fallbacks; explicit coordinates remain exact [layout origins](RUST-SKATE-RAMP-ASSETS.md).
+The [supported placement contract](RUST-SKATE-PLACEMENT.md) defines native socket,
+existing-foundation-top and compatible adjacent-park targets, normal rotation
+steps and the exact ghost offsets. X/Z/yaw follow the selected frame; measured
+remaining terrain/foundation support determines Y, including explicit admin
+coordinates. The lowest actual native floor bounds meet support with no added
+gap. Missing or uneven support refuses placement and retains the item. Existing
+saved anchors and all kind IDs/markers/relative layouts remain unchanged.
+The three quarterpipe ghosts and placed shells share the final group anchor plus
+measured unpitched floor top, with group yaw only and zero `VisualOrigin` offsets;
+the original quarterpipe no longer uses a pitched-floor toe as its model origin.
+Client ghost agreement remains unverified. Full prefab/material, privilege,
+terrain/water, occupancy, range25m, save identity and assembly guards remain.
+Typed `skate.placeitem [x y z yaw]` / `skate.place <kind> [pose]` are admin fallbacks;
+explicit Y is a support-search hint, X/Z stay explicit and yaw uses native steps.
 
 Only the original item's verified quantity1→0 pays after complete registration.
 Earlier refusals retain it. Post-debit rollback returns it only after complete
