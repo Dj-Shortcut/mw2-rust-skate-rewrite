@@ -50,6 +50,8 @@ The complete buffered horizontal path plus the incoming segment must stay within
 
 ## Session diagnostics
 
+Source 0.3.26 also supplies a closed server collision surface for complete verified MEGA groups, matching the shared smooth profile instead of their straight native floor chords. It replaces only owned floor colliders and restores them on invalidation/unload; native guard walls and antihack remain active. See the [MEGA collision contract](../../../docs/RUST-SKATE-MEGA-HALFPIPE.md#server-collision-surface). Native riding acceptance is still required.
+
 Keep the source's `// Reference: Unity.Collections` directive when installing it in Oxide. The trace reads `NativeList` results from that assembly, which Oxide does not automatically reference alongside `UnityEngine.CoreModule`.
 
 An administrator can arm `skate.trace <SteamID64> [seconds]` for one connected player (default 60 seconds, maximum 120), then stop it with `skate.trace stop`. It installs separate observational patches on demand; installation failure leaves movement patches and native checks unchanged. The capture expires automatically, stops on disconnect/unload, and stores at most 512 event records. An anonymous run token and millisecond UTC timestamps correlate the private server output with a recorded client climb. No permission, configuration, security convar or movement result is changed.

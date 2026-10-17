@@ -1,6 +1,6 @@
 # Modular MEGA halfpipe contract
 
-`mega-halfpipe` is one atomic kit, kind **11**, marked item **0x534B500C**, exact name `Skate MEGA Halfpipe` (stock carrier/skin/quantity unchanged). IDs 0–7, their native parts and saved layouts are unchanged; IDs 8/9 are the mini/L quarterpipes and ID 10 is the half-wall kicker. The server/shared catalogue and client 0.18.6 implementation are merged. Riding on server-placed kits remains unverified.
+`mega-halfpipe` is one atomic kit, kind **11**, marked item **0x534B500C**, exact name `Skate MEGA Halfpipe` (stock carrier/skin/quantity unchanged). IDs 0–7, their native parts and saved layouts are unchanged; IDs 8/9 are the mini/L quarterpipes and ID 10 is the half-wall kicker. The server/shared catalogue and client 0.18.6 implementation are merged. Source 0.3.26 adds the server collision replacement described below; native riding acceptance remains open.
 
 ## Configuration and modules
 
@@ -25,6 +25,14 @@ Every native part retains prefab/grade bounds validation, privilege/build hooks,
 The existing transaction owns all80 native members: complete registration precedes one verified original item debit1→0 and `Paid`; pre-debit refusal retains it. Post-debit rollback refunds only after verified complete cleanup and safe metadata. No external wall is a member. Hammer removal claims recovery before destruction and returns one item only for complete paid groups after all members/metadata are gone. Partial/free/uncertain groups mint none; interrupted states require private recovery.
 
 Version1 metadata stores canonical kind, anchor, indexed native identities/poses and payment state under existing world/checksum, group/file-size guards. Reload reconciles actual native members; it never fills missing modules or automatically mints an item. A partial group retains its reservation until removed. Older source cannot read the new kind: keep matching private world/metadata/source backups. Release pins and live installations are unchanged.
+
+## Server collision surface
+
+Source 0.3.26 extends the existing quarterpipe collision lifecycle to a complete, verified MEGA group. Its closed Construction-layer mesh uses the same 124 shared riding-profile samples at X−1.5…10.5. The vertical datum is the first flat floor's local `bounds.max.y`, matching the client's `Origin` before `RideLift`; tilted metal chord bounds are not a datum. The shell has closed sides, ends and underside, with outward-facing triangles. Sides above the riding profile remain open.
+
+Only the group's 64 verified floor members have their original physical colliders replaced. All 80 members must still match their saved native identities, owner, prefab and pose, original grade, zero skin and unit scale. Every floor must supply a physical collider. Native coping and rear guard walls remain solid. Unrelated entities, foundations, world colliders and all native antihack decisions remain active. Member positions, save metadata and the shared/client profile are unchanged.
+
+The replacement becomes solid before the original floors are disabled. Failure, invalidation, removal, world change or plugin unload restores the original floor colliders before removing the replacement. This aligns the server's floor geometry with the client's smooth surface; it is not an exemption from noclip. Compilation and geometry checks do not establish native mesh cooking, lifecycle operation, momentum or physical-controller acceptance.
 
 ## Exact client riding contract
 
