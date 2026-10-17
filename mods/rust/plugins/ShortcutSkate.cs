@@ -1611,7 +1611,7 @@ namespace Shortcut.RustMod
 
 namespace Oxide.Plugins
 {
-    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.23")]
+    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.24")]
     [Description("Player-scoped skateboard movement bounds and saved park assemblies.")]
     public sealed class ShortcutSkate : RustPlugin
     {
@@ -2143,6 +2143,349 @@ namespace Oxide.Plugins
             public double RidingAt = -99;
         }
 
+        private const string TracePatchId = "shortcut.skate.movementtrace";
+        private Harmony traceHarmony;
+        private bool traceFailed;
+        private MovementTrace movementTrace;
+        [ThreadStatic] private static TraceValidation traceValidation;
+        [ThreadStatic] private static TraceRpc traceRpc;
+        [ThreadStatic] private static string traceScope;
+
+        private sealed class MovementTrace
+        {
+            public BasePlayer Player;
+            public string Id;
+            public double Ends;
+            public long Validations, Rejections, Sends, Dropped, Written, Errors;
+            public string LastDecision = "none";
+            public long Decision, DecisionUtcTicks;
+            public readonly Queue<string> Pending = new Queue<string>();
+            public readonly object Sync = new object();
+
+            public void Write(string value)
+            {
+                lock (Sync)
+                {
+                    if (Written >= 512) { Dropped++; return; }
+                    Written++;
+                    Pending.Enqueue("Movement trace=" + Id + "; event=" + Written.ToString(CultureInfo.InvariantCulture) +
+                        "; utc=" + DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ", CultureInfo.InvariantCulture) + "; " + value);
+                }
+            }
+        }
+
+        private sealed class TraceValidation
+        {
+            public MovementTrace Run;
+            public int Index;
+            public double Seconds;
+            public Vector3 Start, End;
+            public bool Noclip, Speed, Fly;
+            public string Blocker = "none";
+            public string PreviousScope;
+        }
+
+        private sealed class TraceRpc
+        {
+            public MovementTrace Run;
+            public string Function, Scope;
+            public Vector3 Destination;
+        }
+
+        private MovementTrace TraceFor(BasePlayer player)
+        {
+            MovementTrace run = movementTrace;
+            return run != null && ReferenceEquals(run.Player, player) &&
+                clock.Elapsed.TotalSeconds < run.Ends ? run : null;
+        }
+
+        private static string TracePoint(Vector3 value)
+        {
+            return value.x.ToString("F4", CultureInfo.InvariantCulture) + "," +
+                value.y.ToString("F4", CultureInfo.InvariantCulture) + "," + value.z.ToString("F4", CultureInfo.InvariantCulture);
+        }
+
+        private static string TraceName(string value)
+        {
+            if (string.IsNullOrEmpty(value)) return "none";
+            return new string(value.Take(96).Select(c => char.IsLetterOrDigit(c) || c == '_' || c == '-' || c == '.' ? c : '_').ToArray());
+        }
+
+        private static string TraceBlocker(Collider collider)
+        {
+            if (collider == null) return "none";
+            BaseEntity entity = collider.GetComponentInParent<BaseEntity>();
+            BuildingBlock block = entity as BuildingBlock;
+            return "collider:" + TraceName(collider.name) + ",layer:" + collider.gameObject.layer.ToString(CultureInfo.InvariantCulture) +
+                ",instance:" + collider.GetInstanceID().ToString(CultureInfo.InvariantCulture) +
+                ",entity:" + TraceName(entity == null ? null : entity.ShortPrefabName) +
+                ",grade:" + (block == null ? "none" : block.grade.ToString()) +
+                ",bounds-center:" + TracePoint(collider.bounds.center) + ",bounds-size:" + TracePoint(collider.bounds.size);
+        }
+
+        private void DrainTrace(MovementTrace run)
+        {
+            if (run == null) return;
+            var lines = new List<string>();
+            lock (run.Sync) while (run.Pending.Count != 0) lines.Add(run.Pending.Dequeue());
+            foreach (string line in lines) Puts(line);
+        }
+
+        private void FinishTrace(string reason)
+        {
+            MovementTrace run = movementTrace;
+            movementTrace = null;
+            if (run == null) return;
+            DrainTrace(run);
+            Puts("Movement trace=" + run.Id + "; stopped=" + reason + "; validations=" + run.Validations.ToString(CultureInfo.InvariantCulture) +
+                "; rejected=" + run.Rejections.ToString(CultureInfo.InvariantCulture) + "; correction-sends=" + run.Sends.ToString(CultureInfo.InvariantCulture) +
+                "; dropped=" + run.Dropped.ToString(CultureInfo.InvariantCulture) + "; errors=" + run.Errors.ToString(CultureInfo.InvariantCulture));
+        }
+
+        private void FlushTrace()
+        {
+            MovementTrace run = movementTrace;
+            if (run == null) return;
+            DrainTrace(run);
+            if (clock.Elapsed.TotalSeconds >= run.Ends || run.Player == null || !run.Player.IsConnected)
+                FinishTrace("expired-or-disconnected");
+        }
+
+        private void TracePatch(Type target, string name, Type[] arguments, Type hooks, bool prefix, bool postfix, bool finalizer)
+        {
+            MethodInfo method = AccessTools.Method(target, name, arguments);
+            if (method == null) throw new InvalidOperationException("A movement trace target is unavailable.");
+            var previous = Harmony.GetPatchInfo(method);
+            if (name == "ClientRPCSend" && previous != null && previous.Transpilers.Any(p => p.owner != TracePatchId))
+                throw new InvalidOperationException("The native send body has another transpiler.");
+            Func<string, HarmonyMethod> hook = part => new HarmonyMethod(hooks.GetMethod(part, BindingFlags.Static | BindingFlags.NonPublic))
+                { priority = part == "Postfix" ? Priority.Last : Priority.First };
+            traceHarmony.Patch(method, prefix: prefix ? hook("Prefix") : null, postfix: postfix ? hook("Postfix") : null,
+                finalizer: finalizer ? hook("Finalizer") : null);
+            var patches = Harmony.GetPatchInfo(method);
+            if (patches == null || (prefix && !patches.Prefixes.Any(p => p.owner == TracePatchId)) ||
+                (postfix && !patches.Postfixes.Any(p => p.owner == TracePatchId)) || (finalizer && !patches.Finalizers.Any(p => p.owner == TracePatchId)))
+                throw new InvalidOperationException("A movement trace observer was not registered.");
+        }
+
+        private bool InstallTrace()
+        {
+            if (traceFailed) return false;
+            if (traceHarmony != null) return true;
+            try
+            {
+                traceHarmony = new Harmony(TracePatchId);
+                TracePatch(typeof(AntiHack), "ValidateMoves", new[] { typeof(BasePlayer.PlayerServerStates.ReadOnly).MakeByRefType(),
+                    typeof(NativeArray<int>.ReadOnly), typeof(NativeArray<BasePlayer.PositionChange>) }, typeof(TraceMoves), true, true, true);
+                TracePatch(typeof(AntiHack), "AreNoClipping", new[] { typeof(BasePlayer.PlayerServerStates.ReadOnly).MakeByRefType(),
+                    typeof(NativeArray<AntiHack.PlayerNoclipState>), typeof(NativeArray<int>.ReadOnly), typeof(NativeList<int>), typeof(Span<Collider>) },
+                    typeof(TraceNoclip), false, true, false);
+                TracePatch(typeof(AntiHack), "AreSpeeding", null, typeof(TraceSpeed), false, true, false);
+                TracePatch(typeof(AntiHack), "AreFlying", null, typeof(TraceFly), false, true, false);
+                TracePatch(typeof(AntiHack), "Log", new[] { typeof(BasePlayer), typeof(AntiHackType), typeof(string), typeof(bool) }, typeof(TraceLog), true, false, false);
+                TracePatch(typeof(BaseEntity), "ClientRPC", new[] { typeof(RpcTarget), typeof(Vector3) }, typeof(TraceRpcCall), true, false, true);
+                TracePatch(typeof(BaseEntity), "ClientRPC", new[] { typeof(RpcTarget), typeof(Vector3), typeof(NetworkableId) }, typeof(TraceRpcCall), true, false, true);
+                TracePatch(typeof(BaseEntity), "ClientRPCSend", new[] { typeof(Network.NetWrite), typeof(Network.SendInfo) }, typeof(TraceRpcSend), false, true, false);
+                TracePatch(typeof(BasePlayer), "UpdatePositionFromTick", new[] { typeof(PlayerTick), typeof(bool) }, typeof(TraceTick), true, false, true);
+                TracePatch(typeof(BasePlayer), "ServerFinalizePlayers", null, typeof(TraceFinalize), true, false, true);
+                return true;
+            }
+            catch (Exception)
+            {
+                traceFailed = true;
+                try { if (traceHarmony != null) traceHarmony.UnpatchAll(TracePatchId); } catch (Exception) { }
+                traceHarmony = null;
+                return false;
+            }
+        }
+
+        [ConsoleCommand("skate.trace")]
+        private void TraceCommand(ConsoleSystem.Arg arg)
+        {
+            BasePlayer actor = arg.Player();
+            bool privileged = (actor != null && actor.IsAdmin) || arg.IsAdmin ||
+                (actor == null && arg.IsServerside && arg.Connection == null);
+            if (!privileged) { arg.ReplyWith("Administrator access is required."); return; }
+            int count = arg.Args == null ? 0 : arg.Args.Length;
+            if (count == 1 && arg.GetString(0) == "stop") { FinishTrace("operator"); arg.ReplyWith("Movement trace stopped."); return; }
+            ulong target;
+            int seconds = 60;
+            if (count < 1 || count > 2 || !ulong.TryParse(arg.GetString(0), NumberStyles.None, CultureInfo.InvariantCulture, out target) || target == 0 ||
+                (count == 2 && (!int.TryParse(arg.GetString(1), NumberStyles.None, CultureInfo.InvariantCulture, out seconds) || seconds < 1 || seconds > 120)))
+            { arg.ReplyWith("Usage: skate.trace <steamID> [1-120 seconds], or skate.trace stop."); return; }
+            BasePlayer player = BasePlayer.FindByID(target);
+            if (player == null || !player.IsConnected || player.IsNpc)
+            { arg.ReplyWith("No connected player with that Steam ID."); return; }
+            if (!InstallTrace()) { arg.ReplyWith("Movement trace is unavailable; riding and native checks are unchanged."); return; }
+            FinishTrace("replaced");
+            var run = new MovementTrace { Player = player, Id = Guid.NewGuid().ToString("N").Substring(0, 8), Ends = clock.Elapsed.TotalSeconds + seconds };
+            movementTrace = run;
+            run.Write("started; seconds=" + seconds.ToString(CultureInfo.InvariantCulture) + "; observers=installed");
+            DrainTrace(run);
+            arg.ReplyWith("Movement trace " + run.Id + " armed for " + seconds.ToString(CultureInfo.InvariantCulture) + " seconds; observers installed. Native checks are unchanged.");
+        }
+
+        private static class TraceMoves
+        {
+            private static void Prefix(ref BasePlayer.PlayerServerStates.ReadOnly __0, NativeArray<int>.ReadOnly __1, out TraceValidation __state)
+            {
+                __state = traceValidation;
+                traceValidation = null;
+                try
+                {
+                    MovementTrace run = instance == null ? null : instance.movementTrace;
+                    if (run == null || instance.TraceFor(run.Player) == null) return;
+                    foreach (int index in __1)
+                    {
+                        if (!ReferenceEquals(__0.PlayerCache.Objects[index], run.Player)) continue;
+                        var cache = __0.TickCache;
+                        int count = cache.Infos[index].Count, offset = checked(index * cache.BufferSize);
+                        traceValidation = new TraceValidation { Run = run, Index = index, Seconds = __0.TickDeltaTime[index],
+                            Start = cache.Segments[offset].point, End = cache.Segments[offset + count].point,
+                            PreviousScope = traceScope };
+                        traceScope = "validate";
+                        return;
+                    }
+                }
+                catch (Exception) { if (instance != null && instance.movementTrace != null) instance.movementTrace.Errors++; }
+            }
+
+            private static void Postfix(NativeArray<BasePlayer.PositionChange> __2, TraceValidation __state)
+            {
+                TraceValidation value = traceValidation;
+                if (value == null || ReferenceEquals(value, __state)) return;
+                try
+                {
+                    BasePlayer.PositionChange result = __2[value.Index];
+                    MovementTrace run = value.Run;
+                    run.Validations++; run.Decision++;
+                    run.DecisionUtcTicks = DateTime.UtcNow.Ticks;
+                    string reasons = (value.Noclip ? "noclip," : "") + (value.Speed ? "speed," : "") + (value.Fly ? "fly," : "") +
+                        (value.Seconds > ConVar.AntiHack.maxdeltatime ? "max-delta," : "");
+                    run.LastDecision = result + ":" + (reasons.Length == 0 ? "unobserved-reason" : reasons.TrimEnd(','));
+                    if (result != BasePlayer.PositionChange.Invalid) return;
+                    run.Rejections++;
+                    run.Write("rejected; decision=" + run.Decision.ToString(CultureInfo.InvariantCulture) + "; reason=" + run.LastDecision +
+                        "; dt=" + value.Seconds.ToString("G9", CultureInfo.InvariantCulture) + "; from=" + TracePoint(value.Start) +
+                        "; to=" + TracePoint(value.End) + "; blocker=" + value.Blocker);
+                }
+                catch (Exception) { value.Run.Errors++; }
+            }
+
+            private static void Finalizer(TraceValidation __state)
+            {
+                if (traceValidation != null && !ReferenceEquals(traceValidation, __state)) traceScope = traceValidation.PreviousScope;
+                traceValidation = __state;
+            }
+        }
+
+        private static class TraceNoclip
+        {
+            private static void Postfix(NativeList<int> __3, Span<Collider> __4)
+            {
+                TraceValidation value = traceValidation;
+                if (value == null) return;
+                try
+                {
+                    for (int n = 0; n < __3.Length; n++) if (__3[n] == value.Index)
+                    { value.Noclip = true; value.Blocker = TraceBlocker(__4[value.Index]); break; }
+                }
+                catch (Exception) { value.Run.Errors++; }
+            }
+        }
+
+        private static void TraceBoolean(NativeArray<int>.ReadOnly indices, NativeArray<bool> results, bool flying)
+        {
+            TraceValidation value = traceValidation;
+            if (value == null) return;
+            try
+            {
+                for (int n = 0; n < indices.Length; n++) if (indices[n] == value.Index)
+                { if (flying) value.Fly = results[n]; else value.Speed = results[n]; return; }
+            }
+            catch (Exception) { value.Run.Errors++; }
+        }
+
+        private static class TraceSpeed
+        { private static void Postfix(NativeArray<int>.ReadOnly __2, NativeArray<bool> __3) { TraceBoolean(__2, __3, false); } }
+        private static class TraceFly
+        { private static void Postfix(NativeArray<int>.ReadOnly __3, NativeArray<bool> __4) { TraceBoolean(__3, __4, true); } }
+
+        private static class TraceLog
+        {
+            private static void Prefix(BasePlayer __0, AntiHackType __1, string __2)
+            {
+                MovementTrace run = null;
+                try
+                {
+                    run = instance == null ? null : instance.TraceFor(__0);
+                    if (run == null) return;
+                    string reason = __2 != null && __2.StartsWith("moved too far between ticks:", StringComparison.Ordinal) ? "tick-distance" :
+                        __2 != null && __2.StartsWith("Player had too many ticks buffered", StringComparison.Ordinal) ? "tick-overflow" : "native-log";
+                    run.Write("native-check; reason=" + reason + "; type=" + __1 + "; scope=" + (traceScope ?? "other"));
+                }
+                catch (Exception) { if (run != null) run.Errors++; }
+            }
+        }
+
+        private static class TraceRpcCall
+        {
+            private static void Prefix(BaseEntity __instance, RpcTarget __0, Vector3 __1, out TraceRpc __state)
+            {
+                __state = traceRpc;
+                traceRpc = null;
+                MovementTrace run = null;
+                try
+                {
+                    run = instance == null ? null : instance.TraceFor(__instance as BasePlayer);
+                    if (run == null || (__0.Function != "ForcePositionTo" && __0.Function != "ForcePositionToParentOffset")) return;
+                    traceRpc = new TraceRpc { Run = run, Function = __0.Function, Destination = __1, Scope = traceScope ?? "other" };
+                }
+                catch (Exception) { if (run != null) run.Errors++; }
+            }
+            private static void Finalizer(TraceRpc __state) { traceRpc = __state; }
+        }
+
+        private static class TraceRpcSend
+        {
+            private static void Postfix(BaseEntity __instance, Network.SendInfo __1, bool __runOriginal)
+            {
+                TraceRpc value = traceRpc;
+                if (value == null || !ReferenceEquals(value.Run.Player, __instance)) return;
+                try
+                {
+                    MovementTrace run = value.Run;
+                    if (!__runOriginal) { run.Errors++; return; }
+                    var connection = run.Player.net == null ? null : run.Player.net.connection;
+                    if (connection == null || (!ReferenceEquals(__1.connection, connection) &&
+                        (__1.connections == null || !__1.connections.Any(c => ReferenceEquals(c, connection))))) return;
+                    run.Sends++;
+                    run.Write("correction-send; rpc=" + value.Function + "; scope=" + value.Scope + "; destination=" + TracePoint(value.Destination) +
+                        "; destination-space=" + (value.Function == "ForcePositionToParentOffset" ? "parent-offset" : "world") +
+                        "; recipient=target; decision=" + run.Decision.ToString(CultureInfo.InvariantCulture) + "; last-validation=" + run.LastDecision +
+                        "; last-validation-age-ms=" + (run.DecisionUtcTicks == 0 ? "unknown" :
+                            ((DateTime.UtcNow.Ticks - run.DecisionUtcTicks) / 10000.0).ToString("F3", CultureInfo.InvariantCulture)));
+                }
+                catch (Exception) { value.Run.Errors++; }
+            }
+        }
+
+        private static class TraceTick
+        {
+            private static void Prefix(BasePlayer __instance, out string __state)
+            {
+                __state = traceScope;
+                if (instance != null && instance.TraceFor(__instance) != null) traceScope = "tick";
+            }
+            private static void Finalizer(string __state) { traceScope = __state; }
+        }
+
+        private static class TraceFinalize
+        {
+            private static void Prefix(out string __state) { __state = traceScope; traceScope = "finalize"; }
+            private static void Finalizer(string __state) { traceScope = __state; }
+        }
+
         public const double RidingSpeed = 7, RidingGraceSeconds = 3;
 
         protected override void LoadDefaultConfig()
@@ -2218,6 +2561,7 @@ namespace Oxide.Plugins
             else Puts("Skating ready: movement patches installed; permitted eligible players up to " + settings.MaximumHorizontalSpeed +
                 " m/s; fly exemption requires a server admin or shortcutskate.fly and vertical travel up to 200 m/s; support, airtime and rearm are diagnostic only.");
             timer.Every(0.1f, Sweep);
+            timer.Every(0.1f, FlushTrace);
             timer.Every(1f, CleanupWallAttachments);
         }
 
@@ -2686,6 +3030,10 @@ namespace Oxide.Plugins
 
         private void Unload()
         {
+            FinishTrace("unload");
+            try { if (traceHarmony != null) traceHarmony.UnpatchAll(TracePatchId); }
+            catch (Exception) { PrintWarning("Movement trace observers could not be removed."); }
+            traceHarmony = null;
             InitializeGroundedBuildings();
             parkClosing = true;
             groundedReady = false;
