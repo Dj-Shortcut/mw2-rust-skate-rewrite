@@ -2141,6 +2141,7 @@ namespace Oxide.Plugins
 
         private const string TracePatchId = "shortcut.skate.movementtrace";
         private Harmony traceHarmony;
+        private bool traceFailed;
         private MovementTrace movementTrace;
         [ThreadStatic] private static TraceValidation traceValidation;
         [ThreadStatic] private static TraceRpc traceRpc;
@@ -2250,6 +2251,9 @@ namespace Oxide.Plugins
         {
             MethodInfo method = AccessTools.Method(target, name, arguments);
             if (method == null) throw new InvalidOperationException("A movement trace target is unavailable.");
+            var previous = Harmony.GetPatchInfo(method);
+            if (name == "ClientRPCSend" && previous != null && previous.Transpilers.Any(p => p.owner != TracePatchId))
+                throw new InvalidOperationException("The native send body has another transpiler.");
             Func<string, HarmonyMethod> hook = part => new HarmonyMethod(hooks.GetMethod(part, BindingFlags.Static | BindingFlags.NonPublic))
                 { priority = part == "Postfix" ? Priority.Last : Priority.First };
             traceHarmony.Patch(method, prefix: prefix ? hook("Prefix") : null, postfix: postfix ? hook("Postfix") : null,
@@ -2262,6 +2266,7 @@ namespace Oxide.Plugins
 
         private bool InstallTrace()
         {
+            if (traceFailed) return false;
             if (traceHarmony != null) return true;
             try
             {
@@ -2283,6 +2288,7 @@ namespace Oxide.Plugins
             }
             catch (Exception)
             {
+                traceFailed = true;
                 try { if (traceHarmony != null) traceHarmony.UnpatchAll(TracePatchId); } catch (Exception) { }
                 traceHarmony = null;
                 return false;
@@ -2438,13 +2444,14 @@ namespace Oxide.Plugins
 
         private static class TraceRpcSend
         {
-            private static void Postfix(BaseEntity __instance, Network.SendInfo __1)
+            private static void Postfix(BaseEntity __instance, Network.SendInfo __1, bool __runOriginal)
             {
                 TraceRpc value = traceRpc;
                 if (value == null || !ReferenceEquals(value.Run.Player, __instance)) return;
                 try
                 {
                     MovementTrace run = value.Run;
+                    if (!__runOriginal) { run.Errors++; return; }
                     var connection = run.Player.net == null ? null : run.Player.net.connection;
                     if (connection == null || (!ReferenceEquals(__1.connection, connection) &&
                         (__1.connections == null || !__1.connections.Any(c => ReferenceEquals(c, connection))))) return;
