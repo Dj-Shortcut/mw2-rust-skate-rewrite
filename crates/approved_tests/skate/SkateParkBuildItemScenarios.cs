@@ -7,7 +7,7 @@ using System.Security.Cryptography;
 using Shortcut.RustMod;
 
 // Owner-approved skate_park_build_items. This consumes an actual compiled shared/plugin
-// DLL; it does not copy the helper or construct fake native Items, Planners or Unity objects.
+// DLL and production client identity reader with scalar observations; no native Items, Planners or Unity objects.
 internal static class SkateParkBuildItemScenarios
 {
     private static int checks;
@@ -134,6 +134,94 @@ internal static class SkateParkBuildItemScenarios
             Identity(false, Kinds[i], "building.planner", 0, 0x534B50FF, Names[i], 1,
                      "reserved future marker with legitimate name " + i);
         }
+    }
+
+    private sealed class ItemObservation
+    {
+        public DefinitionObservation info = new DefinitionObservation();
+        public DataObservation instanceData = new DataObservation();
+        public string name;
+        public ulong skin;
+        public int amount = 1, position;
+    }
+    private sealed class DefinitionObservation { public string shortname = "building.planner"; }
+    private sealed class DataObservation { public int dataInt; }
+    private sealed class ContainerObservation
+    { public System.Collections.Generic.List<object> itemList = new System.Collections.Generic.List<object>(); }
+    private sealed class InventoryObservation
+    {
+        public ContainerObservation containerBelt = new ContainerObservation();
+        public ContainerObservation containerMain = new ContainerObservation();
+    }
+    private sealed class PlayerObservation
+    {
+        public InventoryObservation inventory = new InventoryObservation();
+        public object Active;
+        public object GetActiveItem() { return Active; }
+    }
+
+    private static void ClientInventoryIdentity()
+    {
+        var player = new PlayerObservation();
+        for (int i = 0; i < Kinds.Length; i++)
+        {
+            var item = new ItemObservation { name = Names[i], position = i };
+            item.instanceData.dataInt = Markers[i];
+            player.inventory.containerMain.itemList.Add(item);
+            player.Active = null;
+            Check(SkateHeld.FindInBelt(player, i) == -1, "main inventory does not equip item " + i);
+            Check(!SkateHeld.Read(player) && SkateHeld.HeldKind() == -1, "main item is not held " + i);
+            player.inventory.containerMain.itemList.Remove(item);
+            player.inventory.containerBelt.itemList.Add(item);
+            for (int slot = 0; slot < 6; slot++)
+            {
+                item.position = slot;
+                player.Active = item;
+                Check(SkateHeld.FindInBelt(player, i) == slot, "current belt position " + i + "/" + slot);
+                Check(SkateHeld.Read(player) && SkateHeld.HeldKind() == i, "fresh active item " + i + "/" + slot);
+            }
+            item.position = 0;
+            foreach (string carrier in new[] { "hammer", "", null })
+            {
+                item.info.shortname = carrier;
+                Check(SkateHeld.Read(player) && SkateHeld.HeldKind() == -1, "client refuses wrong carrier " + i);
+                Check(SkateHeld.FindInBelt(player, i) == -1, "picker refuses wrong carrier " + i);
+            }
+            item.info.shortname = "building.planner";
+            item.skin = 1;
+            Check(SkateHeld.Read(player) && SkateHeld.HeldKind() == -1, "client refuses skin " + i);
+            Check(SkateHeld.FindInBelt(player, i) == -1, "picker refuses skin " + i);
+            item.skin = 0;
+            foreach (int amount in Amounts)
+            {
+                item.amount = amount;
+                Check(SkateHeld.Read(player) && SkateHeld.HeldKind() == (amount == 1 ? i : -1), "client amount " + i);
+                Check(SkateHeld.FindInBelt(player, i) == (amount == 1 ? 0 : -1), "picker amount " + i);
+            }
+            item.amount = 1;
+            foreach (int slot in new[] { -1, 6, int.MaxValue })
+            {
+                item.position = slot;
+                Check(SkateHeld.FindInBelt(player, i) == -1, "invalid belt position " + i + "/" + slot);
+            }
+            item.position = 0;
+            item.name = Names[(i + 1) % Kinds.Length];
+            Check(SkateHeld.Read(player) && SkateHeld.HeldKind() == -1, "crossed name refuses held " + i);
+            Check(SkateHeld.FindInBelt(player, i) == -1 && SkateHeld.FindInBelt(player, (i + 1) % Kinds.Length) == -1,
+                "crossed identity refuses both picker entries " + i);
+            item.name = Names[i];
+            item.instanceData = null;
+            Check(SkateHeld.Read(player) && SkateHeld.HeldKind() == -1, "name alone refuses held " + i);
+            Check(SkateHeld.FindInBelt(player, i) == -1, "name alone refuses picker " + i);
+            player.inventory.containerBelt.itemList.Clear();
+            player.Active = null;
+            Check(!SkateHeld.Read(player) && SkateHeld.HeldKind() == -1, "unequip clears held identity " + i);
+        }
+        foreach (int kind in new[] { int.MinValue, -1, 12, int.MaxValue })
+            Check(SkateHeld.FindInBelt(player, kind) == -1, "invalid picker kind refuses " + kind);
+        Check(SkateHeld.FindInBelt(null, 0) == -1, "missing player refuses picker");
+        Check(!SkateHeld.Read(null) && SkateHeld.HeldKind() == -1, "missing player clears held identity");
+        Console.WriteLine("Production client identity reader passed scalar main/belt/active observations for all twelve kinds and six slots; native moves were not executed.");
     }
 
     private static void VerifiedSingleDebit()
@@ -455,7 +543,7 @@ internal static class SkateParkBuildItemScenarios
             Console.WriteLine("Actual library: " + library + "\nSHA-256: " + digest);
             if (args.Length == 1)
                 Check(string.Equals(args[0], digest, StringComparison.OrdinalIgnoreCase), "actual library hash pinned");
-            CatalogAndTagBoundaries(); IdentityRefusals(); VerifiedSingleDebit(); RecoveryStatesAndCounts();
+            CatalogAndTagBoundaries(); IdentityRefusals(); ClientInventoryIdentity(); VerifiedSingleDebit(); RecoveryStatesAndCounts();
             DeterminismAndAllocation(); OptionalParkMetadataParsing();
             Console.WriteLine("skate_park_build_items: " + checks + " checks passed");
             Console.WriteLine("Native item/UID deduction, registration, save/claim persistence, refund delivery and building-plan UI were not exercised.");
@@ -463,4 +551,9 @@ internal static class SkateParkBuildItemScenarios
         }
         catch (Exception error) { Console.Error.WriteLine(error); return 1; }
     }
+}
+
+internal static class Out
+{
+    public static void Say(string message) { }
 }

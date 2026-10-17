@@ -1,9 +1,6 @@
-// What the player holds, for the park items: a building plan marked with instanceData.dataInt
-// 0x534B5001..08 and named "Skate Bank" and so on. The client's types are renamed, so the item is
-// looked for by its shape; when it cannot be read, nothing is assumed about it (no ghost). The HELD
-// log lines name the members that could lead to it.
 using System;
 using System.Reflection;
+using Shortcut.RustMod;
 
 public static class SkateHeld
 {
@@ -12,6 +9,8 @@ public static class SkateHeld
     public static int Marker;
     // The belt slot of the held item (its position), or -1.
     public static int Slot = -1;
+    private static ulong skin;
+    private static int amount;
     private static MethodInfo activeItem;
     private static bool looked;
 
@@ -77,7 +76,7 @@ public static class SkateHeld
     // (GetActiveItem); otherwise nothing, and the log says what there is.
     public static bool Read(object player)
     {
-        Shortname = ""; Name = ""; Marker = 0; Slot = -1;
+        Shortname = ""; Name = ""; Marker = 0; Slot = -1; skin = ulong.MaxValue; amount = 0;
         if (player == null) return false;
         try
         {
@@ -93,6 +92,10 @@ public static class SkateHeld
             Marker = marker is int ? (int)marker : 0;
             var pos = Get(it, "position");
             Slot = pos is int ? (int)pos : -1;
+            var itemSkin = Get(it, "skin");
+            var itemAmount = Get(it, "amount");
+            skin = itemSkin is ulong ? (ulong)itemSkin : ulong.MaxValue;
+            amount = itemAmount is int ? (int)itemAmount : 0;
             return true;
         }
         catch (Exception) { return false; }
@@ -104,9 +107,8 @@ public static class SkateHeld
     // The park kind of the held item, or -1.
     public static int HeldKind()
     {
-        if (Marker >= FirstMarker && Marker < FirstMarker + ItemNames.Length) return Marker - FirstMarker;
-        for (var i = 0; i < ItemNames.Length; i++) if (Name == ItemNames[i]) return i;
-        return -1;
+        SkateParkKind kind;
+        return SkateParkBuildItems.TryIdentity(Shortname, skin, Marker, Name, amount, out kind) ? (int)kind : -1;
     }
 
     // The belt slot (0..5) holding the park item of that kind, or -1; Belt names what was seen.
@@ -114,6 +116,7 @@ public static class SkateHeld
     public static int FindInBelt(object player, int kind)
     {
         Belt = "";
+        if (player == null || kind < 0 || kind >= SkateParkBuildItems.PieceCount) return -1;
         try
         {
             var inv = Get(player, "inventory") ?? OfType(player, "PlayerInventory");
@@ -140,7 +143,14 @@ public static class SkateHeld
                 var pos = Get(it, "position");
                 var slot = pos is int ? (int)pos : -1;
                 Belt += " " + slot + ":" + (name != "" ? name : "?") + (marker != 0 ? "#" + marker.ToString("X") : "");
-                if (found < 0 && (marker == FirstMarker + kind || name == ItemNames[kind])) found = slot;
+                var info = Get(it, "info");
+                var carrier = info == null ? null : Get(info, "shortname") as string;
+                var itemSkin = Get(it, "skin");
+                var itemAmount = Get(it, "amount");
+                SkateParkKind observed;
+                if (found < 0 && slot >= 0 && slot < 6 && itemSkin is ulong && itemAmount is int &&
+                    SkateParkBuildItems.TryIdentity(carrier, (ulong)itemSkin, marker, name, (int)itemAmount, out observed) &&
+                    (int)observed == kind) found = slot;
             }
             return found;
         }

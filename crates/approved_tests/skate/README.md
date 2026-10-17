@@ -185,6 +185,14 @@ The existing park layout/anchor scenarios also cover the 3.0000005 m native floo
 
 ## Park build items
 
+The existing item scenario also compiles the production `SkateHeld.cs` adapter
+against the selected actual shared/plugin DLL. Scalar observation objects supply
+current main/belt membership, positions and active item; its logging boundary is
+silent. All twelve kinds are selected across all six belt slots, then invalid
+carrier/skin/quantity/name/marker/slot and unequip states are refused. These are
+controlled reflection observations, not native inventory moves or Planner
+recreation. Full client compilation and actual game acceptance remain separate.
+
 The same approved layout/build-item scenarios also cover appended half-wall kicker kind 10, both-side measured wall joins and item accounting. For the actual plugin parser extension, set `SKATE_PARK_PARSER_REFERENCES=/absolute/path/to/genuine/managed` when executing the plugin build-item runner. It uses the plugin's own JSON attribute assembly for round-trips of old records and rejection of malformed/conflicting wall dependencies. Without that variable, the runner explicitly skips parser checks; native callbacks and gameplay remain separate.
 
 The owner approved `skate_park_build_items` by name on 12 October 2026. It checks
@@ -195,9 +203,9 @@ refusals, determinism and warmed allocation. It invokes the actual helper in eac
 separately selected compiled shared and plugin DLL; it does not copy the helper.
 
 ```sh
-dotnet build crates/approved_tests/skate/SkateParkBuildItemScenarios.csproj -p:ActualLibraryPath=/absolute/path/to/SkateMotion.dll
+dotnet build crates/approved_tests/skate/SkateParkBuildItemScenarios.csproj -p:RustManagedPath=/absolute/path/to/managed -p:ActualLibraryPath=/absolute/path/to/SkateMotion.dll
 dotnet context/skate-approved-park-build-items/bin/SkateMotion/net8.0/SkateParkBuildItemScenarios.dll EXPECTED_SHA256
-dotnet build crates/approved_tests/skate/SkateParkBuildItemScenarios.csproj -p:ActualLibraryPath=/absolute/path/to/ShortcutSkate.dll
+dotnet build crates/approved_tests/skate/SkateParkBuildItemScenarios.csproj -p:RustManagedPath=/absolute/path/to/managed -p:ActualLibraryPath=/absolute/path/to/ShortcutSkate.dll
 dotnet context/skate-approved-park-build-items/bin/ShortcutSkate/net8.0/SkateParkBuildItemScenarios.dll EXPECTED_SHA256
 ```
 

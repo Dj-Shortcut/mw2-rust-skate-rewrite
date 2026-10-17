@@ -1,5 +1,7 @@
 # TODO — Rust skate-mod en historisch rewritewerk
 
+- [x] #469 item 4 client-identiteit: echte gedeelde carrier/skin/aantal/marker/naamcontrole bij vasthouden en riemkeuze, actuele itemwaarneming per preview, correcte half-wall-route en uitleg om een voorraaditem naar de riem te verplaatsen. Serveraudit: native verplaatsen bewaart item-UID/marker maar kan de Planner vervangen; bestaande plaatsing bindt de actuele Planner opnieuw en heeft geen oorspronkelijke-slotbeperking. Gemelde moduleweigeringen blijven #470. Bestaande approved itemscenario met gecontroleerde waarnemingen voor alle 12 typen/6 slots; echte native moves, alle plaatsingen en gameplay blijven ongeverifieerd. Geen server-/releasepinwijziging of deployment.
+
 De eigenaar beslist welke agent welke taak uitvoert en kan werk opnieuw
 toewijzen. Namen bij eerdere resultaten zijn historische bronvermelding, geen
 vaste taakverdeling. Volg zijn laatste expliciete opdracht en leg die vast bij
