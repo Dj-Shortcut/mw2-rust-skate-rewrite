@@ -39,7 +39,7 @@ Jump starts only on a fresh grounded press. `TakeoffPending` preserves rising ve
 
 ## Park layout API
 
-Source **0.3.20** `SkateParkLayout` preserves the eight original native park assemblies and appends mini/L quarterpipes, a half-wall kicker and the [MEGA halfpipe kit](../../../docs/RUST-SKATE-MEGA-HALFPIPE.md) in metres, +X right, +Y up and +Z forward. The existing part counts, materials, prefab paths and `TryPart`, `TryTransform`, `TrySupportedAnchor`, `Name` and `TryKind` contracts are preserved. `SkateMegaHalfpipe` supplies its 80-part module layout, fixed dimensions and 124-point client riding profile; native smooth riding/coping integration remains open. `SkatePark.cs` is canonical; the self-contained server plugin embeds its identical marked block, checked by `publish-check`.
+Source **0.3.21** `SkateParkLayout` preserves the eight original native park assemblies and appends mini/L quarterpipes, a half-wall kicker and the [MEGA halfpipe kit](../../../docs/RUST-SKATE-MEGA-HALFPIPE.md) in metres, +X right, +Y up and +Z forward. The existing part counts, materials, prefab paths and `TryPart`, `TryTransform`, `TrySupportedAnchor`, `Name` and `TryKind` contracts are preserved. `SkateMegaHalfpipe` supplies its 80-part module layout, fixed dimensions and 124-point client riding profile; native smooth riding/coping integration remains open. `SkatePark.cs` is canonical; the self-contained server plugin embeds its identical marked block, checked by `publish-check`. The exact selected neighbour floor permits at most 1 mm native-bounds contact through `OverlapsBoxBeyondContact`; `OverlapsBox` remains strict for saved reservations. Full support revalidation occurs at bounded transaction phases; per-part actor/item/world guards remain active.
 
 Halfpipe walls use native local-Z length (3 m) and local-X thickness (the owner reported approximately 0.2 m). End rails have local yaw 270/90 degrees; left/right side panels have 180/0 degrees. The sixteen ride floors and all floor-only pieces keep their existing transforms. This corrects the wall-axis assumption in new layouts; `TryMatch` now expects those corrected headings, so an older halfpipe with the preceding wall headings is not recognized as the current complete layout. Stored server group records use their recorded poses and are not migrated by this helper; the server parser also accepts the preceding halfpipe wall headings. The client’s separate layout copy needs the corresponding heading change before recognizing a newly placed halfpipe. The existing approved layout scenarios check wall footprints, adjoining rail ends and rotated anchors against both actual shared and plugin DLLs. Native collision/contact and visible full-halfpipe acceptance remain pending.
 
@@ -56,6 +56,18 @@ This verifies geometric consistency, not park registration, ownership, grade or 
 `VisualOrigin(kind, out right, out forward, out height, out yaw)` returns the nominal local authored-asset pivot offset: bank/kicker use the first floor's low edge, halfpipe uses the flat centre (1.5,1.5), MEGA uses right4.5, and quarterpipes/ledges/funbox use the layout baseline. Rotate right/forward by the anchor yaw before translating the visual node. All returned heights and local yaws are zero. This relation does not determine native floor-top thickness: the adapter adds the measured surface offset in the appropriate frame. All three quarterpipes use the final group anchor plus the unpitched floor top, with group yaw only; the original quarterpipe never inherits a pitched carrier's toe offset or pitch. An origin mapping does not make different asset and native collider profiles coincide.
 
 The [half-wall kicker contract](../../../docs/RUST-SKATE-HALF-WALL-KICKER.md) specifies appended kind 10, `SkateParkBox` / `TryHalfWallAnchor`, the exact measured wall-face/top-surface join and native client request. Its external wall dependency never enters paid/refunded members. Native preview, collision, riding and lifecycle acceptance remain open.
+
+### Foundation support grids
+
+`SkateParkLayout.SupportCellCount`, `TrySupportCell`, `TrySupportCellPose`,
+`TrySupportGridAnchor` and `FitsSupportCell` define the full rotated support mask
+and foundation-grid fit independently of native part positions. Large L keeps its
+three-cell mask; MEGA covers its full existing reservation with 84 cells and
+anchors its first flat floor to the selected cell. Every required cell needs its
+own verified level foundation or permitted dry terrain on the common support
+plane. See the [placement and ghost contract](../../../docs/RUST-SKATE-PLACEMENT.md).
+These helpers describe geometry; native support/permission/collision queries and
+transaction revalidation remain server responsibilities.
 
 ## Park build-item API
 

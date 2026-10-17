@@ -275,7 +275,15 @@ namespace Shortcut.RustMod
         public static bool OverlapsBox(double x, double z, double yaw, double halfRight, double halfForward,
             double otherX, double otherZ, double otherYaw, double otherHalfRight, double otherHalfForward)
         {
-            if (!Coordinate(x) || !Coordinate(z) || !Angle(yaw) || !Coordinate(otherX) || !Coordinate(otherZ) ||
+            return OverlapsBoxBeyondContact(x, z, yaw, halfRight, halfForward,
+                otherX, otherZ, otherYaw, otherHalfRight, otherHalfForward, 0);
+        }
+
+        public static bool OverlapsBoxBeyondContact(double x, double z, double yaw, double halfRight, double halfForward,
+            double otherX, double otherZ, double otherYaw, double otherHalfRight, double otherHalfForward, double contactTolerance)
+        {
+            if (!Finite(contactTolerance) || contactTolerance < 0 || contactTolerance > NativeBoundsTolerance ||
+                !Coordinate(x) || !Coordinate(z) || !Angle(yaw) || !Coordinate(otherX) || !Coordinate(otherZ) ||
                 !Angle(otherYaw) || !Finite(halfRight) || !Finite(halfForward) || !Finite(otherHalfRight) ||
                 !Finite(otherHalfForward) || halfRight <= 0 || halfForward <= 0 || otherHalfRight <= 0 || otherHalfForward <= 0)
                 return true;
@@ -283,10 +291,10 @@ namespace Shortcut.RustMod
             double ax = Math.Cos(a), az = -Math.Sin(a), bx = Math.Cos(b), bz = -Math.Sin(b);
             double dx = otherX - x, dz = otherZ - z;
             double c = Math.Abs(ax * bx + az * bz), s = Math.Abs(ax * -bz + az * bx);
-            return Math.Abs(dx * ax + dz * az) < halfRight + otherHalfRight * c + otherHalfForward * s - 1e-7 &&
-                Math.Abs(dx * -az + dz * ax) < halfForward + otherHalfRight * s + otherHalfForward * c - 1e-7 &&
-                Math.Abs(dx * bx + dz * bz) < otherHalfRight + halfRight * c + halfForward * s - 1e-7 &&
-                Math.Abs(dx * -bz + dz * bx) < otherHalfForward + halfRight * s + halfForward * c - 1e-7;
+            return Math.Abs(dx * ax + dz * az) < halfRight + otherHalfRight * c + otherHalfForward * s - 1e-7 - contactTolerance &&
+                Math.Abs(dx * -az + dz * ax) < halfForward + otherHalfRight * s + otherHalfForward * c - 1e-7 - contactTolerance &&
+                Math.Abs(dx * bx + dz * bz) < otherHalfRight + halfRight * c + halfForward * s - 1e-7 - contactTolerance &&
+                Math.Abs(dx * -bz + dz * bx) < otherHalfForward + halfRight * s + halfForward * c - 1e-7 - contactTolerance;
         }
         private static void HalfpipePart(int index, out SkateParkPart part)
         {
@@ -416,6 +424,71 @@ namespace Shortcut.RustMod
             if (!Coordinate(nextX) || !Coordinate(nextZ)) return false;
             x = nextX; z = nextZ;
             return true;
+        }
+
+        public static int SupportCellCount(SkateParkKind kind)
+        {
+            switch (kind)
+            {
+                case SkateParkKind.Bank: case SkateParkKind.Kicker: case SkateParkKind.LedgeLow:
+                case SkateParkKind.LedgeHigh: case SkateParkKind.MiniQuarterPipe: return 1;
+                case SkateParkKind.QuarterPipe: return 2;
+                case SkateParkKind.LongLedge: case SkateParkKind.Funbox: case SkateParkKind.LargeQuarterPipe: return 3;
+                case SkateParkKind.Halfpipe: return 32;
+                case SkateParkKind.MegaHalfpipe: return 84;
+                default: return 0;
+            }
+        }
+
+        public static bool TrySupportCell(SkateParkKind kind, int index, out int right, out int forward)
+        {
+            right = forward = 0;
+            if (index < 0 || index >= SupportCellCount(kind)) return false;
+            switch (kind)
+            {
+                case SkateParkKind.QuarterPipe: forward = index; break;
+                case SkateParkKind.LongLedge: right = index - 1; break;
+                case SkateParkKind.Funbox: forward = index - 1; break;
+                case SkateParkKind.LargeQuarterPipe: right = index == 1 ? 1 : 0; forward = index == 2 ? 1 : 0; break;
+                case SkateParkKind.Halfpipe: right = index % 4 - 1; forward = index / 4 - 3; break;
+                case SkateParkKind.MegaHalfpipe: right = index % 6 - 1; forward = index / 6 - 5; break;
+            }
+            return true;
+        }
+
+        public static bool TrySupportGridAnchor(SkateParkKind kind, double gridX, double gridZ, double yaw,
+            out double x, out double z)
+        {
+            x = z = 0;
+            if (SupportCellCount(kind) == 0 || !Coordinate(gridX) || !Coordinate(gridZ) || !Angle(yaw)) return false;
+            double phase = kind == SkateParkKind.MegaHalfpipe ? -4.5 : 0;
+            double px = gridX - phase * Math.Sin(yaw * Degrees), pz = gridZ - phase * Math.Cos(yaw * Degrees);
+            if (!Coordinate(px) || !Coordinate(pz)) return false;
+            x = px; z = pz;
+            return true;
+        }
+
+        public static bool TrySupportCellPose(SkateParkKind kind, int index, double x, double z, double yaw,
+            out SkateParkTransform cell)
+        {
+            cell = new SkateParkTransform();
+            int right, forward;
+            if (!TrySupportCell(kind, index, out right, out forward) || !Coordinate(x) || !Coordinate(z) || !Angle(yaw)) return false;
+            double r = right * CellSize, f = forward * CellSize + (kind == SkateParkKind.MegaHalfpipe ? -4.5 : 0);
+            double px = x + r * Math.Cos(yaw * Degrees) + f * Math.Sin(yaw * Degrees);
+            double pz = z - r * Math.Sin(yaw * Degrees) + f * Math.Cos(yaw * Degrees);
+            if (!Coordinate(px) || !Coordinate(pz)) return false;
+            cell = new SkateParkTransform { X = px, Z = pz, Yaw = Normalize(yaw) };
+            return true;
+        }
+
+        public static bool FitsSupportCell(SkateParkTransform cell, double foundationX, double foundationZ, double foundationYaw)
+        {
+            double snapped;
+            if (!Coordinate(cell.X) || !Coordinate(cell.Z) || !Angle(cell.Yaw) || !Coordinate(foundationX) ||
+                !Coordinate(foundationZ) || !TrySnapYaw(foundationYaw, cell.Yaw, 90, out snapped)) return false;
+            return Math.Abs(cell.X - foundationX) <= SupportTolerance && Math.Abs(cell.Z - foundationZ) <= SupportTolerance &&
+                Math.Abs(Normalize(foundationYaw - snapped + 180) - 180) <= 0.01;
         }
 
         public static bool TrySupportPlane(IReadOnlyList<double> heights, out double top)
