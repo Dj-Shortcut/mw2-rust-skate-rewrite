@@ -19,6 +19,8 @@ public static class SkateCamera
     public const float OutRate = 5f;
     private static float shownLen = -1f, shownAt = -99f;
     private static bool failed, ahead = true;
+    // Apply threw once: the camera is the game's own from then on, and FollowYaw stands still.
+    public static bool Failed { get { return failed; } }
 
     public static void Sample()
     {

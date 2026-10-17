@@ -146,7 +146,8 @@ public class SkateRig : MonoBehaviour
     {
         if (steadyFailed || !SkateRide.On || !SkateKeys.Pad || SkateKeys.Scripted) return;
         if (SkateRide.Speed > 1f) viewAhead = true; else if (SkateRide.Speed < -1f) viewAhead = false;
-        var yaw = SkateCamera.Chase && !SkateCamera.Fixed ? SkateCamera.FollowYaw : SkateRide.Yaw + (viewAhead ? 0f : 180f);
+        // A chase camera that threw no longer moves FollowYaw: the board's heading then.
+        var yaw = SkateCamera.Chase && !SkateCamera.Fixed && !SkateCamera.Failed ? SkateCamera.FollowYaw : SkateRide.Yaw + (viewAhead ? 0f : 180f);
         if (!SetView(yaw, "steady")) steadyFailed = true;
     }
 
