@@ -254,6 +254,16 @@ namespace Shortcut.RustMod
                 Math.Abs(maxForward - 1.54002917) <= NativeBoundsTolerance;
         }
 
+        public static bool MatchesMeasuredTwigCollider(string colliderName, SkateParkBox local, SkateParkBox block)
+        {
+            return MatchesMeasuredTwigBounds(colliderName,
+                local.X - local.SizeX / 2, local.Y - local.SizeY / 2, local.Z - local.SizeZ / 2,
+                local.X + local.SizeX / 2, local.Y + local.SizeY / 2, local.Z + local.SizeZ / 2) &&
+                MatchesMeasuredTwigBounds(colliderName,
+                block.X - block.SizeX / 2, block.Y - block.SizeY / 2, block.Z - block.SizeZ / 2,
+                block.X + block.SizeX / 2, block.Y + block.SizeY / 2, block.Z + block.SizeZ / 2);
+        }
+
         public static bool ContainsQuarterPoint(SkateParkKind kind, double right, double up, double forward,
             double minimumUp, double maximumUp, double tolerance = NativeBoundsTolerance)
         {

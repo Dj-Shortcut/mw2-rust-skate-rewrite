@@ -771,6 +771,16 @@ namespace Shortcut.RustMod
                 Math.Abs(maxForward - 1.54002917) <= NativeBoundsTolerance;
         }
 
+        public static bool MatchesMeasuredTwigCollider(string colliderName, SkateParkBox local, SkateParkBox block)
+        {
+            return MatchesMeasuredTwigBounds(colliderName,
+                local.X - local.SizeX / 2, local.Y - local.SizeY / 2, local.Z - local.SizeZ / 2,
+                local.X + local.SizeX / 2, local.Y + local.SizeY / 2, local.Z + local.SizeZ / 2) &&
+                MatchesMeasuredTwigBounds(colliderName,
+                block.X - block.SizeX / 2, block.Y - block.SizeY / 2, block.Z - block.SizeZ / 2,
+                block.X + block.SizeX / 2, block.Y + block.SizeY / 2, block.Z + block.SizeZ / 2);
+        }
+
         public static bool ContainsQuarterPoint(SkateParkKind kind, double right, double up, double forward,
             double minimumUp, double maximumUp, double tolerance = NativeBoundsTolerance)
         {
@@ -4789,8 +4799,26 @@ namespace Oxide.Plugins
                 Math.Abs(scale.y - 1) > SkateParkLayout.NativeBoundsTolerance ||
                 Math.Abs(scale.z - 1) > SkateParkLayout.NativeBoundsTolerance) return false;
             Bounds bounds = new Bounds(box.center, box.size);
-            Vector3 low = bounds.min, high = bounds.max;
-            return SkateParkLayout.MatchesMeasuredTwigBounds(collider.name, low.x, low.y, low.z, high.x, high.y, high.z);
+            Matrix4x4 toBlock = Matrix4x4.identity;
+            Transform frame = box.transform;
+            while (frame != block.transform)
+            {
+                if (frame == null) return false;
+                toBlock = Matrix4x4.TRS(frame.localPosition, frame.localRotation, frame.localScale) * toBlock;
+                frame = frame.parent;
+            }
+            Bounds physical = new Bounds();
+            bool first = true;
+            for (int x = -1; x <= 1; x += 2)
+            for (int y = -1; y <= 1; y += 2)
+            for (int z = -1; z <= 1; z += 2)
+            {
+                Vector3 point = toBlock.MultiplyPoint3x4(bounds.center + Vector3.Scale(bounds.extents, new Vector3(x, y, z)));
+                if (!Coordinate(point)) return false;
+                if (first) { physical = new Bounds(point, Vector3.zero); first = false; }
+                else physical.Encapsulate(point);
+            }
+            return SkateParkLayout.MatchesMeasuredTwigCollider(collider.name, ParkBox(bounds), ParkBox(physical));
         }
 
         private static bool ParkMeasuredTwigFloor(BuildingBlock block)

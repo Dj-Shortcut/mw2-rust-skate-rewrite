@@ -1373,6 +1373,29 @@ internal static class SkateParkLayoutScenarios
         double[] high = { 1.54439974, 0.100000769, 1.54002917 };
         Require(SkateParkLayout.MatchesMeasuredTwigBounds(SkateParkLayout.TwigFloorCollider,
             low[0], low[1], low[2], high[0], high[1], high[2]), "reported twig collider geometry is identified exactly.");
+        SkateParkBox raw = Box((low[0] + high[0]) / 2, (low[1] + high[1]) / 2, (low[2] + high[2]) / 2,
+            high[0] - low[0], high[1] - low[1], high[2] - low[2]);
+        Require(SkateParkLayout.MatchesMeasuredTwigCollider(SkateParkLayout.TwigFloorCollider, raw, raw),
+            "reported twig box in the native block frame is recognized.");
+        foreach (int axis in new[] { 0, 1, 2 })
+        foreach (double shift in new[] { -0.1, -0.01, -0.0011, 0.0011, 0.01, 0.1 })
+        {
+            SkateParkBox moved = raw;
+            if (axis == 0) moved.X += shift;
+            else if (axis == 1) moved.Y += shift;
+            else moved.Z += shift;
+            Require(!SkateParkLayout.MatchesMeasuredTwigCollider(SkateParkLayout.TwigFloorCollider, raw, moved),
+                "unchanged raw twig size cannot exempt a collider shifted within its block.");
+        }
+        SkateParkBox rotated = Box(raw.Z, raw.Y, -raw.X, raw.SizeZ, raw.SizeY, raw.SizeX);
+        Require(!SkateParkLayout.MatchesMeasuredTwigCollider(SkateParkLayout.TwigFloorCollider, raw, rotated),
+            "unchanged raw twig size cannot exempt a quarter-turned collider child.");
+        SkateParkBox scaled = Box(raw.X * 1.01, raw.Y, raw.Z, raw.SizeX * 1.01, raw.SizeY, raw.SizeZ);
+        Require(!SkateParkLayout.MatchesMeasuredTwigCollider(SkateParkLayout.TwigFloorCollider, raw, scaled),
+            "unchanged raw twig size cannot exempt a scaled collider frame.");
+        SkateParkBox rounded = raw; rounded.X += 0.0005;
+        Require(SkateParkLayout.MatchesMeasuredTwigCollider(SkateParkLayout.TwigFloorCollider, raw, rounded),
+            "block-frame measurement keeps the existing millimetre budget.");
         foreach (string name in new[] { null, "", SkateParkLayout.FloorPrefab,
             "assets/prefabs/building core/foundation/foundation.twig.prefab", SkateParkLayout.TwigFloorCollider.ToUpperInvariant() })
             Require(!SkateParkLayout.MatchesMeasuredTwigBounds(name, low[0], low[1], low[2], high[0], high[1], high[2]),

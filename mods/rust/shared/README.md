@@ -342,8 +342,11 @@ These checks do not prove Unity physics/materials, IL2CPP/Mono runtime allocatio
 The reported #480 twig floor collider has local min `(-1.541687,-0.00000024586916,-1.55486429)`
 and max `(1.54439974,0.100000769,1.54002917)` metres. `MatchesMeasuredTwigBounds`
 recognises that exact floor.twig identity and geometry within the existing 1 mm
-measurement tolerance. The native adapter also verifies the owning floor and unit
-scale. `ContainsQuarterColliderPoint` permits its known horizontal overhang;
+measurement tolerance. `MatchesMeasuredTwigCollider` requires both collider-local
+and owning-block bounds to match, so a translated, rotated or scaled collider
+child cannot inherit the exception. The adapter composes local transforms without
+a world-coordinate round trip and also verifies the owning floor and unit scale.
+`ContainsQuarterColliderPoint` permits its known horizontal overhang;
 vertical bounds, generic construction metadata and saved reservation overlap stay
 unchanged. Other collider names/shapes, including unmeasured foundations, do not
 inherit this allowance. These are reported live bounds and offline fixtures, not
