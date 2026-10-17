@@ -127,7 +127,39 @@ public class SkateRig : MonoBehaviour
 
     public static void LevelView()
     {
-        if (Local == null) return;
+        SetView(SkateRide.Yaw + (SkateRide.Speed < -0.5f ? 180f : 0f), "level");
+    }
+
+    // With a controller the game's own view is not the steering: Steam's layout sends the right
+    // stick to the game as the mouse, so every flick turns the view (the owner's log: up to 145
+    // degrees in a second on the board). The chase camera hides that, but the game's compass
+    // reads the view and whips round at every trick, and the pitch is left far up or down for
+    // the step-off. So while the controller rides the view is put back every frame, level and
+    // the way the camera looks: behind the rider, the chase camera's own yaw; otherwise the way
+    // the board goes, kept through a stop by the same hysteresis the chase camera uses. The
+    // keyboard is left alone: there the mouse is the steering. Only the flick's own frame can
+    // show before it is put back. Whether the compass follows is for the game to show.
+    // A route that is missing or threw stops it for the rest of the ride; the next mount tries
+    // again, since the player's input object is replaced on a respawn or reconnect.
+    private static bool viewAhead = true, steadyFailed;
+    private static void SteadyView()
+    {
+        if (steadyFailed || !SkateRide.On || !SkateKeys.Pad || SkateKeys.Scripted) return;
+        if (SkateRide.Speed > 1f) viewAhead = true; else if (SkateRide.Speed < -1f) viewAhead = false;
+        // A chase camera that threw no longer moves FollowYaw: the board's heading then.
+        var yaw = SkateCamera.Chase && !SkateCamera.Fixed && !SkateCamera.Failed ? SkateCamera.FollowYaw : SkateRide.Yaw + (viewAhead ? 0f : 180f);
+        if (!SetView(yaw, "steady")) steadyFailed = true;
+    }
+
+    // The game's view, yaw only and level, told to the player's input (SetViewVars). False once
+    // the route is known not to be there, or when it threw: the caller then gives up on it.
+    // The input object is read from the player each time rather than bound once: the game hands
+    // out a fresh wrapper for it, so a bound call could not be told from a stale one. One array
+    // is kept; the quaternion's box is the one allocation a frame this costs.
+    private static readonly object[] viewArgs = new object[1];
+    private static bool SetView(float yaw, string what)
+    {
+        if (Local == null) return true;
         try
         {
             const System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
@@ -152,12 +184,13 @@ public class SkateRig : MonoBehaviour
                 }
                 Out.Say("SKATE view route: " + (setView == null ? "none (no member with SetViewVars(Quaternion))" : inputMember.Name + ".SetViewVars"));
             }
-            if (setView == null) return;
+            if (setView == null) return false;
             var field = inputMember as System.Reflection.FieldInfo;
             var input = field != null ? field.GetValue(Local) : ((System.Reflection.PropertyInfo)inputMember).GetValue(Local, null);
-            if (input != null) setView.Invoke(input, new object[] { Quaternion.Euler(0f, SkateRide.Yaw + (SkateRide.Speed < -0.5f ? 180f : 0f), 0f) });
+            if (input != null) { viewArgs[0] = Quaternion.Euler(0f, yaw, 0f); setView.Invoke(input, viewArgs); }
+            return true;
         }
-        catch (Exception e) { Out.Say("SKATE view level threw " + e.GetType().Name + ": " + e.Message); }
+        catch (Exception e) { Out.Say("SKATE view " + what + " threw " + e.GetType().Name + ": " + e.Message); return false; }
     }
 
     public static void MountNow(float yaw)
@@ -165,7 +198,7 @@ public class SkateRig : MonoBehaviour
         if (Body == null) return;
         if (!RiderRig.Bound) { try { RiderRig.Bind(LocalT); } catch (Exception e) { Out.Say("RIDER bind threw " + e.GetType().Name + ": " + e.Message); } }
         SkateSfx.Start();
-        SkateRide.Mount(Body, yaw);
+        SkateRide.Mount(Body, yaw); viewAhead = true; steadyFailed = false;
         SkateHud.MountedAt = Time.realtimeSinceStartup;
         Say("MOUNT yaw=" + SkateRide.Yaw.ToString("F0") + " speed=" + SkateRide.Speed.ToString("F1") + " rider=" + RiderRig.Bound + " audio=" + SkateSfx.State);
     }
@@ -294,7 +327,7 @@ public class SkateRig : MonoBehaviour
         var feet = at; var up = SkateRide.ViewNormal; var tilted = up;
         SkateBoard.Tilt(ref feet, ref tilted);
         var t2 = SkateClock.Now(); RiderRig.Frame(feet, up, !third, frame); SkateClock.Add(SkateClock.Rider, t2);
-        var t3 = SkateClock.Now(); SkateCamera.Apply(at - Vector3.up * SkateBoard.Pop); SkateClock.Add(SkateClock.Camera, t3);
+        var t3 = SkateClock.Now(); SkateCamera.Apply(at - Vector3.up * SkateBoard.Pop); SteadyView(); SkateClock.Add(SkateClock.Camera, t3);
         try { SkateWatch.Frame(LocalT, board, now); }
         catch (Exception e) { if (!watchFailed) { watchFailed = true; Say("watch threw " + e.GetType().Name + ": " + e.Message); } }
     }
