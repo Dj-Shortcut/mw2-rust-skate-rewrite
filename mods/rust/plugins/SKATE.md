@@ -50,7 +50,7 @@ The complete buffered horizontal path plus the incoming segment must stay within
 
 ## Session diagnostics
 
-Source 0.3.26 also supplies a closed server collision surface for complete verified MEGA groups, matching the shared smooth profile instead of their straight native floor chords. It replaces only owned floor colliders and restores them on invalidation/unload; native guard walls and antihack remain active. See the [MEGA collision contract](../../../docs/RUST-SKATE-MEGA-HALFPIPE.md#server-collision-surface). Native riding acceptance is still required.
+Source 0.3.26 also supplies a closed server collision surface for complete verified MEGA groups, matching the shared smooth profile instead of their straight native floor chords. Its 64 patches each retain their native floor as hit owner; only owned floor colliders are replaced. It restores them on invalidation/unload and isolates saved-group failures during startup; native guard walls and antihack remain active. See the [MEGA collision contract](../../../docs/RUST-SKATE-MEGA-HALFPIPE.md#server-collision-surface). Native riding acceptance is still required.
 
 Keep the source's `// Reference: Unity.Collections` directive when installing it in Oxide. The trace reads `NativeList` results from that assembly, which Oxide does not automatically reference alongside `UnityEngine.CoreModule`.
 

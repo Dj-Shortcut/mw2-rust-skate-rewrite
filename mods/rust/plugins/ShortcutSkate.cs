@@ -3795,6 +3795,30 @@ namespace Oxide.Plugins
                     SkateParkQuarterProfile profile;
                     if (!SkateParkLayout.TryKind(group.Kind, out kind) ||
                         (kind != SkateParkKind.MegaHalfpipe && !SkateParkLayout.TryQuarterProfile(kind, out profile))) continue;
+                    if (kind == SkateParkKind.MegaHalfpipe)
+                    {
+                        // One altered saved kit must retain native collision without disabling
+                        // unrelated park placement. New-placement failures still roll back below.
+                        try
+                        {
+                            var megaFailures = new List<string>();
+                            ParkNativePart[] megaDefinitions;
+                            if (!ParkPrefabs(kind, megaFailures, out megaDefinitions))
+                                throw new InvalidDataException("MEGA collision prefab verification failed.");
+                            EnsureParkProfileCollision(kind, group, group.Members, megaDefinitions[0].Construction.bounds);
+                        }
+                        catch (ParkProfileChangedException)
+                        {
+                            RemoveParkProfileCollision(group);
+                            PrintWarning("A saved MEGA group has altered native grades, skins or scale; its original floor collision is retained.");
+                        }
+                        catch (Exception error)
+                        {
+                            RemoveParkProfileCollision(group);
+                            PrintWarning("Saved MEGA profile creation failed (" + error.GetType().Name + "); native floor collision is retained for that group.");
+                        }
+                        continue;
+                    }
                     var failures = new List<string>();
                     ParkNativePart[] definitions;
                     if (!ParkPrefabs(kind, failures, out definitions))
@@ -5529,12 +5553,25 @@ namespace Oxide.Plugins
         {
             public GameObject Root;
             public Mesh Mesh;
-            public MeshCollider Shell;
             public float Datum;
-            public ParkProfileMeshState ShellShape;
+            public readonly List<ParkProfilePatch> Patches = new List<ParkProfilePatch>();
             public readonly List<Collider> Disabled = new List<Collider>();
             public readonly List<BuildingBlock> Members = new List<BuildingBlock>();
             public readonly List<ParkProfileColliderState> OriginalShapes = new List<ParkProfileColliderState>();
+        }
+
+        private sealed class ParkProfilePatch
+        {
+            public int Index;
+            public GameObject Root;
+            public Mesh Mesh;
+            public MeshCollider Shell;
+            public ParkProfileMeshState Shape;
+        }
+
+        private sealed class ParkProfileChangedException : Exception
+        {
+            public ParkProfileChangedException(string message) : base(message) { }
         }
 
         private sealed class ParkProfileMeshState
@@ -5656,9 +5693,7 @@ namespace Oxide.Plugins
             ParkMember[] parts = null, IList<BuildingBlock> verifiedBlocks = null)
         {
             if (group == null || group.Kind != "mega-halfpipe" || collision == null || collision.Members.Count != SkateMegaHalfpipe.PartCount ||
-                collision.OriginalShapes.Count < 64 || collision.Root == null || !collision.Root.activeInHierarchy ||
-                collision.Mesh == null || collision.Shell == null || !collision.Shell.enabled || collision.Shell.isTrigger || collision.Shell.convex ||
-                collision.Shell.sharedMesh != collision.Mesh || collision.ShellShape == null) return false;
+                collision.OriginalShapes.Count < 64 || collision.Patches.Count != 64) return false;
             if (parts == null) parts = group.Members.OrderBy(member => member.Index).ToArray();
             if (parts.Length != SkateMegaHalfpipe.PartCount || (verifiedBlocks != null && verifiedBlocks.Count != parts.Length)) return false;
             for (int i = 0; i < parts.Length; i++)
@@ -5671,18 +5706,36 @@ namespace Oxide.Plugins
             BuildingBlock first = collision.Members[0];
             float datum = first.bounds.max.y;
             if (float.IsNaN(datum) || float.IsInfinity(datum) || datum <= 0 || datum >= 0.5f || Math.Abs(datum - collision.Datum) > 1e-5f ||
-                collision.Root.transform.parent != first.transform || collision.Root.transform.lossyScale != Vector3.one ||
-                collision.Root.layer != LayerMask.NameToLayer("Construction") ||
-                !((collision.Root.transform.position - new Vector3((float)group.AnchorX, (float)group.AnchorY + datum, (float)group.AnchorZ)).sqrMagnitude <= 4e-6f) ||
-                !(Quaternion.Angle(collision.Root.transform.rotation, Quaternion.Euler(0, (float)group.AnchorYaw, 0)) <= 0.01f)) return false;
-            Collider[] shellColliders = collision.Root.GetComponentsInChildren<Collider>(true);
-            if (shellColliders.Length != 1 || !ReferenceEquals(shellColliders[0], collision.Shell) || !collision.ShellShape.Matches(collision.Mesh) ||
                 collision.OriginalShapes.Any(shape => !shape.Matches())) return false;
+            Vector3 origin = new Vector3((float)group.AnchorX, (float)group.AnchorY + datum, (float)group.AnchorZ);
+            Quaternion rotation = Quaternion.Euler(0, (float)group.AnchorYaw, 0);
+            int layer = LayerMask.NameToLayer("Construction");
+            for (int i = 0; i < collision.Patches.Count; i++)
+            {
+                ParkProfilePatch patch = collision.Patches[i];
+                if (patch.Index != i || patch.Root == null || !patch.Root.activeInHierarchy || patch.Mesh == null ||
+                    patch.Shell == null || !patch.Shell.enabled || patch.Shell.isTrigger || patch.Shell.convex ||
+                    patch.Shell.sharedMesh != patch.Mesh || patch.Shape == null || !patch.Shape.Matches(patch.Mesh) ||
+                    !ReferenceEquals(patch.Shell.ToBaseEntity(), collision.Members[i]) ||
+                    patch.Root.transform.parent != collision.Members[i].transform || patch.Root.transform.lossyScale != Vector3.one ||
+                    patch.Root.layer != layer || !((patch.Root.transform.position - origin).sqrMagnitude <= 4e-6f) ||
+                    !(Quaternion.Angle(patch.Root.transform.rotation, rotation) <= 0.01f)) return false;
+                Collider[] shellColliders = patch.Root.GetComponentsInChildren<Collider>(true);
+                if (shellColliders.Length != 1 || !ReferenceEquals(shellColliders[0], patch.Shell)) return false;
+            }
             foreach (BuildingBlock block in collision.Members.Take(64))
                 foreach (Collider collider in block.GetComponentsInChildren<Collider>(true))
                     if (collider != null && collider.enabled && !collider.isTrigger && collider.gameObject.activeInHierarchy &&
-                        !collider.transform.IsChildOf(collision.Root.transform) && ReferenceEquals(collider.ToBaseEntity(), block)) return false;
+                        !ParkProfileOwnsCollider(collision, collider) && ReferenceEquals(collider.ToBaseEntity(), block)) return false;
             return true;
+        }
+
+        private static bool ParkProfileOwnsCollider(ParkProfileCollision collision, Collider collider)
+        {
+            if (collision.Root != null && collider.transform.IsChildOf(collision.Root.transform)) return true;
+            foreach (ParkProfilePatch patch in collision.Patches)
+                if (patch.Root != null && collider.transform.IsChildOf(patch.Root.transform)) return true;
+            return false;
         }
 
         private void RemoveParkProfileCollision(ParkGroup group)
@@ -5692,7 +5745,14 @@ namespace Oxide.Plugins
             parkProfileCollisions.Remove(group);
             foreach (Collider collider in collision.Disabled)
                 if (collider != null) collider.enabled = true;
+            foreach (ParkProfilePatch patch in collision.Patches)
+                if (patch.Root != null) patch.Root.SetActive(false);
             if (collision.Root != null) collision.Root.SetActive(false);
+            foreach (ParkProfilePatch patch in collision.Patches)
+            {
+                if (patch.Root != null) UnityEngine.Object.Destroy(patch.Root);
+                if (patch.Mesh != null) UnityEngine.Object.Destroy(patch.Mesh);
+            }
             if (collision.Root != null) UnityEngine.Object.Destroy(collision.Root);
             if (collision.Mesh != null) UnityEngine.Object.Destroy(collision.Mesh);
         }
@@ -5746,35 +5806,65 @@ namespace Oxide.Plugins
             return mesh;
         }
 
-        private static Mesh ParkMegaMesh()
+        private static Mesh ParkMegaMesh(int floorIndex)
         {
+            if (floorIndex < 0 || floorIndex >= 64) throw new ArgumentOutOfRangeException("floorIndex");
             var vertices = new List<Vector3>();
             var triangles = new List<int>();
-            float left = -1.5f, right = 10.5f, bottom = -0.1f;
-            double z0, y0;
-            if (!SkateMegaHalfpipe.TryProfilePoint(0, out z0, out y0))
-                throw new InvalidDataException("MEGA profile start is unavailable.");
-            float start = (float)z0, startTop = (float)y0;
-            for (int i = 1; i < SkateMegaHalfpipe.ProfilePointCount; i++)
+            var points = new List<Vector2>();
+            int lane = floorIndex % SkateMegaHalfpipe.Lanes;
+            float left = lane * 3 - 1.5f, right = left + 3, bottom = -0.1f;
+            if (floorIndex < 16)
             {
-                double z1, y1;
-                if (!SkateMegaHalfpipe.TryProfilePoint(i, out z1, out y1) || z1 <= z0)
-                    throw new InvalidDataException("MEGA profile samples are unavailable or unordered.");
-                Vector3 a = new Vector3(left, (float)y0, (float)z0), b = new Vector3(right, (float)y0, (float)z0);
-                Vector3 c = new Vector3(left, (float)y1, (float)z1), d = new Vector3(right, (float)y1, (float)z1);
-                Vector3 ab = new Vector3(left, bottom, (float)z0), bb = new Vector3(right, bottom, (float)z0);
-                Vector3 cb = new Vector3(left, bottom, (float)z1), db = new Vector3(right, bottom, (float)z1);
-                ParkQuarterQuad(vertices, triangles, a, c, d, b);
-                ParkQuarterQuad(vertices, triangles, a, ab, cb, c);
-                ParkQuarterQuad(vertices, triangles, b, d, db, bb);
-                ParkQuarterQuad(vertices, triangles, ab, bb, db, cb);
-                z0 = z1; y0 = y1;
+                float forward = (float)(-SkateMegaHalfpipe.FlatLength / 2 + floorIndex / SkateMegaHalfpipe.Lanes * SkateMegaHalfpipe.Tile);
+                points.Add(new Vector2(forward, (float)SkateMegaHalfpipe.RideLift));
+                points.Add(new Vector2(forward + 3, (float)SkateMegaHalfpipe.RideLift));
             }
-            ParkQuarterQuad(vertices, triangles, new Vector3(left, startTop, start), new Vector3(right, startTop, start),
-                new Vector3(right, bottom, start), new Vector3(left, bottom, start));
-            ParkQuarterQuad(vertices, triangles, new Vector3(left, (float)y0, (float)z0), new Vector3(left, bottom, (float)z0),
-                new Vector3(right, bottom, (float)z0), new Vector3(right, (float)y0, (float)z0));
-            var mesh = new Mesh { name = "ShortcutSkate MEGA closed shell" };
+            else
+            {
+                int first, last;
+                if (floorIndex < 56)
+                {
+                    int segment = (floorIndex - 16) % 20 / SkateMegaHalfpipe.Lanes;
+                    int steps = SkateMegaHalfpipe.CurveSteps / SkateMegaHalfpipe.TransitionSegments;
+                    first = floorIndex < 36 ? SkateMegaHalfpipe.CurveSteps + 1 - (segment + 1) * steps :
+                        SkateMegaHalfpipe.CurveSteps + 2 + segment * steps;
+                    last = first + steps;
+                }
+                else { first = floorIndex < 60 ? 0 : SkateMegaHalfpipe.ProfilePointCount - 2; last = first + 1; }
+                for (int i = first; i <= last; i++)
+                {
+                    double forward, height;
+                    if (!SkateMegaHalfpipe.TryProfilePoint(i, out forward, out height))
+                        throw new InvalidDataException("MEGA floor profile samples are unavailable.");
+                    points.Add(new Vector2((float)forward, (float)height));
+                }
+            }
+            float start = points[0].x, startTop = points[0].y;
+            Vector2 previous = points[0];
+            for (int i = 1; i < points.Count; i++)
+            {
+                Vector2 next = points[i];
+                if (next.x <= previous.x) throw new InvalidDataException("MEGA floor profile samples are unordered.");
+                Vector3 a = new Vector3(left, previous.y, previous.x), b = new Vector3(right, previous.y, previous.x);
+                Vector3 c = new Vector3(left, next.y, next.x), d = new Vector3(right, next.y, next.x);
+                Vector3 ab = new Vector3(left, bottom, previous.x), bb = new Vector3(right, bottom, previous.x);
+                Vector3 cb = new Vector3(left, bottom, next.x), db = new Vector3(right, bottom, next.x);
+                ParkQuarterQuad(vertices, triangles, a, c, d, b);
+                // The complete union is closed. Internal floor/lane boundaries have
+                // no vertical faces that could act as walls during a seam crossing.
+                if (lane == 0) ParkQuarterQuad(vertices, triangles, a, ab, cb, c);
+                if (lane == SkateMegaHalfpipe.Lanes - 1) ParkQuarterQuad(vertices, triangles, b, d, db, bb);
+                ParkQuarterQuad(vertices, triangles, ab, bb, db, cb);
+                previous = next;
+            }
+            if (floorIndex >= 56 && floorIndex < 60)
+                ParkQuarterQuad(vertices, triangles, new Vector3(left, startTop, start), new Vector3(right, startTop, start),
+                    new Vector3(right, bottom, start), new Vector3(left, bottom, start));
+            if (floorIndex >= 60)
+                ParkQuarterQuad(vertices, triangles, new Vector3(left, previous.y, previous.x), new Vector3(left, bottom, previous.x),
+                    new Vector3(right, bottom, previous.x), new Vector3(right, previous.y, previous.x));
+            var mesh = new Mesh { name = "ShortcutSkate MEGA floor profile " + floorIndex.ToString(CultureInfo.InvariantCulture) };
             try
             {
                 mesh.vertices = vertices.ToArray();
@@ -5811,7 +5901,7 @@ namespace Oxide.Plugins
                     block.skinID != 0 || block.transform.lossyScale != Vector3.one))
                 {
                     RemoveParkProfileCollision(group);
-                    throw new InvalidDataException("MEGA collision requires the original native grades, skins and scale.");
+                    throw new ParkProfileChangedException("MEGA collision requires the original native grades, skins and scale.");
                 }
                 blocks.Add(block);
             }
@@ -5842,36 +5932,52 @@ namespace Oxide.Plugins
             try
             {
                 collision.Members.AddRange(blocks);
-                collision.Root = new GameObject(mega ? "ShortcutSkate MEGA collision" : "ShortcutSkate quarterpipe collision");
-                collision.Root.SetActive(false);
-                collision.Root.layer = layer;
-                collision.Root.transform.position = new Vector3((float)group.AnchorX, (float)group.AnchorY + datum, (float)group.AnchorZ);
-                collision.Root.transform.rotation = Quaternion.Euler(0, (float)group.AnchorYaw, 0);
-                collision.Root.transform.SetParent(blocks[0].transform, true);
-                collision.Mesh = mega ? ParkMegaMesh() : ParkQuarterMesh(kind, profile);
-                var shell = collision.Root.AddComponent<MeshCollider>();
-                shell.sharedMesh = collision.Mesh;
-                shell.convex = false;
                 if (mega)
                 {
-                    collision.Shell = shell;
                     collision.Datum = datum;
-                    collision.ShellShape = ParkProfileMeshState.Capture(collision.Mesh);
+                    for (int i = 0; i < 64; i++)
+                    {
+                        var patch = new ParkProfilePatch { Index = i };
+                        collision.Patches.Add(patch);
+                        patch.Root = new GameObject("ShortcutSkate MEGA floor collision " + i.ToString(CultureInfo.InvariantCulture));
+                        patch.Root.SetActive(false);
+                        patch.Root.layer = layer;
+                        patch.Root.transform.position = new Vector3((float)group.AnchorX, (float)group.AnchorY + datum, (float)group.AnchorZ);
+                        patch.Root.transform.rotation = Quaternion.Euler(0, (float)group.AnchorYaw, 0);
+                        // Keep the common profile frame while preserving the actual native
+                        // floor as the parent used by hit, hammer, grade and entity queries.
+                        patch.Root.transform.SetParent(blocks[i].transform, true);
+                        patch.Mesh = ParkMegaMesh(i);
+                        patch.Shell = patch.Root.AddComponent<MeshCollider>();
+                        patch.Shell.sharedMesh = patch.Mesh;
+                        patch.Shell.convex = false;
+                        patch.Shape = ParkProfileMeshState.Capture(patch.Mesh);
+                    }
                 }
-                if (!mega)
+                else
                 {
+                    collision.Root = new GameObject("ShortcutSkate quarterpipe collision");
+                    collision.Root.SetActive(false);
+                    collision.Root.layer = layer;
+                    collision.Root.transform.position = new Vector3((float)group.AnchorX, (float)group.AnchorY + datum, (float)group.AnchorZ);
+                    collision.Root.transform.rotation = Quaternion.Euler(0, (float)group.AnchorYaw, 0);
+                    collision.Root.transform.SetParent(blocks[0].transform, true);
+                    collision.Mesh = ParkQuarterMesh(kind, profile);
+                    var shell = collision.Root.AddComponent<MeshCollider>();
+                    shell.sharedMesh = collision.Mesh;
+                    shell.convex = false;
                     var coping = collision.Root.AddComponent<CapsuleCollider>();
                     coping.direction = 0;
                     coping.radius = (float)profile.CopingRadius;
                     coping.height = (float)(2 * (profile.HalfWidth + profile.CopingRadius));
                     coping.center = new Vector3(0, (float)profile.Height,
                         (float)(profile.StartForward + profile.Entry + profile.Radius));
-                }
-                if (kind == SkateParkKind.LargeQuarterPipe)
-                {
-                    var apron = collision.Root.AddComponent<BoxCollider>();
-                    apron.center = new Vector3(2.9f, (float)-profile.Skin / 2, 0);
-                    apron.size = new Vector3(3, (float)profile.Skin, 2.8f);
+                    if (kind == SkateParkKind.LargeQuarterPipe)
+                    {
+                        var apron = collision.Root.AddComponent<BoxCollider>();
+                        apron.center = new Vector3(2.9f, (float)-profile.Skin / 2, 0);
+                        apron.size = new Vector3(3, (float)profile.Skin, 2.8f);
+                    }
                 }
                 // MEGA's native coping/rear guard walls remain solid; replace only its
                 // 64 floor colliders with the closed smooth floor shell.
@@ -5882,7 +5988,7 @@ namespace Oxide.Plugins
                     {
                         if (collider == null || collider.isTrigger || !collider.enabled ||
                             (mega && !collider.gameObject.activeInHierarchy) ||
-                            collider.transform.IsChildOf(collision.Root.transform) || !ReferenceEquals(collider.ToBaseEntity(), block)) continue;
+                            ParkProfileOwnsCollider(collision, collider) || !ReferenceEquals(collider.ToBaseEntity(), block)) continue;
                         if (mega) collision.OriginalShapes.Add(ParkProfileColliderState.Capture(collider, block));
                         collision.Disabled.Add(collider);
                     }
@@ -5891,9 +5997,13 @@ namespace Oxide.Plugins
                 }
                 // Retain solid collision throughout the exchange; failure restores the originals
                 // before removing the replacement. No native anti-hack result is overridden.
-                if (mega) { collision.Root.SetActive(true); Physics.SyncTransforms(); }
+                if (mega)
+                {
+                    foreach (ParkProfilePatch patch in collision.Patches) patch.Root.SetActive(true);
+                    Physics.SyncTransforms();
+                }
                 foreach (Collider collider in collision.Disabled) collider.enabled = false;
-                collision.Root.SetActive(true);
+                if (!mega) collision.Root.SetActive(true);
                 Physics.SyncTransforms();
                 if (mega && !ParkMegaCollisionHealthy(group, collision, parts, blocks))
                     throw new InvalidDataException("MEGA profile collision activation could not be verified.");
