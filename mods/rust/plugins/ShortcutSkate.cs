@@ -5821,11 +5821,13 @@ namespace Oxide.Plugins
             // assembly-neutral Unity marker still protects held members after a reload.
             if (id != 0 && parkData != null && parkData.Groups != null && parkData.Groups.Any(group =>
                 group.Members.Any(member => member.Id == id) && ParkProfileRestorePending(group))) return true;
-            if (parkData != null && !parkDataBroken && parkData.Groups != null) return false;
+            if (id != 0 && parkData != null && !parkDataBroken && parkData.Groups != null &&
+                parkData.Groups.Any(group => group.Members.Any(member => member.Id == id))) return false;
             GameObject[] pending = Resources.FindObjectsOfTypeAll<GameObject>().Where(value => value != null &&
                 value.activeInHierarchy && value.name.StartsWith(ParkRestoreMarkerPrefix, StringComparison.Ordinal)).ToArray();
             if (pending.Length == 0) return false;
-            // Missing metadata grants denial only. A bounded marker region never grants
+            // Missing group metadata grants denial only, including unsaved placements.
+            // A bounded marker region never grants
             // ownership, adoption, restoration or deletion authority over this entity.
             try
             {
@@ -5877,7 +5879,12 @@ namespace Oxide.Plugins
             values = new List<Bounds>();
             foreach (Collider collider in collision.Disabled)
             {
-                if (collider == null || collider.enabled) continue;
+                if (collider == null)
+                {
+                    if (!ParkRestoreMissingOriginalSafe(collision, collider)) return false;
+                    continue;
+                }
+                if (collider.enabled) continue;
                 if (!ParkRestoreOriginalOwned(collision, collider)) return false;
                 Bounds local;
                 if (!ParkRestoreLocalBounds(collider, out local)) return false;
@@ -5894,6 +5901,14 @@ namespace Oxide.Plugins
                 values.Add(world);
             }
             return true;
+        }
+
+        private static bool ParkRestoreMissingOriginalSafe(ParkProfileCollision collision, Collider collider)
+        {
+            ParkProfileColliderState captured = collision.OriginalShapes.FirstOrDefault(value => ReferenceEquals(value.Collider, collider));
+            // A live floor losing its collider is not proof of restored native support.
+            // A destroyed member has already lost its surface independently of cleanup.
+            return captured != null && (captured.Owner == null || captured.Owner.IsDestroyed);
         }
 
         private static BasePlayer[] ParkRestorePlayers()
@@ -6003,8 +6018,18 @@ namespace Oxide.Plugins
         {
             exit = null;
             if (!Coordinate(hint)) return false;
-            RaycastHit hit;
-            if (!Physics.Raycast(hint + Vector3.up * 12, Vector3.down, out hit, 40f, ~0, QueryTriggerInteraction.Ignore) ||
+            var hits = new RaycastHit[128];
+            int hitCount = Physics.RaycastNonAlloc(hint + Vector3.up * 12, Vector3.down, hits, 40f, ~0, QueryTriggerInteraction.Ignore);
+            if (hitCount >= hits.Length) return false;
+            RaycastHit hit = new RaycastHit();
+            bool found = false;
+            for (int i = 0; i < hitCount; i++)
+            {
+                Collider collider = hits[i].collider;
+                if (collider == null || collider.transform.IsChildOf(player.transform) || ReferenceEquals(collider.ToBaseEntity(), player)) continue;
+                if (!found || hits[i].distance < hit.distance) { hit = hits[i]; found = true; }
+            }
+            if (!found ||
                 hit.collider == null || !(hit.normal.y >= 0.98f) || !Coordinate(hit.point) ||
                 WaterLevel.Test(hit.point + Vector3.up * 0.05f, true, true, player)) return false;
             BuildingBlock block = hit.collider.ToBaseEntity() as BuildingBlock;
@@ -6110,7 +6135,12 @@ namespace Oxide.Plugins
             // The retained list never grants authority over a collider reparented elsewhere.
             foreach (Collider collider in collision.Disabled)
             {
-                if (collider == null || collider.enabled) continue;
+                if (collider == null)
+                {
+                    if (!ParkRestoreMissingOriginalSafe(collision, collider)) return false;
+                    continue;
+                }
+                if (collider.enabled) continue;
                 if (!ParkRestoreOriginalOwned(collision, collider)) return false;
             }
             foreach (Collider collider in collision.Disabled) if (collider != null && !collider.enabled) collider.enabled = true;
