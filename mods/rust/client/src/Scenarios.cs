@@ -187,11 +187,29 @@ public static class Scenarios
         return yaw;
     }
 
+    // A place to ride to first, from the step "to:x/z": a tour that starts out of reach of the park
+    // (a respawn far off) gets there on the board, steered by the script, the keyboard having no look.
+    public static bool HasTarget; public static Vector3 Target;
+    private static float travelSaid = -1f;
+    private static bool Travel(float game)
+    {
+        var pos = SkateRide.On ? SkateRide.Position : SkateRig.LocalT.position;
+        var flat = Target - pos; flat.y = 0f;
+        if (flat.magnitude < 30f && SkateParks.PieceCount > 0) { HasTarget = false; Say("tour: arrived near " + Out.V1(Target) + " at " + Out.V1(pos)); return false; }
+        if (!SkateRide.On) SkateRig.MountNow(SkateKeys.LookYaw);
+        SkateKeys.Brake = false; SkateKeys.Jump = false;
+        SkateKeys.LookYaw = Unstick(Steer(flat, pos, -1), game);
+        SkateKeys.Push = SkateRide.Speed < 9f;
+        if (travelSaid < 0f || game - travelSaid > 10f) { travelSaid = game; Say("tour: riding to " + Out.V1(Target) + ", " + flat.magnitude.ToString("F0") + " m to go, at " + Out.V1(pos)); }
+        return true;
+    }
+
     private static void Tour(float game)
     {
         if (tourIndex < 0)
         {
             if (game < 6f) return;
+            if (HasTarget && Travel(game)) return;
             Say("tour: " + SkateParks.PieceCount + " pieces | " + SkateParks.Line());
             if (SkateParks.PieceCount == 0) { Finish(); return; }
             SkateRig.MountNow(SkateKeys.LookYaw);
