@@ -109,6 +109,10 @@ The mini reserves one 3m cell; the large reserves exactly cells(0,0),(1,0),(0,1)
 
 The native floor/wall supports are not curved riding surfaces. Claude must integrate the shared profiles into client preview, visuals and colliders and verify recognition, native transform agreement, removal/reload and riding. No installation or native acceptance is established by this source change.
 
+## Held park preview in 0.3.29
+
+While an administrator on foot holds a Skate park build item, the server draws that piece's footprint where they aim, four times a second, with Rust's own admin debug drawing (`ddraw.line`, `ddraw.arrow`, `ddraw.text`). The footprint is the outline of the piece's support cells, with an arrow to its forward edge and the item name above it. It is green where the placement target rule (`TryParkTargetFrame`, the same rule a placement uses) accepts the aimed foundation, and red with a short reason elsewhere. The client cannot read the held item in this Rust build (its member names are obfuscated), so the server shows it instead. The preview does not include the building plan's own R turn (the server does not receive it before placement), and green does not promise that support, occupancy and payment checks will pass; the placement itself still runs every check. Nothing is drawn while riding. Not yet seen in the game.
+
 ## Persistent park pieces
 
 v0.3.6 adds direct placement for an in-game administrator, without placing a foundation first:

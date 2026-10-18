@@ -1689,7 +1689,7 @@ namespace Shortcut.RustMod
 
 namespace Oxide.Plugins
 {
-    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.28")]
+    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.29")]
     [Description("Player-scoped skateboard movement bounds and saved park assemblies.")]
     public sealed class ShortcutSkate : RustPlugin
     {
@@ -2643,6 +2643,77 @@ namespace Oxide.Plugins
             timer.Every(0.1f, Sweep);
             timer.Every(0.1f, FlushTrace);
             timer.Every(1f, CleanupWallAttachments);
+            timer.Every(HeldParkPreviewSeconds, DrawHeldParkPreviews);
+        }
+
+        // While an administrator on foot holds a Skate park build item, the server draws that
+        // piece's footprint where they aim, with the same target rule placement uses: green where
+        // the target frame is accepted, red where it is not, with the piece name and its forward
+        // edge. The client cannot read the held item in this Rust build, so the server shows it.
+        private const float HeldParkPreviewSeconds = 0.25f;
+        private void DrawHeldParkPreviews()
+        {
+            if (!parkReady || parkClosing) return;
+            foreach (BasePlayer player in BasePlayer.activePlayerList.ToArray())
+            {
+                try { DrawHeldParkPreview(player); }
+                catch (Exception) { }
+            }
+        }
+
+        private void DrawHeldParkPreview(BasePlayer player)
+        {
+            SkateParkKind kind;
+            if (player == null || !player.IsAdmin || !Eligible(player) || sessions.ContainsKey(player.userID) ||
+                player.eyes == null || !(player.GetHeldEntity() is Planner) || !ParkItemIdentity(player.GetActiveItem(), out kind)) return;
+            int mask = LayerMask.GetMask("World", "Terrain", "Construction", "Deployed");
+            Ray ray = player.eyes.HeadRay();
+            RaycastHit hit;
+            if (mask == 0 || !Coordinate(ray.origin) || !Physics.Raycast(ray, out hit, MaximumParkPlacementDistance, mask, QueryTriggerInteraction.Ignore))
+                return;
+            string name = SkateParkBuildItems.Name(kind);
+            BuildingBlock host = hit.collider == null ? null : hit.collider.ToBaseEntity() as BuildingBlock;
+            double x = hit.point.x, z = hit.point.z, yaw = player.eyes.rotation.eulerAngles.y, top = hit.point.y;
+            bool valid = false;
+            string why = "aim at a foundation top";
+            if (host != null && hit.normal.y >= 0.98f)
+            {
+                var failures = new List<string>();
+                ParkNativePart[] definitions;
+                var probe = new ParkPlacementRequest { Player = player, Owner = player.userID, ItemKind = kind, BuildItem = true };
+                string failure;
+                if (ParkPrefabs(kind, failures, out definitions) && failures.Count == 0 &&
+                    TryParkTargetFrame(probe, host, hit, 0, true, definitions, out x, out z, out yaw, out failure))
+                {
+                    valid = true;
+                    why = "";
+                    if (Coordinate(probe.SnapSupportTop)) top = probe.SnapSupportTop;
+                }
+                else why = "no compatible foundation here";
+            }
+            int rmin = 0, rmax = 0, fmin = 0, fmax = 0;
+            for (int i = 0; i < SkateParkLayout.SupportCellCount(kind); i++)
+            {
+                int right, forward;
+                if (!SkateParkLayout.TrySupportCell(kind, i, out right, out forward)) return;
+                rmin = Math.Min(rmin, right); rmax = Math.Max(rmax, right);
+                fmin = Math.Min(fmin, forward); fmax = Math.Max(fmax, forward);
+            }
+            double half = SkateParkLayout.CellSize / 2, phase = kind == SkateParkKind.MegaHalfpipe ? -4.5 : 0;
+            double r0 = rmin * SkateParkLayout.CellSize - half, r1 = rmax * SkateParkLayout.CellSize + half;
+            double f0 = fmin * SkateParkLayout.CellSize - half + phase, f1 = fmax * SkateParkLayout.CellSize + half + phase;
+            float y = (float)top + 0.05f;
+            double c = Math.Cos(yaw * Math.PI / 180), sn = Math.Sin(yaw * Math.PI / 180);
+            Func<double, double, Vector3> at = (r, f) => new Vector3((float)(x + r * c + f * sn), y, (float)(z - r * sn + f * c));
+            Color color = valid ? Color.green : Color.red;
+            float life = HeldParkPreviewSeconds + 0.05f;
+            Vector3 a = at(r0, f0), b = at(r1, f0), d = at(r1, f1), e = at(r0, f1);
+            foreach (var edge in new[] { new[] { a, b }, new[] { b, d }, new[] { d, e }, new[] { e, a } })
+                player.SendConsoleCommand("ddraw.line", life, color, edge[0], edge[1]);
+            Vector3 mid = at((r0 + r1) / 2, (f0 + f1) / 2), front = at((r0 + r1) / 2, f1);
+            player.SendConsoleCommand("ddraw.arrow", life, color, mid, front, 0.5f);
+            player.SendConsoleCommand("ddraw.text", life, color, mid + Vector3.up * 1.5f,
+                name + (valid ? "" : " - " + why));
         }
 
         private static bool Patched(string name, Type patch, bool postfix)
