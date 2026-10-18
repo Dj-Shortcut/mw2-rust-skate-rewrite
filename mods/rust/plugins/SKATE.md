@@ -109,6 +109,10 @@ The mini reserves one 3m cell; the large reserves exactly cells(0,0),(1,0),(0,1)
 
 The native floor/wall supports are not curved riding surfaces. Claude must integrate the shared profiles into client preview, visuals and colliders and verify recognition, native transform agreement, removal/reload and riding. No installation or native acceptance is established by this source change.
 
+## Daylight in 0.3.30
+
+While the plugin is loaded the server's time stands at midday: on load it runs `env.progresstime false` and `env.time 12`, and on unload `env.progresstime true`, so the day cycle runs again without the plugin. The owner tests at all hours; a night test hides what the rider, the board and the park look like. Not yet seen on the live server.
+
 ## Persistent park pieces
 
 v0.3.6 adds direct placement for an in-game administrator, without placing a foundation first:
