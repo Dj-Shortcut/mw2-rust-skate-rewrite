@@ -229,6 +229,11 @@ public static class Scenarios
         // First to a point further out on the piece's own line, then in along that line to the start:
         // seen live, a straight way to the start went through the pieces and stuck under one.
         var outer = start - along * TourOut;
+        // The MEGA's ends are its 9.6 m walls, closed underneath: seen live, the way in along its line
+        // stuck against the side of the south wall. It is entered from the side onto its flat, 2 m
+        // short of the middle, and then turned up its line.
+        var mega = kind == SkateParks.Kind.MegaHalfpipe;
+        if (mega) { start = origin - along * 2f; outer = start + SkateRide.Dir(heading + 90f) * 12f; }
         var flat = (tourStage == 0 ? outer : start) - pos; flat.y = 0f;
         var stage = game - tourAt;
         if (tourStage == 0)
@@ -280,7 +285,7 @@ public static class Scenarios
                 SkateKeys.JumpPressed = true; SkateKeys.PopKind = SkatePopKind.Ollie; SkateKeys.PopScale = 1f;
             }
             if (IsLedge(kind) && toLedge < 0.6f) SkateKeys.LookYaw = heading + 8f;
-            if (stage > TourAcross)
+            if (stage > (mega ? 2f * TourAcross : TourAcross))
             {
                 Say("TOUR " + kind + " #" + tourIndex + ": rose " + tourRise.ToString("F2") + " m, air " + tourAir.ToString("F2") + " s, top " + tourTop.ToString("F1") + " m/s, back " + (-tourBack).ToString("F1") + " m/s, held " + (tourHeld > 0 ? "yes" : "no")
                     + ", grinds " + (SkateRide.GrindStarts - tourGrinds) + (tourGrindKinds != "" ? " (" + tourGrindKinds.Trim() + ")" : "") + ", bails " + (SkateRide.Bails - tourBails) + ", put backs " + (SkateRide.ResetsAll - tourResets) + ", end " + Out.V1(pos) + " " + SkateRide.Mode);
