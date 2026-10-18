@@ -1612,7 +1612,7 @@ namespace Shortcut.RustMod
 
 namespace Oxide.Plugins
 {
-    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.26")]
+    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.27")]
     [Description("Player-scoped skateboard movement bounds and saved park assemblies.")]
     public sealed class ShortcutSkate : RustPlugin
     {
@@ -1656,6 +1656,7 @@ namespace Oxide.Plugins
         private object parkSelectionEpoch = new object();
         private readonly Dictionary<ulong, ParkGroup> parkMembers = new Dictionary<ulong, ParkGroup>();
         private readonly Dictionary<ParkGroup, ParkProfileCollision> parkProfileCollisions = new Dictionary<ParkGroup, ParkProfileCollision>();
+        private readonly Dictionary<ulong, string> parkProfileRestoreHolds = new Dictionary<ulong, string>();
         private readonly List<ParkRollbackReceipt> parkRollback = new List<ParkRollbackReceipt>();
         private bool parkRollbackCleaning;
         private readonly Dictionary<ulong, ParkNativeRequest> parkNativeRequests = new Dictionary<ulong, ParkNativeRequest>();
@@ -1670,6 +1671,7 @@ namespace Oxide.Plugins
         private bool parkStorageFailed;
         private string parkStorageError;
         private bool parkReady;
+        private bool parkProfileRestoreRefreshNeeded;
         private bool parkBusy;
         private bool parkRefreshing;
         private bool parkClosing;
@@ -3048,21 +3050,30 @@ namespace Oxide.Plugins
             parkReady = false;
             parkSelections.Clear();
             parkDemolitionPending.Clear();
+            ready = false;
+            stallStartups.Clear();
+            foreach (Session session in sessions.Values.ToArray()) Stop(session.Player, SkateSessionReason.Unload);
             foreach (ParkNativeRequest pending in parkNativeCleanup)
                 if (pending.PaymentSuppressed) pending.CleanupReady = true;
             CleanupNativeParkCarriers();
             parkNativeRequests.Clear();
             if (parkNativeCleanup.Count != 0)
                 PrintError("Unload has " + parkNativeCleanup.Count + " native park carriers with incomplete cleanup; unverified identities were left untouched and no build items were spent for those requests.");
-            foreach (ParkGroup group in parkProfileCollisions.Keys.ToArray()) RemoveParkProfileCollision(group);
+            foreach (ParkGroup group in parkProfileCollisions.Keys.ToArray())
+            {
+                try
+                {
+                    if (!RemoveParkProfileCollision(group))
+                        PrintWarning("Occupied MEGA collision restoration remains owned independently until its player bodies are clear.");
+                }
+                catch (Exception error)
+                { PrintError("Park collision restoration could not finish during unload (" + error.GetType().Name + "); no successful restoration is claimed."); }
+            }
             CleanupParkRollback();
             if (parkRollback.Count != 0) PrintError("Unload could not remove " + parkRollback.Count + " unsaved park rollback parts; cleanup is incomplete.");
             if (parkItemDeliveries.Count != 0)
                 PrintError("Unload has " + parkItemDeliveries.Count + " unverified build-item deliveries. No replacement items were minted; private operator recovery may be required.");
             if (!parkDataBroken && parkData != null && SameParkWorld(parkData)) SaveParksSafely();
-            ready = false;
-            stallStartups.Clear();
-            foreach (Session session in sessions.Values.ToArray()) Stop(session.Player, SkateSessionReason.Unload);
             optedOut.Clear();
             diagnostics.Clear();
             ClearPractice();
@@ -3740,6 +3751,7 @@ namespace Oxide.Plugins
         {
             parkReady = false;
             if (parkDataBroken || parkClosing || parkStorageFailed || parkRefreshing) return;
+            parkProfileRestoreRefreshNeeded = false;
             parkRefreshing = true;
             try
             {
@@ -3754,12 +3766,24 @@ namespace Oxide.Plugins
                         foreach (string problem in ParkIdentityChanges(parkData, current)) PrintWarning(problem);
                         PrintWarning("Old park grouping belongs to another save/world generation; no old entity IDs were adopted.");
                     }
-                    foreach (ParkGroup group in parkProfileCollisions.Keys.ToArray()) RemoveParkProfileCollision(group);
+                    foreach (ParkGroup group in parkProfileCollisions.Keys.ToArray())
+                        if (!RemoveParkProfileCollision(group))
+                            throw new InvalidDataException("Previous-world park collision restoration is still pending; no new generation was adopted.");
+                    if (parkData != null && parkData.Groups.Any(ParkProfileRestorePending))
+                        throw new InvalidDataException("Previous-world park collision restoration is still pending; no new generation was adopted.");
                     parkData = current;
                 }
                 parkMembers.Clear();
                 foreach (ParkGroup group in parkData.Groups.ToArray())
                 {
+                    if (ParkProfileRestorePending(group))
+                    {
+                        parkProfileRestoreRefreshNeeded = true;
+                        // Keep the old group's identity intact while an earlier plugin's
+                        // independent owner still controls its colliders.
+                        foreach (ParkMember member in group.Members) parkMembers.Add(member.Id, group);
+                        continue;
+                    }
                     foreach (ParkMember member in group.Members.ToArray())
                     {
                         BuildingBlock block = FindParkBlock(member.Id);
@@ -3773,13 +3797,15 @@ namespace Oxide.Plugins
                 }
                 foreach (ParkGroup group in parkData.Groups.ToArray())
                 {
+                    if (ParkProfileRestorePending(group)) continue;
                     foreach (ParkMember member in group.Members.ToArray())
                         if (!ParkMatches(FindParkBlock(member.Id), group, member))
                         { group.Members.Remove(member); parkMembers.Remove(member.Id); }
                     if (group.Members.Count == 0) parkData.Groups.Remove(group);
                 }
                 foreach (ParkGroup group in parkProfileCollisions.Keys.ToArray())
-                    if (!parkData.Groups.Contains(group)) RemoveParkProfileCollision(group);
+                    if (!parkData.Groups.Contains(group) && !RemoveParkProfileCollision(group))
+                        throw new InvalidDataException("An earlier park collision restoration is still pending.");
                 current = NewParkData();
                 if (!SameParkGeneration(parkData, current))
                     throw new InvalidDataException("Save/world generation changed during park verification.\n" +
@@ -3791,6 +3817,9 @@ namespace Oxide.Plugins
                 }
                 foreach (ParkGroup group in parkData.Groups)
                 {
+                    if (ParkProfileRestorePending(group))
+                    { parkProfileRestoreRefreshNeeded = true; continue; }
+                    if (ParkRollbackOwnsGroup(group)) continue;
                     SkateParkKind kind;
                     SkateParkQuarterProfile profile;
                     if (!SkateParkLayout.TryKind(group.Kind, out kind) ||
@@ -3807,15 +3836,26 @@ namespace Oxide.Plugins
                                 throw new InvalidDataException("MEGA collision prefab verification failed.");
                             EnsureParkProfileCollision(kind, group, group.Members, megaDefinitions[0].Construction.bounds);
                         }
+                        catch (ParkProfileRestorePendingException)
+                        {
+                            parkProfileRestoreRefreshNeeded = true;
+                            PrintWarning("Saved MEGA collision restoration is independently owned; replacement verification will retry after body clearance.");
+                        }
                         catch (ParkProfileChangedException)
                         {
-                            RemoveParkProfileCollision(group);
-                            PrintWarning("A saved MEGA group has altered native grades, skins or scale; its original floor collision is retained.");
+                            if (!RemoveParkProfileCollision(group))
+                            {
+                                parkProfileRestoreRefreshNeeded = true;
+                                PrintWarning("An altered saved MEGA group is waiting for independently owned collision restoration.");
+                            }
+                            else PrintWarning("A saved MEGA group has altered native grades, skins or scale; its original floor collision is retained.");
                         }
                         catch (Exception error)
                         {
-                            RemoveParkProfileCollision(group);
-                            PrintWarning("Saved MEGA profile creation failed (" + error.GetType().Name + "); native floor collision is retained for that group.");
+                            bool restored = RemoveParkProfileCollision(group);
+                            if (!restored) parkProfileRestoreRefreshNeeded = true;
+                            PrintWarning("Saved MEGA profile creation failed (" + error.GetType().Name + "); " +
+                                (restored ? "native floor collision is retained for that group." : "independently owned collision restoration is pending."));
                         }
                         continue;
                     }
@@ -5001,29 +5041,41 @@ namespace Oxide.Plugins
                 !parkDataBroken && !parkStorageFailed && ReferenceEquals(parkData, data) && SameParkWorld(data);
         }
 
+        private void CleanupMegaProfileCollisionHealth()
+        {
+            // The caller owns parkBusy. Collision safety does not depend on writable park metadata.
+            foreach (var pair in parkProfileCollisions.ToArray())
+            {
+                if (!parkBusy || !ReferenceEquals(instance, this) || parkClosing || parkRefreshing || SaveRestore.IsSaving) return;
+                ParkProfileCollision current;
+                if (pair.Key.Kind != "mega-halfpipe" || !parkProfileCollisions.TryGetValue(pair.Key, out current) ||
+                    !ReferenceEquals(current, pair.Value)) continue;
+                bool healthy;
+                try { healthy = ParkMegaCollisionHealthy(pair.Key, current); }
+                catch (Exception) { healthy = false; }
+                if (!healthy)
+                {
+                    RemoveParkProfileCollision(pair.Key);
+                    PrintWarning("MEGA profile collision was invalidated; native floor collision restoration was requested.");
+                }
+            }
+        }
+
         private void CleanupWallAttachments()
         {
-            if (!ReferenceEquals(instance, this) || parkClosing || parkBusy || parkRefreshing || SaveRestore.IsSaving ||
-                parkDataBroken || parkStorageFailed || parkData == null || !SameParkWorld(parkData)) return;
-            ParkData data = parkData;
+            if (!ReferenceEquals(instance, this) || parkClosing || parkBusy || parkRefreshing || SaveRestore.IsSaving) return;
             parkBusy = true;
             try
             {
+                CleanupMegaProfileCollisionHealth();
+                if (parkProfileRestoreRefreshNeeded && parkRollback.Count == 0 && parkData != null &&
+                    CurrentWallCleanup(parkData) && !parkData.Groups.Any(ParkProfileRestorePending))
+                    InitializeParks();
+                if (parkData == null || !CurrentWallCleanup(parkData)) return;
+                ParkData data = parkData;
                 foreach (ParkGroup group in data.Groups.ToArray())
                 {
                     if (!CurrentWallCleanup(data)) return;
-                    ParkProfileCollision profileCollision;
-                    if (group.Kind == "mega-halfpipe" && parkProfileCollisions.TryGetValue(group, out profileCollision))
-                    {
-                        bool healthy;
-                        try { healthy = ParkMegaCollisionHealthy(group, profileCollision); }
-                        catch (Exception) { healthy = false; }
-                        if (!healthy)
-                        {
-                            RemoveParkProfileCollision(group);
-                            PrintWarning("MEGA profile collision was invalidated; native floor colliders were restored.");
-                        }
-                    }
                     if (group.Wall == null) continue;
                     if (WallMatches(FindParkBlock(group.Wall.Id), group.Wall))
                     {
@@ -5551,6 +5603,7 @@ namespace Oxide.Plugins
 
         private sealed class ParkProfileCollision
         {
+            public ParkGroup Identity;
             public GameObject Root;
             public Mesh Mesh;
             public float Datum;
@@ -5572,6 +5625,11 @@ namespace Oxide.Plugins
         private sealed class ParkProfileChangedException : Exception
         {
             public ParkProfileChangedException(string message) : base(message) { }
+        }
+
+        private sealed class ParkProfileRestorePendingException : Exception
+        {
+            public ParkProfileRestorePendingException() : base("MEGA native collision restoration is pending; held members must not be removed or replaced.") { }
         }
 
         private sealed class ParkProfileMeshState
@@ -5738,10 +5796,435 @@ namespace Oxide.Plugins
             return false;
         }
 
-        private void RemoveParkProfileCollision(ParkGroup group)
+        private const string ParkRestoreMarkerPrefix = "ShortcutSkate pending MEGA restoration ";
+
+        private static bool ParkRestoreMarkerExists(string marker)
+        {
+            return Resources.FindObjectsOfTypeAll<GameObject>().Any(value => value != null && value.name == marker);
+        }
+
+        private static bool ParkProfileRestorePending(ParkGroup group)
+        {
+            return group != null && ParkRestoreMarkerExists(ParkRestoreMarkerPrefix + group.Id);
+        }
+
+        private bool ParkProfileRestoreHeld(BaseEntity entity)
+        {
+            if (entity == null || entity.IsDestroyed) return false;
+            string marker; ulong id = ParkId(entity);
+            if (parkProfileRestoreHolds.TryGetValue(id, out marker))
+            {
+                if (ParkRestoreMarkerExists(marker)) return true;
+                parkProfileRestoreHolds.Remove(id);
+            }
+            // A fresh plugin assembly has no old instance cache. Retained metadata plus the
+            // assembly-neutral Unity marker still protects held members after a reload.
+            if (id != 0 && parkData != null && parkData.Groups != null && parkData.Groups.Any(group =>
+                group.Members.Any(member => member.Id == id) && ParkProfileRestorePending(group))) return true;
+            if (parkData != null && !parkDataBroken && parkData.Groups != null) return false;
+            GameObject[] pending = Resources.FindObjectsOfTypeAll<GameObject>().Where(value => value != null &&
+                value.activeInHierarchy && value.name.StartsWith(ParkRestoreMarkerPrefix, StringComparison.Ordinal)).ToArray();
+            if (pending.Length == 0) return false;
+            // Missing metadata grants denial only. A bounded marker region never grants
+            // ownership, adoption, restoration or deletion authority over this entity.
+            try
+            {
+                Bounds body = entity.WorldSpaceBounds().ToBounds();
+                if (!Coordinate(body.center) || !Coordinate(body.size) || body.size.x <= 0 || body.size.y <= 0 || body.size.z <= 0) return true;
+                foreach (GameObject value in pending)
+                {
+                    Vector3 center = value.transform.position, size = value.transform.localScale;
+                    if (!Coordinate(center) || !Coordinate(size) || size.x <= 0 || size.y <= 0 || size.z <= 0 ||
+                        new Bounds(center, size).Intersects(body)) return true;
+                }
+            }
+            catch (Exception) { return true; }
+            return false;
+        }
+
+        private static ParkGroup ParkRestoreIdentity(ParkGroup group, IEnumerable<ParkMember> members)
+        {
+            return new ParkGroup { Id = group.Id, Kind = group.Kind, Owner = group.Owner,
+                AnchorX = group.AnchorX, AnchorY = group.AnchorY, AnchorZ = group.AnchorZ, AnchorYaw = group.AnchorYaw,
+                Members = members.Select(part => new ParkMember { Index = part.Index, Id = part.Id, Prefab = part.Prefab,
+                    X = part.X, Y = part.Y, Z = part.Z, Yaw = part.Yaw, Pitch = part.Pitch }).ToList() };
+        }
+
+        private static bool ParkRestoreLocalBounds(Collider collider, out Bounds bounds)
+        {
+            bounds = new Bounds();
+            BoxCollider box = collider as BoxCollider;
+            MeshCollider mesh = collider as MeshCollider;
+            if (box != null) bounds = new Bounds(box.center, box.size);
+            else if (mesh != null && mesh.sharedMesh != null) bounds = mesh.sharedMesh.bounds;
+            else return false;
+            return Coordinate(bounds.center) && Coordinate(bounds.size) &&
+                bounds.size.x > 0 && bounds.size.y > 0 && bounds.size.z > 0;
+        }
+
+        private static bool ParkRestoreOriginalOwned(ParkProfileCollision collision, Collider collider)
+        {
+            ParkProfileColliderState state = collision.OriginalShapes.FirstOrDefault(value => ReferenceEquals(value.Collider, collider));
+            if (state == null || state.Owner == null || collision.Identity == null ||
+                !ReferenceEquals(collider.ToBaseEntity(), state.Owner)) return false;
+            int index = collision.Members.FindIndex(value => ReferenceEquals(value, state.Owner));
+            return index >= 0 && index < collision.Identity.Members.Count &&
+                ParkMatches(state.Owner, collision.Identity, collision.Identity.Members[index]);
+        }
+
+        private static bool ParkProspectiveBounds(ParkProfileCollision collision, out List<Bounds> values)
+        {
+            values = new List<Bounds>();
+            foreach (Collider collider in collision.Disabled)
+            {
+                if (collider == null || collider.enabled) continue;
+                if (!ParkRestoreOriginalOwned(collision, collider)) return false;
+                Bounds local;
+                if (!ParkRestoreLocalBounds(collider, out local)) return false;
+                Bounds world = new Bounds(collider.transform.TransformPoint(local.min), Vector3.zero);
+                for (int i = 1; i < 8; i++)
+                {
+                    Vector3 point = collider.transform.TransformPoint(new Vector3((i & 1) == 0 ? local.min.x : local.max.x,
+                        (i & 2) == 0 ? local.min.y : local.max.y, (i & 4) == 0 ? local.min.z : local.max.z));
+                    if (!Coordinate(point)) return false;
+                    world.Encapsulate(point);
+                }
+                if (!Coordinate(world.center) || !Coordinate(world.size)) return false;
+                world.Expand(0.02f);
+                values.Add(world);
+            }
+            return true;
+        }
+
+        private static BasePlayer[] ParkRestorePlayers()
+        {
+            return BasePlayer.activePlayerList.Concat(BasePlayer.sleepingPlayerList)
+                .Where(player => player != null && !player.IsDestroyed).Distinct().ToArray();
+        }
+
+        private static bool ParkRestoreBody(BasePlayer player, out Bounds body)
+        {
+            body = player.WorldSpaceBounds().ToBounds();
+            body.Encapsulate(player.GetBounds(false));
+            body.Encapsulate(new Bounds(player.transform.position + Vector3.up * 0.6f, Vector3.one * 0.68f));
+            body.Expand(0.02f);
+            return Coordinate(body.center) && Coordinate(body.size) && body.size.x > 0 && body.size.y > 0 && body.size.z > 0;
+        }
+
+        private static bool ParkRestoreOccupied(List<Bounds> originals, IEnumerable<BasePlayer> players)
+        {
+            foreach (BasePlayer player in players)
+            {
+                Bounds body;
+                if (!ParkRestoreBody(player, out body) || originals.Any(value => value.Intersects(body))) return true;
+            }
+            return false;
+        }
+
+        private static Bounds ParkRestoreEnvelope(ParkProfileCollision collision)
+        {
+            ParkGroup identity = collision.Identity;
+            Bounds result = new Bounds(new Vector3((float)identity.AnchorX, (float)identity.AnchorY, (float)identity.AnchorZ), Vector3.zero);
+            foreach (ParkMember part in identity.Members)
+                result.Encapsulate(new Bounds(ParkPosition(part), Vector3.one * 4));
+            result.Expand(2f);
+            return result;
+        }
+
+        private static bool ParkRestoreHorizontalOverlap(Bounds body, Bounds envelope)
+        {
+            return body.min.x <= envelope.max.x && body.max.x >= envelope.min.x &&
+                body.min.z <= envelope.max.z && body.max.z >= envelope.min.z;
+        }
+
+        private static bool ParkRetainedMegaProfileHealthy(ParkProfileCollision collision)
+        {
+            ParkGroup identity = collision.Identity;
+            if (identity == null || identity.Members.Count != 80 || collision.Members.Count != 80 || collision.Patches.Count != 64) return false;
+            for (int i = 0; i < identity.Members.Count; i++)
+                if (!ParkMatches(collision.Members[i], identity, identity.Members[i]) || collision.Members[i].transform.lossyScale != Vector3.one) return false;
+            Vector3 origin = new Vector3((float)identity.AnchorX, (float)identity.AnchorY + collision.Datum, (float)identity.AnchorZ);
+            Quaternion rotation = Quaternion.Euler(0, (float)identity.AnchorYaw, 0);
+            for (int i = 0; i < collision.Patches.Count; i++)
+            {
+                ParkProfilePatch patch = collision.Patches[i];
+                if (patch.Index != i || patch.Root == null || !patch.Root.activeInHierarchy || patch.Shell == null ||
+                    !patch.Shell.enabled || patch.Shell.isTrigger || patch.Shell.convex || patch.Mesh == null ||
+                    patch.Shell.sharedMesh != patch.Mesh || patch.Shape == null || !patch.Shape.Matches(patch.Mesh) ||
+                    !ReferenceEquals(patch.Shell.ToBaseEntity(), collision.Members[i]) ||
+                    patch.Root.transform.parent != collision.Members[i].transform || patch.Root.transform.lossyScale != Vector3.one ||
+                    patch.Root.layer != LayerMask.NameToLayer("Construction") ||
+                    !((patch.Root.transform.position - origin).sqrMagnitude <= 4e-6f) || !(Quaternion.Angle(patch.Root.transform.rotation, rotation) <= 0.01f)) return false;
+                Collider[] owned = patch.Root.GetComponentsInChildren<Collider>(true);
+                if (owned.Length != 1 || !ReferenceEquals(owned[0], patch.Shell)) return false;
+            }
+            return true;
+        }
+
+        private sealed class ParkRestoreExit
+        {
+            public BasePlayer Player;
+            public Vector3 Position;
+            public Bounds Body;
+            public Collider Ground;
+            public Vector3 GroundPoint;
+        }
+
+        private object OnStructureUpgrade(BuildingBlock block, BasePlayer player, BuildingGrade.Enum grade, ulong skin)
+        {
+            if (block == null) return null;
+            ParkGroup group = parkProfileCollisions.FirstOrDefault(pair => pair.Key.Kind == "mega-halfpipe" &&
+                pair.Value.Members.Any(member => ReferenceEquals(member, block))).Key;
+            bool held = ParkProfileRestoreHeld(block);
+            if (group == null && !held) return null;
+            bool occupied = held;
+            if (!occupied)
+            {
+                Bounds envelope = ParkRestoreEnvelope(parkProfileCollisions[group]);
+                foreach (BasePlayer bodyPlayer in ParkRestorePlayers())
+                {
+                    Bounds body;
+                    if (!ParkRestoreBody(bodyPlayer, out body) || body.Intersects(envelope)) { occupied = true; break; }
+                }
+            }
+            if (occupied || !RemoveParkProfileCollision(group))
+            {
+                if (player != null) player.ConsoleMessage("Leave the MEGA park and retry the upgrade after pending collision restoration completes.");
+                return false;
+            }
+            // Rust can still refuse this pre-cost hook's upgrade after we return.
+            // Reconcile unchanged groups too, so a rejected upgrade cannot remove their riding surface.
+            parkProfileRestoreRefreshNeeded = true;
+            return null;
+        }
+
+        private static bool ParkRestoreExitCandidate(BasePlayer player, Bounds body, Vector3 hint, List<Bounds> originals,
+            List<Bounds> exclusions, BasePlayer[] players, List<ParkRestoreExit> reserved, Collider[] scratch, out ParkRestoreExit exit)
+        {
+            exit = null;
+            if (!Coordinate(hint)) return false;
+            RaycastHit hit;
+            if (!Physics.Raycast(hint + Vector3.up * 12, Vector3.down, out hit, 40f, ~0, QueryTriggerInteraction.Ignore) ||
+                hit.collider == null || !(hit.normal.y >= 0.98f) || !Coordinate(hit.point) ||
+                WaterLevel.Test(hit.point + Vector3.up * 0.05f, true, true, player)) return false;
+            BuildingBlock block = hit.collider.ToBaseEntity() as BuildingBlock;
+            if (!(hit.collider is TerrainCollider) && (block == null || block.IsDestroyed || block.GetParentEntity() != null ||
+                (block.ShortPrefabName != "foundation" && block.ShortPrefabName != "foundation.triangle" && block.ShortPrefabName != "floor") ||
+                hit.collider.gameObject.name.StartsWith("ShortcutSkate", StringComparison.Ordinal))) return false;
+            Vector3 position = hit.point + Vector3.up * (0.25f - (body.min.y - player.transform.position.y));
+            Bounds proposed = new Bounds(body.center + position - player.transform.position, body.size);
+            if (!Coordinate(position) || originals.Any(value => value.Intersects(proposed)) ||
+                exclusions.Any(value => ParkRestoreHorizontalOverlap(proposed, value)) || reserved.Any(value => value.Body.Intersects(proposed))) return false;
+            foreach (BasePlayer other in players)
+            {
+                if (ReferenceEquals(other, player)) continue;
+                Bounds otherBody;
+                if (!ParkRestoreBody(other, out otherBody) || otherBody.Intersects(proposed)) return false;
+            }
+            int count = Physics.OverlapBoxNonAlloc(proposed.center, proposed.extents, scratch, Quaternion.identity, ~0, QueryTriggerInteraction.Ignore);
+            if (count >= scratch.Length) return false;
+            for (int i = 0; i < count; i++)
+                if (scratch[i] != null && !scratch[i].transform.IsChildOf(player.transform)) return false;
+            exit = new ParkRestoreExit { Player = player, Position = position, Body = proposed, Ground = hit.collider, GroundPoint = hit.point };
+            return true;
+        }
+
+        private bool ParkTryRestoreExits(ParkProfileCollision collision, List<Bounds> originals, BasePlayer[] players)
+        {
+            var affected = new List<BasePlayer>();
+            foreach (BasePlayer player in players)
+            {
+                Bounds body;
+                if (!ParkRestoreBody(player, out body)) return false;
+                if (originals.Any(value => value.Intersects(body))) affected.Add(player);
+            }
+            if (affected.Count == 0) return true;
+            if (affected.Count > 128) return false;
+            var exclusions = new List<Bounds>(); var allOriginals = new List<Bounds>(originals);
+            foreach (ParkProfileCollision current in parkProfileCollisions.Values.Where(value => value.Identity != null))
+            {
+                exclusions.Add(ParkRestoreEnvelope(current));
+                List<Bounds> otherBounds;
+                if (!ParkProspectiveBounds(current, out otherBounds)) return false;
+                allOriginals.AddRange(otherBounds);
+            }
+            foreach (GameObject marker in Resources.FindObjectsOfTypeAll<GameObject>())
+                if (marker != null && marker.name.StartsWith(ParkRestoreMarkerPrefix, StringComparison.Ordinal))
+                    exclusions.Add(new Bounds(marker.transform.position, marker.transform.localScale));
+            Bounds envelope = ParkRestoreEnvelope(collision);
+            var hints = new List<Vector3>();
+            foreach (float offset in new[] { 2f, 5f, 10f })
+                for (int i = 0; i < 16; i++)
+                {
+                    float angle = i * Mathf.PI / 8;
+                    hints.Add(new Vector3(envelope.center.x + (envelope.extents.x + offset) * Mathf.Cos(angle),
+                        envelope.max.y, envelope.center.z + (envelope.extents.z + offset) * Mathf.Sin(angle)));
+                }
+            // Pose sampling only: never Respawn, ResetPlayerState or an inventory/progress operation.
+            for (int i = 0; i < 2; i++)
+            {
+                BasePlayer.SpawnPoint point = SpawnHandler.GetSpawnPoint();
+                if (point == null || !Coordinate(point.pos)) continue;
+                for (int x = -1; x <= 1; x++) for (int z = -1; z <= 1; z++)
+                    hints.Add(point.pos + new Vector3(x * 2, 0, z * 2));
+            }
+            var exits = new List<ParkRestoreExit>(); var scratch = new Collider[128];
+            foreach (BasePlayer player in affected)
+            {
+                if (!player.IsAlive() || player.isMounted || player.GetParentEntity() != null) return false;
+                Bounds body;
+                if (!ParkRestoreBody(player, out body)) return false;
+                ParkRestoreExit selected = null;
+                foreach (Vector3 hint in hints)
+                    if (ParkRestoreExitCandidate(player, body, hint, allOriginals, exclusions, players, exits, scratch, out selected)) break;
+                if (selected == null) return false;
+                exits.Add(selected);
+            }
+            // Every destination is reserved and verified before the first body moves.
+            foreach (ParkRestoreExit exit in exits)
+            {
+                if (exit.Player == null || exit.Player.IsDestroyed || exit.Player.isMounted || exit.Player.GetParentEntity() != null ||
+                    exit.Ground == null || !exit.Ground.enabled || !exit.Ground.gameObject.activeInHierarchy) return false;
+                Bounds body; ParkRestoreExit rechecked;
+                if (!ParkRestoreBody(exit.Player, out body) || !ParkRestoreExitCandidate(exit.Player, body, exit.GroundPoint,
+                    allOriginals, exclusions, ParkRestorePlayers(), exits.Where(value => !ReferenceEquals(value, exit)).ToList(), scratch, out rechecked) ||
+                    !ReferenceEquals(rechecked.Ground, exit.Ground) || (rechecked.Position - exit.Position).sqrMagnitude > 4e-6f) return false;
+                Stop(exit.Player, SkateSessionReason.Unload);
+                exit.Player.Teleport(exit.Position);
+            }
+            Physics.SyncTransforms();
+            foreach (ParkRestoreExit exit in exits)
+            {
+                Bounds body; ParkRestoreExit rechecked;
+                if (exit.Player == null || !ParkRestoreBody(exit.Player, out body) ||
+                    !ParkRestoreExitCandidate(exit.Player, body, exit.GroundPoint, allOriginals, exclusions, ParkRestorePlayers(),
+                        exits.Where(value => !ReferenceEquals(value, exit)).ToList(), scratch, out rechecked) ||
+                    !ReferenceEquals(rechecked.Ground, exit.Ground) ||
+                    (rechecked.Position - exit.Player.transform.position).sqrMagnitude > 4e-6f) return false;
+            }
+            return !ParkRestoreOccupied(originals, ParkRestorePlayers());
+        }
+
+        private static bool ParkRestoreComplete(ParkProfileCollision collision)
+        {
+            // The retained list never grants authority over a collider reparented elsewhere.
+            foreach (Collider collider in collision.Disabled)
+            {
+                if (collider == null || collider.enabled) continue;
+                if (!ParkRestoreOriginalOwned(collision, collider)) return false;
+            }
+            foreach (Collider collider in collision.Disabled) if (collider != null && !collider.enabled) collider.enabled = true;
+            Physics.SyncTransforms();
+            foreach (ParkProfilePatch patch in collision.Patches) if (patch.Root != null) patch.Root.SetActive(false);
+            if (collision.Root != null) collision.Root.SetActive(false);
+            Physics.SyncTransforms();
+            foreach (ParkProfilePatch patch in collision.Patches)
+            {
+                if (patch.Root != null) UnityEngine.Object.Destroy(patch.Root);
+                if (patch.Mesh != null) UnityEngine.Object.Destroy(patch.Mesh);
+            }
+            if (collision.Root != null) UnityEngine.Object.Destroy(collision.Root);
+            if (collision.Mesh != null) UnityEngine.Object.Destroy(collision.Mesh);
+            return true;
+        }
+
+        private bool ParkDeferProfileRestore(ParkGroup group, ParkProfileCollision collision)
+        {
+            string marker = ParkRestoreMarkerPrefix + group.Id;
+            bool verified;
+            try { verified = ParkRetainedMegaProfileHealthy(collision); }
+            catch (Exception) { verified = false; }
+            GameObject owner = new GameObject(marker);
+            owner.SetActive(false);
+            owner.AddComponent<ParkProfileRestoreOwner>().Initialize(group, collision, verified);
+            foreach (BuildingBlock member in collision.Members)
+                if (member != null && ParkId(member) != 0) parkProfileRestoreHolds[ParkId(member)] = marker;
+            parkProfileCollisions.Remove(group);
+            owner.SetActive(true);
+            PrintWarning("MEGA native floor restoration is pending; an independent Unity owner retains the collision record until body clearance is verified.");
+            return false;
+        }
+
+        private sealed class ParkProfileRestoreOwner : MonoBehaviour
+        {
+            private ParkProfileCollision collision;
+            private float nextCheck;
+            private bool complete, quitting, warned;
+
+            public void Initialize(ParkGroup group, ParkProfileCollision value, bool verified)
+            {
+                collision = value;
+                gameObject.name = ParkRestoreMarkerPrefix + group.Id;
+                Bounds envelope = ParkRestoreEnvelope(value);
+                transform.position = envelope.center; transform.localScale = envelope.size;
+                if (!verified) WarnIntegrity();
+            }
+
+            private void WarnIntegrity()
+            {
+                if (warned) return;
+                warned = true;
+                UnityEngine.Debug.LogError("ShortcutSkate MEGA restoration is pending with unverified replacement integrity; no occupied native colliders were force-enabled.");
+            }
+
+            private void Update()
+            {
+                if (complete || collision == null || UnityEngine.Time.realtimeSinceStartup < nextCheck) return;
+                nextCheck = UnityEngine.Time.realtimeSinceStartup + 0.25f;
+                try
+                {
+                    BasePlayer[] players = ParkRestorePlayers(); List<Bounds> originals;
+                    if (players.Length != 0 && (!ParkProspectiveBounds(collision, out originals) || ParkRestoreOccupied(originals, players)))
+                    {
+                        if (!ParkRetainedMegaProfileHealthy(collision)) WarnIntegrity();
+                        return;
+                    }
+                    if (!ParkRestoreComplete(collision)) { WarnIntegrity(); return; }
+                    complete = true; collision = null;
+                    UnityEngine.Debug.Log("ShortcutSkate pending MEGA native floor restoration completed after verified body clearance.");
+                    UnityEngine.Object.Destroy(gameObject);
+                }
+                catch (Exception) { WarnIntegrity(); }
+            }
+
+            private void OnApplicationQuit() { quitting = true; }
+
+            private void OnDestroy()
+            {
+                if (complete || quitting || collision == null) return;
+                // An independent Unity owner must not silently lose its held record on plugin unload.
+                GameObject replacement = new GameObject(gameObject.name);
+                replacement.SetActive(false);
+                replacement.AddComponent<ParkProfileRestoreOwner>().Initialize(collision.Identity, collision, false);
+                replacement.SetActive(true);
+            }
+        }
+
+        private bool RemoveParkProfileCollision(ParkGroup group)
         {
             ParkProfileCollision collision;
-            if (!parkProfileCollisions.TryGetValue(group, out collision)) return;
+            if (!parkProfileCollisions.TryGetValue(group, out collision)) return !ParkProfileRestorePending(group);
+            if (group.Kind == "mega-halfpipe")
+            {
+                // Partial activation may have left every native collider enabled. Removing
+                // unused replacement objects cannot introduce a new native-body overlap.
+                bool clear = !collision.Disabled.Any(collider => collider != null && !collider.enabled);
+                try
+                {
+                    BasePlayer[] players = ParkRestorePlayers(); List<Bounds> originals;
+                    if (!clear) clear = players.Length == 0 || (ParkProspectiveBounds(collision, out originals) &&
+                        (!ParkRestoreOccupied(originals, players) || ParkTryRestoreExits(collision, originals, players)));
+                    // Re-read every current body immediately before changing native collision.
+                    players = ParkRestorePlayers();
+                    if (clear && players.Length != 0 && collision.Disabled.Any(collider => collider != null && !collider.enabled))
+                        clear = ParkProspectiveBounds(collision, out originals) && !ParkRestoreOccupied(originals, players);
+                }
+                catch (Exception) { clear = false; }
+                if (!clear) return ParkDeferProfileRestore(group, collision);
+                if (!ParkRestoreComplete(collision)) return ParkDeferProfileRestore(group, collision);
+                parkProfileCollisions.Remove(group);
+                return true;
+            }
             parkProfileCollisions.Remove(group);
             foreach (Collider collider in collision.Disabled)
                 if (collider != null) collider.enabled = true;
@@ -5755,6 +6238,7 @@ namespace Oxide.Plugins
             }
             if (collision.Root != null) UnityEngine.Object.Destroy(collision.Root);
             if (collision.Mesh != null) UnityEngine.Object.Destroy(collision.Mesh);
+            return true;
         }
 
         private static void ParkQuarterQuad(List<Vector3> vertices, List<int> triangles,
@@ -5883,24 +6367,27 @@ namespace Oxide.Plugins
         private void EnsureParkProfileCollision(SkateParkKind kind, ParkGroup group, IEnumerable<ParkMember> members, Bounds floor)
         {
             bool mega = kind == SkateParkKind.MegaHalfpipe;
+            // Older plugin assemblies can still own a deferred restore. Never capture their
+            // replacement colliders as if they were the native floor or create a second owner.
+            if (mega && ParkProfileRestorePending(group)) throw new ParkProfileRestorePendingException();
             SkateParkQuarterProfile profile = new SkateParkQuarterProfile();
             if (!mega && !SkateParkLayout.TryQuarterProfile(kind, out profile)) return;
             ParkMember[] parts = members.OrderBy(member => member.Index).ToArray();
             if (parts.Length != SkateParkLayout.PartCount(kind))
-            { RemoveParkProfileCollision(group); return; }
+            { if (!RemoveParkProfileCollision(group)) throw new ParkProfileRestorePendingException(); return; }
             var blocks = new List<BuildingBlock>();
             for (int i = 0; i < parts.Length; i++)
             {
                 BuildingBlock block = FindParkBlock(parts[i].Id);
                 if (parts[i].Index != i || !ParkMatches(block, group, parts[i]))
                 {
-                    RemoveParkProfileCollision(group);
+                    if (!RemoveParkProfileCollision(group)) throw new ParkProfileRestorePendingException();
                     throw new InvalidDataException("Park profile collision requires the complete verified native group.");
                 }
                 if (mega && (block.grade != (i < 16 ? BuildingGrade.Enum.Stone : i < 72 ? BuildingGrade.Enum.Metal : BuildingGrade.Enum.Wood) ||
                     block.skinID != 0 || block.transform.lossyScale != Vector3.one))
                 {
-                    RemoveParkProfileCollision(group);
+                    if (!RemoveParkProfileCollision(group)) throw new ParkProfileRestorePendingException();
                     throw new ParkProfileChangedException("MEGA collision requires the original native grades, skins and scale.");
                 }
                 blocks.Add(block);
@@ -5915,10 +6402,10 @@ namespace Oxide.Plugins
                     try { healthy = ParkMegaCollisionHealthy(group, existing, parts, blocks); }
                     catch (Exception) { healthy = false; }
                     if (healthy) return;
-                    RemoveParkProfileCollision(group);
+                    if (!RemoveParkProfileCollision(group)) throw new ParkProfileRestorePendingException();
                     throw new InvalidDataException("MEGA profile collision changed; native floor colliders were restored.");
                 }
-                RemoveParkProfileCollision(group);
+                if (!RemoveParkProfileCollision(group)) throw new ParkProfileRestorePendingException();
             }
             int layer = LayerMask.NameToLayer("Construction");
             if (layer < 0) throw new InvalidDataException("Park profile collision layer is unavailable.");
@@ -5927,7 +6414,7 @@ namespace Oxide.Plugins
             float datum = mega ? blocks[0].bounds.max.y : floor.max.y;
             if (mega && (float.IsNaN(datum) || float.IsInfinity(datum) || datum <= 0 || datum >= 0.5f))
                 throw new InvalidDataException("MEGA flat-floor riding datum is unavailable.");
-            var collision = new ParkProfileCollision();
+            var collision = new ParkProfileCollision { Identity = mega ? ParkRestoreIdentity(group, parts) : null };
             parkProfileCollisions.Add(group, collision);
             try
             {
@@ -6010,7 +6497,7 @@ namespace Oxide.Plugins
             }
             catch
             {
-                RemoveParkProfileCollision(group);
+                if (!RemoveParkProfileCollision(group)) throw new ParkProfileRestorePendingException();
                 throw;
             }
         }
@@ -6873,12 +7360,20 @@ namespace Oxide.Plugins
                     SkateParkSelections.TryApply(request.Selection.State, SkateParkSelectionAction.PlacementFailed,
                         player != null && player.IsAdmin, parkReady, clock.Elapsed.TotalSeconds, null, out retained))
                     request.Selection.State = retained;
+                // Do not delete held entities, erase their metadata or mint a refund
+                // while a restoration owner is protecting overlapping player bodies.
+                if (!RemoveParkProfileCollision(group))
+                {
+                    parkReady = false;
+                    if (request.ItemSpent) request.RefundClaimed = true;
+                    failure = error.Message + " Collision restoration is pending; park parts remain tracked and no replacement item was issued.";
+                    return false;
+                }
                 if (recorded)
                 {
                     request.Data.Groups.Remove(group);
                     foreach (ParkMember part in parts) parkMembers.Remove(part.Id);
                 }
-                RemoveParkProfileCollision(group);
                 CleanupParkRollback();
                 bool rollbackSaved = !recorded;
                 if (recorded)
@@ -6962,6 +7457,12 @@ namespace Oxide.Plugins
                 BaseEntity.saveList != null && !BaseEntity.saveList.Contains(entity);
         }
 
+        private bool ParkRollbackOwnsGroup(ParkGroup group)
+        {
+            return group != null && parkRollback.Any(receipt => receipt.Lifetime != null &&
+                group.Members.Any(member => member.Id == receipt.Lifetime.Id));
+        }
+
         private void CleanupParkRollback()
         {
             // Kill hooks can unload the plugin and reenter this queue before destruction completes.
@@ -6974,6 +7475,7 @@ namespace Oxide.Plugins
                     ParkRollbackReceipt receipt = parkRollback[i];
                     try
                     {
+                        if (ParkProfileRestoreHeld(receipt.Entity)) continue;
                         if (!ParkRollbackRemoved(receipt))
                         {
                             // Unknown/partially spawned objects are retained; do not guess a lifetime.
@@ -7020,6 +7522,11 @@ namespace Oxide.Plugins
 
         private object OnStructureDemolish(DecayEntity entity, BasePlayer player, bool immediate)
         {
+            if (ParkProfileRestoreHeld(entity))
+            {
+                if (player != null) player.ConsoleMessage("Park collision restoration is pending. Leave the park and retry demolition once it is clear.");
+                return false;
+            }
             if (!ReferenceEquals(parkDemolitionHookBlock, null) && ReferenceEquals(entity, parkDemolitionHookBlock) && ReferenceEquals(player, parkDemolitionHookPlayer) &&
                 immediate == parkDemolitionHookImmediate && parkBusy) return null;
             ParkGroup group = VerifiedParkGroup(entity as BuildingBlock);
@@ -7085,6 +7592,8 @@ namespace Oxide.Plugins
                     if (parkClosing || !player.IsConnected || !player.CanInteract() || (immediate && !player.IsAdmin) ||
                         !ParkMatches(blocks[i], group, group.Members[i]))
                         throw new InvalidDataException("A park member changed during demolition permission checks.");
+                if (!RemoveParkProfileCollision(group))
+                    throw new InvalidDataException("Park collision restoration is pending. No recovery was claimed and no park member was removed.");
                 if (recover)
                 {
                     if (!ReferenceEquals(instance, this) || !ReferenceEquals(data, parkData) || !SameParkWorld(data) ||
@@ -7165,8 +7674,9 @@ namespace Oxide.Plugins
 
         private void PruneDestroyedParkMembers(ParkGroup group)
         {
+            if (ParkProfileRestorePending(group)) return;
             if (group.Members.Any(member => !ParkMatches(FindParkBlock(member.Id), group, member)))
-                RemoveParkProfileCollision(group);
+                if (!RemoveParkProfileCollision(group)) return;
             if (group.Wall != null && (!CurrentWallCleanup(parkData) || !parkData.Groups.Contains(group))) return;
             bool changed = false;
             foreach (ParkMember member in group.Members.ToArray())
