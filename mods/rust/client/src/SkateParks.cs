@@ -274,6 +274,7 @@ public static class SkateParks
         // Cells of a metre, for the neighbourhood searches.
         var cells = new Dictionary<long, List<int>>();
         for (var i = 0; i < blocks.Count; i++) { var key = Cell(blocks[i].Position); List<int> l; if (!cells.TryGetValue(key, out l)) cells[key] = l = new List<int>(); l.Add(i); }
+        MegaNearMiss(blocks, cells, taken);
         var matched = new List<int>();
         // Pitched kinds first (the most distinctive), the halfpipe before the quarterpipe it contains.
         var order = new[] { Kind.MegaHalfpipe, Kind.Halfpipe, Kind.LargeQuarterPipe, Kind.MiniQuarterPipe, Kind.HalfWallKicker, Kind.QuarterPipe, Kind.Funbox, Kind.Kicker, Kind.Bank, Kind.LongLedge, Kind.LedgeHigh, Kind.LedgeLow };
@@ -304,6 +305,79 @@ public static class SkateParks
         Assemblies = placed.Count;
         var drawn = 0; foreach (var p in placed) if (p.Root != null) drawn++;
         Drawn = drawn;
+    }
+
+    // A MEGA kit the client can't match whole: its 9 and 27 degree chords would otherwise be taken
+    // for a bank and a kicker on one side (#495). The best partial match from any flat floor, at
+    // least half the kit, keeps its blocks from the smaller kinds; the first part missing is logged
+    // with the nearest block of its prefab, once for each new outcome.
+    private static string megaMiss = "";
+    private static void MegaNearMiss(List<Block> blocks, Dictionary<long, List<int>> cells, HashSet<int> taken)
+    {
+        var layout = Layout(Kind.MegaHalfpipe);
+        var best = new List<int>(); var bestMissing = -1; var bestYaw = 0f; var bestAt = Vector3.zero;
+        var found = new List<int>();
+        for (var i = 0; i < blocks.Count; i++)
+        {
+            var b = blocks[i];
+            if (taken.Contains(b.Id) || b.Prefab != FloorPrefab || Math.Abs(b.Pitch) > AngleTolerance) continue;
+            var anchorYaw = b.Yaw;
+            found.Clear();
+            var missing = -1;
+            var sin = (float)Math.Sin(anchorYaw * Degrees); var cos = (float)Math.Cos(anchorYaw * Degrees);
+            for (var k = 0; k < layout.Length; k++)
+            {
+                var hit = MegaPartAt(layout, k, blocks, cells, taken, b, sin, cos, anchorYaw, found);
+                if (hit >= 0) found.Add(hit); else if (missing < 0) missing = k;
+            }
+            if (found.Count > best.Count) { best = new List<int>(found); bestMissing = missing; bestYaw = anchorYaw; bestAt = b.Position; }
+        }
+        if (best.Count < layout.Length / 2 || bestMissing < 0)
+        {
+            if (megaMiss.Length > 0 && best.Count < layout.Length / 2) megaMiss = "";
+            return;
+        }
+        foreach (var m in best) taken.Add(blocks[m].Id);
+        var part = layout[bestMissing];
+        var first = blocks[best[0]];
+        var s = (float)Math.Sin(bestYaw * Degrees); var c = (float)Math.Cos(bestYaw * Degrees);
+        var dr = (float)(part.Right - layout[0].Right); var df = (float)(part.Forward - layout[0].Forward); var dh = (float)(part.Height - layout[0].Height);
+        var want = first.Position + new Vector3(dr * c + df * s, dh, -dr * s + df * c);
+        var near = -1; var nearD = float.MaxValue;
+        for (var i = 0; i < blocks.Count; i++)
+        {
+            if (blocks[i].Prefab != part.Prefab) continue;
+            var d = Vector3.Distance(blocks[i].Position, want);
+            if (d < nearD) { nearD = d; near = i; }
+        }
+        var line = "MEGA kit at " + Out.V1(bestAt) + " not whole: " + best.Count + "/" + layout.Length + " parts, first missing #" + bestMissing +
+            " (" + (part.Prefab == FloorPrefab ? "floor" : "low wall") + " pitch " + part.Pitch.ToString("F0") + " yaw " + (bestYaw + part.Yaw).ToString("F0") + " at " + Out.V1(want) + ")" +
+            (near < 0 ? ", no block of that prefab in reach" : ", nearest " + nearD.ToString("F2") + " m away, pitch " + blocks[near].Pitch.ToString("F1") + " yaw " + blocks[near].Yaw.ToString("F1") + " at " + Out.V1(blocks[near].Position)) +
+            "; its blocks are kept from the smaller kinds";
+        var key = best.Count + "/" + bestMissing;
+        if (key == megaMiss) return;
+        megaMiss = key;
+        Say(line);
+    }
+    private static int MegaPartAt(Part[] layout, int k, List<Block> blocks, Dictionary<long, List<int>> cells, HashSet<int> taken, Block first, float sin, float cos, float anchorYaw, List<int> found)
+    {
+        var part = layout[k];
+        var dr = (float)(part.Right - layout[0].Right); var df = (float)(part.Forward - layout[0].Forward); var dh = (float)(part.Height - layout[0].Height);
+        var want = first.Position + new Vector3(dr * cos + df * sin, dh, -dr * sin + df * cos);
+        var wantYaw = anchorYaw + (float)part.Yaw;
+        var best = -1; var bestDistance = PositionTolerance;
+        foreach (var i in Near(cells, want))
+        {
+            var b = blocks[i];
+            if (b.Prefab != part.Prefab || taken.Contains(b.Id) || found.Contains(i)) continue;
+            var d = Vector3.Distance(b.Position, want);
+            if (d > bestDistance) continue;
+            var yawOff = Math.Abs(Delta(wantYaw, b.Yaw));
+            if (part.Prefab != FloorPrefab) { yawOff %= 90f; yawOff = Math.Min(yawOff, 90f - yawOff); }
+            if (yawOff > AngleTolerance || Math.Abs(Delta((float)part.Pitch, b.Pitch)) > AngleTolerance) continue;
+            best = i; bestDistance = d;
+        }
+        return best;
     }
 
     // Every part of the layout has a block of its prefab within the tolerances, taking the given
