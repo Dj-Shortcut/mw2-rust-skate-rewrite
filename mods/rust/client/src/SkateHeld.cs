@@ -334,48 +334,32 @@ public static class SkateHeld
     // switched on again on stepping off (Show). What the held entity offers is logged once a type.
     private static readonly System.Collections.Generic.List<UnityEngine.GameObject> hidden = new System.Collections.Generic.List<UnityEngine.GameObject>();
     private static readonly System.Collections.Generic.HashSet<string> probed = new System.Collections.Generic.HashSet<string>();
-    private static MethodInfo heldEntity; private static bool heldLooked;
     private static bool Hide(object player, out string how)
     {
         how = "";
-        const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
-        if (!heldLooked)
+        var root = player as UnityEngine.Component;
+        if (root == null) { how = "the player is not a component"; return false; }
+        // This client's member names are obfuscated (its type names are kept), and nothing on the
+        // player returns its held entity; so the held entity is found by its type among the
+        // player's children. (The first-person view model is RiderRig's: it hides it from the
+        // chase camera.)
+        var off = 0; var names = "";
+        var heldOnes = root.GetComponentsInChildren<HeldEntity>(false);
+        for (var i = 0; i < heldOnes.Length; i++)
         {
-            heldLooked = true;
-            heldEntity = player.GetType().GetMethod("GetHeldEntity", flags, null, Type.EmptyTypes, null);
-            // This client's member names are obfuscated (the type names are kept): then the
-            // player's methods without arguments that return a HeldEntity are the candidates.
-            if (heldEntity == null)
-            {
-                var seen = "";
-                for (var t = player.GetType(); t != null && t != typeof(object); t = t.BaseType)
-                    foreach (var m in t.GetMethods(flags | BindingFlags.DeclaredOnly))
-                    {
-                        if (m.GetParameters().Length != 0 || !Derives(m.ReturnType, "HeldEntity")) continue;
-                        seen += " " + t.Name + "." + m.Name + ":" + m.ReturnType.Name;
-                        if (heldEntity == null) heldEntity = m;
-                    }
-                Out.Say("HELD entity route: " + (heldEntity == null ? "none (no method returns a HeldEntity)" : heldEntity.Name + "; candidates:" + seen));
-            }
+            var c = heldOnes[i];
+            if (c == null) continue;
+            var go = c.gameObject;
+            if (go == null || !go.activeSelf) continue;
+            var kind = c.GetType().Name;
+            if (probed.Add(kind)) Out.Say("HELD switching off a " + kind + " (" + go.name + ") while riding");
+            go.SetActive(false);
+            hidden.Add(go);
+            names += " " + kind + " (" + go.name + ")";
+            off++;
         }
-        if (heldEntity == null) { how = "no belt and no GetHeldEntity in this build"; return false; }
-        var held = heldEntity.Invoke(player, null) as UnityEngine.Component;
-        if (held == null) return false;
-        var go = held.gameObject;
-        var kind = held.GetType().Name;
-        if (probed.Add(kind))
-        {
-            var ms = "";
-            for (var t = held.GetType(); t != null && t != typeof(object); t = t.BaseType)
-                foreach (var m in t.GetMembers(flags | BindingFlags.DeclaredOnly))
-                    if (m.Name.IndexOf("Holster", StringComparison.OrdinalIgnoreCase) >= 0 || m.Name.IndexOf("SetHeld", StringComparison.OrdinalIgnoreCase) >= 0 || m.Name.IndexOf("viewModel", StringComparison.OrdinalIgnoreCase) >= 0 || m.Name.IndexOf("guide", StringComparison.OrdinalIgnoreCase) >= 0)
-                        ms += " " + t.Name + "." + m.Name;
-            Out.Say("HELD entity " + kind + " offers:" + (ms == "" ? " (nothing named holster, held, view model or guide)" : ms));
-        }
-        if (!go.activeSelf) return false;
-        go.SetActive(false);
-        hidden.Add(go);
-        how = "switched off the held " + kind + " (" + go.name + ")";
+        if (off == 0) return false;
+        how = "switched off" + names;
         return true;
     }
 
