@@ -339,7 +339,25 @@ public static class SkateHeld
     {
         how = "";
         const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
-        if (!heldLooked) { heldLooked = true; heldEntity = player.GetType().GetMethod("GetHeldEntity", flags, null, Type.EmptyTypes, null); }
+        if (!heldLooked)
+        {
+            heldLooked = true;
+            heldEntity = player.GetType().GetMethod("GetHeldEntity", flags, null, Type.EmptyTypes, null);
+            // This client's member names are obfuscated (the type names are kept): then the
+            // player's methods without arguments that return a HeldEntity are the candidates.
+            if (heldEntity == null)
+            {
+                var seen = "";
+                for (var t = player.GetType(); t != null && t != typeof(object); t = t.BaseType)
+                    foreach (var m in t.GetMethods(flags | BindingFlags.DeclaredOnly))
+                    {
+                        if (m.GetParameters().Length != 0 || !Derives(m.ReturnType, "HeldEntity")) continue;
+                        seen += " " + t.Name + "." + m.Name + ":" + m.ReturnType.Name;
+                        if (heldEntity == null) heldEntity = m;
+                    }
+                Out.Say("HELD entity route: " + (heldEntity == null ? "none (no method returns a HeldEntity)" : heldEntity.Name + "; candidates:" + seen));
+            }
+        }
         if (heldEntity == null) { how = "no belt and no GetHeldEntity in this build"; return false; }
         var held = heldEntity.Invoke(player, null) as UnityEngine.Component;
         if (held == null) return false;
@@ -359,6 +377,12 @@ public static class SkateHeld
         hidden.Add(go);
         how = "switched off the held " + kind + " (" + go.name + ")";
         return true;
+    }
+
+    private static bool Derives(Type t, string name)
+    {
+        for (; t != null && t != typeof(object); t = t.BaseType) if (t.Name == name) return true;
+        return false;
     }
 
     // Stepping off: every held entity switched off for the ride is switched on again.
