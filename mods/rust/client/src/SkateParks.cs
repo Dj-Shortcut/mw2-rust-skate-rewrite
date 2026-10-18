@@ -320,7 +320,9 @@ public static class SkateParks
                 var p = new Placed { Kind = kind, Ids = ids };
                 if (!Place(p, kind, blocks, matched, anchorYaw, displaced))
                 {
-                    if (kind == Kind.MegaHalfpipe) { reserved.UnionWith(ids); taken.UnionWith(ids); }
+                    // Geometry has identified this kit even when its model or safe activation
+                    // is unavailable. Do not reinterpret its members as a smaller obstacle.
+                    reserved.UnionWith(ids); taken.UnionWith(ids);
                     continue;
                 }
                 foreach (var id in ids) taken.Add(id);
@@ -368,6 +370,7 @@ public static class SkateParks
             return;
         }
         foreach (var m in best) taken.Add(blocks[m].Id);
+        WithdrawPartialMega(best, blocks);
         var part = layout[bestMissing];
         var first = blocks[best[0]];
         var s = (float)Math.Sin(bestYaw * Degrees); var c = (float)Math.Cos(bestYaw * Degrees);
@@ -389,6 +392,57 @@ public static class SkateParks
         megaMiss = key;
         Say(line);
     }
+
+    // A partial MEGA can become recognizable after an earlier scan drew a bank or kicker.
+    // Withdraw only overlays wholly owned by that partial kit, and only while the actual
+    // rider is clear of both the old ride surface and the native geometry it will reveal.
+    private static void WithdrawPartialMega(List<int> matched, List<Block> blocks)
+    {
+        var ids = new HashSet<int>(); foreach (var index in matched) ids.Add(blocks[index].Id);
+        var withdrawn = new List<Placed>();
+        foreach (var existing in placed)
+        {
+            if (existing.Kind == Kind.MegaHalfpipe || existing.Ids.Length == 0) continue;
+            var contained = true;
+            foreach (var id in existing.Ids) if (!ids.Contains(id)) { contained = false; break; }
+            if (contained) withdrawn.Add(existing);
+        }
+        if (withdrawn.Count == 0) return;
+        var nextBacking = new HashSet<int>();
+        try
+        {
+            foreach (var existing in withdrawn)
+            {
+                if (existing.Root == null || !ReplacementClear(existing.Root))
+                    throw new InvalidOperationException("Step clear of the partial MEGA to remove its provisional overlays.");
+                foreach (var id in existing.Ids)
+                {
+                    var found = false;
+                    foreach (var block in blocks)
+                    {
+                        if (block.Id != id) continue;
+                        if (block.Entity == null || !ReplacementClear(block.Entity.gameObject))
+                            throw new InvalidOperationException("Step clear of the partial MEGA's native parts to remove its provisional overlays.");
+                        found = true; break;
+                    }
+                    if (!found) throw new InvalidOperationException("A partial MEGA member is unavailable.");
+                }
+            }
+            foreach (var remaining in placed)
+                if (!withdrawn.Contains(remaining))
+                    foreach (var collider in remaining.Backing) if (collider != null) nextBacking.Add(collider.GetInstanceID());
+        }
+        catch (Exception error)
+        {
+            Status = "partial MEGA overlay removal deferred: " + error.Message;
+            return;
+        }
+        foreach (var existing in withdrawn) { placed.Remove(existing); Remove(existing); }
+        BackingIds.Clear(); BackingIds.UnionWith(nextBacking); backingVersion++;
+        try { Isolate(SkateRide.On, SkateRig.Body, Time.realtimeSinceStartup); }
+        catch (Exception error) { Status = "backing isolation will retry: " + error.Message; }
+    }
+
     private static int MegaPartAt(Part[] layout, int k, List<Block> blocks, Dictionary<long, List<int>> cells, HashSet<int> taken, Block first, float sin, float cos, float anchorYaw, List<int> found)
     {
         var part = layout[k];

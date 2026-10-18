@@ -17,11 +17,14 @@ nothing to the server: to the server the rider is a player who moves.
 
 ## Development verification
 
-Client 0.18.21 retries complete larger park assemblies before retaining smaller matches. A
+Client 0.18.22 retries complete larger park assemblies before retaining smaller matches. A
 MEGA that first streamed as a bank or kicker can become the full round halfpipe when all its
 members arrive. Replacement prepares its surface first, preserves renderer/backing ownership,
 and waits if the rider intersects the new surface. Regular-halfpipe backing isolation selects
 only transition floors 4–11, preserving native flat, deck and wall collision.
+Partial MEGA recognition also withdraws old, wholly contained provisional overlays after the
+rider clears their surface and native parts; occupied overlays remain until a safe retry.
+A matched kit whose preparation fails keeps its members reserved against smaller matches.
 
 Rising contact on a verified ramp face uses its contact normal for wall classification,
 landing and gap closure. Side edges, undersides, coping and ordinary world walls remain
@@ -41,9 +44,9 @@ the owner's earlier client.
   checks and 4,069 audio checks across 550 generated clips.
 - **Compiles but unverified:** the shared landing policy and authored waveform generator in
   native gameplay.
-- **Still missing:** compilation of the complete changed client against its generated IL2CPP
-  references, native ramp/seam/grind/revert/lifecycle checks and audible playback. Codex has run
-  no Rust client, Shadow PC or live-server commands for this handover.
+- **Still missing:** the installed-game build and visible/native ramp, seam, grind, revert,
+  lifecycle and audible-playback checks. The cached-reference client compile does not replace
+  those runtime checks.
 
 `SkateSfx` caches original generated roll, metal-truck and wooden-deck loops plus push, pop,
 landing and bail shots. It crossfades truck/deck contact by grind kind, scales bounded
