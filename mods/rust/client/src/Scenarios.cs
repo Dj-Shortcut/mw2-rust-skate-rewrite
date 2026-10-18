@@ -127,12 +127,12 @@ public static class Scenarios
     // is logged per piece. The pieces are those SkateParks found near the player.
     public const float TourRun = 8f, TourOut = 8f, TourReach = 0.7f, TourApproach = 25f, TourAcross = 5f, TourRest = 2f;
     private static int tourIndex = -1, tourStage, tourHeld, tourResets, tourBails, tourGrinds;
-    private static float tourAt, tourStartY, tourRise, tourAir, tourTop, tourBack;
+    private static float tourAt, tourStartY, tourRise, tourAir, tourTop, tourBack, tourSteep;
     private static bool tourPopped;
     private static string tourGrindKinds = "";
     private static float TourSpeed(SkateParks.Kind k)
     {
-        switch (k) { case SkateParks.Kind.QuarterPipe: case SkateParks.Kind.Halfpipe: case SkateParks.Kind.LargeQuarterPipe: return 8f; case SkateParks.Kind.MegaHalfpipe: return 11f; case SkateParks.Kind.MiniQuarterPipe: return 6f; case SkateParks.Kind.LedgeLow: case SkateParks.Kind.LedgeHigh: case SkateParks.Kind.LongLedge: return 5f; default: return 6.5f; }
+        switch (k) { case SkateParks.Kind.QuarterPipe: case SkateParks.Kind.Halfpipe: case SkateParks.Kind.LargeQuarterPipe: return 8f; case SkateParks.Kind.MegaHalfpipe: return 15f; case SkateParks.Kind.MiniQuarterPipe: return 6f; case SkateParks.Kind.LedgeLow: case SkateParks.Kind.LedgeHigh: case SkateParks.Kind.LongLedge: return 5f; default: return 6.5f; }
     }
     private static bool IsLedge(SkateParks.Kind k) { return k == SkateParks.Kind.LedgeLow || k == SkateParks.Kind.LedgeHigh || k == SkateParks.Kind.LongLedge; }
     // Toward the target, bent away from the pieces on the way (all of them, or all but the one being
@@ -256,7 +256,7 @@ public static class Scenarios
             if (flat.magnitude < TourReach || stage > TourApproach)
             {
                 Say("tour " + kind + " #" + tourIndex + ": " + (flat.magnitude < TourReach ? "at the start" : "start not reached, " + flat.magnitude.ToString("F1") + " m off") + " after " + stage.ToString("F1") + " s, at " + Out.V1(pos));
-                tourStage = 1; tourAt = game; tourPopped = false; tourStartY = pos.y; tourRise = 0f; tourAir = 0f; tourTop = 0f; tourBack = 0f; tourHeld = SkateRide.Held ? 1 : 0; tourResets = SkateRide.ResetsAll; tourBails = SkateRide.Bails; tourGrinds = SkateRide.GrindStarts; tourGrindKinds = "";
+                tourStage = 1; tourAt = game; tourPopped = false; tourStartY = pos.y; tourRise = 0f; tourSteep = 0f; tourAir = 0f; tourTop = 0f; tourBack = 0f; tourHeld = SkateRide.Held ? 1 : 0; tourResets = SkateRide.ResetsAll; tourBails = SkateRide.Bails; tourGrinds = SkateRide.GrindStarts; tourGrindKinds = "";
             }
             return;
         }
@@ -273,6 +273,8 @@ public static class Scenarios
             SkateKeys.Push = SkateRide.Speed < TourSpeed(kind) && !(transition && (tourRise > 0.3f || SkateRide.Speed < 0f));
             tourRise = Math.Max(tourRise, pos.y - tourStartY);
             tourTop = Math.Max(tourTop, SkateRide.Speed);
+            // How steep the face under the board got, degrees: the MEGA's vertical is above 72.
+            if (SkateRide.Mode == RideMode.Ground) tourSteep = Math.Max(tourSteep, Vector3.Angle(SkateRide.Normal, Vector3.up));
             if (SkateRide.Mode == RideMode.Ground) tourBack = Math.Min(tourBack, SkateRide.Speed);
             if (SkateRide.Mode == RideMode.Air) tourAir += Time.deltaTime;
             if (SkateRide.Held) tourHeld++;
@@ -287,7 +289,7 @@ public static class Scenarios
             if (IsLedge(kind) && toLedge < 0.6f) SkateKeys.LookYaw = heading + 8f;
             if (stage > (mega ? 2f * TourAcross : TourAcross))
             {
-                Say("TOUR " + kind + " #" + tourIndex + ": rose " + tourRise.ToString("F2") + " m, air " + tourAir.ToString("F2") + " s, top " + tourTop.ToString("F1") + " m/s, back " + (-tourBack).ToString("F1") + " m/s, held " + (tourHeld > 0 ? "yes" : "no")
+                Say("TOUR " + kind + " #" + tourIndex + ": rose " + tourRise.ToString("F2") + " m, steepest " + tourSteep.ToString("F0") + " deg, air " + tourAir.ToString("F2") + " s, top " + tourTop.ToString("F1") + " m/s, back " + (-tourBack).ToString("F1") + " m/s, held " + (tourHeld > 0 ? "yes" : "no")
                     + ", grinds " + (SkateRide.GrindStarts - tourGrinds) + (tourGrindKinds != "" ? " (" + tourGrindKinds.Trim() + ")" : "") + ", bails " + (SkateRide.Bails - tourBails) + ", put backs " + (SkateRide.ResetsAll - tourResets) + ", end " + Out.V1(pos) + " " + SkateRide.Mode);
                 tourStage = 2; tourAt = game; SkateKeys.Jump = false;
             }
