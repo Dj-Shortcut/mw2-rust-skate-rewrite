@@ -279,13 +279,20 @@ below grows with the slope), and the ride flapped between ground and air up ever
 at 68 degrees the board was turned straight up, a 22-degree kink in its way. Now the board keeps
 the face to the lip, where it stands vertical, with gravity along the face the whole way (past 72
 degrees by the client's own rule, since the shared physics takes no ground steeper than that), and
-leaves the lip with the pace it had along the face: up as much as the face stood up, no pop added
-unless one was asked for, and comes back down onto the face, rolling back fakie, or onto the deck
-when the way led over it. The log says `SKATE vert: off the lip at … deg, … m/s up, … along`. Only
-the transitions the client makes itself (quarterpipes, halfpipe, MEGA, half-wall kicker) are read
-this way; banks, kickers, ledges and the world are as before. Checked offline in a 2D model of the
-rule on a 1.2, 3 and 9.59 m circle (the ground kept to 88–90 degrees, a 7 m/s board on the 3 m
-quarterpipe stalling at 66 degrees and rolling back); not compiled, not seen in the game.
+leaves the lip with the pace it had along the face: up as much as the face stood up, the pace
+along the coping kept on a diagonal line (past 72 degrees the shared frame's rise factor is held
+where it was, so a carve up the wall is not bent into a vertical launch), a pop added only when
+one was asked for (also one asked for in the last moment on the face), and comes back down onto
+the face, rolling back fakie (a face steeper than 72 degrees is landed by the client's own rule:
+the fall's part into the face is the impact, the rest rolls), or onto the deck when the way led
+over it. Over a transition the air step reads its gap to the face along the face's normal. The
+coping on the lip is not the face: met by the contact ray, the face has ended. The log says
+`SKATE vert: off the lip at … deg, … m/s up, … along`. Only the transitions the client makes
+itself (quarterpipes, halfpipe, MEGA, half-wall kicker) are read this way; banks, kickers, ledges
+and the world are as before. Checked offline in a 2D model of the rule on a 1.2, 3 and 9.59 m
+circle (the ground kept to 88–90 degrees, a 7 m/s board on the 3 m quarterpipe stalling at 66
+degrees and rolling back) and the tangent rule against the shared formula up to 72.5 degrees; not
+compiled, not seen in the game.
 
 ### Steps
 
