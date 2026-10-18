@@ -344,12 +344,18 @@ public static class SkateHeld
         // player returns its held entity; so the held entity is found by its type among the
         // player's children. (The first-person view model is RiderRig's: it hides it from the
         // chase camera.)
+        // The held entity sits on a hand bone (r_prop, l_prop) of the rider's model, which is not
+        // under the player (the log: a building planner under r_prop in player_model.prefab);
+        // what hangs on the back (a gun under spine3) is left alone.
+        var model = RiderRig.Root != null ? (UnityEngine.Component)RiderRig.Root : root;
         var off = 0; var names = "";
-        var heldOnes = root.GetComponentsInChildren<HeldEntity>(false);
+        var heldOnes = model.GetComponentsInChildren<HeldEntity>(false);
         for (var i = 0; i < heldOnes.Length; i++)
         {
             var c = heldOnes[i];
             if (c == null) continue;
+            var bone = c.transform.parent;
+            if (bone == null || !bone.name.EndsWith("_prop", StringComparison.Ordinal)) continue;
             var go = c.gameObject;
             if (go == null || !go.activeSelf) continue;
             var kind = c.GetType().Name;
