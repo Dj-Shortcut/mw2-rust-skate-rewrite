@@ -890,6 +890,83 @@ namespace Shortcut.RustMod
         { return Finite(value) && Math.Abs(value) <= 100000; }
     }
 
+    public static class SkateHalfpipe
+    {
+        public const int ProfilePointCount = 40;
+        public const double Lift = 0.02;
+        private const double HalfLength = 1.5, Degrees = Math.PI / 180, Bend = 3;
+        private const int BendSteps = 8;
+
+        private struct ProfilePoint
+        {
+            public readonly float Forward, Height;
+            public ProfilePoint(float forward, float height) { Forward = forward; Height = height; }
+        }
+
+        private static readonly ProfilePoint[] profile = BuildProfile();
+
+        public static bool TryProfilePoint(int index, out double forward, out double height)
+        {
+            forward = height = 0;
+            if (index < 0 || index >= ProfilePointCount) return false;
+            forward = profile[index].Forward;
+            height = profile[index].Height;
+            return true;
+        }
+
+        private static ProfilePoint[] BuildProfile()
+        {
+            double run1 = 2 * HalfLength * Math.Cos(15 * Degrees), rise1 = 2 * HalfLength * Math.Sin(15 * Degrees);
+            double run2 = 2 * HalfLength * Math.Cos(35 * Degrees), rise2 = 2 * HalfLength * Math.Sin(35 * Degrees);
+            double half = 2 * HalfLength, deck = 2 * HalfLength, top = rise1 + rise2;
+            var corners = new List<ProfilePoint>(8);
+            var radii = new List<double>(8);
+            foreach (int side in new[] { -1, 1 })
+            {
+                // Preserve the client's Vector2 float rounding before double bend arithmetic.
+                var points = new[] {
+                    new ProfilePoint((float)(side * (half + run1 + run2 + deck)), (float)top),
+                    new ProfilePoint((float)(side * (half + run1 + run2)), (float)top),
+                    new ProfilePoint((float)(side * (half + run1)), (float)rise1),
+                    new ProfilePoint((float)(side * half), 0f) };
+                var bends = new[] { 0.0, 0.0, Bend, Bend };
+                if (side < 0)
+                    for (int i = 0; i < 4; i++) { corners.Add(points[i]); radii.Add(bends[i]); }
+                else
+                    for (int i = 3; i >= 0; i--) { corners.Add(points[i]); radii.Add(bends[i]); }
+            }
+            var result = new List<ProfilePoint>(ProfilePointCount);
+            for (int i = 0; i < corners.Count; i++)
+            {
+                if (i == 0 || i == corners.Count - 1 || radii[i] <= 0) { result.Add(corners[i]); continue; }
+                double ax = corners[i - 1].Forward, ay = corners[i - 1].Height;
+                double bx = corners[i].Forward, by = corners[i].Height;
+                double cx = corners[i + 1].Forward, cy = corners[i + 1].Height;
+                double l1 = Math.Sqrt((bx - ax) * (bx - ax) + (by - ay) * (by - ay));
+                double l2 = Math.Sqrt((cx - bx) * (cx - bx) + (cy - by) * (cy - by));
+                double d1x = (bx - ax) / l1, d1y = (by - ay) / l1, d2x = (cx - bx) / l2, d2y = (cy - by) / l2;
+                double turn = Math.Acos(Math.Max(-1.0, Math.Min(1.0, d1x * d2x + d1y * d2y)));
+                if (turn < 0.001) { result.Add(corners[i]); continue; }
+                double t = Math.Min(radii[i] * Math.Tan(turn / 2), Math.Min(l1, l2) * 0.45);
+                double r = t / Math.Tan(turn / 2);
+                double sx = bx - d1x * t, sy = by - d1y * t;
+                double cross = d1x * d2y - d1y * d2x, sign = cross > 0 ? 1.0 : -1.0;
+                double ox = sx - d1y * r * sign, oy = sy + d1x * r * sign;
+                double fx = sx - ox, fy = sy - oy;
+                int steps = Math.Max(BendSteps, (int)Math.Ceiling(turn * 180.0 / Math.PI / 4.0));
+                for (int k = 0; k <= steps; k++)
+                {
+                    double angle = turn * k / steps * sign;
+                    double cosine = Math.Cos(angle), sine = Math.Sin(angle);
+                    result.Add(new ProfilePoint((float)(ox + fx * cosine - fy * sine), (float)(oy + fx * sine + fy * cosine)));
+                }
+            }
+            if (result.Count != ProfilePointCount)
+                throw new InvalidOperationException("Regular halfpipe profile point count changed.");
+            return result.ToArray();
+        }
+    }
+
     public static class SkateMegaHalfpipe
     {
         public const int PartCount = 80, Lanes = 4, TransitionSegments = 5, CurveSteps = 60;

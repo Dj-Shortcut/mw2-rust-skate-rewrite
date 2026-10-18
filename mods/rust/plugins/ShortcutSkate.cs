@@ -1408,6 +1408,83 @@ namespace Shortcut.RustMod
         { return Finite(value) && Math.Abs(value) <= 100000; }
     }
 
+    public static class SkateHalfpipe
+    {
+        public const int ProfilePointCount = 40;
+        public const double Lift = 0.02;
+        private const double HalfLength = 1.5, Degrees = Math.PI / 180, Bend = 3;
+        private const int BendSteps = 8;
+
+        private struct ProfilePoint
+        {
+            public readonly float Forward, Height;
+            public ProfilePoint(float forward, float height) { Forward = forward; Height = height; }
+        }
+
+        private static readonly ProfilePoint[] profile = BuildProfile();
+
+        public static bool TryProfilePoint(int index, out double forward, out double height)
+        {
+            forward = height = 0;
+            if (index < 0 || index >= ProfilePointCount) return false;
+            forward = profile[index].Forward;
+            height = profile[index].Height;
+            return true;
+        }
+
+        private static ProfilePoint[] BuildProfile()
+        {
+            double run1 = 2 * HalfLength * Math.Cos(15 * Degrees), rise1 = 2 * HalfLength * Math.Sin(15 * Degrees);
+            double run2 = 2 * HalfLength * Math.Cos(35 * Degrees), rise2 = 2 * HalfLength * Math.Sin(35 * Degrees);
+            double half = 2 * HalfLength, deck = 2 * HalfLength, top = rise1 + rise2;
+            var corners = new List<ProfilePoint>(8);
+            var radii = new List<double>(8);
+            foreach (int side in new[] { -1, 1 })
+            {
+                // Preserve the client's Vector2 float rounding before double bend arithmetic.
+                var points = new[] {
+                    new ProfilePoint((float)(side * (half + run1 + run2 + deck)), (float)top),
+                    new ProfilePoint((float)(side * (half + run1 + run2)), (float)top),
+                    new ProfilePoint((float)(side * (half + run1)), (float)rise1),
+                    new ProfilePoint((float)(side * half), 0f) };
+                var bends = new[] { 0.0, 0.0, Bend, Bend };
+                if (side < 0)
+                    for (int i = 0; i < 4; i++) { corners.Add(points[i]); radii.Add(bends[i]); }
+                else
+                    for (int i = 3; i >= 0; i--) { corners.Add(points[i]); radii.Add(bends[i]); }
+            }
+            var result = new List<ProfilePoint>(ProfilePointCount);
+            for (int i = 0; i < corners.Count; i++)
+            {
+                if (i == 0 || i == corners.Count - 1 || radii[i] <= 0) { result.Add(corners[i]); continue; }
+                double ax = corners[i - 1].Forward, ay = corners[i - 1].Height;
+                double bx = corners[i].Forward, by = corners[i].Height;
+                double cx = corners[i + 1].Forward, cy = corners[i + 1].Height;
+                double l1 = Math.Sqrt((bx - ax) * (bx - ax) + (by - ay) * (by - ay));
+                double l2 = Math.Sqrt((cx - bx) * (cx - bx) + (cy - by) * (cy - by));
+                double d1x = (bx - ax) / l1, d1y = (by - ay) / l1, d2x = (cx - bx) / l2, d2y = (cy - by) / l2;
+                double turn = Math.Acos(Math.Max(-1.0, Math.Min(1.0, d1x * d2x + d1y * d2y)));
+                if (turn < 0.001) { result.Add(corners[i]); continue; }
+                double t = Math.Min(radii[i] * Math.Tan(turn / 2), Math.Min(l1, l2) * 0.45);
+                double r = t / Math.Tan(turn / 2);
+                double sx = bx - d1x * t, sy = by - d1y * t;
+                double cross = d1x * d2y - d1y * d2x, sign = cross > 0 ? 1.0 : -1.0;
+                double ox = sx - d1y * r * sign, oy = sy + d1x * r * sign;
+                double fx = sx - ox, fy = sy - oy;
+                int steps = Math.Max(BendSteps, (int)Math.Ceiling(turn * 180.0 / Math.PI / 4.0));
+                for (int k = 0; k <= steps; k++)
+                {
+                    double angle = turn * k / steps * sign;
+                    double cosine = Math.Cos(angle), sine = Math.Sin(angle);
+                    result.Add(new ProfilePoint((float)(ox + fx * cosine - fy * sine), (float)(oy + fx * sine + fy * cosine)));
+                }
+            }
+            if (result.Count != ProfilePointCount)
+                throw new InvalidOperationException("Regular halfpipe profile point count changed.");
+            return result.ToArray();
+        }
+    }
+
     public static class SkateMegaHalfpipe
     {
         public const int PartCount = 80, Lanes = 4, TransitionSegments = 5, CurveSteps = 60;
@@ -1612,7 +1689,7 @@ namespace Shortcut.RustMod
 
 namespace Oxide.Plugins
 {
-    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.27")]
+    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.28")]
     [Description("Player-scoped skateboard movement bounds and saved park assemblies.")]
     public sealed class ShortcutSkate : RustPlugin
     {
@@ -3823,38 +3900,43 @@ namespace Oxide.Plugins
                     SkateParkKind kind;
                     SkateParkQuarterProfile profile;
                     if (!SkateParkLayout.TryKind(group.Kind, out kind) ||
-                        (kind != SkateParkKind.MegaHalfpipe && !SkateParkLayout.TryQuarterProfile(kind, out profile))) continue;
-                    if (kind == SkateParkKind.MegaHalfpipe)
+                        (!ParkOwnedHalfpipe(kind) && !SkateParkLayout.TryQuarterProfile(kind, out profile))) continue;
+                    if (ParkOwnedHalfpipe(kind))
                     {
-                        // One altered saved kit must retain native collision without disabling
-                        // unrelated park placement. New-placement failures still roll back below.
+                        // An altered saved kit keeps native collision without blocking other parks.
                         try
                         {
-                            var megaFailures = new List<string>();
-                            ParkNativePart[] megaDefinitions;
-                            if (!ParkPrefabs(kind, megaFailures, out megaDefinitions))
-                                throw new InvalidDataException("MEGA collision prefab verification failed.");
-                            EnsureParkProfileCollision(kind, group, group.Members, megaDefinitions[0].Construction.bounds);
+                            var profileFailures = new List<string>();
+                            ParkNativePart[] profileDefinitions;
+                            if (!ParkPrefabs(kind, profileFailures, out profileDefinitions))
+                                throw new InvalidDataException("Halfpipe collision prefab verification failed.");
+                            EnsureParkProfileCollision(kind, group, group.Members, profileDefinitions[0].Construction.bounds);
+                        }
+                        catch (ParkProfileActivationOccupiedException)
+                        {
+                            // Only this group's new fill is deferred; no body or native collider moved.
+                            // The controlled cleanup pass retries quietly after the body leaves.
+                            parkProfileRestoreRefreshNeeded = true;
                         }
                         catch (ParkProfileRestorePendingException)
                         {
                             parkProfileRestoreRefreshNeeded = true;
-                            PrintWarning("Saved MEGA collision restoration is independently owned; replacement verification will retry after body clearance.");
+                            PrintWarning("Saved halfpipe collision restoration is independently owned; replacement verification will retry after body clearance.");
                         }
                         catch (ParkProfileChangedException)
                         {
                             if (!RemoveParkProfileCollision(group))
                             {
                                 parkProfileRestoreRefreshNeeded = true;
-                                PrintWarning("An altered saved MEGA group is waiting for independently owned collision restoration.");
+                                PrintWarning("An altered saved halfpipe group is waiting for independently owned collision restoration.");
                             }
-                            else PrintWarning("A saved MEGA group has altered native grades, skins or scale; its original floor collision is retained.");
+                            else PrintWarning("A saved halfpipe group has altered native grades, skins or scale; its original floor collision is retained.");
                         }
                         catch (Exception error)
                         {
                             bool restored = RemoveParkProfileCollision(group);
                             if (!restored) parkProfileRestoreRefreshNeeded = true;
-                            PrintWarning("Saved MEGA profile creation failed (" + error.GetType().Name + "); " +
+                            PrintWarning("Saved halfpipe profile creation failed (" + error.GetType().Name + "); " +
                                 (restored ? "native floor collision is retained for that group." : "independently owned collision restoration is pending."));
                         }
                         continue;
@@ -4565,7 +4647,7 @@ namespace Oxide.Plugins
                     .Append(group.Members.Count.ToString(CultureInfo.InvariantCulture)).Append('/')
                     .Append(SkateParkLayout.PartCount(kind).ToString(CultureInfo.InvariantCulture));
                 if (group.Members.Count != SkateParkLayout.PartCount(kind)) text.Append(" (partial)");
-                if (kind == SkateParkKind.MegaHalfpipe)
+                if (ParkOwnedHalfpipe(kind))
                 {
                     ParkProfileCollision collision;
                     bool healthy = false;
@@ -5048,7 +5130,7 @@ namespace Oxide.Plugins
             {
                 if (!parkBusy || !ReferenceEquals(instance, this) || parkClosing || parkRefreshing || SaveRestore.IsSaving) return;
                 ParkProfileCollision current;
-                if (pair.Key.Kind != "mega-halfpipe" || !parkProfileCollisions.TryGetValue(pair.Key, out current) ||
+                if (!ParkOwnedHalfpipe(pair.Key.Kind) || !parkProfileCollisions.TryGetValue(pair.Key, out current) ||
                     !ReferenceEquals(current, pair.Value)) continue;
                 bool healthy;
                 try { healthy = ParkMegaCollisionHealthy(pair.Key, current); }
@@ -5056,7 +5138,7 @@ namespace Oxide.Plugins
                 if (!healthy)
                 {
                     RemoveParkProfileCollision(pair.Key);
-                    PrintWarning("MEGA profile collision was invalidated; native floor collision restoration was requested.");
+                    PrintWarning("Halfpipe profile collision was invalidated; native floor collision restoration was requested.");
                 }
             }
         }
@@ -5627,6 +5709,11 @@ namespace Oxide.Plugins
             public ParkProfileChangedException(string message) : base(message) { }
         }
 
+        private sealed class ParkProfileActivationOccupiedException : Exception
+        {
+            public ParkProfileActivationOccupiedException() : base("Leave the regular halfpipe transition volume before its smooth collision can be installed.") { }
+        }
+
         private sealed class ParkProfileRestorePendingException : Exception
         {
             public ParkProfileRestorePendingException() : base("MEGA native collision restoration is pending; held members must not be removed or replaced.") { }
@@ -5747,19 +5834,42 @@ namespace Oxide.Plugins
             }
         }
 
+        private static bool ParkOwnedHalfpipe(SkateParkKind kind)
+        { return kind == SkateParkKind.MegaHalfpipe || kind == SkateParkKind.Halfpipe; }
+
+        private static bool ParkOwnedHalfpipe(string kind)
+        { return kind == "mega-halfpipe" || kind == "halfpipe"; }
+
+        private static int ParkProfileFloorStart(SkateParkKind kind)
+        { return kind == SkateParkKind.Halfpipe ? 4 : 0; }
+
+        private static int ParkProfileFloorCount(SkateParkKind kind)
+        { return kind == SkateParkKind.Halfpipe ? 8 : 64; }
+
+        private static BuildingGrade.Enum ParkProfileGrade(SkateParkKind kind, int index)
+        {
+            if (kind == SkateParkKind.Halfpipe)
+                return index < 4 ? BuildingGrade.Enum.Stone : index >= 16 && index < 20 ? BuildingGrade.Enum.Wood : BuildingGrade.Enum.Metal;
+            return index < 16 ? BuildingGrade.Enum.Stone : index < 72 ? BuildingGrade.Enum.Metal : BuildingGrade.Enum.Wood;
+        }
+
         private bool ParkMegaCollisionHealthy(ParkGroup group, ParkProfileCollision collision,
             ParkMember[] parts = null, IList<BuildingBlock> verifiedBlocks = null)
         {
-            if (group == null || group.Kind != "mega-halfpipe" || collision == null || collision.Members.Count != SkateMegaHalfpipe.PartCount ||
-                collision.OriginalShapes.Count < 64 || collision.Patches.Count != 64) return false;
+            SkateParkKind kind;
+            if (group == null || !SkateParkLayout.TryKind(group.Kind, out kind) || !ParkOwnedHalfpipe(kind) || collision == null ||
+                collision.Identity == null || collision.Identity.Id != group.Id || collision.Identity.Kind != group.Kind ||
+                collision.Identity.Members.Count != SkateParkLayout.PartCount(kind) ||
+                collision.Members.Count != SkateParkLayout.PartCount(kind) ||
+                collision.OriginalShapes.Count < ParkProfileFloorCount(kind) || collision.Patches.Count != ParkProfileFloorCount(kind)) return false;
             if (parts == null) parts = group.Members.OrderBy(member => member.Index).ToArray();
-            if (parts.Length != SkateMegaHalfpipe.PartCount || (verifiedBlocks != null && verifiedBlocks.Count != parts.Length)) return false;
+            if (parts.Length != SkateParkLayout.PartCount(kind) || (verifiedBlocks != null && verifiedBlocks.Count != parts.Length)) return false;
             for (int i = 0; i < parts.Length; i++)
             {
                 BuildingBlock block = verifiedBlocks == null ? FindParkBlock(parts[i].Id) : verifiedBlocks[i];
                 if (parts[i].Index != i || !ParkMatches(block, group, parts[i]) || !ReferenceEquals(block, collision.Members[i]) ||
-                    block.grade != (i < 16 ? BuildingGrade.Enum.Stone : i < 72 ? BuildingGrade.Enum.Metal : BuildingGrade.Enum.Wood) ||
-                    block.skinID != 0 || block.transform.lossyScale != Vector3.one) return false;
+                    !ParkMatches(block, collision.Identity, collision.Identity.Members[i]) ||
+                    block.grade != ParkProfileGrade(kind, i) || block.skinID != 0 || block.transform.lossyScale != Vector3.one) return false;
             }
             BuildingBlock first = collision.Members[0];
             float datum = first.bounds.max.y;
@@ -5770,18 +5880,19 @@ namespace Oxide.Plugins
             int layer = LayerMask.NameToLayer("Construction");
             for (int i = 0; i < collision.Patches.Count; i++)
             {
+                int ownerIndex = ParkProfileFloorStart(kind) + i;
                 ParkProfilePatch patch = collision.Patches[i];
-                if (patch.Index != i || patch.Root == null || !patch.Root.activeInHierarchy || patch.Mesh == null ||
+                if (patch.Index != ownerIndex || patch.Root == null || !patch.Root.activeInHierarchy || patch.Mesh == null ||
                     patch.Shell == null || !patch.Shell.enabled || patch.Shell.isTrigger || patch.Shell.convex ||
                     patch.Shell.sharedMesh != patch.Mesh || patch.Shape == null || !patch.Shape.Matches(patch.Mesh) ||
-                    !ReferenceEquals(patch.Shell.ToBaseEntity(), collision.Members[i]) ||
-                    patch.Root.transform.parent != collision.Members[i].transform || patch.Root.transform.lossyScale != Vector3.one ||
+                    !ReferenceEquals(patch.Shell.ToBaseEntity(), collision.Members[ownerIndex]) ||
+                    patch.Root.transform.parent != collision.Members[ownerIndex].transform || patch.Root.transform.lossyScale != Vector3.one ||
                     patch.Root.layer != layer || !((patch.Root.transform.position - origin).sqrMagnitude <= 4e-6f) ||
                     !(Quaternion.Angle(patch.Root.transform.rotation, rotation) <= 0.01f)) return false;
                 Collider[] shellColliders = patch.Root.GetComponentsInChildren<Collider>(true);
                 if (shellColliders.Length != 1 || !ReferenceEquals(shellColliders[0], patch.Shell)) return false;
             }
-            foreach (BuildingBlock block in collision.Members.Take(64))
+            foreach (BuildingBlock block in collision.Members.Skip(ParkProfileFloorStart(kind)).Take(ParkProfileFloorCount(kind)))
                 foreach (Collider collider in block.GetComponentsInChildren<Collider>(true))
                     if (collider != null && collider.enabled && !collider.isTrigger && collider.gameObject.activeInHierarchy &&
                         !ParkProfileOwnsCollider(collision, collider) && ReferenceEquals(collider.ToBaseEntity(), block)) return false;
@@ -5955,19 +6066,25 @@ namespace Oxide.Plugins
         private static bool ParkRetainedMegaProfileHealthy(ParkProfileCollision collision)
         {
             ParkGroup identity = collision.Identity;
-            if (identity == null || identity.Members.Count != 80 || collision.Members.Count != 80 || collision.Patches.Count != 64) return false;
+            SkateParkKind kind;
+            if (identity == null || !SkateParkLayout.TryKind(identity.Kind, out kind) || !ParkOwnedHalfpipe(kind) ||
+                identity.Members.Count != SkateParkLayout.PartCount(kind) || collision.Members.Count != SkateParkLayout.PartCount(kind) ||
+                collision.Patches.Count != ParkProfileFloorCount(kind)) return false;
             for (int i = 0; i < identity.Members.Count; i++)
-                if (!ParkMatches(collision.Members[i], identity, identity.Members[i]) || collision.Members[i].transform.lossyScale != Vector3.one) return false;
+                if (!ParkMatches(collision.Members[i], identity, identity.Members[i]) ||
+                    collision.Members[i].grade != ParkProfileGrade(kind, i) || collision.Members[i].skinID != 0 ||
+                    collision.Members[i].transform.lossyScale != Vector3.one) return false;
             Vector3 origin = new Vector3((float)identity.AnchorX, (float)identity.AnchorY + collision.Datum, (float)identity.AnchorZ);
             Quaternion rotation = Quaternion.Euler(0, (float)identity.AnchorYaw, 0);
             for (int i = 0; i < collision.Patches.Count; i++)
             {
+                int ownerIndex = ParkProfileFloorStart(kind) + i;
                 ParkProfilePatch patch = collision.Patches[i];
-                if (patch.Index != i || patch.Root == null || !patch.Root.activeInHierarchy || patch.Shell == null ||
+                if (patch.Index != ownerIndex || patch.Root == null || !patch.Root.activeInHierarchy || patch.Shell == null ||
                     !patch.Shell.enabled || patch.Shell.isTrigger || patch.Shell.convex || patch.Mesh == null ||
                     patch.Shell.sharedMesh != patch.Mesh || patch.Shape == null || !patch.Shape.Matches(patch.Mesh) ||
-                    !ReferenceEquals(patch.Shell.ToBaseEntity(), collision.Members[i]) ||
-                    patch.Root.transform.parent != collision.Members[i].transform || patch.Root.transform.lossyScale != Vector3.one ||
+                    !ReferenceEquals(patch.Shell.ToBaseEntity(), collision.Members[ownerIndex]) ||
+                    patch.Root.transform.parent != collision.Members[ownerIndex].transform || patch.Root.transform.lossyScale != Vector3.one ||
                     patch.Root.layer != LayerMask.NameToLayer("Construction") ||
                     !((patch.Root.transform.position - origin).sqrMagnitude <= 4e-6f) || !(Quaternion.Angle(patch.Root.transform.rotation, rotation) <= 0.01f)) return false;
                 Collider[] owned = patch.Root.GetComponentsInChildren<Collider>(true);
@@ -5988,7 +6105,7 @@ namespace Oxide.Plugins
         private object OnStructureUpgrade(BuildingBlock block, BasePlayer player, BuildingGrade.Enum grade, ulong skin)
         {
             if (block == null) return null;
-            ParkGroup group = parkProfileCollisions.FirstOrDefault(pair => pair.Key.Kind == "mega-halfpipe" &&
+            ParkGroup group = parkProfileCollisions.FirstOrDefault(pair => ParkOwnedHalfpipe(pair.Key.Kind) &&
                 pair.Value.Members.Any(member => ReferenceEquals(member, block))).Key;
             bool held = ParkProfileRestoreHeld(block);
             if (group == null && !held) return null;
@@ -6234,7 +6351,7 @@ namespace Oxide.Plugins
         {
             ParkProfileCollision collision;
             if (!parkProfileCollisions.TryGetValue(group, out collision)) return !ParkProfileRestorePending(group);
-            if (group.Kind == "mega-halfpipe")
+            if (ParkOwnedHalfpipe(group.Kind))
             {
                 // Partial activation may have left every native collider enabled. Removing
                 // unused replacement objects cannot introduce a new native-body overlap.
@@ -6394,14 +6511,126 @@ namespace Oxide.Plugins
             }
         }
 
+        private static Mesh ParkHalfpipeMesh(int floorIndex)
+        {
+            if (floorIndex < 4 || floorIndex >= 12) throw new ArgumentOutOfRangeException("floorIndex");
+            // Shared samples are the existing client 0.18.18 centre-of-flat profile,
+            // before its 2 cm lift. Preserve every facet; new owner cuts interpolate
+            // those facets, rather than resampling an ideal circle.
+            if (SkateHalfpipe.ProfilePointCount != 40 || !(Math.Abs(SkateHalfpipe.Lift - 0.02) <= 1e-9))
+                throw new InvalidDataException("Regular halfpipe profile contract is unavailable.");
+            var profile = new Vector2[SkateHalfpipe.ProfilePointCount];
+            for (int i = 0; i < profile.Length; i++)
+            {
+                double forward, height;
+                if (!SkateHalfpipe.TryProfilePoint(i, out forward, out height) ||
+                    !Coordinate(new Vector3(0, (float)height, (float)forward)))
+                    throw new InvalidDataException("Regular halfpipe profile samples are unavailable.");
+                profile[i] = new Vector2((float)forward, (float)height);
+                if (i != 0 && !(profile[i].x > profile[i - 1].x))
+                    throw new InvalidDataException("Regular halfpipe profile samples are unordered.");
+            }
+            bool back = floorIndex < 8;
+            bool upper = floorIndex == 6 || floorIndex == 7 || floorIndex >= 10;
+            float cut = (float)((back ? -1 : 1) * (3 + 3 * Math.Cos(15 * Math.PI / 180)));
+            // Include the full rounded toe on the flat; the native flat/deck remain
+            // solid. Only the true outer toe/lip boundaries receive vertical caps.
+            float from = back ? profile[1].x : profile[20].x;
+            float to = back ? profile[19].x : profile[38].x;
+            if (back ? upper : !upper) to = cut;
+            else from = cut;
+            bool capStart = back ? upper : !upper;
+            bool capEnd = !capStart;
+            int lane = floorIndex % 2;
+            float left = lane * 3 - 1.5f, right = left + 3, bottom = -0.1f;
+            var vertices = new List<Vector3>();
+            var triangles = new List<int>();
+            bool found = false;
+            Vector2 first = new Vector2(), last = new Vector2();
+            for (int i = 1; i < profile.Length; i++)
+            {
+                Vector2 previous = profile[i - 1], next = profile[i];
+                float start = Math.Max(from, previous.x), end = Math.Min(to, next.x);
+                if (!(end > start)) continue;
+                // Arithmetic stays in the client's float profile domain. Both
+                // neighbours use the same endpoints/cut and hence identical seams.
+                float startHeight = start == previous.x ? previous.y : previous.y + (next.y - previous.y) * ((start - previous.x) / (next.x - previous.x));
+                float endHeight = end == next.x ? next.y : previous.y + (next.y - previous.y) * ((end - previous.x) / (next.x - previous.x));
+                Vector2 aPoint = new Vector2(start + 1.5f, startHeight + (float)SkateHalfpipe.Lift);
+                Vector2 bPoint = new Vector2(end + 1.5f, endHeight + (float)SkateHalfpipe.Lift);
+                if (!found) { first = aPoint; found = true; }
+                last = bPoint;
+                Vector3 a = new Vector3(left, aPoint.y, aPoint.x), b = new Vector3(right, aPoint.y, aPoint.x);
+                Vector3 c = new Vector3(left, bPoint.y, bPoint.x), d = new Vector3(right, bPoint.y, bPoint.x);
+                Vector3 ab = new Vector3(left, bottom, aPoint.x), bb = new Vector3(right, bottom, aPoint.x);
+                Vector3 cb = new Vector3(left, bottom, bPoint.x), db = new Vector3(right, bottom, bPoint.x);
+                ParkQuarterQuad(vertices, triangles, a, c, d, b);
+                if (lane == 0) ParkQuarterQuad(vertices, triangles, a, ab, cb, c);
+                if (lane == 1) ParkQuarterQuad(vertices, triangles, b, d, db, bb);
+                ParkQuarterQuad(vertices, triangles, ab, bb, db, cb);
+            }
+            if (!found || !(last.x > first.x))
+                throw new InvalidDataException("Regular halfpipe patch has no riding facets.");
+            if (capStart)
+                ParkQuarterQuad(vertices, triangles, new Vector3(left, first.y, first.x), new Vector3(right, first.y, first.x),
+                    new Vector3(right, bottom, first.x), new Vector3(left, bottom, first.x));
+            if (capEnd)
+                ParkQuarterQuad(vertices, triangles, new Vector3(left, last.y, last.x), new Vector3(left, bottom, last.x),
+                    new Vector3(right, bottom, last.x), new Vector3(right, last.y, last.x));
+            var mesh = new Mesh { name = "ShortcutSkate regular halfpipe transition profile " + floorIndex.ToString(CultureInfo.InvariantCulture) };
+            try
+            {
+                mesh.vertices = vertices.ToArray();
+                mesh.triangles = triangles.ToArray();
+                mesh.RecalculateNormals();
+                mesh.RecalculateBounds();
+                return mesh;
+            }
+            catch
+            {
+                UnityEngine.Object.Destroy(mesh);
+                throw;
+            }
+        }
+
+        private static bool ParkProfileReplacementBodiesClear(ParkProfileCollision collision)
+        {
+            var volumes = new List<Bounds>();
+            foreach (ParkProfilePatch patch in collision.Patches)
+            {
+                if (patch.Root == null || patch.Mesh == null) return false;
+                Bounds local = patch.Mesh.bounds;
+                if (!Coordinate(local.center) || !Coordinate(local.size)) return false;
+                Bounds world = new Bounds(patch.Root.transform.TransformPoint(local.min), Vector3.zero);
+                for (int i = 1; i < 8; i++)
+                {
+                    Vector3 point = patch.Root.transform.TransformPoint(new Vector3((i & 1) == 0 ? local.min.x : local.max.x,
+                        (i & 2) == 0 ? local.min.y : local.max.y, (i & 4) == 0 ? local.min.z : local.max.z));
+                    if (!Coordinate(point)) return false;
+                    world.Encapsulate(point);
+                }
+                if (!Coordinate(world.center) || !Coordinate(world.size)) return false;
+                world.Expand(0.02f);
+                volumes.Add(world);
+            }
+            if (volumes.Count != 8) return false;
+            foreach (BasePlayer player in ParkRestorePlayers())
+            {
+                Bounds body;
+                if (!ParkRestoreBody(player, out body) || volumes.Any(volume => volume.Intersects(body))) return false;
+            }
+            return true;
+        }
+
         private void EnsureParkProfileCollision(SkateParkKind kind, ParkGroup group, IEnumerable<ParkMember> members, Bounds floor)
         {
             bool mega = kind == SkateParkKind.MegaHalfpipe;
+            bool ownedHalfpipe = ParkOwnedHalfpipe(kind);
             // Older plugin assemblies can still own a deferred restore. Never capture their
             // replacement colliders as if they were the native floor or create a second owner.
-            if (mega && ParkProfileRestorePending(group)) throw new ParkProfileRestorePendingException();
+            if (ownedHalfpipe && ParkProfileRestorePending(group)) throw new ParkProfileRestorePendingException();
             SkateParkQuarterProfile profile = new SkateParkQuarterProfile();
-            if (!mega && !SkateParkLayout.TryQuarterProfile(kind, out profile)) return;
+            if (!ownedHalfpipe && !SkateParkLayout.TryQuarterProfile(kind, out profile)) return;
             ParkMember[] parts = members.OrderBy(member => member.Index).ToArray();
             if (parts.Length != SkateParkLayout.PartCount(kind))
             { if (!RemoveParkProfileCollision(group)) throw new ParkProfileRestorePendingException(); return; }
@@ -6414,49 +6643,49 @@ namespace Oxide.Plugins
                     if (!RemoveParkProfileCollision(group)) throw new ParkProfileRestorePendingException();
                     throw new InvalidDataException("Park profile collision requires the complete verified native group.");
                 }
-                if (mega && (block.grade != (i < 16 ? BuildingGrade.Enum.Stone : i < 72 ? BuildingGrade.Enum.Metal : BuildingGrade.Enum.Wood) ||
+                if (ownedHalfpipe && (block.grade != ParkProfileGrade(kind, i) ||
                     block.skinID != 0 || block.transform.lossyScale != Vector3.one))
                 {
                     if (!RemoveParkProfileCollision(group)) throw new ParkProfileRestorePendingException();
-                    throw new ParkProfileChangedException("MEGA collision requires the original native grades, skins and scale.");
+                    throw new ParkProfileChangedException("Halfpipe collision requires the original native grades, skins and scale.");
                 }
                 blocks.Add(block);
             }
             ParkProfileCollision existing;
             if (parkProfileCollisions.TryGetValue(group, out existing))
             {
-                if (!mega && existing.Root != null && existing.Members.SequenceEqual(blocks)) return;
-                if (mega)
+                if (!ownedHalfpipe && existing.Root != null && existing.Members.SequenceEqual(blocks)) return;
+                if (ownedHalfpipe)
                 {
                     bool healthy;
                     try { healthy = ParkMegaCollisionHealthy(group, existing, parts, blocks); }
                     catch (Exception) { healthy = false; }
                     if (healthy) return;
                     if (!RemoveParkProfileCollision(group)) throw new ParkProfileRestorePendingException();
-                    throw new InvalidDataException("MEGA profile collision changed; native floor colliders were restored.");
+                    throw new InvalidDataException("Halfpipe profile collision changed; native floor colliders were restored.");
                 }
                 if (!RemoveParkProfileCollision(group)) throw new ParkProfileRestorePendingException();
             }
             int layer = LayerMask.NameToLayer("Construction");
             if (layer < 0) throw new InvalidDataException("Park profile collision layer is unavailable.");
-            // The client places MEGA at the first flat block's local bounds top, then adds
-            // the shared RideLift. Do not infer this datum from a tilted metal chord.
-            float datum = mega ? blocks[0].bounds.max.y : floor.max.y;
-            if (mega && (float.IsNaN(datum) || float.IsInfinity(datum) || datum <= 0 || datum >= 0.5f))
-                throw new InvalidDataException("MEGA flat-floor riding datum is unavailable.");
-            var collision = new ParkProfileCollision { Identity = mega ? ParkRestoreIdentity(group, parts) : null };
+            // Both halfpipes use the first flat block's local top as their riding datum.
+            // The mesh adds its kind's lift; never infer the datum from a tilted chord.
+            float datum = ownedHalfpipe ? blocks[0].bounds.max.y : floor.max.y;
+            if (ownedHalfpipe && (float.IsNaN(datum) || float.IsInfinity(datum) || datum <= 0 || datum >= 0.5f))
+                throw new InvalidDataException("Halfpipe flat-floor riding datum is unavailable.");
+            var collision = new ParkProfileCollision { Identity = ownedHalfpipe ? ParkRestoreIdentity(group, parts) : null };
             parkProfileCollisions.Add(group, collision);
             try
             {
                 collision.Members.AddRange(blocks);
-                if (mega)
+                if (ownedHalfpipe)
                 {
                     collision.Datum = datum;
-                    for (int i = 0; i < 64; i++)
+                    for (int i = ParkProfileFloorStart(kind); i < ParkProfileFloorStart(kind) + ParkProfileFloorCount(kind); i++)
                     {
                         var patch = new ParkProfilePatch { Index = i };
                         collision.Patches.Add(patch);
-                        patch.Root = new GameObject("ShortcutSkate MEGA floor collision " + i.ToString(CultureInfo.InvariantCulture));
+                        patch.Root = new GameObject("ShortcutSkate " + group.Kind + " floor collision " + i.ToString(CultureInfo.InvariantCulture));
                         patch.Root.SetActive(false);
                         patch.Root.layer = layer;
                         patch.Root.transform.position = new Vector3((float)group.AnchorX, (float)group.AnchorY + datum, (float)group.AnchorZ);
@@ -6464,7 +6693,7 @@ namespace Oxide.Plugins
                         // Keep the common profile frame while preserving the actual native
                         // floor as the parent used by hit, hammer, grade and entity queries.
                         patch.Root.transform.SetParent(blocks[i].transform, true);
-                        patch.Mesh = ParkMegaMesh(i);
+                        patch.Mesh = mega ? ParkMegaMesh(i) : ParkHalfpipeMesh(i);
                         patch.Shell = patch.Root.AddComponent<MeshCollider>();
                         patch.Shell.sharedMesh = patch.Mesh;
                         patch.Shell.convex = false;
@@ -6496,34 +6725,38 @@ namespace Oxide.Plugins
                         apron.size = new Vector3(3, (float)profile.Skin, 2.8f);
                     }
                 }
-                // MEGA's native coping/rear guard walls remain solid; replace only its
-                // 64 floor colliders with the closed smooth floor shell.
-                foreach (BuildingBlock block in mega ? blocks.Take(64) : blocks)
+                // Replace only the designated native floors: MEGA0..63 or regular4..11.
+                // Regular flat/decks and both kinds' native guard walls stay solid.
+                foreach (BuildingBlock block in ownedHalfpipe ? blocks.Skip(ParkProfileFloorStart(kind)).Take(ParkProfileFloorCount(kind)) : blocks)
                 {
                     int before = collision.Disabled.Count;
                     foreach (Collider collider in block.GetComponentsInChildren<Collider>(true))
                     {
                         if (collider == null || collider.isTrigger || !collider.enabled ||
-                            (mega && !collider.gameObject.activeInHierarchy) ||
+                            (ownedHalfpipe && !collider.gameObject.activeInHierarchy) ||
                             ParkProfileOwnsCollider(collision, collider) || !ReferenceEquals(collider.ToBaseEntity(), block)) continue;
-                        if (mega) collision.OriginalShapes.Add(ParkProfileColliderState.Capture(collider, block));
+                        if (ownedHalfpipe) collision.OriginalShapes.Add(ParkProfileColliderState.Capture(collider, block));
                         collision.Disabled.Add(collider);
                     }
-                    if (mega && collision.Disabled.Count == before)
-                        throw new InvalidDataException("MEGA collision requires physical colliders on every verified floor.");
+                    if (ownedHalfpipe && collision.Disabled.Count == before)
+                        throw new InvalidDataException("Halfpipe collision requires physical colliders on every verified transition floor.");
                 }
+                // A new closed regular ramp can occupy space beneath the old plates.
+                // Observe all active/sleeping bodies before the first collision mutation.
+                if (kind == SkateParkKind.Halfpipe && !ParkProfileReplacementBodiesClear(collision))
+                    throw new ParkProfileActivationOccupiedException();
                 // Retain solid collision throughout the exchange; failure restores the originals
                 // before removing the replacement. No native anti-hack result is overridden.
-                if (mega)
+                if (ownedHalfpipe)
                 {
                     foreach (ParkProfilePatch patch in collision.Patches) patch.Root.SetActive(true);
                     Physics.SyncTransforms();
                 }
                 foreach (Collider collider in collision.Disabled) collider.enabled = false;
-                if (!mega) collision.Root.SetActive(true);
+                if (!ownedHalfpipe) collision.Root.SetActive(true);
                 Physics.SyncTransforms();
-                if (mega && !ParkMegaCollisionHealthy(group, collision, parts, blocks))
-                    throw new InvalidDataException("MEGA profile collision activation could not be verified.");
+                if (ownedHalfpipe && !ParkMegaCollisionHealthy(group, collision, parts, blocks))
+                    throw new InvalidDataException("Halfpipe profile collision activation could not be verified.");
             }
             catch
             {
