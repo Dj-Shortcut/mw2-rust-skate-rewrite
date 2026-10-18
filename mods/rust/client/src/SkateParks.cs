@@ -193,7 +193,7 @@ public static class SkateParks
     private sealed class Loaded { public SkateModel Model; public Mesh[] Meshes; public Material[] Materials; public string Error; }
     private sealed class Placed
     {
-        public Kind Kind; public int[] Ids; public GameObject Root; public Vector3 Origin; public float Yaw; public int ColliderCount;
+        public Kind Kind; public int[] Ids; public BuildingBlock[] Entities; public GameObject Root; public Vector3 Origin; public float Yaw; public int ColliderCount;
         public readonly List<Renderer> Hidden = new List<Renderer>();
         public readonly List<Collider> Backing = new List<Collider>();
         public readonly List<int> Ramp = new List<int>();
@@ -264,12 +264,20 @@ public static class SkateParks
             blocks.Add(new Block { Entity = b, Prefab = prefab, Position = t.position, Rotation = t.rotation, Yaw = e.y, Pitch = Wrap(e.x), Top = top, Bottom = bottom, Id = b.GetInstanceID() });
         }
         Blocks = blocks.Count;
-        // Assemblies that are still complete stay as they are; the rest go.
+        // Assemblies that are still complete stay as they are; the rest go. A block that is out of
+        // Reach but still exists keeps its assembly: riding away from a MEGA used to drop it once
+        // its far end left the sphere, and its near chords were then drawn as banks and kickers.
         var present = new HashSet<int>(); foreach (var b in blocks) present.Add(b.Id);
         for (var i = placed.Count - 1; i >= 0; i--)
         {
             var keep = true;
-            foreach (var id in placed[i].Ids) if (!present.Contains(id)) { keep = false; break; }
+            var ids = placed[i].Ids; var entities = placed[i].Entities;
+            for (var k = 0; k < ids.Length; k++)
+            {
+                if (present.Contains(ids[k])) continue;
+                if (entities != null && k < entities.Length && Alive(entities[k])) continue;
+                keep = false; break;
+            }
             if (!keep) { Remove(placed[i]); placed.RemoveAt(i); }
         }
         var taken = new HashSet<int>();
@@ -317,7 +325,9 @@ public static class SkateParks
                     displaced.Add(existing);
                 }
                 if (overlap) continue;
-                var p = new Placed { Kind = kind, Ids = ids };
+                var entities = new BuildingBlock[matched.Count];
+                for (var m = 0; m < matched.Count; m++) entities[m] = blocks[matched[m]].Entity;
+                var p = new Placed { Kind = kind, Ids = ids, Entities = entities };
                 if (!Place(p, kind, blocks, matched, anchorYaw, displaced))
                 {
                     // Geometry has identified this kit even when its model or safe activation
@@ -1587,6 +1597,10 @@ public static class SkateParks
         return flat;
     }
 
+    private static bool Alive(BuildingBlock b)
+    {
+        try { return b != null && b.gameObject != null && b.gameObject.activeInHierarchy; } catch (Exception) { return false; }
+    }
     private static long Cell(Vector3 p) { return ((long)Math.Floor(p.x) & 0xFFFFF) | (((long)Math.Floor(p.y) & 0xFFFFF) << 20) | (((long)Math.Floor(p.z) & 0xFFFFF) << 40); }
     private static IEnumerable<int> Near(Dictionary<long, List<int>> cells, Vector3 at)
     {
