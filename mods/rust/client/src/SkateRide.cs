@@ -172,16 +172,31 @@ public static class SkateRide
     private static float HorizontalFactor { get { return Mode == RideMode.Ground ? Flat(Tangent).magnitude : 1f; } }
     public static float HorizontalSpeed { get { return Speed * HorizontalFactor; } }
     private static Vector3 Flat(Vector3 v) { return new Vector3(v.x, 0f, v.z); }
+    // The way along the ground that goes the heading's way. The shared frame (its ground is at most
+    // 72 degrees, normal y over 0.3) keeps the heading as the horizontal part and gives it the rise
+    // the normal asks for: the heading's part into the slope, up the slope, by 1/y. Up a transition
+    // the normal tilts on to level at the lip (SteepSlope), where that rise would be unbounded and
+    // the heading's part along the face would vanish with it, so a diagonal line up the wall became
+    // a straight vertical launch. Past the shared limit the factor is held at its value there: the
+    // part into the face goes up it, the part along the face (along the coping) stays, and the two
+    // agree with the shared frame at 72 degrees.
+    private const float SharedNormalLeast = 0.3f;
     private static Vector3 SurfaceTangent(Vector3 normal, Vector3 heading)
     {
-        if (normal.y <= 0.3f) return heading;
-        var v = heading; v.y = -(v.x * normal.x + v.z * normal.z) / normal.y;
-        return v.normalized;
+        var level = new Vector3(normal.x, 0f, normal.z); var lean = level.magnitude;
+        if (lean < 0.0001f) return heading;
+        level /= lean;
+        var into = -(heading.x * level.x + heading.z * level.z);
+        var along = heading + level * into;
+        var up = new Vector3(-level.x * normal.y, lean, -level.z * normal.y);
+        var v = along + up * (into / Math.Max(normal.y, SharedNormalLeast));
+        return v.sqrMagnitude > 0.000001f ? v.normalized : heading;
     }
     private static void LimitSpeed(float forward, float reverse)
     {
         var h = HorizontalFactor;
-        if (h <= 0.0001f) { Speed = 0f; return; }
+        // Straight up a lip there is no horizontal pace to cap.
+        if (h <= 0.0001f) return;
         Speed = Clamp(Speed, -reverse / h, forward / h);
         if (Mode == RideMode.Grind) SkateGrind.Speed = Speed;
     }
@@ -268,7 +283,7 @@ public static class SkateRide
         if (mountAt - putBackAt > CapForget) ForgetServer();
         VSpeed = 0f; AirTime = 0f; flipLeft = shoveLeft = pendShove = bodyLeft = 0f; pendFlip = 0; SpinDeg = FlipDeg = ShoveDeg = BodyDeg = 0; LateTrick = false; Jumped = TrickAir = Braking = Manual = NoseManual = spinning = DeckReversed = false; PushPhase = 0f; stuck = 0; heldSteps = 0; Held = false;
         Grab = SkateGrabKind.None; spinSide = 1f; wantKind = SkatePopKind.Ollie; wantFlip = 0; wantShove = 0f; wantScale = 1f;
-        PumpHeld = RevertLeft = revertTurned = 0f; landedTrick = false; steppedAt = -99f; StepUps = 0; Pump = default(SkatePumpState); SlopeDegrees = 0f; ContactNormal = Vector3.up; GrindKind = SkateGrindKind.None; GrindFrontside = GrindAlong = false; GrindDeck = 0f; Stalling = false; Stalls = 0; PlantedUntil = -99f; PushMongo = PushLead = false; handDownAt = -99f; rollingBack = false;
+        PumpHeld = RevertLeft = revertTurned = 0f; landedTrick = false; steppedAt = -99f; StepUps = 0; Pump = default(SkatePumpState); SlopeDegrees = 0f; ContactNormal = Vector3.up; OnRamp = false; GrindKind = SkateGrindKind.None; GrindFrontside = GrindAlong = false; GrindDeck = 0f; Stalling = false; Stalls = 0; PlantedUntil = -99f; PushMongo = PushLead = false; handDownAt = -99f; rollingBack = false;
         Trick = new SkateTrickState(false); TrickName = ""; ComboPoints = 0; TrickAt = BankedAt = LandAt = jumpWanted = -99f; OffReason = "";
         SkateHud.Clear();
         Normal = ViewNormal = Vector3.up; Position = b.position; Tangent = Dir(yaw);
@@ -389,6 +404,7 @@ public static class SkateRide
     // or the coping), so the face is read again with a ray to the contact. On the face itself the
     // two agree; on a transition's open side edge (the drawn surface has no side face) the ray
     // still finds the upward face, but the sweep's normal turns out sideways, and that stays a wall.
+    // The face is ridden as far as the vertical lip, so a face is one up to level.
     private static bool RampFaceAhead(Vector3 from, RaycastHit hit)
     {
         if (Mode != RideMode.Ground && VSpeed >= 0f) return false;
@@ -396,7 +412,7 @@ public static class SkateRide
         var to = hit.m_Point - from; var reach = to.magnitude;
         RaycastHit face;
         if (reach < 0.001f || !SkateParks.Ray(from, to / reach, out face, reach + WallProbe, GroundMask) || face.collider != hit.collider) return false;
-        return face.m_Normal.y > 0.05f && Vector3.Dot(face.m_Normal, hit.m_Normal) > 0.9f;
+        return face.m_Normal.y > -0.05f && Vector3.Dot(face.m_Normal, hit.m_Normal) > 0.9f;
     }
     // The whole measured pace of the last step, along the path the body took (for the checks' logs).
     public static float PathSpeed;
@@ -533,6 +549,7 @@ public static class SkateRide
     private static void Sense(Vector3 pos)
     {
         RaycastHit hit;
+        if (Mode == RideMode.Ground && OnRamp && RampContact(pos, out hit)) return;
         var reach = Mode == RideMode.Air ? AirProbe : FeetProbe;
         var got = SkateParks.Ray(pos + Vector3.up * RayLift, Vector3.down, out hit, RayLift + reach, GroundMask);
         // The player's capsule ends in a half sphere: on a slope it rests on its side of that sphere, so
@@ -542,24 +559,90 @@ public static class SkateRide
         // degrees.
         var slack = got && hit.m_Normal.y > 0.2f && hit.m_Normal.y < 0.999f ? Math.Min(CapsuleSlackMost, CapsuleRadius * (1f / hit.m_Normal.y - 1f)) : 0f;
         Clearance = got ? hit.m_Distance - RayLift - slack : 99f;
+        OnRamp = got && SkateParks.IsRamp(hit) && !SkateParks.IsCoping(hit);
+        // Over a transition's face (coming down onto it from the air, or the first step onto it)
+        // the gap is the half sphere's distance to the face along the face's normal, exact rather
+        // than the rest's estimate, and the face keeps its normal however steep: a fall back onto
+        // the wall is landed on the wall (Land), not on level ground.
+        if (OnRamp && hit.m_Normal.y > 0.001f) Clearance = Vector3.Dot(pos + Vector3.up * CapsuleRadius - hit.m_Point, hit.m_Normal) - CapsuleRadius;
         Grounded = got && Clearance <= FeetProbe;
-        OnRamp = got && SkateParks.IsRamp(hit);
-        Normal = Grounded && hit.m_Normal.y > 0.3f ? hit.m_Normal : Vector3.up;
-        if (got && hit.m_Normal.y > 0.3f) ContactNormal = hit.m_Normal;
+        Normal = Grounded && (hit.m_Normal.y > SharedNormalLeast || (OnRamp && hit.m_Normal.y > 0.001f)) ? hit.m_Normal : Vector3.up;
+        BelowNormal = got && hit.m_Normal.y > 0.001f ? hit.m_Normal : Vector3.up;
+        if (got && hit.m_Normal.y > SharedNormalLeast) ContactNormal = hit.m_Normal;
+    }
+    // The normal of what Sense last found under the body, grounded or not (the air step's landing
+    // reads the gap to a transition's face along it).
+    public static Vector3 BelowNormal = Vector3.up;
+
+    // On a transition's drawn surface (Sense): its faces are ground, not walls (WallAhead), and the
+    // contact is read along the face's normal (RampContact).
+    public static bool OnRamp;
+    // Rides off the lip of a transition (the log's count): the board leaves the face with the whole
+    // pace it had along it, up as much as the face stood up, and comes back down onto it.
+    public static int Verts;
+    public const float RampReach = 0.3f;
+
+    // On a transition the body rests against the face, not on the ground straight below it: the
+    // capsule's bottom half sphere touches the face along the face's normal. Read straight down,
+    // the ground under the body is lost from about 53 degrees on (the gap below grows past the
+    // probe, the capsule's rest on the slope counted in), and the ride flapped between ground and
+    // air up every transition (#487). So on a face the ride is on, the contact is read along the
+    // last normal from the half sphere's centre: the distance to the face less the radius is the
+    // gap. The ground is kept as far as the lip, where the face stands vertical; a face that leans
+    // over is none, and so is anything but the transition's own collider. The ride's frame on a
+    // face past the shared physics' 72 degrees is the client's own (SteepSlope).
+    private static bool RampContact(Vector3 pos, out RaycastHit hit)
+    {
+        hit = default(RaycastHit);
+        var along = -Normal;
+        if (along.sqrMagnitude < 0.5f) return false;
+        along = along.normalized;
+        if (!SkateParks.Ray(pos + Vector3.up * CapsuleRadius, along, out hit, CapsuleRadius + FeetProbe + RampReach, GroundMask)) return false;
+        // The coping on the lip is not the face: met by this ray, the face has ended there.
+        if (!SkateParks.IsRamp(hit) || SkateParks.IsCoping(hit) || hit.m_Normal.y < -0.05f) return false;
+        Clearance = hit.m_Distance - CapsuleRadius;
+        Grounded = Clearance <= FeetProbe;
+        OnRamp = true;
+        Normal = hit.m_Normal.y > 0.001f ? hit.m_Normal : new Vector3(hit.m_Normal.x, 0.001f, hit.m_Normal.z).normalized;
+        BelowNormal = Normal;
+        if (hit.m_Normal.y > SharedNormalLeast) ContactNormal = hit.m_Normal;
+        return true;
     }
 
-    // On a transition's drawn surface (Sense): its faces are ground, not walls (WallAhead).
-    public static bool OnRamp;
-    // Up a transition past VertDegrees the board goes vert: all its pace turns straight up, so the
-    // rider rises along the face and over the coping and comes straight back down onto the
-    // transition, rolling back fakie. The shared physics takes no ground steeper than 72 degrees, and
-    // a body leaving the face there would fly onto the deck or over it.
-    public const float VertDegrees = 68f;
-    public static int Verts;
+    // Past the shared physics' limit (its frame takes no ground over 72 degrees) the same rule is
+    // kept by the client up to the lip: gravity along the tangent, the slope signed by the way of travel.
+    private static void SteepSlope(Vector3 tangent, float dt)
+    {
+        Speed += -AirGravity * tangent.y * dt;
+        var horizontal = Flat(tangent).magnitude;
+        SlopeDegrees = Speed == 0f ? 0f : (float)(Math.Atan2(tangent.y, horizontal) * 180.0 / Math.PI) * Math.Sign(Speed);
+    }
 
     private static void GroundStep(float dt)
     {
-        if (!Grounded) { Launch(Tangent, 0f, dt); Sense(Position); AirStep(Position, dt); return; }
+        if (!Grounded)
+        {
+            // Off the lip of a transition (or any edge): the pace along the ground goes on as it
+            // was, and a pop asked for in the last moment on it is taken here, as it would have
+            // been a step earlier on the ground (TakeOff forgets the request otherwise). The air
+            // brings the board back down onto the face, rolling back fakie, or onto the deck when
+            // the way led over it.
+            var popped = now - jumpWanted < 0.12f;
+            var pop = 0f;
+            if (popped)
+            {
+                Pops++; jumpWanted = -99f;
+                if (SkateTricks.IsPlant(wantKind)) PlantedUntil = now + PlantSeconds;
+                pop = OlliePop * wantScale * PopHeight(wantKind);
+            }
+            var rise = Tangent.y * Speed;
+            if (rise > 0.5f && Math.Abs(SlopeDegrees) >= 45f)
+            {
+                Verts++;
+                Out.Say("SKATE vert: off the lip at " + Math.Abs(SlopeDegrees).ToString("F0") + " deg, " + rise.ToString("F1") + " m/s up, " + Flat(Tangent * Speed).magnitude.ToString("F1") + " along" + (popped ? ", popped" : "") + ", at " + Out.V3(Position));
+            }
+            Launch(Tangent, pop, dt); Sense(Position); AirStep(Position, dt); return;
+        }
         var before = Yaw;
         var maxTurn = TurnRate / (1f + Math.Abs(Speed) / 8f) * dt;
         // The brake with a turn held at speed is a powerslide: the board swings across the line and
@@ -589,41 +672,17 @@ public static class SkateRide
         if (now - jumpWanted >= 0.12f) Revert(dt);
         var dir = RevertLeft != 0f ? revertDir * revertSign : Dir(Yaw);
         var tangent = SurfaceTangent(Normal, dir);
-        // The shared physics: gravity along the tangent of the ground, the slope signed by the way of travel.
+        // The shared physics: gravity along the tangent of the ground, the slope signed by the way of
+        // travel. Up a transition past its limit (a face over 72 degrees, only ever a ramp's), the
+        // client keeps the same rule to the lip.
         SkateSlopeResult slope; string error;
-        if (SkateRidePhysics.TrySlope(new SkateSlopeInput(V(Normal), V(dir), Speed, AirGravity), dt, out slope, out error))
+        if (Normal.y <= SharedNormalLeast) SteepSlope(tangent, dt);
+        else if (SkateRidePhysics.TrySlope(new SkateSlopeInput(V(Normal), V(dir), Speed, AirGravity), dt, out slope, out error))
         {
             tangent = V(slope.Tangent); Speed = (float)slope.SignedTangentSpeed; SlopeDegrees = (float)slope.SignedSlopeDegrees;
         }
         else { Speed += Vector3.Dot(Physics.gravity, tangent) * SlopeGain * dt; Physics_(error); }
         Tangent = tangent; Braking = SkateKeys.Brake;
-        if (OnRamp && SlopeDegrees >= VertDegrees)
-        {
-            // A pop asked for on the way up adds to the rise and makes the flight a trick.
-            var popped = now - jumpWanted < 0.12f;
-            // The pace into the face turns up; the pace along the coping stays, so a carve up the
-            // wall carries on sideways the way it came. Each part of the pace goes one way only.
-            var face = Flat(Normal);
-            var along = Flat(tangent * Speed);
-            if (face.sqrMagnitude > 0.0001f) { face = face.normalized; along -= face * Vector3.Dot(along, face); }
-            var up = (float)Math.Sqrt(Math.Max(0f, Speed * Speed - along.sqrMagnitude));
-            if (popped)
-            {
-                Pops++; jumpWanted = -99f;
-                if (SkateTricks.IsPlant(wantKind)) PlantedUntil = now + PlantSeconds;
-                up += OlliePop * wantScale * PopHeight(wantKind);
-            }
-            Verts++;
-            Out.Say("SKATE vert at " + SlopeDegrees.ToString("F0") + " deg, " + up.ToString("F1") + " m/s up, " + along.magnitude.ToString("F1") + " along" + (popped ? ", popped" : "") + ", at " + Out.V3(Position));
-            var nose = NoseYaw; var deck = DeckYaw;
-            var sign = Speed < 0f ? -1f : 1f;
-            if (along.sqrMagnitude > 0.0001f) Yaw = (float)(Math.Atan2(along.x * sign, along.z * sign) * 180.0 / Math.PI);
-            Speed = along.magnitude * sign;
-            TakeOff(popped, up + AirGravity * dt);
-            KeepAirPose(nose, deck);
-            AirStep(Position, dt);
-            return;
-        }
         // A press up to a moment before touch-down still counts, so tricks can be chained.
         if (now - jumpWanted < 0.12f)
         {
@@ -678,9 +737,11 @@ public static class SkateRide
             PushPhase += down ? Math.Max(dt / (PushPeriod * 3f), Math.Abs(Speed) * dt / stroke * span) : dt / PushPeriod;
             if (PushPhase >= 1f) PushPhase = 0f;
         }
-        // The velocity runs along the ground's tangent; a gap under the wheels is closed on top of it.
+        // The velocity runs along the ground's tangent; a gap under the wheels is closed on top of it:
+        // down, and on a transition's face toward the face, which is where the gap was read.
         velocity = tangent * Speed;
-        velocity.y -= Clamp(Clearance * 8f, 0f, 3f);
+        var close = Clamp(Clearance * 8f, 0f, 3f);
+        if (OnRamp) velocity -= Normal * close; else velocity.y -= close;
         StepOver(dir, dt);
         // In a slide the rider leans back from the way he goes, into the turn that started it.
         var leanWant = Powerslide > 0.01f ? -PowerslideSide * 18f * Powerslide : Clamp((Delta(before, Yaw) + revertStep) / dt * 0.12f, -25f, 25f);
@@ -744,9 +805,11 @@ public static class SkateRide
     private static void PumpStep(float dt)
     {
         PumpHeld = SkateKeys.Crouch ? Math.Min(PumpCharge, PumpHeld + dt) : 0f;
-        var travel = Flat(Tangent) * (Speed >= 0f ? 1f : -1f);
+        var travel = Flat(Tangent); if (travel.sqrMagnitude < 0.0001f) travel = Dir(Yaw);
+        travel = travel * (Speed >= 0f ? 1f : -1f);
         SkatePumpResult r; string error;
-        var input = new SkatePumpInput(Mode == RideMode.Ground, SkateKeys.Crouch, SlopeDegrees, Math.Abs(Speed), new SkateVector(travel.x, 0, travel.z));
+        // The shared pump takes a slope short of vertical; at the lip the face is as good as that.
+        var input = new SkatePumpInput(Mode == RideMode.Ground, SkateKeys.Crouch, Clamp(SlopeDegrees, -89.9f, 89.9f), Math.Abs(Speed), new SkateVector(travel.x, 0, travel.z));
         if (!SkateRidePhysics.TryPump(Pump, input, dt, out r, out error)) { Physics_(error); return; }
         Pump = r.State;
         if (!r.Awarded) return;
@@ -821,7 +884,10 @@ public static class SkateRide
 
     private static float TimeToGround()
     {
-        var h = Clearance > AirProbe ? AirProbe : Clearance < 0f ? 0f : Clearance;
+        var h = Clearance;
+        // Over a transition's face the gap is read along its normal: the fall to it is longer.
+        if (OnRamp && h > 0f) h /= Math.Max(BelowNormal.y, 0.2f);
+        h = h > AirProbe ? AirProbe : h < 0f ? 0f : h;
         return (VSpeed + (float)Math.Sqrt(VSpeed * VSpeed + 2f * AirGravity * h)) / AirGravity;
     }
 
@@ -879,7 +945,9 @@ public static class SkateRide
         var flipAxis = Clamp(flipLeft / flipStep, -1f, 1f); var shoveAxis = Clamp(shoveLeft / shoveStep, -1f, 1f); var bodyAxis = Clamp(bodyLeft / bodyStep, -1f, 1f);
 
         stuck = VSpeed < -2f && Math.Abs(ActualV) < 0.3f && AirTime > 0.2f ? stuck + 1 : 0;
-        if ((VSpeed <= 0f && Clearance <= Math.Max(0.04f, -VSpeed * dt + 0.02f)) || stuck >= 3)
+        // The step closes the gap by the fall; onto a transition's face, by the pace into the face.
+        var closing = OnRamp ? Math.Max(0f, -Vector3.Dot(dir * Speed + Vector3.up * VSpeed, BelowNormal)) : -VSpeed;
+        if ((VSpeed <= 0f && Clearance <= Math.Max(0.04f, closing * dt + 0.02f)) || stuck >= 3)
         {
             var recovery = stuck >= 3;
             var incoming = dir * Speed + Vector3.up * VSpeed;
@@ -979,9 +1047,13 @@ public static class SkateRide
         landRoll = Vector3.zero; hasLandRoll = false;
         var normal = Grounded ? Normal : ContactNormal;
         if (recovery) incoming.y = 0f;
+        // Back down onto a transition's face past the shared landing's 72 degrees (only ever a
+        // ramp's, from Sense): the fall's part into the face is the impact, the rest rolls along it.
+        var steep = normal.y <= SharedNormalLeast;
         var impact = 0f; var r = default(SkateLandingResult); string error = null;
-        var valid = !recovery && SkateRidePhysics.TryLand(new SkateLandingInput(V(incoming), V(normal), V(Dir(Yaw)), BailImpact, LandRoll), out r, out error);
-        if (valid) impact = r.Bailed ? Math.Max((float)r.NormalImpact, BailImpact + 0.01f) : (float)r.NormalImpact;
+        var valid = !recovery && (steep || SkateRidePhysics.TryLand(new SkateLandingInput(V(incoming), V(normal), V(Dir(Yaw)), BailImpact, LandRoll), out r, out error));
+        if (valid && steep) impact = Math.Max(0f, -Vector3.Dot(incoming, normal));
+        else if (valid) impact = r.Bailed ? Math.Max((float)r.NormalImpact, BailImpact + 0.01f) : (float)r.NormalImpact;
         else if (!recovery) { Physics_(error); Bail(); return; }
         if (AirTime > 0.12f || impact > 1.5f) { Lands++; LandAt = now; LandImpact = impact; }
         landedTrick = TrickAir; spinAtLand = SkateKeys.Spin;
@@ -1000,10 +1072,12 @@ public static class SkateRide
             Yaw += airNoseOffset + airDeckOffset; airNoseOffset = airDeckOffset = 0f; comingRound = false;
             SpinDeg = FlipDeg = ShoveDeg = 0;
             var axis = Dir(Yaw + (Trick.Switch ? 180f : 0f) + (DeckReversed ? 180f : 0f));
-            if (!SkateRidePhysics.TryLand(new SkateLandingInput(V(incoming), V(normal), V(axis), BailImpact, recovery ? 0f : LandRoll), out r, out error))
-            { Physics_(error); Speed = Flat(incoming).magnitude * (Speed < 0f ? -1f : 1f); Bail(); return; }
+            Vector3 roll;
+            if (steep) roll = incoming - normal * Vector3.Dot(incoming, normal);
+            else if (SkateRidePhysics.TryLand(new SkateLandingInput(V(incoming), V(normal), V(axis), BailImpact, recovery ? 0f : LandRoll), out r, out error)) roll = V(r.RollVelocity);
+            else { Physics_(error); Speed = Flat(incoming).magnitude * (Speed < 0f ? -1f : 1f); Bail(); return; }
             Tangent = SurfaceTangent(normal, Dir(Yaw)); Normal = normal;
-            Speed = Vector3.Dot(V(r.RollVelocity), Tangent);
+            Speed = Vector3.Dot(roll, Tangent);
             LimitSpeed(Cap, Cap);
             landRoll = Tangent * Speed; hasLandRoll = true;
         }

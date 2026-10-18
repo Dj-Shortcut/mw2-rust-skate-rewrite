@@ -1216,10 +1216,18 @@ public static class SkateParks
     // The drawn riding surface and coping of a transition, by collider ID: the ride takes them as
     // ground up to near vertical and never as a wall, so a quarterpipe is ridden up to its lip.
     public static readonly HashSet<int> RampIds = new HashSet<int>();
+    // The coping alone (a subset of RampIds): the ride's contact on a face (SkateRide.RampContact)
+    // is the surface, never the pipe on its lip; the coping stays for grinds and stalls.
+    public static readonly HashSet<int> CopingIds = new HashSet<int>();
     public static bool IsRamp(RaycastHit hit)
     {
         if (RampIds.Count == 0) return false;
         try { var c = hit.collider; return c != null && RampIds.Contains(c.GetInstanceID()); } catch (Exception) { return false; }
+    }
+    public static bool IsCoping(RaycastHit hit)
+    {
+        if (CopingIds.Count == 0) return false;
+        try { var c = hit.collider; return c != null && CopingIds.Contains(c.GetInstanceID()); } catch (Exception) { return false; }
     }
     private static void KeepRamp(Placed p, GameObject root)
     {
@@ -1234,6 +1242,7 @@ public static class SkateParks
                 if (name != "COLLISION__transition" && name != "COLLISION__coping") continue;
                 var id = c.GetInstanceID();
                 p.Ramp.Add(id); RampIds.Add(id);
+                if (name == "COLLISION__coping") CopingIds.Add(id);
             }
         }
         catch (Exception e) { Status = "ramp colliders not read: " + e.Message; }
@@ -1241,7 +1250,7 @@ public static class SkateParks
 
     private static void Remove(Placed p)
     {
-        foreach (var id in p.Ramp) RampIds.Remove(id);
+        foreach (var id in p.Ramp) { RampIds.Remove(id); CopingIds.Remove(id); }
         p.Ramp.Clear();
         if (p.Backing.Count > 0)
         {
