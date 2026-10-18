@@ -502,14 +502,16 @@ public static class RiderRig
         try
         {
             if (Pelvis == null) { Bound = false; return; }
+            // The rider stands square to the deck all the way up a transition to the vertical, as the
+            // board does: only a missing or upside-down up falls back to the world's.
             double ux = up.x, uy = up.y, uz = up.z;
             var ul = Math.Sqrt(ux * ux + uy * uy + uz * uz);
-            if (ul < 0.5 || uy / ul < 0.2) { ux = 0; uy = 1; uz = 0; ul = 1; }
+            if (ul < 0.5 || uy / ul < -0.1) { ux = 0; uy = 1; uz = 0; ul = 1; }
             ux /= ul; uy /= ul; uz /= ul;
-            var rad = SkateRide.NoseYaw * Math.PI / 180.0;
-            double fx = Math.Sin(rad), fy = 0, fz = Math.Cos(rad);
-            var d = fx * ux + fy * uy + fz * uz;
-            fx -= ux * d; fy -= uy * d; fz -= uz * d;
+            // The nose's way on the face: the part of it into a steep face goes up the face, so the
+            // body still has a forward where the nose points straight into a vertical wall.
+            var face = SkateBoard.OnFace(new Vector3((float)ux, (float)uy, (float)uz), SkateRide.Dir(SkateRide.NoseYaw));
+            double fx = face.x, fy = face.y, fz = face.z;
             var fl = Math.Sqrt(fx * fx + fy * fy + fz * fz);
             if (fl < 0.2) return;
             fx /= fl; fy /= fl; fz /= fl;

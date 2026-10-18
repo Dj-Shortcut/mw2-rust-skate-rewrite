@@ -272,6 +272,14 @@ about 10 cm above one; the riding surface is their collider, and their colour is
 model's when it is there. Without the `.glb` files next to the plugin the other pieces are found
 and not drawn; the log says which file is missing. Unverified in game.
 
+The rider on the vertical (0.18.22): the rider stands square to the deck all the way up a
+transition, as the board does. Before, the rider's frame went back to the world's up from about 78
+degrees on while the board kept following the face, so on the vertical part of a halfpipe the body
+stuck out sideways from a board standing upright. The nose's way on a steep face is now laid on
+the face (the part of it into the face goes up the face, `SkateBoard.OnFace`), for the board, its
+pitch and the rider alike, so a nose pointed straight into a vertical wall points up the wall
+instead of having no way at all. Not yet seen in the game.
+
 Riding a transition (0.18.18, the client side of #487): on a transition's own collider the ground
 is read along the face's normal, from the centre of the body's bottom half sphere, rather than
 straight down. Straight down, the ground under the body was lost from about 53 degrees on (the gap
