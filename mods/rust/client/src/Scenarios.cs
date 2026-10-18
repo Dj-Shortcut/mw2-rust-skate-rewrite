@@ -125,8 +125,8 @@ public static class Scenarios
     // The server's own park pieces, ridden one after another: to a point in front of each, then
     // across it along its way, at a speed that should carry the board up and over; what came of it
     // is logged per piece. The pieces are those SkateParks found near the player.
-    public const float TourRun = 8f, TourOut = 8f, TourReach = 0.7f, TourApproach = 25f, TourAcross = 5f, TourRest = 2f;
-    private static int tourIndex = -1, tourStage, tourHeld, tourResets, tourBails, tourGrinds;
+    public const float TourPumpSeconds = 45f, TourRun = 8f, TourOut = 8f, TourReach = 0.7f, TourApproach = 25f, TourAcross = 5f, TourRest = 2f;
+    private static int tourIndex = -1, tourStage, tourHeld, tourResets, tourBails, tourGrinds, tourPumps;
     private static float tourAt, tourStartY, tourRise, tourAir, tourTop, tourBack, tourSteep;
     private static bool tourPopped;
     private static string tourGrindKinds = "";
@@ -256,7 +256,7 @@ public static class Scenarios
             if (flat.magnitude < TourReach || stage > TourApproach)
             {
                 Say("tour " + kind + " #" + tourIndex + ": " + (flat.magnitude < TourReach ? "at the start" : "start not reached, " + flat.magnitude.ToString("F1") + " m off") + " after " + stage.ToString("F1") + " s, at " + Out.V1(pos));
-                tourStage = 1; tourAt = game; tourPopped = false; tourStartY = pos.y; tourRise = 0f; tourSteep = 0f; tourAir = 0f; tourTop = 0f; tourBack = 0f; tourHeld = SkateRide.Held ? 1 : 0; tourResets = SkateRide.ResetsAll; tourBails = SkateRide.Bails; tourGrinds = SkateRide.GrindStarts; tourGrindKinds = "";
+                tourStage = 1; tourAt = game; tourPopped = false; tourStartY = pos.y; tourRise = 0f; tourSteep = 0f; tourAir = 0f; tourTop = 0f; tourBack = 0f; tourHeld = SkateRide.Held ? 1 : 0; tourResets = SkateRide.ResetsAll; tourPumps = SkateRide.Pumps; tourBails = SkateRide.Bails; tourGrinds = SkateRide.GrindStarts; tourGrindKinds = "";
             }
             return;
         }
@@ -272,6 +272,9 @@ public static class Scenarios
             var transition = SkateParks.IsTransition(kind);
             SkateKeys.Push = SkateRide.Speed < TourSpeed(kind) && !(transition && (tourRise > 0.3f || SkateRide.Speed < 0f));
             tourRise = Math.Max(tourRise, pos.y - tourStartY);
+            // On the MEGA the push alone tops out near 55 degrees (R 9.6 m, gravity 16): pump it, crouched
+            // down each face and up again through the bottom, pass after pass, to reach its vertical.
+            if (mega) SkateKeys.Crouch = SkateRide.Mode == RideMode.Ground && SkateRide.SlopeDegrees < -4f;
             tourTop = Math.Max(tourTop, SkateRide.Speed);
             // How steep the face under the board got, degrees: the MEGA's vertical is above 72.
             if (SkateRide.Mode == RideMode.Ground) tourSteep = Math.Max(tourSteep, Vector3.Angle(SkateRide.Normal, Vector3.up));
@@ -287,11 +290,11 @@ public static class Scenarios
                 SkateKeys.JumpPressed = true; SkateKeys.PopKind = SkatePopKind.Ollie; SkateKeys.PopScale = 1f;
             }
             if (IsLedge(kind) && toLedge < 0.6f) SkateKeys.LookYaw = heading + 8f;
-            if (stage > (mega ? 2f * TourAcross : TourAcross))
+            if (stage > (mega ? TourPumpSeconds : TourAcross))
             {
                 Say("TOUR " + kind + " #" + tourIndex + ": rose " + tourRise.ToString("F2") + " m, steepest " + tourSteep.ToString("F0") + " deg, air " + tourAir.ToString("F2") + " s, top " + tourTop.ToString("F1") + " m/s, back " + (-tourBack).ToString("F1") + " m/s, held " + (tourHeld > 0 ? "yes" : "no")
-                    + ", grinds " + (SkateRide.GrindStarts - tourGrinds) + (tourGrindKinds != "" ? " (" + tourGrindKinds.Trim() + ")" : "") + ", bails " + (SkateRide.Bails - tourBails) + ", put backs " + (SkateRide.ResetsAll - tourResets) + ", end " + Out.V1(pos) + " " + SkateRide.Mode);
-                tourStage = 2; tourAt = game; SkateKeys.Jump = false;
+                    + ", grinds " + (SkateRide.GrindStarts - tourGrinds) + (tourGrindKinds != "" ? " (" + tourGrindKinds.Trim() + ")" : "") + ", pumps " + (SkateRide.Pumps - tourPumps) + ", bails " + (SkateRide.Bails - tourBails) + ", put backs " + (SkateRide.ResetsAll - tourResets) + ", end " + Out.V1(pos) + " " + SkateRide.Mode);
+                tourStage = 2; tourAt = game; SkateKeys.Jump = false; SkateKeys.Crouch = false;
             }
             return;
         }
