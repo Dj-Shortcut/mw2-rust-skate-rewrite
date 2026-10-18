@@ -190,22 +190,77 @@ public static class SkateHeld
     {
         const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
         selectLooked = true;
+        var seen = "";
         for (var at = player.GetType(); at != null && selectSlot == null; at = at.BaseType)
         {
             foreach (var f in at.GetFields(flags | BindingFlags.DeclaredOnly))
             {
-                var m = f.FieldType.GetMethod("SelectSlot", flags, null, new[] { typeof(int) }, null);
+                var m = SlotSelector(f.FieldType);
+                if (BeltLike(f.Name, f.FieldType)) seen += " field " + f.Name + ":" + f.FieldType.Name + Slotty(f.FieldType);
                 if (m != null) { selectSlot = m; selectMember = f; selectOwner = "field " + f.Name; break; }
             }
             if (selectSlot != null) break;
             foreach (var p in at.GetProperties(flags | BindingFlags.DeclaredOnly))
             {
                 if (p.GetIndexParameters().Length != 0) continue;
-                var m = p.PropertyType.GetMethod("SelectSlot", flags, null, new[] { typeof(int) }, null);
+                if (BeltLike(p.Name, p.PropertyType)) seen += " property " + p.Name + ":" + p.PropertyType.Name + Slotty(p.PropertyType);
+                var m = SlotSelector(p.PropertyType);
                 if (m != null) { selectSlot = m; selectMember = p; selectOwner = "property " + p.Name; break; }
             }
         }
-        Out.Say("HELD belt select route: " + (selectSlot == null ? "none found (no member with SelectSlot(int))" : selectOwner + "." + selectSlot.Name));
+        Out.Say("HELD belt select route: " + (selectSlot == null ? "none found (no member with SelectSlot(int, ...)); belt-like members:" + (seen == "" ? " (none)" : seen) : selectOwner + "." + selectSlot.Name + "(" + selectSlot.GetParameters().Length + " args)"));
+    }
+
+    // A member worth naming in the log: belt by name, or a type with slot methods.
+    private static bool BeltLike(string name, Type t)
+    {
+        if (name.IndexOf("Belt", StringComparison.OrdinalIgnoreCase) >= 0 || t.Name.IndexOf("Belt", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+        if (t.IsPrimitive || t == typeof(string)) return false;
+        return Slotty(t).IndexOf("Slot", StringComparison.OrdinalIgnoreCase) >= 0;
+    }
+
+    // A SelectSlot whose first argument is the slot and whose others can be left at their defaults.
+    private static MethodInfo SlotSelector(Type t)
+    {
+        const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
+        foreach (var m in t.GetMethods(flags))
+        {
+            if (m.Name != "SelectSlot") continue;
+            var ps = m.GetParameters();
+            if (ps.Length == 0 || ps[0].ParameterType != typeof(int)) continue;
+            var rest = true;
+            for (var i = 1; i < ps.Length; i++) if (!ps[i].IsOptional && !ps[i].ParameterType.IsValueType) rest = false;
+            if (rest) return m;
+        }
+        return null;
+    }
+
+    // The slot and selection methods of a type, for the log.
+    private static string Slotty(Type t)
+    {
+        var s = "";
+        try
+        {
+            foreach (var m in t.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static))
+                if (m.Name.IndexOf("Slot", StringComparison.OrdinalIgnoreCase) >= 0 || m.Name.IndexOf("Select", StringComparison.OrdinalIgnoreCase) >= 0 || m.Name.IndexOf("Active", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    var args = "";
+                    foreach (var pa in m.GetParameters()) args += (args == "" ? "" : ",") + pa.ParameterType.Name;
+                    s += " " + m.Name + "(" + args + ")";
+                }
+        }
+        catch (Exception) { }
+        return s == "" ? "" : " [" + s.Trim() + "]";
+    }
+
+    // The arguments for the belt's SelectSlot: the slot, then each other argument's default.
+    private static object[] SlotArgs(int slot)
+    {
+        var ps = selectSlot.GetParameters();
+        var args = new object[ps.Length];
+        args[0] = slot;
+        for (var i = 1; i < ps.Length; i++) args[i] = ps[i].IsOptional ? ps[i].DefaultValue : Activator.CreateInstance(ps[i].ParameterType);
+        return args;
     }
 
     // Makes that belt slot the active one through the game's own belt, the way a number key does,
@@ -224,7 +279,7 @@ public static class SkateHeld
             var field = selectMember as FieldInfo;
             owner = field != null ? field.GetValue(player) : ((PropertyInfo)selectMember).GetValue(player, null);
             if (owner == null) { how = selectOwner + " is empty"; return false; }
-            selectSlot.Invoke(owner, new object[] { slot });
+            selectSlot.Invoke(owner, SlotArgs(slot));
             how = selectOwner + ".SelectSlot(" + slot + ")";
             return true;
         }
@@ -266,7 +321,7 @@ public static class SkateHeld
                 Out.Say("HELD holster route: " + holsterRoute);
             }
             if (clearSelection != null) clearSelection.Invoke(owner, null);
-            else selectSlot.Invoke(owner, new object[] { -1 });
+            else selectSlot.Invoke(owner, SlotArgs(-1));
             how = holsterRoute + " put away " + (Name != "" ? Name : Shortname);
             return true;
         }
