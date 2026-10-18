@@ -302,7 +302,7 @@ public static class SkateHeld
         {
             const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
             if (!selectLooked) LookForBelt(player);
-            if (selectSlot == null) { how = "no belt in this build"; return false; }
+            if (selectSlot == null) return Hide(player, out how);
             var field = selectMember as FieldInfo;
             var owner = field != null ? field.GetValue(player) : ((PropertyInfo)selectMember).GetValue(player, null);
             if (owner == null) { how = selectOwner + " is empty"; return false; }
@@ -326,6 +326,48 @@ public static class SkateHeld
             return true;
         }
         catch (Exception e) { how = "holster threw " + e.GetType().Name + ": " + e.Message; return false; }
+    }
+
+    // Without a belt to clear (this build: no member of the player has a SelectSlot), the held
+    // entity itself is switched off on this client while riding: its model, its view model and a
+    // building plan's ghost go with it, and a switched-off plan takes no clicks. Each one is
+    // switched on again on stepping off (Show). What the held entity offers is logged once a type.
+    private static readonly System.Collections.Generic.List<UnityEngine.GameObject> hidden = new System.Collections.Generic.List<UnityEngine.GameObject>();
+    private static readonly System.Collections.Generic.HashSet<string> probed = new System.Collections.Generic.HashSet<string>();
+    private static MethodInfo heldEntity; private static bool heldLooked;
+    private static bool Hide(object player, out string how)
+    {
+        how = "";
+        const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
+        if (!heldLooked) { heldLooked = true; heldEntity = player.GetType().GetMethod("GetHeldEntity", flags, null, Type.EmptyTypes, null); }
+        if (heldEntity == null) { how = "no belt and no GetHeldEntity in this build"; return false; }
+        var held = heldEntity.Invoke(player, null) as UnityEngine.Component;
+        if (held == null) return false;
+        var go = held.gameObject;
+        var kind = held.GetType().Name;
+        if (probed.Add(kind))
+        {
+            var ms = "";
+            for (var t = held.GetType(); t != null && t != typeof(object); t = t.BaseType)
+                foreach (var m in t.GetMembers(flags | BindingFlags.DeclaredOnly))
+                    if (m.Name.IndexOf("Holster", StringComparison.OrdinalIgnoreCase) >= 0 || m.Name.IndexOf("SetHeld", StringComparison.OrdinalIgnoreCase) >= 0 || m.Name.IndexOf("viewModel", StringComparison.OrdinalIgnoreCase) >= 0 || m.Name.IndexOf("guide", StringComparison.OrdinalIgnoreCase) >= 0)
+                        ms += " " + t.Name + "." + m.Name;
+            Out.Say("HELD entity " + kind + " offers:" + (ms == "" ? " (nothing named holster, held, view model or guide)" : ms));
+        }
+        if (!go.activeSelf) return false;
+        go.SetActive(false);
+        hidden.Add(go);
+        how = "switched off the held " + kind + " (" + go.name + ")";
+        return true;
+    }
+
+    // Stepping off: every held entity switched off for the ride is switched on again.
+    public static int Show()
+    {
+        var n = 0;
+        foreach (var go in hidden) if (go != null && !go.activeSelf) { go.SetActive(true); n++; }
+        hidden.Clear();
+        return n;
     }
 
     // The belt's selected slot (0..5, -1 for none) as the belt keeps it: a member named like

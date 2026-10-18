@@ -118,6 +118,8 @@ public class SkateRig : MonoBehaviour
     // Off the board the item put away at the start of the ride is taken in hand again.
     private void Unholster()
     {
+        var shown = SkateHeld.Show();
+        if (shown > 0) Say("UNHOLSTER switched " + shown + " held entity back on");
         var slot = restoreSlot; restoreSlot = -1;
         if (slot < 0 || Local == null) return;
         string how;
