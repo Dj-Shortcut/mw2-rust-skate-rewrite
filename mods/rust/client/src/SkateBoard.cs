@@ -79,13 +79,28 @@ public static class SkateBoard
     // The deck's pitch, degrees, the leading end up: a manual's, a grind's and an ollie's together.
     public static float PitchDegrees { get { return Tip * TipDegrees + GrindPitch + AirPitch; } }
 
+    // A heading laid on the face whose up is that normal: the part along the face stays, the part
+    // into it goes up it (as SkateRide's tangent does), so a nose pointed straight into a vertical
+    // wall points up the wall instead of into it. On flat ground it is the heading itself.
+    public static Vector3 OnFace(Vector3 normal, Vector3 heading)
+    {
+        var level = new Vector3(normal.x, 0f, normal.z); var lean = level.magnitude;
+        if (lean < 0.0001f) return heading;
+        level /= lean;
+        var into = -(heading.x * level.x + heading.z * level.z);
+        var along = heading + level * into;
+        var up = new Vector3(-level.x * normal.y, lean, -level.z * normal.y);
+        var v = along + up * into;
+        v = v - normal * Vector3.Dot(v, normal);
+        return v.sqrMagnitude > 0.000001f ? v.normalized : heading;
+    }
+
     public static void Tilt(ref Vector3 at, ref Vector3 up)
     {
         var pitch = PitchDegrees;
         if (Math.Abs(pitch) > 0.01f)
         {
-            var lead = SkateRide.Dir(SkateRide.Yaw);
-            lead = lead - up * Vector3.Dot(lead, up);
+            var lead = OnFace(up, SkateRide.Dir(SkateRide.Yaw));
             if (lead.sqrMagnitude > 0.0001f)
             {
                 lead = SkateRide.Speed >= 0f ? lead.normalized : -lead.normalized;
@@ -142,13 +157,11 @@ public static class SkateBoard
         var n = SkateRide.ViewNormal;
         var at = Contact(playerT);
         Tilt(ref at, ref n);
-        var travel = SkateRide.Dir(SkateRide.Yaw);
-        travel = travel - n * Vector3.Dot(travel, n);
-        travel = travel.sqrMagnitude > 0.0001f ? travel.normalized : SkateRide.Dir(SkateRide.Yaw);
+        var travel = OnFace(n, SkateRide.Dir(SkateRide.Yaw));
         // The lean rolls the board about its direction of travel, right side down in a right turn.
         var up = SkateRide.Turn(-SkateRide.Lean, travel) * n;
         // The board's own nose: the rider's stance, and what the board has turned under his feet.
-        var nose = SkateRide.Dir(SkateRide.DeckYaw);
+        var nose = OnFace(up, SkateRide.Dir(SkateRide.DeckYaw));
         nose = nose - up * Vector3.Dot(nose, up);
         nose = nose.sqrMagnitude > 0.0001f ? nose.normalized : travel;
         var flip = (float)SkateRide.FlipDeg; var askew = 0f;
