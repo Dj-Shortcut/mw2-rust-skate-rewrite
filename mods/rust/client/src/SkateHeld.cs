@@ -235,10 +235,14 @@ public static class SkateHeld
     // The game's belt is asked to clear its selection (ClearSelection, else SelectSlot(-1)); the
     // route is logged once, and what still sits in the hand is logged each time it fails.
     private static bool clearLooked; private static MethodInfo clearSelection; private static string holsterRoute = "";
+    // This client build has no GetActiveItem (the log: "HELD methods returning Item: (none)"), so
+    // the held item cannot be read by name; then the belt's own selected slot says what is held.
     public static bool Holster(object player, out string how)
     {
         how = "";
-        if (player == null || !Read(player) || (Shortname == "" && Name == "")) return false;
+        if (player == null) return false;
+        var named = Read(player);
+        if (named && Shortname == "" && Name == "") return false;
         try
         {
             const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
@@ -247,6 +251,13 @@ public static class SkateHeld
             var field = selectMember as FieldInfo;
             var owner = field != null ? field.GetValue(player) : ((PropertyInfo)selectMember).GetValue(player, null);
             if (owner == null) { how = selectOwner + " is empty"; return false; }
+            if (!named)
+            {
+                var selected = SelectedSlot(owner);
+                if (selected == NotReadable) { how = "neither the held item nor the belt's selected slot can be read"; return false; }
+                if (selected < 0 || selected >= 6) return false;
+                Slot = selected; Name = "belt slot " + (selected + 1);
+            }
             if (!clearLooked)
             {
                 clearLooked = true;
@@ -260,6 +271,40 @@ public static class SkateHeld
             return true;
         }
         catch (Exception e) { how = "holster threw " + e.GetType().Name + ": " + e.Message; return false; }
+    }
+
+    // The belt's selected slot (0..5, -1 for none) as the belt keeps it: a member named like
+    // SelectedSlot, static or not; NotReadable when the belt has none. The route is logged once.
+    public const int NotReadable = int.MinValue;
+    private static bool slotLooked; private static MemberInfo slotMember;
+    private static int SelectedSlot(object belt)
+    {
+        const BindingFlags all = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static;
+        if (!slotLooked)
+        {
+            slotLooked = true;
+            var t = belt.GetType();
+            foreach (var name in new[] { "SelectedSlot", "selectedSlot", "_selectedSlot", "currentSlot" })
+            {
+                var p = t.GetProperty(name, all);
+                if (p != null && p.PropertyType == typeof(int) && p.GetIndexParameters().Length == 0) { slotMember = p; break; }
+                var f = t.GetField(name, all);
+                if (f != null && f.FieldType == typeof(int)) { slotMember = f; break; }
+            }
+            var ints = "";
+            if (slotMember == null) foreach (var m in t.GetMembers(all))
+                {
+                    var pi = m as PropertyInfo; var fi = m as FieldInfo;
+                    if ((pi != null && pi.PropertyType == typeof(int) && pi.GetIndexParameters().Length == 0) || (fi != null && fi.FieldType == typeof(int))) ints += " " + m.Name;
+                }
+            Out.Say("HELD belt selected slot: " + (slotMember != null ? t.Name + "." + slotMember.Name : "none found; int members of " + t.Name + ":" + (ints == "" ? " (none)" : ints)));
+        }
+        if (slotMember == null) return NotReadable;
+        var target = belt;
+        var sp = slotMember as PropertyInfo; var sf = slotMember as FieldInfo;
+        if ((sp != null && sp.GetGetMethod(true).IsStatic) || (sf != null && sf.IsStatic)) target = null;
+        var v = sp != null ? sp.GetValue(target, null) : sf.GetValue(target);
+        return v is int ? (int)v : NotReadable;
     }
 
     // The building plan's own turn (R), in degrees about up: the held planner's rotationOffset, as
