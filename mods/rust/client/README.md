@@ -17,6 +17,19 @@ nothing to the server: to the server the rider is a player who moves.
 
 ## Development verification
 
+Client 0.18.21 retries complete larger park assemblies before retaining smaller matches. A
+MEGA that first streamed as a bank or kicker can become the full round halfpipe when all its
+members arrive. Replacement prepares its surface first, preserves renderer/backing ownership,
+and waits if the rider intersects the new surface. Regular-halfpipe backing isolation selects
+only transition floors 4–11, preserving native flat, deck and wall collision.
+
+Rising contact on a verified ramp face uses its contact normal for wall classification,
+landing and gap closure. Side edges, undersides, coping and ordinary world walls remain
+obstructions. The held item is restored during rig teardown as well as normal dismount.
+Cached genuine IL2CPP-reference compilation and temporary exact-source regression checks pass;
+deployment, the complete visible server-placed MEGA and paired native riding acceptance remain
+open. These checks do not establish the actual capsule/network-root relationship or Skate feel.
+
 The handover corrections retain tangent-speed physics with horizontal server/HUD limits,
 process complete landing impact before accepted roll, preserve grind travel independently of
 visual board angle, and own one rig and its audio resources. The client menu matches the server's

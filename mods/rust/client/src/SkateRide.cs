@@ -397,18 +397,17 @@ public static class SkateRide
     public const float WallProbe = 0.3f, WallSkin = 0.1f, WallSlam = 8f, WallFrom = 3f;
     private static readonly float[] wallHeights = { 0.6f, 1.3f };
     public static int WallStops, WallSlams;
-    // A transition's riding face is ground to roll up or come down onto, not a wall: met from the
-    // ground, or falling onto it from the air. Its slabs' riding faces look up; their undersides
-    // (met from behind) and their side edges do not, and stay walls, as does any face met while
-    // rising. A sphere sweep's normal points at the sphere, not out of the face (round on an edge
+    // A transition's riding face is ground to roll up or come down onto, including contact while
+    // rising through the air. Its undersides, side edges and coping stay walls. A sphere sweep's
+    // normal points at the sphere, not out of the face (round on an edge
     // or the coping), so the face is read again with a ray to the contact. On the face itself the
     // two agree; on a transition's open side edge (the drawn surface has no side face) the ray
     // still finds the upward face, but the sweep's normal turns out sideways, and that stays a wall.
     // The face is ridden as far as the vertical lip, so a face is one up to level.
     private static bool RampFaceAhead(Vector3 from, RaycastHit hit)
     {
-        if (Mode != RideMode.Ground && VSpeed >= 0f) return false;
-        if (!SkateParks.IsRamp(hit)) return false;
+        if (Mode != RideMode.Ground && Mode != RideMode.Air) return false;
+        if (!SkateParks.IsRamp(hit) || SkateParks.IsCoping(hit)) return false;
         var to = hit.m_Point - from; var reach = to.magnitude;
         RaycastHit face;
         if (reach < 0.001f || !SkateParks.Ray(from, to / reach, out face, reach + WallProbe, GroundMask) || face.collider != hit.collider) return false;
@@ -533,7 +532,8 @@ public static class SkateRide
         if (rode < 0.5f || got > rode * 0.5f) return;
         RaycastHit wall;
         var ahead = new Vector3(lastDir.x, 0f, lastDir.z) * Math.Sign(Speed);
-        if (ahead.sqrMagnitude < 0.0001f || !SkateParks.Ray(pos + Vector3.up * 0.3f, ahead.normalized, out wall, 0.6f, GroundMask) || wall.m_Normal.y > 0.5f) return;
+        var from = pos + Vector3.up * 0.3f;
+        if (ahead.sqrMagnitude < 0.0001f || !SkateParks.Ray(from, ahead.normalized, out wall, 0.6f, GroundMask) || wall.m_Normal.y > 0.5f || RampFaceAhead(from, wall)) return;
         if (Speed > 0f) LimitSpeed(Math.Max(0f, Actual) + 2f, Cap);
         else LimitSpeed(Cap, Math.Max(0f, -Actual) + 2f);
     }
@@ -549,7 +549,9 @@ public static class SkateRide
     private static void Sense(Vector3 pos)
     {
         RaycastHit hit;
-        if (Mode == RideMode.Ground && OnRamp && RampContact(pos, out hit)) return;
+        // Keep the last verified face's normal probe in the air too: a rising capsule can
+        // meet the curve again where the straight-down probe no longer reaches it.
+        if ((Mode == RideMode.Ground || Mode == RideMode.Air) && OnRamp && RampContact(pos, out hit)) return;
         var reach = Mode == RideMode.Air ? AirProbe : FeetProbe;
         var got = SkateParks.Ray(pos + Vector3.up * RayLift, Vector3.down, out hit, RayLift + reach, GroundMask);
         // The player's capsule ends in a half sphere: on a slope it rests on its side of that sphere, so
@@ -945,18 +947,22 @@ public static class SkateRide
         var flipAxis = Clamp(flipLeft / flipStep, -1f, 1f); var shoveAxis = Clamp(shoveLeft / shoveStep, -1f, 1f); var bodyAxis = Clamp(bodyLeft / bodyStep, -1f, 1f);
 
         stuck = VSpeed < -2f && Math.Abs(ActualV) < 0.3f && AirTime > 0.2f ? stuck + 1 : 0;
-        // The step closes the gap by the fall; onto a transition's face, by the pace into the face.
-        var closing = OnRamp ? Math.Max(0f, -Vector3.Dot(dir * Speed + Vector3.up * VSpeed, BelowNormal)) : -VSpeed;
-        if ((VSpeed <= 0f && Clearance <= Math.Max(0.04f, closing * dt + 0.02f)) || stuck >= 3)
+        // Touching a curve is decided along its normal, not by world-up: the rider can
+        // still be rising when the face catches up. A pop separating from it stays airborne.
+        var incoming = dir * Speed + Vector3.up * VSpeed;
+        var contactNormal = OnRamp ? BelowNormal : Vector3.up;
+        var separation = Vector3.Dot(incoming, contactNormal);
+        var closing = Math.Max(0f, -separation);
+        if ((separation <= 0f && Clearance <= Math.Max(0.04f, closing * dt + 0.02f)) || stuck >= 3)
         {
             var recovery = stuck >= 3;
-            var incoming = dir * Speed + Vector3.up * VSpeed;
-            var impact = recovery ? 0f : Math.Max(0f, -VSpeed);
+            var impact = recovery ? 0f : closing;
             Land(incoming, recovery, dt);
             if (Mode == RideMode.Ground)
             {
                 velocity = hasLandRoll ? landRoll : dir * Speed;
-                velocity.y = (hasLandRoll ? landRoll.y : 0f) - Clamp(Clearance / dt, 0f, impact);
+                if (!hasLandRoll) velocity.y = 0f;
+                velocity -= contactNormal * Clamp(Clearance / dt, 0f, impact);
             }
             else BailStep(incoming, dt);
             return;
@@ -1045,7 +1051,7 @@ public static class SkateRide
     {
         LastAir = AirLine("land");
         landRoll = Vector3.zero; hasLandRoll = false;
-        var normal = Grounded ? Normal : ContactNormal;
+        var normal = OnRamp ? BelowNormal : Grounded ? Normal : ContactNormal;
         if (recovery) incoming.y = 0f;
         // Back down onto a transition's face past the shared landing's 72 degrees (only ever a
         // ramp's, from Sense): the fall's part into the face is the impact, the rest rolls along it.

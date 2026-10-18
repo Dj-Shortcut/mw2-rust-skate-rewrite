@@ -103,7 +103,12 @@ public class SkateRig : MonoBehaviour
     private void LetGo(string why, string off, bool forgetServer)
     {
         Say(why + "; looking again");
-        SkateRide.Dismount(off); RiderRig.Unbind();
+        SkateRide.Dismount(off);
+        // Release only this ride's held-state ownership while its player/model
+        // references still exist; a later Update is not guaranteed on teardown.
+        try { Unholster(); }
+        catch (Exception e) { Out.Err("HELD restore during movement teardown threw " + e.GetType().Name + ": " + e.Message); }
+        RiderRig.Unbind();
         if (forgetServer) SkateRide.ForgetServer();
         // The old driver is queued behind the old walk component, not the next one.
         if (late != null) { UnityEngine.Object.Destroy(late); late = null; }
@@ -339,6 +344,8 @@ public class SkateRig : MonoBehaviour
     {
         try { SkateRide.Dismount("the skate rig is gone"); }
         catch (Exception e) { Out.Err("SKATE dismount threw " + e.GetType().Name + ": " + e.Message); }
+        try { Unholster(); }
+        catch (Exception e) { Out.Err("HELD restore during rig teardown threw " + e.GetType().Name + ": " + e.Message); }
         try { if (late != null) late.enabled = false; }
         catch (Exception e) { Out.Err("SKATE late driver disable threw " + e.GetType().Name + ": " + e.Message); }
         try { if (late != null) UnityEngine.Object.Destroy(late); late = null; }
