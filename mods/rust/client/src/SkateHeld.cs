@@ -333,6 +333,7 @@ public static class SkateHeld
     // building plan's ghost go with it, and a switched-off plan takes no clicks. Each one is
     // switched on again on stepping off (Show). What the held entity offers is logged once a type.
     private static readonly System.Collections.Generic.List<UnityEngine.GameObject> hidden = new System.Collections.Generic.List<UnityEngine.GameObject>();
+    private static bool sceneSaid;
     private static readonly System.Collections.Generic.HashSet<string> probed = new System.Collections.Generic.HashSet<string>();
     private static bool Hide(object player, out string how)
     {
@@ -358,7 +359,24 @@ public static class SkateHeld
             names += " " + kind + " (" + go.name + ")";
             off++;
         }
-        if (off == 0) return false;
+        if (off == 0)
+        {
+            // Not under the player: where the game keeps its held entities is logged once.
+            if (!sceneSaid)
+            {
+                sceneSaid = true;
+                var all = UnityEngine.Object.FindObjectsOfType<HeldEntity>();
+                var where = "";
+                for (var i = 0; i < all.Length && i < 6; i++)
+                {
+                    if (all[i] == null) continue;
+                    var parent = all[i].transform.parent;
+                    where += " " + all[i].GetType().Name + "(" + all[i].gameObject.name + (all[i].gameObject.activeInHierarchy ? "" : ", off") + ") under " + (parent == null ? "nothing" : parent.name + (parent.root == null ? "" : " in " + parent.root.name));
+                }
+                Out.Say("HELD none under the player (" + root.gameObject.name + "); in the scene " + all.Length + ":" + (where == "" ? " (none)" : where));
+            }
+            return false;
+        }
         how = "switched off" + names;
         return true;
     }
