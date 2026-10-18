@@ -433,7 +433,11 @@ public static class Scenarios
     // the kind of grab for a grab view, the board's turn under the feet in degrees for a shove view
     // and the part of the bail that has passed for a bail view.
     private static readonly View[] views = {
-        new View("stance, seen from the rider's front", 90f, "stance", 0f), new View("stance, seen along the board from behind", 180f, "stance", 0f),
+        new View("stance, seen from the rider's front", 90f, "stance", 0f),
+        new View("up a wall at 60 degrees, from the side", 90f, "wall", 60f), new View("up a wall at 80 degrees, from the side", 90f, "wall", 80f),
+        new View("up a wall at 88 degrees, from the side", 90f, "wall", 88f), new View("up a wall at 80 degrees, from behind", 180f, "wall", 80f),
+        new View("across a wall at 80 degrees, from below", 90f, "across", 80f),
+        new View("stance, seen along the board from behind", 180f, "stance", 0f),
         new View("stance, seen from the rider's back", 270f, "stance", 0f), new View("stance, seen along the board from ahead", 0f, "stance", 0f),
         new View("stance, seen from above", 90f, "above", 0f),
         new View("push, foot coming down", 90f, "push", 0.2f), new View("push, foot on the ground", 90f, "push", 0.45f),
@@ -557,6 +561,12 @@ public static class Scenarios
         SkateBoard.ShowLift = air ? 0.7f : 0f;
         SkateRide.Trick = new SkateTrickState(v.State == "switch");
         if (v.State == "bail") SkateRide.ModeAt = now - v.Value * SkateRide.BailSeconds;
+        // Standing on a face this steep, frozen, so the board and the body can be compared where the
+        // rider used to go back to the world's up (about 78 degrees on): "wall" faces the nose up it,
+        // "across" rides along it with the face on the rider's toe side.
+        var steep = v.State == "wall" || v.State == "across" ? v.Value * (float)(Math.PI / 180.0) : 0f;
+        var away = v.State == "across" ? SkateRide.Dir(SkateRide.Yaw - 90f * SkateRide.StanceSign) : -SkateRide.Dir(SkateRide.Yaw);
+        SkateRide.Normal = SkateRide.ViewNormal = (Vector3.up * (float)Math.Cos(steep) + away * (float)Math.Sin(steep)).normalized;
         if (v.State == "move") { SkateRide.Frozen = false; SkateRide.Mode = RideMode.Ground; }
         if (v.State == "turn") SkateKeys.LookYaw = yaw0 + 180f;
     }
