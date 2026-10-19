@@ -1689,7 +1689,7 @@ namespace Shortcut.RustMod
 
 namespace Oxide.Plugins
 {
-    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.33")]
+    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.34")]
     [Description("Player-scoped skateboard movement bounds and saved park assemblies.")]
     public sealed class ShortcutSkate : RustPlugin
     {
@@ -7685,6 +7685,8 @@ namespace Oxide.Plugins
                     block.grounded = true;
                     block.OwnerID = group.Owner;
                     block.skinID = 0;
+                    // Retiring a previous grade's skin after capture invalidates collision ownership.
+                    block.grade = definitions[i].Grade;
                     block.Spawn();
                     if (block.IsDestroyed || block.net == null || block.blockDefinition == null)
                         throw new InvalidDataException("A park part failed to initialize: " + definitions[i].Prefab + ".");
