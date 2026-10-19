@@ -2718,30 +2718,30 @@ namespace Oxide.Plugins
         // The outline of a piece's support cells in the piece frame (right, forward, metres): the
         // exposed cell edges, merged along each grid line, so an L-shaped piece such as the large
         // quarterpipe shows the cells it reserves and not a bounding rectangle.
-        private sealed class ParkFootprint
+        private sealed class ParkOutline
         {
             public double R0, R1, F0, F1;
             public readonly List<double[]> Edges = new List<double[]>();
         }
-        private readonly Dictionary<SkateParkKind, ParkFootprint> parkFootprints = new Dictionary<SkateParkKind, ParkFootprint>();
-        private static long FootprintKey(int right, int forward) { return ((long)right << 32) ^ (uint)forward; }
-        private ParkFootprint Footprint(SkateParkKind kind)
+        private readonly Dictionary<SkateParkKind, ParkOutline> parkOutlines = new Dictionary<SkateParkKind, ParkOutline>();
+        private static long OutlineKey(int right, int forward) { return ((long)right << 32) ^ (uint)forward; }
+        private ParkOutline Outline(SkateParkKind kind)
         {
-            ParkFootprint print;
-            if (parkFootprints.TryGetValue(kind, out print)) return print;
+            ParkOutline print;
+            if (parkOutlines.TryGetValue(kind, out print)) return print;
             var cells = new HashSet<long>();
             int rmin = 0, rmax = 0, fmin = 0, fmax = 0;
             for (int i = 0; i < SkateParkLayout.SupportCellCount(kind); i++)
             {
                 int right, forward;
                 if (!SkateParkLayout.TrySupportCell(kind, i, out right, out forward)) continue;
-                cells.Add(FootprintKey(right, forward));
+                cells.Add(OutlineKey(right, forward));
                 rmin = Math.Min(rmin, right); rmax = Math.Max(rmax, right);
                 fmin = Math.Min(fmin, forward); fmax = Math.Max(fmax, forward);
             }
-            if (cells.Count == 0) cells.Add(FootprintKey(0, 0));
+            if (cells.Count == 0) cells.Add(OutlineKey(0, 0));
             double size = SkateParkLayout.CellSize, half = size / 2, phase = kind == SkateParkKind.MegaHalfpipe ? -4.5 : 0;
-            print = new ParkFootprint { R0 = rmin * size - half, R1 = rmax * size + half,
+            print = new ParkOutline { R0 = rmin * size - half, R1 = rmax * size + half,
                 F0 = fmin * size - half + phase, F1 = fmax * size + half + phase };
             // Edges across the forward axis: the line between row f - 1 and row f, where exactly one
             // of the two cells is reserved. A run of exposed edges along the line becomes one segment.
@@ -2750,7 +2750,7 @@ namespace Oxide.Plugins
                 int start = int.MinValue;
                 for (int r = rmin; r <= rmax + 1; r++)
                 {
-                    bool exposed = r <= rmax && cells.Contains(FootprintKey(r, f)) != cells.Contains(FootprintKey(r, f - 1));
+                    bool exposed = r <= rmax && cells.Contains(OutlineKey(r, f)) != cells.Contains(OutlineKey(r, f - 1));
                     if (exposed && start == int.MinValue) start = r;
                     if (exposed || start == int.MinValue) continue;
                     print.Edges.Add(new[] { start * size - half, f * size - half + phase, (r - 1) * size + half, f * size - half + phase });
@@ -2762,21 +2762,21 @@ namespace Oxide.Plugins
                 int start = int.MinValue;
                 for (int f = fmin; f <= fmax + 1; f++)
                 {
-                    bool exposed = f <= fmax && cells.Contains(FootprintKey(r, f)) != cells.Contains(FootprintKey(r - 1, f));
+                    bool exposed = f <= fmax && cells.Contains(OutlineKey(r, f)) != cells.Contains(OutlineKey(r - 1, f));
                     if (exposed && start == int.MinValue) start = f;
                     if (exposed || start == int.MinValue) continue;
                     print.Edges.Add(new[] { r * size - half, start * size - half + phase, r * size - half, (f - 1) * size + half + phase });
                     start = int.MinValue;
                 }
             }
-            parkFootprints[kind] = print;
+            parkOutlines[kind] = print;
             return print;
         }
 
         private void DrawParkFootprint(BasePlayer player, SkateParkKind kind, double x, double z, double yaw, double top,
             bool valid, string label, float life)
         {
-            ParkFootprint print = Footprint(kind);
+            ParkOutline print = Outline(kind);
             float y = (float)top + 0.05f;
             double c = Math.Cos(yaw * Math.PI / 180), sn = Math.Sin(yaw * Math.PI / 180);
             Func<double, double, Vector3> at = (r, f) => new Vector3((float)(x + r * c + f * sn), y, (float)(z - r * sn + f * c));
