@@ -1,15 +1,8 @@
-// The park picker and the park items (owner's choice, 2026-10-13: "own build picker and hotbar
-// items"). The server (Codex's ShortcutSkate 0.3.11) gives eight park items, building plans marked
-// with their kind; one is placed with the game's own building controls as a square foundation
-// (left click, R turns it) and the server builds the piece in its place. Nothing here sends a
-// command: the client cannot (the console packet path is not found in this build and typed keys
-// never reach the console). The picker only chooses a piece and puts that item in the player's
-// hand through the game's own belt; while a park item is held, its piece is drawn as a ghost where
-// the player aims.
 using System;
 using System.Globalization;
 using Shortcut.RustMod;
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 public static class SkatePieces
 {
@@ -28,84 +21,286 @@ public static class SkatePieces
     public static bool AimOk;
     public static Vector3 Aim;
     public static float Yaw;
-    private static bool keyboardOpen, wasP, wasQ, wasE, wasO, wasBack;
+    private enum Entry { None, Keyboard, MouseHold, ControllerHold }
+    private static Entry entry;
+    private static bool wasP, wasBack, wasRight, inputPrimed, cancelledHold, stickChosen;
+    private static object menuPlayer;
+    private static Vector2 pointer;
+    public static int Hover = -1;
+    public static bool BlocksControls;
+    public static bool OwnsCursor;
+    private static CursorLockMode cursorBefore;
+    private static bool cursorVisibleBefore;
+    public static int BuilderKind = -1;
+    private static int requestedKind = -1;
+    private static float replyUntil;
+    private static Application.LogCallback replyListener;
+    private static bool replyListenerFailed;
+    private static bool builderRequested;
+    private static float builderNoticeUntil;
+    private static int builderTurn;
+    private static bool wasPlaceTrigger;
+    private static bool offPending;
+    private static float offUntil;
     private static int previewKind = -1;
     // The kind whose ghost is drawn now; -1 for none.
     public static int GhostKind { get { return previewKind; } }
     private static float previewYaw = 9999f; private static Vector3 previewAt;
 
-    // Takes the controller's presses while the menu is open; returns the ones the ride may use.
-    public static int Step(int padDown, float now)
+    public static int Input(int padDown, float now, Keyboard keyboard, Mouse mouse, bool uiBlocked)
     {
-        var want = SkatePad.Shared && !SkateRide.On && (SkatePad.Buttons & MenuButton) != 0;
-        var padOpen = Open && !keyboardOpen;
-        if (want != padOpen) { if (want) { Open = true; keyboardOpen = false; Out.Say("PIECES menu open"); } else if (!keyboardOpen) Close(); }
-        if (!Open || keyboardOpen) { stanceSince = -1f; return padDown; }
-        if ((padDown & SkatePad.DpadDown) != 0 || (padDown & SkatePad.DpadRight) != 0) Chosen = (Chosen + 1) % Names.Length;
-        if ((padDown & SkatePad.DpadUp) != 0 || (padDown & SkatePad.DpadLeft) != 0) Chosen = (Chosen + Names.Length - 1) % Names.Length;
-        if ((padDown & SkatePad.LeftBumper) != 0) Turn -= TurnStep;
-        if ((padDown & SkatePad.RightBumper) != 0) Turn += TurnStep;
-        if ((padDown & SkatePad.A) != 0) Place(now, true);
-        if ((padDown & SkatePad.B) != 0) Close();
-        SkateRide.StanceHold(ref stanceSince, (SkatePad.Buttons & SkatePad.Y) != 0, now);
-        return padDown & ~(SkatePad.DpadUp | SkatePad.DpadDown | SkatePad.DpadLeft | SkatePad.DpadRight | SkatePad.A | SkatePad.B | SkatePad.X | SkatePad.Y | SkatePad.LeftBumper | SkatePad.RightBumper);
+        try { return InputFrame(padDown, now, keyboard, mouse, uiBlocked); }
+        catch (Exception e)
+        {
+            bool ready = NativeMode(now);
+            Close(ready);
+            Said = "Skate wheel input unavailable. Use F1: skate.builder <piece>, or skate.builder off.";
+            SaidAt = now;
+            Out.Say("PIECES wheel input unavailable: " + e.GetType().Name);
+            return padDown;
+        }
     }
 
-    // The keyboard: P opens the picker and steps to the next piece, Q and E turn it, O places it,
-    // Backspace closes it. Only off the board.
-    public static void Keys(bool p, bool q, bool e, bool o, bool back)
+    private static int InputFrame(int padDown, float now, Keyboard keyboard, Mouse mouse, bool uiBlocked)
     {
-        if (SkateRide.On) { if (keyboardOpen) Close(); wasP = p; wasQ = q; wasE = e; wasO = o; wasBack = back; return; }
-        if (p && !wasP)
+        BlocksControls = false;
+        bool p = keyboard != null && keyboard.pKey.isPressed;
+        bool back = SkatePad.Shared && (SkatePad.Buttons & MenuButton) != 0;
+        bool right = mouse != null && mouse.rightButton.isPressed;
+        bool trigger = SkatePad.Shared && SkatePad.RightTrigger > SkatePad.Pulled;
+        bool triggerPressed = trigger && !wasPlaceTrigger;
+        wasPlaceTrigger = trigger;
+        if (!inputPrimed) { wasP = p; wasBack = back; wasRight = right; inputPrimed = true; }
+        if (!right && !back) cancelledHold = false;
+        bool opened = false;
+        bool canOpen = !uiBlocked && !SkateRide.On && SkateRig.Ready && SkateRig.Local != null;
+        if (!canOpen || (Open && !ReferenceEquals(menuPlayer, SkateRig.Local)))
         {
-            if (!Open) { Open = keyboardOpen = true; Out.Say("PIECES picker open (keyboard)"); }
-            else if (keyboardOpen) Chosen = (Chosen + 1) % Names.Length;
+            bool ready = NativeMode(now);
+            if (Open) Close(ready);
+            wasP = p; wasBack = back; wasRight = right;
+            return padDown;
         }
-        if (Open && keyboardOpen)
+        if (!Open)
         {
-            if (q && !wasQ) Turn -= TurnStep;
-            if (e && !wasE) Turn += TurnStep;
-            if (o && !wasO) Place(Time.realtimeSinceStartup, false);
-            if (back && !wasBack) Close();
+            bool wantsOpen = (right && !wasRight) || (p && !wasP) || (back && !wasBack);
+            bool planner = wantsOpen && SkateHeld.HasPlanner(SkateRig.Local);
+            if (requestedKind >= 0 || offPending)
+            {
+                if (!SkateHeld.HasPlanner(SkateRig.Local))
+                {
+                    NativeMode(now);
+                    wasP = p; wasBack = back; wasRight = right;
+                    return padDown;
+                }
+                bool cancelPending = (padDown & SkatePad.B) != 0 || (keyboard != null && keyboard.escapeKey.wasPressedThisFrame);
+                if (cancelPending) NativeMode(now);
+                if (wantsOpen) { Said = "Waiting for the server reply..."; SaidAt = now; }
+                wasP = p; wasBack = back; wasRight = right;
+                return padDown;
+            }
+            bool native = keyboard != null && (keyboard.leftShiftKey.isPressed || keyboard.rightShiftKey.isPressed);
+            if (right && !wasRight && native && planner)
+            {
+                if (NativeMode(now))
+                { wasP = p; wasBack = back; wasRight = right; return padDown; }
+                wasP = p; wasBack = back; wasRight = right;
+                return padDown;
+            }
+            if (!opened)
+            {
+                if (p && !wasP) opened = Begin(Entry.Keyboard, now);
+                else if (back && !wasBack && !cancelledHold) opened = Begin(Entry.ControllerHold, now);
+                else if (right && !wasRight && !cancelledHold && planner) opened = Begin(Entry.MouseHold, now);
+            }
         }
-        wasP = p; wasQ = q; wasE = e; wasO = o; wasBack = back;
+        if (Open)
+        {
+            BlocksControls = true;
+            bool cancel = (padDown & SkatePad.B) != 0 || (keyboard != null &&
+                (keyboard.escapeKey.wasPressedThisFrame || keyboard.backspaceKey.wasPressedThisFrame || keyboard.f1Key.wasPressedThisFrame ||
+                keyboard.tabKey.wasPressedThisFrame || (!opened && p && !wasP)));
+            if (cancel) { cancelledHold = true; bool ready = NativeMode(now); Close(ready); }
+            else
+            {
+                SkateRide.StanceHold(ref stanceSince, (SkatePad.Buttons & SkatePad.Y) != 0, now);
+                if (SkatePad.Shared && (SkatePad.RightX * SkatePad.RightX + SkatePad.RightY * SkatePad.RightY > 0.04f || stickChosen))
+                {
+                    stickChosen = true;
+                    Hover = SkateWheelChoice.Sector(SkatePad.RightX, SkatePad.RightY, 0.35);
+                    pointer = new Vector2(SkatePad.RightX, -SkatePad.RightY) * SkateBuildWheel.PointerRadius;
+                }
+                else if (mouse != null)
+                {
+                    var delta = mouse.delta.ReadValue();
+                    pointer += new Vector2(delta.x, -delta.y);
+                    pointer = Vector2.ClampMagnitude(pointer, SkateBuildWheel.PointerRadius);
+                    Hover = SkateWheelChoice.Sector(pointer.x, -pointer.y, SkateBuildWheel.PointerRadius * 0.24);
+                }
+                if ((padDown & (SkatePad.DpadRight | SkatePad.DpadDown)) != 0 || (keyboard != null && keyboard.eKey.wasPressedThisFrame))
+                { Hover = (Chosen + 1) % Names.Length; pointer = SkateBuildWheel.PointerFor(Hover); stickChosen = false; }
+                if ((padDown & (SkatePad.DpadLeft | SkatePad.DpadUp)) != 0 || (keyboard != null && keyboard.qKey.wasPressedThisFrame))
+                { Hover = (Chosen + Names.Length - 1) % Names.Length; pointer = SkateBuildWheel.PointerFor(Hover); stickChosen = false; }
+                if (Hover >= 0) Chosen = Hover;
+                bool released = (entry == Entry.MouseHold && wasRight && !right) || (entry == Entry.ControllerHold && wasBack && !back);
+                bool confirm = (padDown & SkatePad.A) != 0 || (keyboard != null &&
+                    (keyboard.enterKey.wasPressedThisFrame || keyboard.oKey.wasPressedThisFrame));
+                if (released || confirm)
+                {
+                    bool select = Hover >= 0;
+                    bool pad = entry == Entry.ControllerHold;
+                    if (select) Place(now, pad);
+                    else { bool ready = NativeMode(now); Close(ready); }
+                }
+            }
+        }
+        if (!Open && BuilderKind >= 0)
+        {
+            if (!SkateHeld.HasPlanner(SkateRig.Local)) NativeMode(now);
+            else
+            {
+                if ((keyboard != null && keyboard.rKey.wasPressedThisFrame) || (padDown & SkatePad.RightBumper) != 0)
+                    builderTurn = (builderTurn + 1) % 4;
+                if ((padDown & SkatePad.LeftBumper) != 0) builderTurn = (builderTurn + 3) % 4;
+                bool click = mouse != null && mouse.leftButton.wasPressedThisFrame;
+                if (click || triggerPressed)
+                {
+                    BlocksControls = true;
+                    SaidAt = now;
+                    Said = SkateConsole.Send("skate.builder place " + builderTurn.ToString(CultureInfo.InvariantCulture))
+                        ? "Placement requested. The server checks the site and 10 Wood."
+                        : "Placement not sent. Check your connection, then click again.";
+                    builderNoticeUntil = now + 2f;
+                }
+                padDown &= ~(SkatePad.LeftBumper | SkatePad.RightBumper);
+            }
+        }
+        wasP = p; wasBack = back; wasRight = right;
+        return BlocksControls ? 0 : padDown;
     }
 
-    private static void Close()
+    private static bool Begin(Entry from, float now)
     {
-        Open = keyboardOpen = false;
+        if (!SkateBuildWheel.Available)
+        { Said = "The skate wheel cannot be drawn here. Use F1: skate.builder <piece>."; SaidAt = now; return false; }
+        string why;
+        if (!SkateHeld.PausePlanner(SkateRig.Local, out why))
+        {
+            Said = "Hold your building plan to open the skate wheel. " + why;
+            SaidAt = now;
+            return false;
+        }
+        try
+        {
+            cursorBefore = Cursor.lockState; cursorVisibleBefore = Cursor.visible;
+            Cursor.lockState = CursorLockMode.None; Cursor.visible = false; OwnsCursor = true;
+        }
+        catch (Exception)
+        {
+            if (!builderRequested && requestedKind < 0 && !offPending) SkateHeld.ResumePlanner();
+            Said = "The skate wheel cannot take cursor focus."; SaidAt = now; return false;
+        }
+        Open = true; entry = from; menuPlayer = SkateRig.Local;
+        Hover = -1; pointer = Vector2.zero; Status = ""; stickChosen = false;
+        ListenForReplies();
+        HeldClear();
+        return true;
+    }
+
+    private static bool NativeMode(float now)
+    {
+        if (offPending) return false;
+        if (!builderRequested) return true;
+        SaidAt = now;
+        if (!SkateConsole.Send("skate.builder off"))
+        { Said = Status = "Could not request Rust building. In F1 type: skate.builder off"; return false; }
+        BuilderKind = requestedKind = -1; offPending = true; offUntil = now + 5f;
+        Said = "Requested Rust building. Waiting for the server reply...";
+        return false;
+    }
+
+    private static void ListenForReplies()
+    {
+        if (replyListener != null || replyListenerFailed) return;
+        try
+        {
+            replyListener = (Action<string, string, LogType>)BuilderReply;
+            Application.add_logMessageReceived(replyListener);
+        }
+        catch (Exception e)
+        { replyListener = null; replyListenerFailed = true; Out.Say("PIECES server reply listener unavailable: " + e.GetType().Name); }
+    }
+
+    private static void BuilderReply(string message, string trace, LogType type)
+    {
+        const string prefix = "[SKATE-BUILDER] ";
+        if (message == null || !message.StartsWith(prefix, StringComparison.Ordinal)) return;
+        string reply = message.Substring(prefix.Length).Trim();
+        if (reply == "off")
+        {
+            if (!offPending && requestedKind >= 0) return;
+            BuilderKind = requestedKind = -1; builderRequested = offPending = false; Said = "Rust building"; if (!Open) SkateHeld.ResumePlanner();
+        }
+        else if (reply.StartsWith("selected ", StringComparison.Ordinal))
+        {
+            var name = reply.Substring(9).Trim();
+            if (offPending || requestedKind < 0 || requestedKind >= Names.Length || name != Names[requestedKind]) return;
+            BuilderKind = requestedKind; requestedKind = -1;
+            Picked = BuilderKind;
+            builderTurn = 0;
+            Said = SkateBuildWheel.Labels[BuilderKind] + " selected. 10 Wood per successful piece; left click places, R rotates.";
+        }
+        else if (reply.StartsWith("refused ", StringComparison.Ordinal))
+        {
+            if (offPending) return;
+            BuilderKind = requestedKind = -1;
+            builderRequested = false; if (!Open) SkateHeld.ResumePlanner();
+            Said = reply.Substring(8); if (Said.Length > 180) Said = Said.Substring(0, 180);
+        }
+        else if (reply.StartsWith("placed ", StringComparison.Ordinal) && BuilderKind >= 0 &&
+            reply == "placed " + Names[BuilderKind] + " 10 Wood")
+        { Said = "Placed " + SkateBuildWheel.Labels[BuilderKind] + " for 10 Wood."; }
+        else if (reply.StartsWith("placement-refused ", StringComparison.Ordinal) && BuilderKind >= 0)
+        { Said = reply.Substring(18); if (Said.Length > 180) Said = Said.Substring(0, 180); }
+        else return;
+        SaidAt = Time.realtimeSinceStartup;
+        builderNoticeUntil = SaidAt + 2.5f;
+    }
+
+    private static void Close(bool resumePlanner = true)
+    {
+        Open = false; entry = Entry.None; menuPlayer = null; Hover = -1;
+        stanceSince = -1f;
+        if (OwnsCursor)
+        {
+            OwnsCursor = false;
+            try
+            {
+                if (Cursor.lockState == CursorLockMode.None && !Cursor.visible)
+                { Cursor.lockState = cursorBefore; Cursor.visible = cursorVisibleBefore; }
+            }
+            catch (Exception e) { Out.Say("PIECES cursor restore unavailable: " + e.GetType().Name); }
+        }
+        if (resumePlanner) SkateHeld.ResumePlanner();
         SkateParks.PreviewClear(); previewKind = -1; previewYaw = 9999f;
     }
 
-    // Each frame while the picker is open: the aim point under the camera's view, the preview there.
     public static void Frame(float now)
     {
-        if (!Open) { HeldFrame(now); return; }
-        AimOk = false;
-        try
+        if (requestedKind >= 0 && now >= replyUntil)
         {
-            var cam = Camera.main;
-            if (cam == null) return;
-            var from = cam.transform.position; var dir = cam.transform.forward;
-            RaycastHit hit;
-            if (!Physics.Raycast(from, dir, out hit, AimReach, SkateRide.GroundMask, QueryTriggerInteraction.Ignore)) return;
-            if (hit.normal.y < 0.5f) return;
-            AimOk = true; Aim = hit.point;
-            var e = cam.transform.eulerAngles;
-            Yaw = (float)Math.Round((e.y + Turn) / 5f) * 5f;
+            NativeMode(now);
+            Said = offPending ? "Server reply not received. Requested Rust building instead."
+                : "Server reply not received. In F1 type: skate.builder off";
+            SaidAt = now; replyUntil = float.PositiveInfinity;
         }
-        catch (Exception ex) { Status = "aim failed: " + ex.GetType().Name; return; }
-        var kind = (SkateParks.Kind)Chosen;
-        if ((int)kind != previewKind)
+        if (offPending && now >= offUntil)
         {
-            var line = SkateParks.PreviewAt(kind, Aim, Yaw, false);
-            previewKind = (int)kind; previewAt = Aim; previewYaw = Yaw;
-            Status = line.StartsWith("not drawn") ? line : "";
+            Said = "Rust-building reply not received. In F1 type: skate.builder off, or re-equip your building plan.";
+            SaidAt = now; offUntil = float.PositiveInfinity;
         }
-        else if (Vector3.Distance(previewAt, Aim) > 0.01f || Math.Abs(previewYaw - Yaw) > 0.01f)
-        {
-            SkateParks.PreviewMove(Aim, Yaw); previewAt = Aim; previewYaw = Yaw;
-        }
+        if (Open) { AimOk = false; HeldClear(); return; }
+        HeldFrame(now);
     }
 
     public static int HeldKind = -1;
@@ -119,6 +314,8 @@ public static class SkatePieces
         var was = HeldKind;
         var read = !SkateRide.On && SkateRig.Local != null && SkateHeld.Read(SkateRig.Local);
         HeldKind = read ? SkateHeld.HeldKind() : -1;
+        if (!SkateRide.On && BuilderKind >= 0 && SkateHeld.HasPlanner(SkateRig.Local)) HeldKind = BuilderKind;
+        else if (!SkateRide.On && BuilderKind >= 0) BuilderKind = -1;
         if (HeldKind != was) Out.Say("PIECES held: " + (HeldKind < 0 ? "no park item" : SkateHeld.ItemNames[HeldKind]) + " (item " + SkateHeld.Shortname + " '" + SkateHeld.Name + "' marker " + SkateHeld.Marker.ToString("X") + ")");
         AimOk = false;
         if (HeldKind < 0) { HeldClear(); return; }
@@ -136,11 +333,14 @@ public static class SkatePieces
         // Snapped and seated by the server's own rules (#476): onto a standing foundation, or beside a
         // park floor, turned by the planner's R; Valid only when every support cell is found.
         Vector3 origin; float yaw; bool onHost; string why;
-        Valid = SkateParks.Ghost((SkateParks.Kind)HeldKind, aimHit, Yaw, SkateHeld.PlannerTurn(SkateRig.Local), out origin, out yaw, out onHost, out why);
+        Valid = SkateParks.Ghost((SkateParks.Kind)HeldKind, aimHit, Yaw, BuilderKind >= 0 ? builderTurn * 90f : SkateHeld.PlannerTurn(SkateRig.Local), out origin, out yaw, out onHost, out why, BuilderKind >= 0);
         OnFoundation = onHost; Yaw = yaw; GhostWhy = why;
         if (HeldKind != previewKind) { SkateParks.PreviewAt((SkateParks.Kind)HeldKind, origin, Yaw, false); previewKind = HeldKind; previewAt = origin; previewYaw = Yaw; }
         else if (Vector3.Distance(previewAt, origin) > 0.01f || Math.Abs(previewYaw - Yaw) > 0.01f) { SkateParks.PreviewMove(origin, Yaw); previewAt = origin; previewYaw = Yaw; }
-        Said = SkateHeld.ItemNames[HeldKind] + (Valid ? (OnFoundation ? ": fits here (left click, R turns it)" : ": on the ground here (left click, R turns it)") : ": does not fit: " + GhostWhy); SaidAt = now;
+        if (now >= builderNoticeUntil)
+        {
+            Said = SkateHeld.ItemNames[HeldKind] + (Valid ? ": preview fits here; server verifies placement and 10 Wood" : ": preview does not fit: " + GhostWhy) + "  |  Shift + right click: Rust building"; SaidAt = now;
+        }
         if (GhostWhy != lastWhy) { lastWhy = GhostWhy; Out.Say("PIECES ghost " + SkateHeld.ItemNames[HeldKind] + (Valid ? " fits" + (OnFoundation ? " on a foundation" : "") : ": " + GhostWhy)); }
     }
 
@@ -160,7 +360,8 @@ public static class SkatePieces
         AimOk = true; Aim = origin; Yaw = yaw;
         if (HeldKind != previewKind) { SkateParks.PreviewAt((SkateParks.Kind)HeldKind, origin, yaw, false); previewKind = HeldKind; previewAt = origin; previewYaw = yaw; }
         else if (Vector3.Distance(previewAt, origin) > 0.01f || Math.Abs(previewYaw - yaw) > 0.01f) { SkateParks.PreviewMove(origin, yaw); previewAt = origin; previewYaw = yaw; }
-        Said = SkateHeld.ItemNames[HeldKind] + ": against this half wall (left click with the square foundation)";
+        Said = SkateHeld.ItemNames[HeldKind] + (BuilderKind >= 0 ? ": preview against this half wall; left click places for 10 Wood"
+            : ": against this half wall (left click with the square foundation)");
     }
 
     private static void HeldClear() { if (previewKind >= 0) { SkateParks.PreviewClear(); previewKind = -1; } }
@@ -168,65 +369,20 @@ public static class SkatePieces
     // The piece last taken with the picker; -1 before any.
     public static int Picked = -1;
 
-    // The chosen piece's park item put in the player's hand, the way a number key would; the
-    // player then places it with the building controls. Without one in the belt, the screen says so.
     public static void Place(float now, bool pad)
     {
         SaidAt = now;
-        var player = SkateRig.Local;
-        if (player == null) { Said = "No player yet"; return; }
-        Picked = Chosen;
-        var slot = SkateHeld.FindInBelt(player, Chosen);
-        Out.Say("PIECES take " + SkateHeld.ItemNames[Chosen] + ": belt" + (SkateHeld.Belt == "" ? " empty" : SkateHeld.Belt) + " -> slot " + slot);
-        // Shown in the open menu too, which the keyboard picker leaves open.
-        // Where the belt cannot be read at all, the player picks the item's number key; the
-        // server is not asked, since the item may well be there already.
-        if (slot < 0 && SkateHeld.Belt == "belt not readable")
-        {
-            Close();
-            Said = "Press the number key of your " + SkateHeld.ItemNames[Chosen] + ", then place it like a square foundation (left click, R turns it). None yet? An admin types skate.items " + Names[Chosen];
-            return;
-        }
-        if (slot < 0)
-        {
-            // Only an item seen nowhere in the inventory is asked from the server, so none is issued twice.
-            var held = SkateHeld.InMain(player, Chosen);
-            if (held != 0)
-            {
-                Said = Status = "Move your " + SkateHeld.ItemNames[Chosen] + " from inventory to a belt slot, then select it" + (held < 0 ? " (an admin gives the park items: skate.items " + Names[Chosen] + ")" : "");
-                return;
-            }
-            Said = Status = AskItem(Chosen, now) ? "Asked the server for a " + SkateHeld.ItemNames[Chosen] + "; take it again (" + (pad ? "A" : "O") + ") once it is in your belt"
-                : "No " + SkateHeld.ItemNames[Chosen] + " in your inventory (an admin gives the park items: skate.items " + Names[Chosen] + ")";
-            return;
-        }
-        string how;
-        if (SkateHeld.SelectSlot(player, slot, out how))
-        {
-            Placed++; Close();
-            Said = "Holding the " + SkateHeld.ItemNames[Chosen] + ": place it like a square foundation (left click, R turns it)";
-            Out.Say("PIECES selected by " + how);
-            return;
-        }
-        Out.Say("PIECES could not select: " + how);
-        Close();
-        Said = Status = "Press " + (slot + 1) + " to hold the " + SkateHeld.ItemNames[Chosen] + ", then place it like a square foundation";
+        if (requestedKind >= 0 || offPending) { Said = Status = "Waiting for the server reply..."; return; }
+        if (SkateRig.Local == null || !SkateHeld.HasPlanner(SkateRig.Local))
+        { Said = Status = "Hold your ordinary building plan first."; return; }
+        string command = "skate.builder " + Names[Chosen];
+        if (!SkateConsole.Send(command))
+        { Said = Status = "Not selected. In F1 type: " + command; return; }
+        requestedKind = Chosen; replyUntil = now + 5f; BuilderKind = -1; Picked = -1; builderRequested = true;
+        Close(false);
+        Said = "Requested " + SkateBuildWheel.Labels[Chosen] + ". Server checks placement and 10 Wood; left click places, R rotates.";
     }
 
-    // Without the item at hand the server is asked for one, at most once per piece every few
-    // seconds: ShortcutSkate's skate.items gives it to an administrator and refuses anyone else.
-    private static readonly float[] itemAskedAt = new float[Names.Length];
-    public static int ItemsAsked;
-    private static bool AskItem(int kind, float now)
-    {
-        if (itemAskedAt[kind] > 0f && now - itemAskedAt[kind] < 5f) return false;
-        if (!SkateConsole.CanSend) { Out.Say("PIECES item ask cannot send: " + SkateConsole.SendState); return false; }
-        var line = "skate.items " + Names[kind];
-        if (!SkateConsole.Send(line)) { Out.Say("PIECES item ask not sent: " + SkateConsole.SendState); return false; }
-        itemAskedAt[kind] = now; ItemsAsked++;
-        Out.Say("PIECES item asked: " + line);
-        return true;
-    }
 
     // The piece asked for by name alone, the way a server with ShortcutSkate 0.3.5 takes it: the
     // next square foundation becomes the piece. Sent when sending works; shown to type otherwise.
@@ -254,16 +410,37 @@ public static class SkatePieces
     {
         if (Open)
         {
-            var s = "PARK PIECE   ";
-            for (var i = 0; i < Names.Length; i++) s += (i == Chosen ? "[" + Names[i].ToUpper() + "]" : Names[i]) + (i + 1 < Names.Length ? "   " : "");
-            s += keyboardOpen ? "      P: next   O: take it   Backspace: close" : "      D-pad: choose   A: take it   B: close   hold Y: stance (" + SkateRide.StanceName + ")";
-            if (Status.Length > 0) s += "   " + Status;
-            return s;
+            return "Skate park wheel";
         }
         if (now - SaidAt < ShownSeconds) return Said;
         if (Asked != "" && now - AskedAt < PlaceSeconds) return "Park piece " + Asked + ": place a square foundation (" + (int)(PlaceSeconds - (now - AskedAt)) + " s left)";
         return "";
     }
 
-    public static void Reset() { Close(); Picked = -1; HeldKind = -1; Asked = Said = Status = ""; SaidAt = AskedAt = -99f; Chosen = 0; Sent = Placed = 0; Turn = 0f; AimOk = false; }
+    public static Vector2 Pointer { get { return pointer; } }
+    public static void CancelFocus()
+    {
+        bool ready = NativeMode(Time.realtimeSinceStartup);
+        Close(ready);
+        inputPrimed = false;
+    }
+    public static void Reset()
+    {
+        if (builderRequested) NativeMode(Time.realtimeSinceStartup);
+        // Player/rig teardown cannot retain a disabled component after its input driver is gone.
+        Close(); inputPrimed = false; cancelledHold = BlocksControls = false; BuilderKind = requestedKind = -1;
+        builderRequested = offPending = false;
+        Picked = -1; HeldKind = -1; Asked = Said = Status = ""; SaidAt = AskedAt = -99f; Chosen = 0;
+        Sent = Placed = 0; Turn = 0f; AimOk = false;
+        builderTurn = 0; wasPlaceTrigger = false;
+    }
+    public static void Shutdown()
+    {
+        Reset();
+        if (replyListener != null)
+        {
+            try { Application.remove_logMessageReceived(replyListener); } catch (Exception) { }
+            replyListener = null;
+        }
+    }
 }

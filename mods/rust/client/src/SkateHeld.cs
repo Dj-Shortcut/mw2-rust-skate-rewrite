@@ -286,6 +286,69 @@ public static class SkateHeld
         catch (Exception e) { how = "select threw " + e.GetType().Name + ": " + e.Message; return false; }
     }
 
+    private static Planner pausedPlanner;
+    private static bool plannerWasEnabled;
+    private static object plannerPlayer;
+    public static bool PausePlanner(object player, out string why)
+    {
+        why = "";
+        if (pausedPlanner != null && ReferenceEquals(plannerPlayer, player)) return HasPlanner(player);
+        if (pausedPlanner != null) ResumePlanner();
+        var root = player as UnityEngine.Component;
+        if (root == null) { why = "The local player is unavailable."; return false; }
+        var model = RiderRig.Root != null ? (UnityEngine.Component)RiderRig.Root : root;
+        var planners = model.GetComponentsInChildren<Planner>(false);
+        Planner found = null;
+        for (int i = 0; i < planners.Length; i++)
+        {
+            Planner candidate = planners[i];
+            if (candidate == null || !candidate.enabled || !candidate.gameObject.activeInHierarchy) continue;
+            var parent = candidate.transform.parent;
+            if (parent == null || !parent.name.EndsWith("_prop", StringComparison.Ordinal)) continue;
+            if (found != null) { why = "More than one active building plan was found."; return false; }
+            found = candidate;
+        }
+        if (found == null) { why = "The active building plan is unavailable."; return false; }
+        plannerWasEnabled = found.enabled;
+        pausedPlanner = found;
+        plannerPlayer = player;
+        found.enabled = false;
+        Out.Say("PIECES ordinary building plan paused on local hand");
+        return true;
+    }
+
+    public static bool HasPlanner(object player)
+    {
+        if (pausedPlanner != null)
+        {
+            var parent = pausedPlanner.transform.parent;
+            return ReferenceEquals(plannerPlayer, player) && pausedPlanner.gameObject.activeInHierarchy && parent != null && parent.name.EndsWith("_prop", StringComparison.Ordinal);
+        }
+        var root = player as UnityEngine.Component;
+        if (root == null) return false;
+        var model = RiderRig.Root != null ? (UnityEngine.Component)RiderRig.Root : root;
+        var planners = model.GetComponentsInChildren<Planner>(false);
+        int found = 0;
+        for (int i = 0; i < planners.Length; i++)
+        {
+            var p = planners[i];
+            if (p == null || !p.enabled || !p.gameObject.activeInHierarchy) continue;
+            var parent = p.transform.parent;
+            if (parent != null && parent.name.EndsWith("_prop", StringComparison.Ordinal)) found++;
+        }
+        return found == 1;
+    }
+
+    public static void ResumePlanner()
+    {
+        var planner = pausedPlanner;
+        pausedPlanner = null;
+        plannerPlayer = null;
+        try { if (planner != null && plannerWasEnabled && !planner.enabled) planner.enabled = true; }
+        catch (Exception e) { Out.Say("PIECES building plan restore unavailable: " + e.GetType().Name); }
+        plannerWasEnabled = false;
+    }
+
     // Puts away what the hand holds, as on a vehicle: nothing is built, swung or fired while riding.
     // The game's belt is asked to clear its selection (ClearSelection, else SelectSlot(-1)); the
     // route is logged once, and what still sits in the hand is logged each time it fails.

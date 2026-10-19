@@ -102,6 +102,7 @@ public class SkateRig : MonoBehaviour
     [HideFromIl2Cpp]
     private void LetGo(string why, string off, bool forgetServer)
     {
+        SkatePieces.Reset();
         Say(why + "; looking again");
         SkateRide.Dismount(off);
         // Release only this ride's held-state ownership while its player/model
@@ -340,8 +341,13 @@ public class SkateRig : MonoBehaviour
     }
     private static bool watchFailed;
 
+    private void OnApplicationFocus(bool focused) { if (!focused) SkatePieces.CancelFocus(); }
+    private void OnDisable() { SkatePieces.Reset(); }
+
     private void OnDestroy()
     {
+        try { SkatePieces.Shutdown(); SkateBuildWheel.Clear(); }
+        catch (Exception e) { Out.Err("PIECES teardown threw " + e.GetType().Name); }
         try { SkateRide.Dismount("the skate rig is gone"); }
         catch (Exception e) { Out.Err("SKATE dismount threw " + e.GetType().Name + ": " + e.Message); }
         try { Unholster(); }

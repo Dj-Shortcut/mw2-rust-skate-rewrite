@@ -70,19 +70,20 @@ public static class SkateKeys
         if (Scripted || failed) { Help = false; return; }
         var now = Time.realtimeSinceStartup;
         SkatePad.Poll(now);
-        var padDown = SkatePieces.Step(SkatePad.Pressed(), now);
+        var padDown = SkatePad.Pressed();
         SkatePadLog.Frame(now);
         try
         {
             var kb = Keyboard.current;
-            if (kb == null || CursorFree())
+            var blocked = CursorFree() && !SkatePieces.OwnsCursor;
+            padDown = SkatePieces.Input(padDown, now, kb, Mouse.current, blocked);
+            if (kb == null || blocked || SkatePieces.BlocksControls)
             {
                 Push = Brake = Left = Right = Crouch = Jump = Manual = NoseManual = Charging = Help = false; Steer = Charge = Spin = wasSpin = 0f; Grab = SkateGrabKind.None;
                 wasPush = wasBrake = wasLeft = wasRight = wasJump = wasCrouch = wasToggle = wasCamera = false; EndStep(); SkatePad.DropPops();
                 keyboardSuspended = true; stanceSince = -1f;
                 return;
             }
-            SkatePieces.Keys(Down(kb.pKey), Down(kb.qKey), Down(kb.eKey), Down(kb.oKey), Down(kb.backspaceKey));
             var stanceKey = Down(kb.f2Key);
             bool push = Down(kb.wKey), brake = Down(kb.sKey), left = Down(kb.aKey), right = Down(kb.dKey);
             bool jump = Down(kb.spaceKey), toggle = Down(kb.kKey), crouch = false, camera = false, manual = false, noComply = false, boneless = false, body = false;
