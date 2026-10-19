@@ -1687,9 +1687,26 @@ namespace Shortcut.RustMod
     }
 }
 
+namespace Shortcut.RustMod
+{
+    public static class SkateBuilderPayment
+    {
+        public const int WoodPrice = 10;
+
+        public static bool ValidCost(int cost, SkateParkBuildItemState state)
+        { return cost == 0 || (cost == WoodPrice && state != SkateParkBuildItemState.None && SkateParkBuildItems.ValidState(state)); }
+
+        public static bool VerifiedDebit(long before, long after, int escrow, bool ownedReceipts)
+        { return ownedReceipts && before >= 0 && after >= 0 && escrow >= 0 && escrow <= WoodPrice && before - after == escrow; }
+
+        public static bool Complete(int nativeTaken, int escrow, bool verifiedDebit)
+        { return verifiedDebit && nativeTaken == WoodPrice && escrow == WoodPrice; }
+    }
+}
+
 namespace Oxide.Plugins
 {
-    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.33")]
+    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.34")]
     [Description("Player-scoped skateboard movement bounds and saved park assemblies.")]
     public sealed class ShortcutSkate : RustPlugin
     {
@@ -1724,12 +1741,21 @@ namespace Oxide.Plugins
             public double Started;
         }
 
-        private const int MaximumParkGroups = 256;
+        private const int DefaultMaximumParkGroups = 1024;
+        private const int MaximumStoredParkGroups = 4096;
+        private const int MaximumParkItemDeliveries = 256;
         private const int MaximumParkSelections = 128;
-        private const int MaximumParkDataLength = 1048576;
+        private const int MaximumParkDataLength = 16 * 1048576;
+        private const int MaximumGroundedDataLength = 1048576;
+        private int ParkGroupLimit { get { return settings == null ? DefaultMaximumParkGroups : settings.MaximumParkGroups; } }
         private const float MaximumParkPlacementDistance = 25;
         private const string ParkFoundationPrefab = "assets/prefabs/building core/foundation/foundation.prefab";
         private readonly Dictionary<ulong, ParkSelection> parkSelections = new Dictionary<ulong, ParkSelection>();
+        private const int BuilderWoodPrice = SkateBuilderPayment.WoodPrice;
+        private readonly Dictionary<ulong, BuilderSelection> builderSelections = new Dictionary<ulong, BuilderSelection>();
+        private BuilderSelection builderPending;
+        private readonly Dictionary<ulong, double> builderPlaceTimes = new Dictionary<ulong, double>();
+        private readonly List<BuilderWoodReceipt> builderWoodHolds = new List<BuilderWoodReceipt>();
         private object parkSelectionEpoch = new object();
         private readonly Dictionary<ulong, ParkGroup> parkMembers = new Dictionary<ulong, ParkGroup>();
         private readonly Dictionary<ParkGroup, ParkProfileCollision> parkProfileCollisions = new Dictionary<ParkGroup, ParkProfileCollision>();
@@ -1812,7 +1838,7 @@ namespace Oxide.Plugins
 
         public static GroundedData ParseGroundedData(string json)
         {
-            if (json == null || json.Length == 0 || json.Length > MaximumParkDataLength)
+            if (json == null || json.Length == 0 || json.Length > MaximumGroundedDataLength)
                 throw new InvalidDataException("Grounded building data is empty or exceeds one MiB.");
             using (var reader = new JsonTextReader(new StringReader(json)) { MaxDepth = 16 })
             {
@@ -1885,6 +1911,7 @@ namespace Oxide.Plugins
             [JsonProperty(Required = Required.Always)] public List<ParkMember> Members;
             [JsonProperty(Required = Required.DisallowNull, DefaultValueHandling = DefaultValueHandling.Ignore)]
             public SkateParkBuildItemState BuildItemState;
+            [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)] public int WoodCost;
             [JsonProperty(NullValueHandling = NullValueHandling.Ignore)] public ParkWallAttachment Wall;
         }
 
@@ -1970,6 +1997,24 @@ namespace Oxide.Plugins
             public bool Pending;
         }
 
+        private sealed class BuilderSelection
+        {
+            public BasePlayer Player;
+            public Planner Planner;
+            public Item Item;
+            public ItemId Uid;
+            public ItemDefinition Definition;
+            public SkateParkKind Kind;
+        }
+
+        private sealed class BuilderWoodReceipt
+        {
+            public Item Item;
+            public ItemId Uid;
+            public ItemDefinition Definition;
+            public int Amount;
+        }
+
         private sealed class ParkAnchorSnapshot
         {
             public Vector3 Position;
@@ -2026,6 +2071,9 @@ namespace Oxide.Plugins
             public double SnapSupportTop;
             public uint Building;
             public bool BuildItem, ItemSpent, RefundClaimed;
+            public BuilderSelection Builder;
+            public readonly List<BuilderWoodReceipt> WoodEscrow = new List<BuilderWoodReceipt>();
+            public bool WoodDebitVerified, WoodRecoveryClaimed;
             public SkateParkKind ItemKind;
             public ItemId ItemUid;
             public ItemDefinition ItemDefinition;
@@ -2111,13 +2159,25 @@ namespace Oxide.Plugins
 
         public static ParkData ParseParkData(string json)
         {
-            if (json == null || json.Length == 0 || json.Length > MaximumParkDataLength)
-                throw new InvalidDataException("Park data is empty or exceeds one MiB.");
+            if (json == null || json.Length == 0 || json.Length > MaximumParkDataLength ||
+                Encoding.UTF8.GetByteCount(json) > MaximumParkDataLength)
+                throw new InvalidDataException("Park data is empty or exceeds 16 MiB.");
             using (var reader = new JsonTextReader(new StringReader(json)) { MaxDepth = 16 })
             {
                 var keys = new Stack<HashSet<string>>();
+                bool inGroups = false;
+                int groupCount = 0;
                 while (reader.Read())
                 {
+                    if (reader.Depth == 1 && string.Equals(reader.Path, "Groups", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (reader.TokenType == JsonToken.StartArray) inGroups = true;
+                        else if (reader.TokenType == JsonToken.EndArray) inGroups = false;
+                    }
+                    else if (inGroups && reader.Depth == 2 && reader.TokenType != JsonToken.EndObject &&
+                        reader.TokenType != JsonToken.EndArray && reader.TokenType != JsonToken.Comment &&
+                        ++groupCount > MaximumStoredParkGroups)
+                        throw new InvalidDataException("Park data exceeds its 4096-group storage ceiling.");
                     if (reader.TokenType == JsonToken.StartObject) keys.Push(new HashSet<string>(StringComparer.OrdinalIgnoreCase));
                     else if (reader.TokenType == JsonToken.StartArray) keys.Push(null);
                     else if (reader.TokenType == JsonToken.EndObject || reader.TokenType == JsonToken.EndArray) keys.Pop();
@@ -2125,6 +2185,13 @@ namespace Oxide.Plugins
                     {
                         string property = (string)reader.Value;
                         if (!keys.Peek().Add(property)) throw new InvalidDataException("Duplicate park data property.");
+                        if (string.Equals(property, "WoodCost", StringComparison.OrdinalIgnoreCase))
+                        {
+                            if (!reader.Read() || reader.TokenType != JsonToken.Integer ||
+                                (Convert.ToInt64(reader.Value, CultureInfo.InvariantCulture) != 0 &&
+                                 Convert.ToInt64(reader.Value, CultureInfo.InvariantCulture) != BuilderWoodPrice))
+                                throw new InvalidDataException("Park Wood cost must be zero for legacy groups or exactly ten.");
+                        }
                         if (string.Equals(property, "BuildItemState", StringComparison.OrdinalIgnoreCase))
                         {
                             if (!reader.Read() || reader.TokenType != JsonToken.Integer ||
@@ -2143,7 +2210,7 @@ namespace Oxide.Plugins
             if (value == null || value.Version != 1 || string.IsNullOrEmpty(value.WipeId) || value.WipeId.Length > 128 ||
                 value.SaveCreatedTicks <= 0 || value.SaveCreatedTicks > DateTime.MaxValue.Ticks ||
                 value.SaveCreatedTicks % TimeSpan.TicksPerSecond != 0 ||
-                value.Checksum == null || value.Checksum.Length > 256 || value.Groups == null || value.Groups.Count > MaximumParkGroups)
+                value.Checksum == null || value.Checksum.Length > 256 || value.Groups == null || value.Groups.Count > MaximumStoredParkGroups)
                 throw new InvalidDataException("Invalid park world identity or group count.");
             var groups = new HashSet<string>(StringComparer.Ordinal);
             var members = new HashSet<ulong>();
@@ -2153,6 +2220,7 @@ namespace Oxide.Plugins
                 SkateParkKind kind;
                 if (group == null || !Guid.TryParseExact(group.Id, "N", out id) || group.Id != id.ToString("N") ||
                     !groups.Add(group.Id) || group.Owner == 0 || !SkateParkBuildItems.ValidState(group.BuildItemState) ||
+                    !SkateBuilderPayment.ValidCost(group.WoodCost, group.BuildItemState) ||
                     !SkateParkLayout.TryKind(group.Kind, out kind) || group.Kind != SkateParkLayout.Name(kind) ||
                     group.Members == null || group.Members.Count < 1 || group.Members.Count > SkateParkLayout.PartCount(kind))
                     throw new InvalidDataException("Invalid park group identity or kind.");
@@ -2196,11 +2264,26 @@ namespace Oxide.Plugins
             [JsonProperty(Required = Required.DisallowNull)] public bool AutomaticEligiblePlayers = true;
             [JsonProperty(Required = Required.DisallowNull)] public double AutomaticRearmSeconds = 1.5;
             [JsonProperty(Required = Required.DisallowNull)] public bool GroundedBuilding = false;
+            [JsonProperty(Required = Required.DisallowNull), JsonConverter(typeof(ParkGroupLimitConverter))]
+            public int MaximumParkGroups = DefaultMaximumParkGroups;
             [JsonProperty(Required = Required.DisallowNull)] public string ParkNextGesture = "I need wood";
             [JsonProperty(Required = Required.DisallowNull)] public string ParkCancelGesture = "Thumbs up";
             [JsonProperty(Required = Required.DisallowNull)] public string[] ParkPieceOrder =
                 { "halfpipe", "bank", "kicker", "quarterpipe", "ledge-low", "ledge-high", "long-ledge", "funbox",
                     "mini-quarterpipe", "large-quarterpipe" };
+        }
+
+        public sealed class ParkGroupLimitConverter : JsonConverter
+        {
+            public override bool CanConvert(Type type) { return type == typeof(int); }
+            public override void WriteJson(JsonWriter writer, object value, JsonSerializer serializer)
+            { writer.WriteValue((int)value); }
+            public override object ReadJson(JsonReader reader, Type type, object existing, JsonSerializer serializer)
+            {
+                if (reader.TokenType != JsonToken.Integer)
+                    throw new InvalidDataException("MaximumParkGroups must be an integer from 1 through 4096.");
+                return Convert.ToInt32(reader.Value, CultureInfo.InvariantCulture);
+            }
         }
 
         private sealed class Session
@@ -2607,6 +2690,8 @@ namespace Oxide.Plugins
                 !SkateSessionBounds.Finite(value.AutomaticRearmSeconds) ||
                 value.AutomaticRearmSeconds < 0.5 || value.AutomaticRearmSeconds > 10)
                 throw new InvalidDataException("Use Version 1, speed 1-50 m/s, airtime 0.1-2 seconds and rearm 0.5-10 seconds.");
+            if (value.MaximumParkGroups < 1 || value.MaximumParkGroups > MaximumStoredParkGroups)
+                throw new InvalidDataException("MaximumParkGroups must be an integer from 1 through 4096.");
             if (!SkateParkSelections.ValidGestureName(value.ParkNextGesture) || !SkateParkSelections.ValidGestureName(value.ParkCancelGesture) ||
                 string.Equals(value.ParkNextGesture, value.ParkCancelGesture, StringComparison.OrdinalIgnoreCase) ||
                 value.ParkPieceOrder == null || value.ParkPieceOrder.Length < 1 || value.ParkPieceOrder.Length > SkateParkBuildItems.PieceCount)
@@ -3018,7 +3103,7 @@ namespace Oxide.Plugins
             PruneParkSelections();
             state = parkSelections.TryGetValue(player.userID, out previous) && ReferenceEquals(previous.Player, player) ?
                 previous.State : new SkateParkSelectionState();
-            if (parkData.Groups.Count >= MaximumParkGroups ||
+            if (parkData.Groups.Count >= ParkGroupLimit ||
                 (!parkSelections.ContainsKey(player.userID) && parkSelections.Count >= MaximumParkSelections))
             { player.ChatMessage("The park group or pending-selection limit has been reached."); return; }
             if (!SkateParkSelections.TryApply(state, SkateParkSelectionAction.Next, true, true,
@@ -3275,6 +3360,10 @@ namespace Oxide.Plugins
                 ParkSelection selection;
                 if (parkSelections.TryGetValue(player.userID, out selection) && ReferenceEquals(selection.Player, player))
                     parkSelections.Remove(player.userID);
+                builderPlaceTimes.Remove(player.userID);
+                BuilderSelection builder;
+                if (builderSelections.TryGetValue(player.userID, out builder) && ReferenceEquals(builder.Player, player))
+                    builderSelections.Remove(player.userID);
                 diagnostics.Remove(player.userID, player);
                 if (optedOut.TryGetValue(player.userID, out previous) && ReferenceEquals(player, previous))
                     optedOut.Remove(player.userID);
@@ -3309,6 +3398,9 @@ namespace Oxide.Plugins
             catch (Exception error) { PrintError("The park gesture patch could not be removed: " + error.Message); }
             parkReady = false;
             parkSelections.Clear();
+            builderSelections.Clear();
+            builderPlaceTimes.Clear();
+            builderPending = null;
             parkDemolitionPending.Clear();
             ready = false;
             stallStartups.Clear();
@@ -3331,6 +3423,8 @@ namespace Oxide.Plugins
             }
             CleanupParkRollback();
             if (parkRollback.Count != 0) PrintError("Unload could not remove " + parkRollback.Count + " unsaved park rollback parts; cleanup is incomplete.");
+            if (builderWoodHolds.Count != 0)
+                PrintError("Unload has " + builderWoodHolds.Count + " unverified Wood receipts. No duplicate refunds were created; private operator recovery may be required.");
             if (parkItemDeliveries.Count != 0)
                 PrintError("Unload has " + parkItemDeliveries.Count + " unverified build-item deliveries. No replacement items were minted; private operator recovery may be required.");
             if (!parkDataBroken && parkData != null && SameParkWorld(parkData)) SaveParksSafely();
@@ -3519,7 +3613,7 @@ namespace Oxide.Plugins
             try
             {
                 if (!File.Exists(GroundedFilename)) return;
-                if (new FileInfo(GroundedFilename).Length > MaximumParkDataLength)
+                if (new FileInfo(GroundedFilename).Length > MaximumGroundedDataLength)
                     throw new InvalidDataException("Grounded building data exceeds one MiB.");
                 groundedData = ParseGroundedData(File.ReadAllText(GroundedFilename));
             }
@@ -3620,7 +3714,7 @@ namespace Oxide.Plugins
             string json;
             try { json = JsonConvert.SerializeObject(groundedData, Formatting.Indented); }
             catch (Exception) { groundedStorageFailed = true; throw; }
-            if (json.Length > MaximumParkDataLength || Encoding.UTF8.GetByteCount(json) > MaximumParkDataLength)
+            if (json.Length > MaximumGroundedDataLength || Encoding.UTF8.GetByteCount(json) > MaximumGroundedDataLength)
                 throw new InvalidDataException("Grounded building metadata exceeds one MiB.");
             try { ParseGroundedData(json); }
             catch (Exception) { groundedStorageFailed = true; throw; }
@@ -3800,14 +3894,61 @@ namespace Oxide.Plugins
             finally { groundedBusy = false; }
         }
 
+        private static string ReadParkDataFile(string filename)
+        {
+            byte[] bytes;
+            using (var stream = new FileStream(filename, FileMode.Open, FileAccess.Read, FileShare.Read))
+            {
+                long length = stream.Length;
+                if (length <= 0 || length > MaximumParkDataLength)
+                    throw new InvalidDataException("Park data is empty or exceeds 16 MiB.");
+                bytes = new byte[(int)length];
+                int offset = 0;
+                while (offset < bytes.Length)
+                {
+                    int count = stream.Read(bytes, offset, bytes.Length - offset);
+                    if (count == 0) throw new IOException("Park data changed while it was read.");
+                    offset += count;
+                }
+                if (stream.ReadByte() != -1) throw new IOException("Park data grew while it was read.");
+            }
+            using (var reader = new StreamReader(new MemoryStream(bytes, false), Encoding.UTF8, true))
+                return reader.ReadToEnd();
+        }
+
+        private sealed class ParkDataWriter : StringWriter
+        {
+            private int bytes;
+            public ParkDataWriter() : base(CultureInfo.InvariantCulture) { }
+            private void Reserve(int count)
+            {
+                if (count > MaximumParkDataLength - bytes)
+                    throw new InvalidDataException("Park metadata exceeds its 16 MiB capacity; no metadata file was written.");
+                bytes += count;
+            }
+            public override void Write(char value)
+            {
+                Reserve(value <= 0x7f ? 1 : value <= 0x7ff ? 2 : 3);
+                base.Write(value);
+            }
+            public override void Write(string value)
+            {
+                if (value != null) Reserve(Encoding.UTF8.GetByteCount(value));
+                base.Write(value);
+            }
+            public override void Write(char[] buffer, int index, int count)
+            {
+                Reserve(Encoding.UTF8.GetByteCount(buffer, index, count));
+                base.Write(buffer, index, count);
+            }
+        }
+
         private void ReadParkData()
         {
             try
             {
                 if (!File.Exists(ParkFilename)) return;
-                if (new FileInfo(ParkFilename).Length > MaximumParkDataLength)
-                    throw new InvalidDataException("Park data exceeds one MiB.");
-                parkData = ParseParkData(File.ReadAllText(ParkFilename));
+                parkData = ParseParkData(ReadParkDataFile(ParkFilename));
             }
             catch (Exception error)
             {
@@ -4144,10 +4285,20 @@ namespace Oxide.Plugins
                 throw new InvalidDataException("Park metadata has no matching native save/world identity.\n" +
                     string.Join("\n", ParkWorldProblems(parkData, true)));
             string json;
-            try { json = JsonConvert.SerializeObject(parkData, Formatting.Indented); }
+            try
+            {
+                using (var writer = new ParkDataWriter())
+                {
+                    var serializer = JsonSerializer.CreateDefault();
+                    serializer.Formatting = Formatting.Indented;
+                    serializer.Serialize(writer, parkData);
+                    json = writer.ToString();
+                }
+            }
+            catch (InvalidDataException) { throw; }
             catch (Exception error) { parkStorageFailed = true; parkStorageError = error.Message; throw; }
             if (json.Length > MaximumParkDataLength || Encoding.UTF8.GetByteCount(json) > MaximumParkDataLength)
-                throw new InvalidDataException("Park metadata exceeds its one MiB capacity; no metadata file was written.");
+                throw new InvalidDataException("Park metadata exceeds its 16 MiB capacity; no metadata file was written.");
             try { ParseParkData(json); }
             catch (Exception error) { parkStorageFailed = true; parkStorageError = error.Message; throw; }
             string filename = ParkFilename;
@@ -4164,7 +4315,7 @@ namespace Oxide.Plugins
                     }
                     if (File.Exists(filename)) File.Replace(temporary, filename, null);
                     else File.Move(temporary, filename);
-                    if (File.ReadAllText(filename) != json) throw new IOException("Park metadata readback did not match.");
+                    if (ReadParkDataFile(filename) != json) throw new IOException("Park metadata readback did not match.");
                 }
                 finally { if (File.Exists(temporary)) File.Delete(temporary); }
             }
@@ -4221,7 +4372,7 @@ namespace Oxide.Plugins
                 !player.IsAdmin || !Eligible(player))
             { ReplyParkCommand(arg, kind, "The selection request was superseded or the administrator became unavailable."); return; }
             PruneParkSelections();
-            if (parkData.Groups.Count >= MaximumParkGroups ||
+            if (parkData.Groups.Count >= ParkGroupLimit ||
                 (!parkSelections.ContainsKey(player.userID) && parkSelections.Count >= MaximumParkSelections))
             { ReplyParkCommand(arg, kind, "The park group or pending-selection limit has been reached."); return; }
             SkateParkSelectionState selected;
@@ -4231,6 +4382,206 @@ namespace Oxide.Plugins
             ReplyParkCommand(arg, kind, "Selected " + SkateParkLayout.Name(kind) + ". Place one normal horizontal square foundation with a building plan within 120 seconds. Failed attempts retain this selection until its original expiry; " +
                 (kind == SkateParkKind.MegaHalfpipe ? "the MEGA kit requires its matching client profile before riding." :
                  kind == SkateParkKind.Halfpipe ? "the halfpipe uses a Stone flat, Metal transitions/decks/sides and Wood back rails." : "the assembly will be Stone."));
+        }
+
+        private bool BuilderAllowed(BasePlayer player)
+        {
+            Session riding;
+            return ready && Eligible(player) && Permitted(player) && !OptedOut(player) &&
+                (!sessions.TryGetValue(player.userID, out riding) || !ReferenceEquals(riding.Player, player) ||
+                    clock.Elapsed.TotalSeconds - riding.RidingAt > RidingGraceSeconds);
+        }
+
+        private bool CurrentBuilderSelection(BasePlayer player, Planner planner, out BuilderSelection selection)
+        {
+            selection = null;
+            if (player == null || !builderSelections.TryGetValue(player.userID, out selection)) return false;
+            Item item = selection.Item;
+            bool owned = ReferenceEquals(selection.Player, player) && ReferenceEquals(selection.Planner, planner) &&
+                player.inventory != null && item != null && item.isServer && !item.IsRemoved() && item.amount == 1 &&
+                item.uid.Equals(selection.Uid) && ReferenceEquals(item.info, selection.Definition) &&
+                item.info != null && item.info.shortname == SkateParkBuildItems.Carrier && !TaggedParkItem(item) &&
+                !item.uid.Equals(default(ItemId)) && ParkPlannerItem(player, player.inventory.containerBelt, item, planner) &&
+                ReferenceEquals(player.GetActiveItem(), item) && ReferenceEquals(player.GetHeldEntity(), planner);
+            if (!owned && ReferenceEquals(selection.Player, player))
+            { builderSelections.Remove(player.userID); BuilderReply(player, "off"); }
+            return owned && BuilderAllowed(player);
+        }
+
+        private void BuilderReply(BasePlayer player, string message)
+        {
+            if (player == null) return;
+            string text = "[SKATE-BUILDER] " + message;
+            player.ConsoleMessage(text);
+            player.ChatMessage(text);
+        }
+
+        [ConsoleCommand("skate.builder")]
+        private void SelectBuilderPiece(ConsoleSystem.Arg arg)
+        {
+            BasePlayer player = arg.Player();
+            if (player == null) { arg.ReplyWith("Use the Skate builder with your held building plan in game."); return; }
+            string[] args = arg.Args == null ? new string[0] : arg.Args.Select(value => value.ToString()).ToArray();
+            if (args.Length == 1 && string.Equals(args[0], "off", StringComparison.OrdinalIgnoreCase))
+            { builderSelections.Remove(player.userID); BuilderReply(player, "off"); return; }
+            if (args.Length >= 1 && string.Equals(args[0], "place", StringComparison.OrdinalIgnoreCase))
+            {
+                int turn = 0;
+                if (args.Length > 2 || (args.Length == 2 && (!int.TryParse(args[1], NumberStyles.None, CultureInfo.InvariantCulture, out turn) || turn < 0 || turn > 3)))
+                { BuilderReply(player, "placement-refused Rotation must be a quarter-turn index from zero to three; no Wood was spent."); return; }
+                PlaceBuilderPiece(player, turn);
+                return;
+            }
+            builderSelections.Remove(player.userID);
+            SkateParkKind kind;
+            if (args.Length != 1 || !SkateParkLayout.TryKind(args[0], out kind))
+            { BuilderReply(player, "refused Choose one of the twelve Skate pieces, or off for normal building."); return; }
+            if (!BuilderAllowed(player))
+            { BuilderReply(player, "refused Stand on foot, alive and on dry land with Skate access."); return; }
+            if (parkBusy || parkRefreshing || parkNativeCleaning || parkClosing || SaveRestore.IsSaving || !parkReady)
+            { BuilderReply(player, "refused Park placement is busy or unavailable."); return; }
+            string failure;
+            if (!RefreshParkWorld(out failure)) { BuilderReply(player, "refused " + failure); return; }
+            Item item = player.GetActiveItem();
+            Planner planner = player.GetHeldEntity() as Planner;
+            ItemContainer belt = player.inventory == null ? null : player.inventory.containerBelt;
+            if (item == null || item.info == null || item.info.shortname != SkateParkBuildItems.Carrier ||
+                TaggedParkItem(item) || item.amount != 1 || item.IsRemoved() || !item.isServer ||
+                item.uid.Equals(default(ItemId)) || !ParkPlannerItem(player, belt, item, planner))
+            { BuilderReply(player, "refused Hold your ordinary building plan."); return; }
+            foreach (var pair in builderSelections.ToArray())
+            {
+                BuilderSelection ignored;
+                CurrentBuilderSelection(pair.Value.Player, pair.Value.Planner, out ignored);
+            }
+            if (!builderSelections.ContainsKey(player.userID) && builderSelections.Count >= MaximumParkSelections)
+            { BuilderReply(player, "refused The builder selection limit is reached."); return; }
+            parkSelections.Remove(player.userID);
+            parkSelectionEpoch = new object();
+            builderSelections[player.userID] = new BuilderSelection { Player = player, Planner = planner, Item = item,
+                Uid = item.uid, Definition = item.info, Kind = kind };
+            BuilderReply(player, "selected " + SkateParkLayout.Name(kind));
+            player.ChatMessage(SkateParkBuildItems.Name(kind) + " costs 10 Wood. Left click with your ordinary building plan; failed placement costs nothing.");
+        }
+
+        private bool ActiveBuilderPlan(BasePlayer player, Planner planner)
+        {
+            BuilderSelection selection;
+            return player != null && builderSelections.TryGetValue(player.userID, out selection) &&
+                ReferenceEquals(selection.Player, player) && ReferenceEquals(selection.Planner, planner) &&
+                ReferenceEquals(player.GetActiveItem(), selection.Item);
+        }
+
+        private void PlaceBuilderPiece(BasePlayer player, int quarterTurn)
+        {
+            BuilderSelection selected;
+            Planner planner = player == null ? null : player.GetHeldEntity() as Planner;
+            if (!CurrentBuilderSelection(player, planner, out selected))
+            { BuilderReply(player, "placement-refused Hold the selected ordinary building plan on foot with Skate access; no Wood was spent."); return; }
+            double now = clock.Elapsed.TotalSeconds;
+            double next;
+            if (quarterTurn < 0 || quarterTurn > 3 ||
+                (builderPlaceTimes.TryGetValue(player.userID, out next) && now < next) || builderPending != null ||
+                parkBusy || parkRefreshing || parkNativeCleaning || parkClosing || !parkReady || SaveRestore.IsSaving ||
+                parkNativeRequests.Count != 0)
+            { BuilderReply(player, "placement-refused Placement is busy or not ready; no Wood was spent."); return; }
+            foreach (var pair in builderPlaceTimes.Where(pair => pair.Value <= now).ToArray()) builderPlaceTimes.Remove(pair.Key);
+            if (!builderPlaceTimes.ContainsKey(player.userID) && builderPlaceTimes.Count >= MaximumParkSelections)
+            { BuilderReply(player, "placement-refused Placement is busy; no Wood was spent."); return; }
+            builderPlaceTimes[player.userID] = now + 0.25;
+            builderPending = selected;
+            try
+            {
+                NextTick(() =>
+                {
+                    try
+                    {
+                        if (!ReferenceEquals(builderPending, selected)) return;
+                        string failure;
+                        if (!RefreshParkWorld(out failure)) { BuilderReply(player, "placement-refused " + failure); return; }
+                        BuilderSelection current;
+                        if (!CurrentBuilderSelection(player, planner, out current) || !ReferenceEquals(current, selected))
+                        { BuilderReply(player, "placement-refused The selected plan changed; no Wood was spent."); return; }
+                        if (BuilderWoodCount(player) < BuilderWoodPrice)
+                        { BuilderReply(player, "placement-refused This Skate piece costs 10 Wood; no Wood was spent."); return; }
+                        uint foundationId = StringPool.Get(ParkFoundationPrefab);
+                        Construction foundation = PrefabAttribute.server == null ? null : PrefabAttribute.server.Find<Construction>(foundationId);
+                        if (!NativeParkConstruction(foundation))
+                        { BuilderReply(player, "placement-refused The stock building-plan construction is unavailable; no Wood was spent."); return; }
+                        var failures = new List<string>();
+                        ParkNativePart[] definitions;
+                        if (!ParkPrefabs(selected.Kind, failures, out definitions) || failures.Count != 0)
+                        { BuilderReply(player, "placement-refused The selected piece's native prefabs are unavailable; no Wood was spent."); return; }
+                        var request = new ParkPlacementRequest { Player = player, Planner = planner, PlannerItem = selected.Item,
+                            Belt = player.inventory.containerBelt, Data = parkData, Builder = selected, ItemKind = selected.Kind,
+                            ItemUid = selected.Uid, ItemDefinition = selected.Definition, ItemData = selected.Item.instanceData, Owner = player.userID };
+                        Ray ray = player.eyes.HeadRay();
+                        RaycastHit hit;
+                        int mask = LayerMask.GetMask("World", "Terrain", "Construction", "Deployed", "Player (Server)");
+                        if (mask == 0 || !Coordinate(ray.origin) || !Coordinate(ray.direction) || ray.direction.sqrMagnitude < 0.0001f ||
+                            Vector3.Distance(ray.origin, player.eyes.position) > 0.5f ||
+                            !Physics.Raycast(ray.origin, ray.direction.normalized, out hit, MaximumParkPlacementDistance, mask, QueryTriggerInteraction.Ignore) ||
+                            hit.collider == null || !Coordinate(hit.point) || !Coordinate(hit.normal) ||
+                            (selected.Kind != SkateParkKind.HalfWallKicker && hit.normal.y <= 0))
+                        { BuilderReply(player, "placement-refused Aim at valid support within 25 metres; no Wood was spent."); return; }
+                        ParkGroup group;
+                        if (selected.Kind == SkateParkKind.HalfWallKicker)
+                        {
+                            if (!TryWallPlacement(request, ray, null, definitions, out group, out failure))
+                            { BuilderReply(player, "placement-refused " + failure); return; }
+                        }
+                        else
+                        {
+                            double x = hit.point.x, z = hit.point.z, yaw;
+                            BuildingBlock host = hit.collider.ToBaseEntity() as BuildingBlock;
+                            if (host != null)
+                            {
+                                if (!TryParkTargetFrame(request, host, hit, quarterTurn * 90, true, definitions, out x, out z, out yaw, out failure))
+                                { BuilderReply(player, "placement-refused " + failure); return; }
+                            }
+                            else if (!SkateParkLayout.TrySnapYaw(player.eyes.rotation.eulerAngles.y + quarterTurn * 90,
+                                0, ParkRotationStep(), out yaw))
+                            { BuilderReply(player, "placement-refused The native support rotation is unavailable; no Wood was spent."); return; }
+                            group = new ParkGroup { Id = Guid.NewGuid().ToString("N"), Owner = request.Owner,
+                                Kind = SkateParkLayout.Name(selected.Kind), AnchorX = x, AnchorY = hit.point.y,
+                                AnchorZ = z, AnchorYaw = yaw, Members = new List<ParkMember>() };
+                            if (!ResolveParkSupport(request, selected.Kind, definitions, group, out failure))
+                            { BuilderReply(player, "placement-refused " + failure); return; }
+                        }
+                        var target = new Construction.Target { valid = true, player = player, ray = ray,
+                            entity = hit.collider.ToBaseEntity(), position = hit.point, normal = hit.normal,
+                            rotation = new Vector3(0, quarterTurn * 90, 0), onTerrain = BuilderTerrainHit(hit) };
+                        bool permitted;
+                        parkBusy = true;
+                        try { permitted = ParkBuildingHook(request, foundation, target); }
+                        finally { parkBusy = false; }
+                        if (!permitted || !CurrentParkRequest(request))
+                        { BuilderReply(player, "placement-refused A native building hook or plan check refused placement; no Wood was spent."); return; }
+                        if (!BuildParkAssembly(request, selected.Kind, definitions, group, out failure))
+                        { BuilderReply(player, "placement-refused " + failure); return; }
+                        ParkPlacementFeedback(player, group);
+                    }
+                    catch (Exception error)
+                    { BuilderReply(player, "placement-refused " + error.Message); }
+                    finally { if (ReferenceEquals(builderPending, selected)) builderPending = null; }
+                });
+            }
+            catch
+            {
+                if (ReferenceEquals(builderPending, selected)) builderPending = null;
+                throw;
+            }
+        }
+
+        private static bool BuilderTerrainHit(RaycastHit hit)
+        { return hit.collider != null && hit.collider.gameObject.layer == LayerMask.NameToLayer("Terrain"); }
+
+        private void OnActiveItemChanged(BasePlayer player, Item oldItem, Item newItem)
+        {
+            BuilderSelection selection;
+            if (player != null && builderSelections.TryGetValue(player.userID, out selection) &&
+                ReferenceEquals(selection.Player, player) && !ReferenceEquals(newItem, selection.Item))
+            { builderSelections.Remove(player.userID); BuilderReply(player, "off"); }
         }
 
         private static bool ParkPlannerItem(BasePlayer player, ItemContainer belt, Item item, Planner planner)
@@ -4298,6 +4649,7 @@ namespace Oxide.Plugins
                 ReferenceEquals(parkBuildHookConstruction, construction) && ReferenceEquals(target.player, request.Player) &&
                 target.Equals(parkBuildHookTarget)) return null;
             BasePlayer player = planner == null ? null : planner.GetOwnerPlayer();
+            if (ActiveBuilderPlan(player, planner)) return false;
             ParkNativeRequest pending = PendingNativeParkRequest(player, planner);
             if (pending == null)
             {
@@ -4370,15 +4722,15 @@ namespace Oxide.Plugins
             failure = "Select a stock square foundation while holding the marked park build item; other native building pieces cannot place a park assembly.";
             if (!NativeParkConstruction(construction)) return false;
             failure = "Park placement is busy or unavailable; the build item was retained.";
-            if (!ReferenceEquals(instance, this) || parkClosing || parkBusy || parkRefreshing || parkNativeCleaning ||
+            if (!ReferenceEquals(instance, this) || parkClosing || parkBusy || parkRefreshing || parkNativeCleaning || builderPending != null ||
                 parkNativeRequests.Count != 0 || SaveRestore.IsSaving || player == null || !player.IsAdmin ||
                 !Eligible(player) || player.eyes == null || !Coordinate(player.eyes.position)) return false;
             CleanupNativeParkCarriers();
             if (parkNativeCleanup.Count != 0)
             { failure = "An earlier native carrier removal is unverified; park placement is disabled and the build item was retained."; return false; }
             if (!RefreshParkWorld(out failure)) return false;
-            if (parkData.Groups.Count >= MaximumParkGroups)
-            { failure = "Park group limit reached: 256; the build item was retained."; return false; }
+            if (parkData.Groups.Count >= ParkGroupLimit)
+            { failure = "Park group limit reached: " + ParkGroupLimit.ToString(CultureInfo.InvariantCulture) + " worldwide; the build item was retained."; return false; }
             Item item = player.GetActiveItem();
             ItemContainer belt = player.inventory == null ? null : player.inventory.containerBelt;
             SkateParkKind kind;
@@ -4397,6 +4749,7 @@ namespace Oxide.Plugins
 
         private object CanAffordToPlace(BasePlayer player, Planner planner, Construction construction)
         {
+            if (ActiveBuilderPlan(player, planner)) return false;
             if (PendingNativeParkRequest(player, planner) != null) return false;
             if (!TaggedNativeParkPlanner(player, planner)) return null;
             ParkPlacementRequest request;
@@ -4512,7 +4865,7 @@ namespace Oxide.Plugins
             failure = "Build-item delivery is unavailable; no replacement item will be minted automatically.";
             if (!ReferenceEquals(instance, this) || parkClosing || player == null || !player.IsAdmin ||
                 !player.IsConnected || player.inventory == null || !Coordinate(player.transform.position) ||
-                parkItemDeliveries.Count >= MaximumParkGroups ||
+                parkItemDeliveries.Count >= MaximumParkItemDeliveries ||
                 (expected != null && (!ReferenceEquals(expected, parkData) || !SameParkWorld(expected)))) return false;
             ulong owner = player.userID;
             Item item;
@@ -4607,7 +4960,8 @@ namespace Oxide.Plugins
         {
             if (request == null || !ReferenceEquals(instance, this) || parkClosing || !parkReady || !CurrentParkSupport(request) ||
                 SaveRestore.IsSaving || !ReferenceEquals(parkData, request.Data) || !SameParkWorld(request.Data) ||
-                request.Player == null || request.Player.userID != request.Owner || !request.Player.IsAdmin || !Eligible(request.Player)) return false;
+                request.Player == null || request.Player.userID != request.Owner ||
+                (request.Builder == null ? !request.Player.IsAdmin : !BuilderAllowed(request.Player)) || !Eligible(request.Player)) return false;
             if (request.Wall != null)
             {
                 SkateParkTransform wallAnchor;
@@ -4623,6 +4977,13 @@ namespace Oxide.Plugins
                 return SameParkPaymentItem(request) && request.PlannerItem.amount == 0;
             if (request.Planner == null || request.Planner.IsDestroyed ||
                 !ReferenceEquals(request.Planner.GetOwnerPlayer(), request.Player)) return false;
+            if (request.Builder != null)
+            {
+                BuilderSelection selected;
+                return CurrentBuilderSelection(request.Player, request.Planner, out selected) && ReferenceEquals(selected, request.Builder) &&
+                    selected.Kind == request.ItemKind && ReferenceEquals(selected.Item, request.PlannerItem) &&
+                    selected.Uid.Equals(request.ItemUid) && ReferenceEquals(selected.Definition, request.ItemDefinition);
+            }
             if (request.BuildItem)
             {
                 SkateParkKind kind;
@@ -4817,7 +5178,8 @@ namespace Oxide.Plugins
             string failure;
             if (!RefreshParkWorld(out failure)) { arg.ReplyWith(failure); return; }
             var text = new StringBuilder("Park groups: ").Append(parkData.Groups.Count.ToString(CultureInfo.InvariantCulture))
-                .Append("/256; new placement ready=").Append(parkReady).Append('.');
+                .Append('/').Append(ParkGroupLimit.ToString(CultureInfo.InvariantCulture))
+                .Append(" worldwide; metadata limit=16 MiB; new placement ready=").Append(parkReady).Append('.');
             foreach (SkateParkKind kind in Enum.GetValues(typeof(SkateParkKind)))
                 text.Append("\n").Append(SkateParkLayout.Name(kind)).Append(": ")
                     .Append(parkData.Groups.Count(g => g.Kind == SkateParkLayout.Name(kind)).ToString(CultureInfo.InvariantCulture));
@@ -7583,8 +7945,8 @@ namespace Oxide.Plugins
                 !ReferenceEquals(planner.GetOwnerPlayer(), player) || !HorizontalParkFoundation(anchor) ||
                 ParkId(anchor) != anchorId || anchor.OwnerID != (ulong)player.userID || parkMembers.ContainsKey(anchorId))
             { ReportParkFailures(player, new[] { "Park placement refused; use a new normal horizontal square foundation while alive, awake, unmounted and on dry land. The selection remains until its original expiry." }); return; }
-            if (parkData.Groups.Count >= MaximumParkGroups)
-            { ReportParkFailures(player, new[] { "Park group limit reached: 256. The selection remains until its original expiry." }); return; }
+            if (parkData.Groups.Count >= ParkGroupLimit)
+            { ReportParkFailures(player, new[] { "Park group limit reached: " + ParkGroupLimit.ToString(CultureInfo.InvariantCulture) + " worldwide. The selection remains until its original expiry." }); return; }
             var failures = new List<string>();
             ParkNativePart[] definitions;
             ParkPrefabs(selection.Kind, failures, out definitions);
@@ -7620,6 +7982,7 @@ namespace Oxide.Plugins
             ParkNativeRequest native = PendingNativeParkRequest(request == null ? null : request.Player,
                 request == null ? null : request.Planner);
             if (parkBusy || parkRefreshing || parkNativeCleaning || !CurrentParkRequest(request) ||
+                (builderPending != null && !ReferenceEquals(request.Builder, builderPending)) ||
                 (parkNativeRequests.Count != 0 && (native == null || !ReferenceEquals(native.Placement, request) ||
                     !native.Removed || native.Failure != null)))
             { failure = request == null ? failure : request.SupportFailure ?? failure; return false; }
@@ -7636,10 +7999,11 @@ namespace Oxide.Plugins
             if (parkRollback.Count != 0)
             { failure = "Previous unsaved park cleanup is incomplete; new placement is disabled until those parts are removed."; return false; }
             if (!CurrentParkPhase(request)) { failure = request.SupportFailure ?? failure; return false; }
-            if (request.Data.Groups.Count >= MaximumParkGroups)
-            { failure = "Park group limit reached: 256."; return false; }
+            if (request.Data.Groups.Count >= ParkGroupLimit)
+            { failure = "Park group limit reached: " + ParkGroupLimit.ToString(CultureInfo.InvariantCulture) + " worldwide."; return false; }
             BasePlayer player = request.Player;
             Planner planner = request.Planner;
+            if (request.Builder != null) { group.WoodCost = BuilderWoodPrice; group.BuildItemState = SkateParkBuildItemState.Preparing; }
             BuildingBlock anchor = request.WallBlock ?? request.Foundation ?? request.Support;
             if (kind != SkateParkKind.HalfWallKicker && request.Supports == null &&
                 !ResolveParkSupport(request, kind, definitions, group, out failure)) return false;
@@ -7784,6 +8148,24 @@ namespace Oxide.Plugins
                             throw new InvalidDataException("A paid park member changed before completion.");
                     }
                 }
+                if (request.Builder != null)
+                {
+                    if (!EscrowBuilderWood(request))
+                        throw new InvalidDataException("The exact 10 Wood payment could not be verified.");
+                    if (!CurrentParkPhase(request))
+                        throw new InvalidDataException(request.SupportFailure ?? "The selected plan, support or world changed during Wood payment.");
+                    group.BuildItemState = SkateParkBuildItemState.Paid;
+                    SaveParkData();
+                    foreach (ParkMember part in parts)
+                    {
+                        BuildingBlock block = created[part.Index];
+                        if (!CurrentParkRequest(request) || !ParkMatches(block, group, part) ||
+                            block.grade != definitions[part.Index].Grade || block.skinID != 0 || !block.enableSaving ||
+                            !block.grounded || block.buildingID != request.Building ||
+                            !ReferenceEquals(block.blockDefinition, definitions[part.Index].Construction))
+                            throw new InvalidDataException("A paid park member changed during Wood payment.");
+                    }
+                }
                 SkateParkSelectionState consumed = new SkateParkSelectionState();
                 if (!CurrentParkPhase(request) || rollbackReceipts.Any(receipt => !ParkRollbackMatches(receipt)) || (request.Selection != null &&
                     !SkateParkSelections.TryApply(request.Selection.State, SkateParkSelectionAction.PlacementSucceeded,
@@ -7802,6 +8184,7 @@ namespace Oxide.Plugins
                     parkSelections.Remove(player.userID);
                 }
                 committed = true;
+                if (request.Builder != null) CompleteBuilderWood(request, group, definitions);
                 failure = null;
                 return true;
             }
@@ -7847,6 +8230,14 @@ namespace Oxide.Plugins
                     }
                     else recovery = " Verified debit recovery is withheld until part cleanup, metadata and world identity are safe; no replacement item was minted.";
                 }
+                if (request.Builder != null && request.WoodEscrow.Count != 0)
+                {
+                    if (parkRollback.Count == 0 && rollbackSaved && ReferenceEquals(instance, this) &&
+                        !parkClosing && SameParkWorld(request.Data) && ReferenceEquals(request.Data, parkData))
+                        recovery += RestoreBuilderWood(request) ? " The reserved Wood was returned; failed placement cost nothing." :
+                            " Wood recovery remains unverified; the same receipt is held and no replacement Wood was minted.";
+                    else recovery += " Wood recovery is held until part removal, metadata and world identity are verified.";
+                }
                 failure = (request.SupportFailure == null ? error.Message : request.SupportFailure) + recovery + (parkRollback.Count == 0 ? "" :
                     " Part cleanup is incomplete; new placement is disabled until cleanup succeeds.");
                 return false;
@@ -7856,6 +8247,191 @@ namespace Oxide.Plugins
                 parkBusy = false;
                 if (!committed && parkClosing) CleanupParkRollback();
             }
+        }
+
+        private static long BuilderWoodCount(BasePlayer player)
+        {
+            if (player == null || player.inventory == null) return -1;
+            long count = 0;
+            foreach (ItemContainer container in new[] { player.inventory.containerMain, player.inventory.containerBelt, player.inventory.containerWear })
+            {
+                if (container == null || container.itemList == null || container.itemList.Count > 256) return -1;
+                foreach (Item item in container.itemList)
+                {
+                    if (item == null || item.info == null || item.info.shortname != "wood") continue;
+                    if (!item.isServer || item.IsRemoved() || item.amount <= 0 || !ReferenceEquals(item.parent, container) ||
+                        !ReferenceEquals(item.GetOwnerPlayer(), player) || item.uid.Equals(default(ItemId))) return -1;
+                    count += item.amount;
+                }
+            }
+            return count;
+        }
+
+        private static bool SameBuilderWood(BuilderWoodReceipt receipt)
+        {
+            Item item = receipt == null ? null : receipt.Item;
+            return item != null && item.isServer && !item.IsRemoved() && item.uid.Equals(receipt.Uid) &&
+                !item.uid.Equals(default(ItemId)) && ReferenceEquals(item.info, receipt.Definition) &&
+                item.info != null && item.info.shortname == "wood" && item.amount == receipt.Amount && receipt.Amount > 0;
+        }
+
+        private static bool DetachedBuilderWood(BuilderWoodReceipt receipt)
+        { return SameBuilderWood(receipt) && receipt.Item.parent == null && ReferenceEquals(receipt.Item.GetWorldEntity(), null); }
+
+        private bool EscrowBuilderWood(ParkPlacementRequest request)
+        {
+            if (request.Builder == null || request.WoodEscrow.Count != 0 || !CurrentParkRequest(request)) return false;
+            ItemDefinition wood = ItemManager.FindItemDefinition("wood");
+            long before = BuilderWoodCount(request.Player);
+            if (wood == null || before < BuilderWoodPrice || builderWoodHolds.Count >= MaximumParkSelections) return false;
+            PlayerInventory inventory = request.Player.inventory;
+            var collected = new List<Item>();
+            int taken = -1;
+            try { taken = inventory.Take(collected, wood.itemid, BuilderWoodPrice); }
+            finally
+            {
+                int amount = 0;
+                bool valid = collected.Count <= BuilderWoodPrice;
+                var ids = new HashSet<ItemId>();
+                foreach (Item item in collected)
+                {
+                    var receipt = new BuilderWoodReceipt { Item = item, Uid = item == null ? default(ItemId) : item.uid,
+                        Definition = wood, Amount = item == null ? 0 : item.amount };
+                    if (!DetachedBuilderWood(receipt) || !ids.Add(receipt.Uid) || receipt.Amount > BuilderWoodPrice - amount)
+                    { valid = false; continue; }
+                    amount += receipt.Amount;
+                    request.WoodEscrow.Add(receipt);
+                    builderWoodHolds.Add(receipt);
+                }
+                long after = BuilderWoodCount(request.Player);
+                request.WoodDebitVerified = SkateBuilderPayment.VerifiedDebit(before, after, amount,
+                    valid && ReferenceEquals(request.Player.inventory, inventory));
+                if (!request.WoodDebitVerified)
+                {
+                    parkReady = false;
+                    PrintError("Wood payment ownership or debit is unverified; park placement is disabled and no replacement Wood was minted.");
+                }
+            }
+            return SkateBuilderPayment.Complete(taken, request.WoodEscrow.Sum(receipt => receipt.Amount), request.WoodDebitVerified) &&
+                request.WoodEscrow.All(DetachedBuilderWood) && CurrentParkRequest(request);
+        }
+
+        private bool ReturnBuilderWood(BuilderWoodReceipt receipt, BasePlayer player, ParkData world)
+        {
+            if (!ReferenceEquals(instance, this) || parkClosing || player == null || player.inventory == null ||
+                !ReferenceEquals(parkData, world) || !SameParkWorld(world) || !DetachedBuilderWood(receipt)) return false;
+            long before = BuilderWoodCount(player);
+            if (before < 0) return false;
+            PlayerInventory inventory = player.inventory;
+            try { inventory.GiveItem(receipt.Item); }
+            catch (Exception) { }
+            long after = BuilderWoodCount(player);
+            if (!ReferenceEquals(instance, this) || parkClosing || !ReferenceEquals(player.inventory, inventory) ||
+                !ReferenceEquals(parkData, world) || !SameParkWorld(world)) return false;
+            long credited = after - before;
+            if (credited == receipt.Amount)
+            {
+                if (DetachedBuilderWood(receipt)) return false;
+                builderWoodHolds.Remove(receipt);
+                return true;
+            }
+            if (credited < 0 || credited > receipt.Amount) return false;
+            if (credited > 0)
+            {
+                var remainder = new BuilderWoodReceipt { Item = receipt.Item, Uid = receipt.Uid,
+                    Definition = receipt.Definition, Amount = receipt.Amount - (int)credited };
+                if (!DetachedBuilderWood(remainder)) return false;
+                receipt.Amount = remainder.Amount;
+            }
+            WorldItem existingDrop = receipt.Item.GetWorldEntity() as WorldItem;
+            if (SameBuilderWood(receipt) && existingDrop != null && !existingDrop.IsDestroyed && existingDrop.net != null &&
+                ReferenceEquals(existingDrop.item, receipt.Item) && Coordinate(existingDrop.transform.position))
+            { builderWoodHolds.Remove(receipt); return true; }
+            if (!DetachedBuilderWood(receipt) || !Coordinate(player.transform.position)) return false;
+            try { receipt.Item.Drop(player.transform.position + Vector3.up, Vector3.zero, Quaternion.identity); }
+            catch (Exception) { }
+            WorldItem dropped = receipt.Item.GetWorldEntity() as WorldItem;
+            bool returned = SameBuilderWood(receipt) && dropped != null && !dropped.IsDestroyed && dropped.net != null &&
+                ReferenceEquals(dropped.item, receipt.Item) && Coordinate(dropped.transform.position);
+            if (returned) builderWoodHolds.Remove(receipt);
+            return returned;
+        }
+
+        private bool RestoreBuilderWood(ParkPlacementRequest request)
+        {
+            if (!request.WoodDebitVerified || request.WoodRecoveryClaimed) return false;
+            request.WoodRecoveryClaimed = true;
+            bool restored = true;
+            foreach (BuilderWoodReceipt receipt in request.WoodEscrow)
+                if (!ReturnBuilderWood(receipt, request.Player, request.Data)) restored = false;
+            if (!restored) PrintError("Reserved Wood recovery is unverified; the same receipts remain held and no second refund was created.");
+            return restored;
+        }
+
+        private void CompleteBuilderWood(ParkPlacementRequest request, ParkGroup group, ParkNativePart[] definitions)
+        {
+            bool verified = false;
+            try
+            {
+                long before = BuilderWoodCount(request.Player);
+                bool receipts = before >= 0;
+                foreach (BuilderWoodReceipt receipt in request.WoodEscrow)
+                {
+                    if (!DetachedBuilderWood(receipt)) { receipts = false; continue; }
+                    try { receipt.Item.Remove(); }
+                    catch (Exception) { }
+                    Item item = receipt.Item;
+                    if (item.isServer && item.uid.Equals(receipt.Uid) && ReferenceEquals(item.info, receipt.Definition) &&
+                        item.IsRemoved() && item.amount == 0 && item.parent == null && ReferenceEquals(item.GetWorldEntity(), null))
+                        builderWoodHolds.Remove(receipt);
+                    else if (DetachedBuilderWood(receipt))
+                        PrintWarning("A committed Wood cleanup was vetoed; the original detached resource remains held for private operator recovery.");
+                    else receipts = false;
+                }
+                verified = receipts && before == BuilderWoodCount(request.Player) && CurrentParkPhase(request) &&
+                    request.Data.Groups.Contains(group) && group.Members.Count == SkateParkLayout.PartCount(request.ItemKind);
+                if (verified)
+                    foreach (ParkMember part in group.Members)
+                    {
+                        BuildingBlock block = FindParkBlock(part.Id);
+                        ParkGroup registered;
+                        if (!parkMembers.TryGetValue(part.Id, out registered) || !ReferenceEquals(registered, group) ||
+                            !ParkMatches(block, group, part) || block.grade != definitions[part.Index].Grade || block.skinID != 0 ||
+                            !block.enableSaving || !block.grounded || block.buildingID != request.Building ||
+                            !ReferenceEquals(block.blockDefinition, definitions[part.Index].Construction))
+                        { verified = false; break; }
+                    }
+            }
+            catch (Exception) { verified = false; }
+            if (!verified)
+            {
+                parkReady = false;
+                PrintError("A committed park or Wood receipt changed during cleanup; new placement is disabled, saved parts remain tracked and no duplicate refund was created.");
+            }
+            try { BuilderReply(request.Player, verified ? "placed " + SkateParkLayout.Name(request.ItemKind) + " 10 Wood" :
+                "payment-review The park was saved, but payment cleanup changed unexpectedly. Do not retry; private operator recovery is required."); }
+            catch (Exception) { PrintWarning("The saved park's payment confirmation could not be delivered."); }
+        }
+
+        private bool ParkRecoveryAuthority(ParkGroup group, BasePlayer player)
+        {
+            return player != null && player.userID == group.Owner &&
+                (group.WoodCost == BuilderWoodPrice ? Permitted(player) && !OptedOut(player) : player.IsAdmin);
+        }
+
+        private bool RefundBuilderGroup(ParkGroup group, BasePlayer player, ParkData world)
+        {
+            if (group.WoodCost != BuilderWoodPrice || group.BuildItemState != SkateParkBuildItemState.RecoveryClaimed ||
+                group.Members.Count != 0 || world.Groups.Contains(group) || !ParkRecoveryAuthority(group, player) ||
+                !ReferenceEquals(instance, this) || parkClosing || !ReferenceEquals(parkData, world) || !SameParkWorld(world)) return false;
+            Item item;
+            try { item = ItemManager.CreateByName("wood", BuilderWoodPrice, 0); }
+            catch (Exception) { PrintError("The once-only Wood refund could not be created; no second refund was attempted."); return false; }
+            var receipt = new BuilderWoodReceipt { Item = item, Uid = item == null ? default(ItemId) : item.uid,
+                Definition = ItemManager.FindItemDefinition("wood"), Amount = BuilderWoodPrice };
+            if (!DetachedBuilderWood(receipt)) return false;
+            builderWoodHolds.Add(receipt);
+            return ReturnBuilderWood(receipt, player, world);
         }
 
         private bool ConsumeParkItem(ParkPlacementRequest request)
@@ -8004,7 +8580,7 @@ namespace Oxide.Plugins
             SkateParkKind itemKind;
             bool recover = SkateParkLayout.TryKind(group.Kind, out itemKind) &&
                 SkateParkBuildItems.Recoverable(group.BuildItemState, group.Members.Count, itemKind) &&
-                player.IsAdmin && player.userID == group.Owner && Eligible(player) && RecoverableWall(group, player);
+                ParkRecoveryAuthority(group, player) && Eligible(player) && RecoverableWall(group, player);
             bool removalStarted = false, recoveryClaimed = false, recoverySaved = false;
             string recoveryMessage = null;
             parkBusy = true;
@@ -8049,7 +8625,7 @@ namespace Oxide.Plugins
                 if (recover)
                 {
                     if (!ReferenceEquals(instance, this) || !ReferenceEquals(data, parkData) || !SameParkWorld(data) ||
-                        SaveRestore.IsSaving || !player.IsAdmin || player.userID != group.Owner || !Eligible(player) ||
+                        SaveRestore.IsSaving || !ParkRecoveryAuthority(group, player) || !Eligible(player) ||
                         !data.Groups.Contains(group) || !RecoverableWall(group, player) ||
                         !SkateParkBuildItems.Recoverable(group.BuildItemState, blocks.Count, itemKind))
                         throw new InvalidDataException("Paid park recovery authority, identity or complete-group state changed.");
@@ -8064,7 +8640,7 @@ namespace Oxide.Plugins
                         !ParkMatches(blocks[i], group, group.Members[i]))
                         throw new InvalidDataException("A remaining park member or actor changed during removal; remaining parts were retained.");
                     if (recover && (!ReferenceEquals(instance, this) || !ReferenceEquals(data, parkData) ||
-                        !SameParkWorld(data) || SaveRestore.IsSaving || !player.IsAdmin || player.userID != group.Owner || !Eligible(player) ||
+                        !SameParkWorld(data) || SaveRestore.IsSaving || !ParkRecoveryAuthority(group, player) || !Eligible(player) ||
                         !RecoverableWall(group, player)))
                         throw new InvalidDataException("Paid park recovery authority or save/world changed during removal.");
                     removalStarted = true;
@@ -8114,9 +8690,15 @@ namespace Oxide.Plugins
             }
             if (recover && recoverySaved && RecoverableWall(group, player))
             {
-                string failure;
-                if (GiveParkItem(player, itemKind, out failure, data)) recoveryMessage = "Park build item returned once.";
-                else recoveryMessage = "Park removal finished, but build-item delivery is unverified: " + failure;
+                if (group.WoodCost == BuilderWoodPrice)
+                    recoveryMessage = RefundBuilderGroup(group, player, data) ? "10 Wood returned once." :
+                        "Park removal finished, but the once-only Wood return is unverified; no second refund was created.";
+                else
+                {
+                    string failure;
+                    if (GiveParkItem(player, itemKind, out failure, data)) recoveryMessage = "Park build item returned once.";
+                    else recoveryMessage = "Park removal finished, but build-item delivery is unverified: " + failure;
+                }
             }
             if (player != null && player.IsConnected)
                 player.ConsoleMessage(recoveryMessage ?? (group.Members.Count == 0 ? "Park group demolished." : removalStarted ?
