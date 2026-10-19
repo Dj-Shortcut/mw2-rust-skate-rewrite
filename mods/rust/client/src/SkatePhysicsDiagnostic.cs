@@ -231,7 +231,7 @@ public static class SkatePhysicsDiagnostic
         {
             var current = SkateParks.PhysicsOwnershipCurrent(owner) && body != null && body == SkateRig.Body;
             Out.Say("PHYS snapshot utc=" + utc + " reason=" + reason + " kind=" + SkateParks.KindName(owner.Kind) + " duration=" + F(now - start) +
-                " current=" + current + " complete=" + (!timedOut && overflows == 0 && missing == 0 && current && pairIndex == pairCount && !pairFailed && !collecting) + " nodes=" + nodes + " overflow=" + overflows + " missing=" + missing + " foreign=" + foreign + " max-frame-ms=" + F(maximumFrameMs));
+                " current=" + current + " complete=" + (!timedOut && overflows == 0 && missing == 0 && current && pairIndex == pairCount && pairUnknown == 0 && !pairFailed && !collecting) + " nodes=" + nodes + " overflow=" + overflows + " missing=" + missing + " foreign=" + foreign + " max-frame-ms=" + F(maximumFrameMs));
             Out.Say("PHYS ownership captured=" + owner.Captured.Length + " live=" + capturedLive + " dead=" + capturedDead + " enabled=" + capturedEnabled +
                 " current-total=" + observed + " current-enabled=" + enabled + " uncaptured=" + uncaptured + " uncaptured-enabled=" + enabledUncaptured + " rider-active=" + rider.Count + " rider-cached=" + owner.Rider.Length +
                 " rider-new=" + newRider + " isolated-records=" + owner.Isolated + " pairs-ignored=" + ignored + " pairs-not-ignored=" + notIgnored + " uncaptured-not-ignored=" + uncapturedNotIgnored +
