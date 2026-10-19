@@ -29,7 +29,7 @@ Half-wall kickers retain their separate wall/side/join contract.
   Adjacent pieces require their own terrain/foundation support; this is no stacking.
 - For the two unsocketed targets, `target.rotation.y` is the ordinary rotation
   delta: `TrySnapYaw(hostYaw+delta, hostYaw, foundation.rotationAmount.y)`.
-  Read the actual native step; do not introduce free-angle preview controls.
+  Use the native step when nonzero. Stock square foundations with a zero rotationAmount use quarter turns of the skate support grid; zero does not mean missing native construction. Do not introduce free-angle preview controls.
   Admin aimed placement rounds its world view yaw relative to the host instead.
   Free/explicit admin poses round relative to world yaw0. Native socket rotations
   remain the native result, including socket-imposed headings.
@@ -73,8 +73,7 @@ foundation cannot be filled by lower ground: the whole plane must agree.
 
 `FitsSupportCell` requires the foundation centre within 0.02m on each world X/Z
 axis of its cell centre and its yaw equal to the grid modulo 90 degrees within
-0.01 degrees. Native foundation bounds must be 2.9–3.1m in X/Z; horizontal pose
-and top-hit checks remain mandatory. Different cells therefore cannot reuse one
+0.01 degrees. The genuine stock foundation Construction bounds are inset (2.8m in X/Z on the live server) and must not be confused with its 3m grid or physical support surface. Exact canonical stock foundation identity, horizontal pose, all nine same-foundation physical support hits and measured top-hit checks remain mandatory. Different cells therefore cannot reuse one
 foundation. All probe heights, across **all** cells and lowest native contacts,
 must have total max-minus-min <=0.02m; choose the maximum as supportTop. Top/edge
 placement also retains the selected host plane. This is contact tolerance, not a
