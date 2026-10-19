@@ -1689,7 +1689,7 @@ namespace Shortcut.RustMod
 
 namespace Oxide.Plugins
 {
-    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.31")]
+    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.32")]
     [Description("Player-scoped skateboard movement bounds and saved park assemblies.")]
     public sealed class ShortcutSkate : RustPlugin
     {
@@ -2708,7 +2708,7 @@ namespace Oxide.Plugins
                 {
                     valid = true;
                     why = "";
-                    if (Coordinate(probe.SnapSupportTop)) top = probe.SnapSupportTop;
+                    if (GroundedCoordinate(probe.SnapSupportTop)) top = probe.SnapSupportTop;
                 }
                 else why = "no compatible foundation here";
             }
