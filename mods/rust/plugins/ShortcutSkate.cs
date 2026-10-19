@@ -1689,7 +1689,7 @@ namespace Shortcut.RustMod
 
 namespace Oxide.Plugins
 {
-    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.29")]
+    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.31")]
     [Description("Player-scoped skateboard movement bounds and saved park assemblies.")]
     public sealed class ShortcutSkate : RustPlugin
     {
@@ -2635,6 +2635,7 @@ namespace Oxide.Plugins
             InitializeParks();
             CleanupWallAttachments();
             InitializeParkGestures();
+            KeepDaylight();
             ready = settings != null && Patched("ValidateMoves", typeof(MovePatch), false) &&
                 Patched("AreSpeeding", typeof(SpeedPatch), true) && Patched("AreFlying", typeof(FlyPatch), true) && StallPatched();
             if (!ready) PrintError("Skating is disabled: matching movement patches and valid config are required.");
@@ -2714,6 +2715,27 @@ namespace Oxide.Plugins
             player.SendConsoleCommand("ddraw.arrow", life, color, mid, front, 0.5f);
             player.SendConsoleCommand("ddraw.text", life, color, mid + Vector3.up * 1.5f,
                 name + (valid ? "" : " - " + why));
+        }
+
+        // The owner's server is a skate park, tested at all hours: the time stands at midday while
+        // this plugin is loaded (env.time 12, env.progresstime false), and the day cycle runs again
+        // when it unloads.
+        private const float DaylightHour = 12;
+        private void KeepDaylight()
+        {
+            try
+            {
+                ConsoleSystem.Run(ConsoleSystem.Option.Server.Quiet(), "env.progresstime", false);
+                ConsoleSystem.Run(ConsoleSystem.Option.Server.Quiet(), "env.time", DaylightHour);
+                Puts("Daylight: time held at " + DaylightHour + ":00.");
+            }
+            catch (Exception error) { PrintWarning("Daylight could not be held: " + error.Message); }
+        }
+
+        private static void ReleaseDaylight()
+        {
+            try { ConsoleSystem.Run(ConsoleSystem.Option.Server.Quiet(), "env.progresstime", true); }
+            catch (Exception) { }
         }
 
         private static bool Patched(string name, Type patch, bool postfix)
@@ -3181,6 +3203,7 @@ namespace Oxide.Plugins
 
         private void Unload()
         {
+            ReleaseDaylight();
             FinishTrace("unload");
             try { if (traceHarmony != null) traceHarmony.UnpatchAll(TracePatchId); }
             catch (Exception) { PrintWarning("Movement trace observers could not be removed."); }
