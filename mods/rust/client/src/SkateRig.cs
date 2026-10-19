@@ -102,6 +102,7 @@ public class SkateRig : MonoBehaviour
     [HideFromIl2Cpp]
     private void LetGo(string why, string off, bool forgetServer)
     {
+        SkatePhysicsDiagnostic.Reset();
         SkatePieces.Reset();
         Say(why + "; looking again");
         SkateRide.Dismount(off);
@@ -290,6 +291,7 @@ public class SkateRig : MonoBehaviour
         else downSince = -1f;
         SkateParks.Frame(now);
         try { SkateParks.Isolate(SkateRide.On, Body, now); } catch (Exception e) { Say("isolation threw " + e.GetType().Name + ": " + e.Message); }
+        SkatePhysicsDiagnostic.Frame(now);
         SkatePieces.Frame(now);
         SkateInbox.Frame(now);
         // With a controller the rider looks where the board goes, a little into the turn; the view
@@ -342,7 +344,7 @@ public class SkateRig : MonoBehaviour
     private static bool watchFailed;
 
     private void OnApplicationFocus(bool focused) { if (!focused) SkatePieces.CancelFocus(); }
-    private void OnDisable() { SkatePieces.Reset(); }
+    private void OnDisable() { SkatePhysicsDiagnostic.Reset(); SkatePieces.Reset(); }
 
     private void OnDestroy()
     {

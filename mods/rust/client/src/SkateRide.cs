@@ -299,6 +299,7 @@ public static class SkateRide
             Speed = Vector3.Dot(velocity, Tangent);
             LimitSpeed(Cap, Cap);
         }
+        SkatePhysicsDiagnostic.NewRide();
     }
 
     public static void Dismount(string reason)
@@ -333,6 +334,7 @@ public static class SkateRide
             if (!(dt > 0.001f && dt <= 0.05f)) dt = 0.03125f;
             now = Time.realtimeSinceStartup;
             var pos = body.position; var game = body.linearVelocity;
+            SkatePhysicsDiagnostic.BeginStep(pos, game, velocity, Time.fixedDeltaTime, dt);
             Position = pos;
             if (pos.y < SeaLevel && OpenSky(pos)) { Dismount("in the water"); return; }
             SenseRollingBack();
@@ -377,6 +379,7 @@ public static class SkateRide
                 flat = Flat(velocity); pace = flat.magnitude;
             }
             if (pace > Top) Top = pace;
+            SkatePhysicsDiagnostic.EndStep(velocity);
             body.linearVelocity = velocity;
             var sign = Speed < 0f ? -1f : 1f;
             lastPos = pos; lastDir = pace > 0.0001f ? flat / pace * sign : Dir(Yaw); lastSpeed = pace * sign; hasLast = true; Steps++;
@@ -571,6 +574,7 @@ public static class SkateRide
         Normal = Grounded && (hit.m_Normal.y > SharedNormalLeast || (OnRamp && hit.m_Normal.y > 0.001f)) ? hit.m_Normal : Vector3.up;
         BelowNormal = got && hit.m_Normal.y > 0.001f ? hit.m_Normal : Vector3.up;
         if (got && hit.m_Normal.y > SharedNormalLeast) ContactNormal = hit.m_Normal;
+        SkatePhysicsDiagnostic.Contact(hit, got);
     }
     // The normal of what Sense last found under the body, grounded or not (the air step's landing
     // reads the gap to a transition's face along it).
@@ -608,6 +612,7 @@ public static class SkateRide
         Normal = hit.m_Normal.y > 0.001f ? hit.m_Normal : new Vector3(hit.m_Normal.x, 0.001f, hit.m_Normal.z).normalized;
         BelowNormal = Normal;
         if (hit.m_Normal.y > SharedNormalLeast) ContactNormal = hit.m_Normal;
+        SkatePhysicsDiagnostic.Contact(hit, true);
         return true;
     }
 

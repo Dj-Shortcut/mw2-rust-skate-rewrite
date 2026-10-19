@@ -149,6 +149,12 @@ KisakCOD — https://github.com/SwagSoftware/KisakCOD
   engine structure, and by the fork for controller aim assist's defaults. IW4L targets IW4, so this is a neighbouring generation of
   the same engine family, not the same codebase.
 
+Unity C# reference source — https://github.com/Unity-Technologies/UnityCsReference
+  Read to check the Unity 6 object-marshalling and read-only physics API contract
+  used by the optional Rust client collision observations. Reference only;
+  no Unity reference-source implementation is copied or distributed here.
+  Unity Reference-Only License.
+
 Ghidra — https://github.com/NationalSecurityAgency/ghidra
   The software reverse engineering framework the original game binaries were
   read with. A development tool: none of it, and none of its output, is
