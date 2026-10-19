@@ -17,7 +17,7 @@ foreach($e in $plan.entries){
  $temporary=Join-Path $PSScriptRoot ('restore-'+[guid]::NewGuid().ToString('N'))
  Copy-Item -LiteralPath $e.backup -Destination $temporary
  if((sha $temporary)-cne$e.old){throw 'Temporary restore hash mismatch'}
- [IO.File]::Replace($temporary,$e.target,$null)
+ [IO.File]::Replace($temporary,$e.target,[System.Management.Automation.Language.NullString]::Value)
  if((sha $e.target)-cne$e.old){throw 'Restored target hash mismatch'}
 }
 'Original play/launcher files restored and verified; no game was started'

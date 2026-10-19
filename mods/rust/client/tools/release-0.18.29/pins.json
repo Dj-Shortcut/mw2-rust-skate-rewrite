@@ -54,8 +54,8 @@
   "candidateClientVersion": "0.18.29",
   "tools": {
     "build.ps1": "191b39d5cf9d9e8745ffa769608e6ab8097b8fbfc1f79240851e69a1ec38e964",
-    "install.ps1": "d0e5a857020f30865ffef64917c8d89cccfecbcbbf2939e20e679e01852574ba",
-    "rollback.ps1": "2f8daed473d1560912707ade538b3de3cc76cb2912336da52f193e6c9eadb432"
+    "install.ps1": "a77d4b07b59ed5bb745a822e5ec38d7ef9fcba1460edef0a240e849f25d2060d",
+    "rollback.ps1": "0b1867530c86f2d98a9ff37a9ef4631760af68cc878816028633c3c2e728a8a3"
   },
   "inputs": [
     {
@@ -347,5 +347,5 @@
       "kind": "model"
     }
   ],
-  "documentationSha256": "c50d129af4263afa0f49cd024f9d35d62d9416d33b646fcf0ce1edbf28ddb02c"
+  "documentationSha256": "8fca7ac5711bbde5a881ddb64140b8dc8d57a86b1d64e6b73cfe5b12fbc58cd0"
 }
