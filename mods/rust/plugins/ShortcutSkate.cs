@@ -2648,9 +2648,10 @@ namespace Oxide.Plugins
         }
 
         // While an administrator on foot holds a Skate park build item, the server draws that
-        // piece's footprint where they aim, with the same target rule placement uses: green where
-        // the target frame is accepted, red where it is not, with the piece name and its forward
-        // edge. The client cannot read the held item in this Rust build, so the server shows it.
+        // piece's footprint where they aim, with the same ray, mask and target rule a placement
+        // uses: green where the target is accepted, red with a short reason where it is not, with
+        // the piece name and an arrow to its forward edge. The client cannot read the held item in
+        // this Rust build, so the server shows it.
         private const float HeldParkPreviewSeconds = 0.25f;
         private void DrawHeldParkPreviews()
         {
@@ -2665,26 +2666,45 @@ namespace Oxide.Plugins
         private void DrawHeldParkPreview(BasePlayer player)
         {
             SkateParkKind kind;
-            if (player == null || !player.IsAdmin || !Eligible(player) || sessions.ContainsKey(player.userID) ||
-                player.eyes == null || !(player.GetHeldEntity() is Planner) || !ParkItemIdentity(player.GetActiveItem(), out kind)) return;
-            int mask = LayerMask.GetMask("World", "Terrain", "Construction", "Deployed");
+            Session session;
+            if (player == null || !player.IsAdmin || !Eligible(player) || player.eyes == null ||
+                !(player.GetHeldEntity() is Planner) || !ParkItemIdentity(player.GetActiveItem(), out kind)) return;
+            // Every permitted player has a movement session on foot too; only recent riding speed
+            // (the rule OnPlayerLand uses) means the player is on the board.
+            if (sessions.TryGetValue(player.userID, out session) && ReferenceEquals(player, session.Player) &&
+                clock.Elapsed.TotalSeconds - session.RidingAt <= RidingGraceSeconds) return;
+            // The placement ray's mask, players included: a player in the way blocks a placement, so
+            // the preview must not turn green on the surface behind them.
+            int mask = LayerMask.GetMask("World", "Terrain", "Construction", "Deployed", "Player (Server)");
             Ray ray = player.eyes.HeadRay();
             RaycastHit hit;
-            if (mask == 0 || !Coordinate(ray.origin) || !Physics.Raycast(ray, out hit, MaximumParkPlacementDistance, mask, QueryTriggerInteraction.Ignore))
-                return;
+            if (mask == 0 || !Coordinate(ray.origin) || !Coordinate(ray.direction) || ray.direction.sqrMagnitude < 0.0001f ||
+                !Physics.Raycast(ray.origin, ray.direction.normalized, out hit, MaximumParkPlacementDistance, mask, QueryTriggerInteraction.Ignore) ||
+                hit.collider == null || !Coordinate(hit.point) || !Coordinate(hit.normal)) return;
             string name = SkateParkBuildItems.Name(kind);
-            BuildingBlock host = hit.collider == null ? null : hit.collider.ToBaseEntity() as BuildingBlock;
+            float life = HeldParkPreviewSeconds + 0.05f;
+            var failures = new List<string>();
+            ParkNativePart[] definitions;
+            bool prefabs = ParkPrefabs(kind, failures, out definitions) && failures.Count == 0;
+            var probe = new ParkPlacementRequest { Player = player, Owner = player.userID, ItemKind = kind, BuildItem = true };
             double x = hit.point.x, z = hit.point.z, yaw = player.eyes.rotation.eulerAngles.y, top = hit.point.y;
+            if (kind == SkateParkKind.HalfWallKicker)
+            {
+                // A half-wall kicker is placed against an aimed half wall, through the same rule.
+                ParkGroup wallGroup;
+                string wallFailure;
+                if (prefabs && TryWallPlacement(probe, ray, null, definitions, out wallGroup, out wallFailure))
+                { DrawHalfWallKickerPreview(player, wallGroup, name, life); return; }
+                DrawParkFootprint(player, kind, x, z, yaw, top, false, name + " - aim at the side of a half wall", life);
+                return;
+            }
+            BuildingBlock host = hit.collider.ToBaseEntity() as BuildingBlock;
             bool valid = false;
             string why = "aim at a foundation top";
             if (host != null && hit.normal.y >= 0.98f)
             {
-                var failures = new List<string>();
-                ParkNativePart[] definitions;
-                var probe = new ParkPlacementRequest { Player = player, Owner = player.userID, ItemKind = kind, BuildItem = true };
                 string failure;
-                if (ParkPrefabs(kind, failures, out definitions) && failures.Count == 0 &&
-                    TryParkTargetFrame(probe, host, hit, 0, true, definitions, out x, out z, out yaw, out failure))
+                if (prefabs && TryParkTargetFrame(probe, host, hit, 0, true, definitions, out x, out z, out yaw, out failure))
                 {
                     valid = true;
                     why = "";
@@ -2692,29 +2712,98 @@ namespace Oxide.Plugins
                 }
                 else why = "no compatible foundation here";
             }
+            DrawParkFootprint(player, kind, x, z, yaw, top, valid, name + (valid ? "" : " - " + why), life);
+        }
+
+        // The outline of a piece's support cells in the piece frame (right, forward, metres): the
+        // exposed cell edges, merged along each grid line, so an L-shaped piece such as the large
+        // quarterpipe shows the cells it reserves and not a bounding rectangle.
+        private sealed class ParkFootprint
+        {
+            public double R0, R1, F0, F1;
+            public readonly List<double[]> Edges = new List<double[]>();
+        }
+        private readonly Dictionary<SkateParkKind, ParkFootprint> parkFootprints = new Dictionary<SkateParkKind, ParkFootprint>();
+        private static long FootprintKey(int right, int forward) { return ((long)right << 32) ^ (uint)forward; }
+        private ParkFootprint Footprint(SkateParkKind kind)
+        {
+            ParkFootprint print;
+            if (parkFootprints.TryGetValue(kind, out print)) return print;
+            var cells = new HashSet<long>();
             int rmin = 0, rmax = 0, fmin = 0, fmax = 0;
             for (int i = 0; i < SkateParkLayout.SupportCellCount(kind); i++)
             {
                 int right, forward;
-                if (!SkateParkLayout.TrySupportCell(kind, i, out right, out forward)) return;
+                if (!SkateParkLayout.TrySupportCell(kind, i, out right, out forward)) continue;
+                cells.Add(FootprintKey(right, forward));
                 rmin = Math.Min(rmin, right); rmax = Math.Max(rmax, right);
                 fmin = Math.Min(fmin, forward); fmax = Math.Max(fmax, forward);
             }
-            double half = SkateParkLayout.CellSize / 2, phase = kind == SkateParkKind.MegaHalfpipe ? -4.5 : 0;
-            double r0 = rmin * SkateParkLayout.CellSize - half, r1 = rmax * SkateParkLayout.CellSize + half;
-            double f0 = fmin * SkateParkLayout.CellSize - half + phase, f1 = fmax * SkateParkLayout.CellSize + half + phase;
+            if (cells.Count == 0) cells.Add(FootprintKey(0, 0));
+            double size = SkateParkLayout.CellSize, half = size / 2, phase = kind == SkateParkKind.MegaHalfpipe ? -4.5 : 0;
+            print = new ParkFootprint { R0 = rmin * size - half, R1 = rmax * size + half,
+                F0 = fmin * size - half + phase, F1 = fmax * size + half + phase };
+            // Edges across the forward axis: the line between row f - 1 and row f, where exactly one
+            // of the two cells is reserved. A run of exposed edges along the line becomes one segment.
+            for (int f = fmin; f <= fmax + 1; f++)
+            {
+                int start = int.MinValue;
+                for (int r = rmin; r <= rmax + 1; r++)
+                {
+                    bool exposed = r <= rmax && cells.Contains(FootprintKey(r, f)) != cells.Contains(FootprintKey(r, f - 1));
+                    if (exposed && start == int.MinValue) start = r;
+                    if (exposed || start == int.MinValue) continue;
+                    print.Edges.Add(new[] { start * size - half, f * size - half + phase, (r - 1) * size + half, f * size - half + phase });
+                    start = int.MinValue;
+                }
+            }
+            for (int r = rmin; r <= rmax + 1; r++)
+            {
+                int start = int.MinValue;
+                for (int f = fmin; f <= fmax + 1; f++)
+                {
+                    bool exposed = f <= fmax && cells.Contains(FootprintKey(r, f)) != cells.Contains(FootprintKey(r - 1, f));
+                    if (exposed && start == int.MinValue) start = f;
+                    if (exposed || start == int.MinValue) continue;
+                    print.Edges.Add(new[] { r * size - half, start * size - half + phase, r * size - half, (f - 1) * size + half + phase });
+                    start = int.MinValue;
+                }
+            }
+            parkFootprints[kind] = print;
+            return print;
+        }
+
+        private void DrawParkFootprint(BasePlayer player, SkateParkKind kind, double x, double z, double yaw, double top,
+            bool valid, string label, float life)
+        {
+            ParkFootprint print = Footprint(kind);
             float y = (float)top + 0.05f;
             double c = Math.Cos(yaw * Math.PI / 180), sn = Math.Sin(yaw * Math.PI / 180);
             Func<double, double, Vector3> at = (r, f) => new Vector3((float)(x + r * c + f * sn), y, (float)(z - r * sn + f * c));
             Color color = valid ? Color.green : Color.red;
-            float life = HeldParkPreviewSeconds + 0.05f;
-            Vector3 a = at(r0, f0), b = at(r1, f0), d = at(r1, f1), e = at(r0, f1);
-            foreach (var edge in new[] { new[] { a, b }, new[] { b, d }, new[] { d, e }, new[] { e, a } })
-                player.SendConsoleCommand("ddraw.line", life, color, edge[0], edge[1]);
-            Vector3 mid = at((r0 + r1) / 2, (f0 + f1) / 2), front = at((r0 + r1) / 2, f1);
+            foreach (double[] edge in print.Edges)
+                player.SendConsoleCommand("ddraw.line", life, color, at(edge[0], edge[1]), at(edge[2], edge[3]));
+            Vector3 mid = at((print.R0 + print.R1) / 2, (print.F0 + print.F1) / 2), front = at((print.R0 + print.R1) / 2, print.F1);
             player.SendConsoleCommand("ddraw.arrow", life, color, mid, front, 0.5f);
-            player.SendConsoleCommand("ddraw.text", life, color, mid + Vector3.up * 1.5f,
-                name + (valid ? "" : " - " + why));
+            player.SendConsoleCommand("ddraw.text", life, color, mid + Vector3.up * 1.5f, label);
+        }
+
+        // The half-wall kicker is one floor pitched 30 degrees up against the wall, so its preview
+        // is that tilted rectangle at the anchor the placement would use.
+        private void DrawHalfWallKickerPreview(BasePlayer player, ParkGroup group, string name, float life)
+        {
+            SkateParkBox floor = group.Wall.FloorBounds;
+            double yaw = group.AnchorYaw * Math.PI / 180, pitch = 30 * Math.PI / 180;
+            Vector3 right = new Vector3((float)Math.Cos(yaw), 0, (float)-Math.Sin(yaw));
+            Vector3 flat = new Vector3((float)Math.Sin(yaw), 0, (float)Math.Cos(yaw));
+            Vector3 slope = flat * (float)Math.Cos(pitch) + Vector3.up * (float)Math.Sin(pitch);
+            Vector3 centre = new Vector3((float)group.AnchorX, (float)group.AnchorY, (float)group.AnchorZ) + Vector3.up * 0.05f;
+            Vector3 dr = right * (float)(floor.SizeX / 2), df = slope * (float)(floor.SizeZ / 2);
+            Vector3 a = centre - dr - df, b = centre + dr - df, d = centre + dr + df, e = centre - dr + df;
+            foreach (var edge in new[] { new[] { a, b }, new[] { b, d }, new[] { d, e }, new[] { e, a } })
+                player.SendConsoleCommand("ddraw.line", life, Color.green, edge[0], edge[1]);
+            player.SendConsoleCommand("ddraw.arrow", life, Color.green, centre, centre + df, 0.5f);
+            player.SendConsoleCommand("ddraw.text", life, Color.green, centre + Vector3.up * 1.5f, name);
         }
 
         // The owner's server is a skate park, tested at all hours: the time stands at midday while
