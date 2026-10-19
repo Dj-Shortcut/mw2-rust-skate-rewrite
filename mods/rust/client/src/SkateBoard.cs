@@ -84,15 +84,7 @@ public static class SkateBoard
     // wall points up the wall instead of into it. On flat ground it is the heading itself.
     public static Vector3 OnFace(Vector3 normal, Vector3 heading)
     {
-        var level = new Vector3(normal.x, 0f, normal.z); var lean = level.magnitude;
-        if (lean < 0.0001f) return heading;
-        level /= lean;
-        var into = -(heading.x * level.x + heading.z * level.z);
-        var along = heading + level * into;
-        var up = new Vector3(-level.x * normal.y, lean, -level.z * normal.y);
-        var v = along + up * into;
-        v = v - normal * Vector3.Dot(v, normal);
-        return v.sqrMagnitude > 0.000001f ? v.normalized : heading;
+        return SkateRide.SurfaceTangent(normal, heading);
     }
 
     public static void Tilt(ref Vector3 at, ref Vector3 up)
