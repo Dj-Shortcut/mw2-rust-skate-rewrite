@@ -1689,7 +1689,7 @@ namespace Shortcut.RustMod
 
 namespace Oxide.Plugins
 {
-    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.32")]
+    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.33")]
     [Description("Player-scoped skateboard movement bounds and saved park assemblies.")]
     public sealed class ShortcutSkate : RustPlugin
     {
@@ -5387,7 +5387,11 @@ namespace Oxide.Plugins
         {
             uint id = StringPool.Get(ParkFoundationPrefab);
             Construction construction = PrefabAttribute.server == null ? null : PrefabAttribute.server.Find<Construction>(id);
-            return construction == null ? double.NaN : construction.rotationAmount.y;
+            if (construction == null) return double.NaN;
+            // Stock square foundations report zero rotationAmount in the live Rust build.
+            // Their support grid still admits quarter turns; this is not a missing prefab.
+            Vector3 step = construction.rotationAmount;
+            return step.x == 0f && step.y == 0f && step.z == 0f ? 90d : step.y;
         }
 
         private static bool ParkSupportFoundationCurrent(ParkSupport support)
@@ -5465,9 +5469,11 @@ namespace Oxide.Plugins
                     !ReferenceEquals(FindParkBlock(ParkId(block)), block) || parkMembers.ContainsKey(ParkId(block)) ||
                     !WallPermission(request.Player, block) || hit.normal.y < 0.98f) return false;
                 Bounds bounds = block.blockDefinition.bounds;
-                if (cell.HasValue && (!SkateParkLayout.FitsSupportCell(cell.Value, block.transform.position.x,
-                    block.transform.position.z, block.transform.rotation.eulerAngles.y) || bounds.size.x < 2.9f ||
-                    bounds.size.x > 3.1f || bounds.size.z < 2.9f || bounds.size.z > 3.1f))
+                // Construction bounds are inset (2.8 m on the live stock foundation), not
+                // the 3 m support grid. Canonical identity and all nine physical hits above
+                // and in TryGhostAnchor validate the actual foundation supporting this cell.
+                if (cell.HasValue && !SkateParkLayout.FitsSupportCell(cell.Value, block.transform.position.x,
+                    block.transform.position.z, block.transform.rotation.eulerAngles.y))
                 { failure = label + ": foundation is off the selected 3 m grid or rotation."; return false; }
                 height = ParkFoundationTop(block, bounds);
                 if (!ParkSupportHeight(height, hit.point.y)) return false;
