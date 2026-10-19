@@ -1,0 +1,351 @@
+{
+  "currentClientVersion": "0.18.27",
+  "currentClientSha256": "840733f909ec53008bb247b4b60c590e026d87467ebfddbd39cf85910d4eca4a",
+  "currentClientBytes": 416768,
+  "currentClientSource": "7cdfa392108428c7ca98436a76fffe2e3d628c29",
+  "expectedInputs": 48,
+  "inputsSha256": "d7c676514f634ef78c3b7cb7df466a4735945d8bada2d75e6ff1ca32f811cd6b",
+  "models": [
+    {
+      "name": "skate_bank.glb",
+      "sha256": "cc379af1a38f2d125c0e3ba4028df5d0976556a2d5b2b071ae33b9bf3e84bff9"
+    },
+    {
+      "name": "skate_kicker.glb",
+      "sha256": "7655b3b0d8204918e4a69fcc3f72b51625fb64426608056234fdb17480cc44a4"
+    },
+    {
+      "name": "skate_quarterpipe.glb",
+      "sha256": "936ea89d63ab5c9688304496f0b00bcf801733edc3122e490b4a8863fcf26cb6"
+    },
+    {
+      "name": "skate_ledge_low.glb",
+      "sha256": "bb71eb0239844a513a0fdf37066db6784a99a6eafb061be54d280ed348963c5d"
+    },
+    {
+      "name": "skate_ledge_high.glb",
+      "sha256": "8a3bf3f0ccf7260280a28e15b4ed5749c66939cc4a87372a99da8cf3b4bfe03f"
+    },
+    {
+      "name": "skate_long_ledge.glb",
+      "sha256": "da1e282b2e29ba20e74e86ad32513fe4807a2e1290ae77d890dfb2c1a01c47dc"
+    },
+    {
+      "name": "skate_funbox.glb",
+      "sha256": "0bb1415ec1950f2056c7e481d5a0f1b1e6333613112fa18bff8c1fa34ab53733"
+    },
+    {
+      "name": "skate_halfpipe.glb",
+      "sha256": "70d3a48ba21012dfdfed0a590b910dfb97a865de2e164fa2aa16dc4c1a16fe57"
+    }
+  ],
+  "steamBuild": "25903346",
+  "interopCount": 191,
+  "referenceCount": 356,
+  "sourceCount": 38,
+  "launcherStepBefore": "skate",
+  "launcherStepAfter": "physicsdiag,skate",
+  "generationFileCount": 193,
+  "generationSidecars": [
+    "MethodAddressToToken.db",
+    "MethodXrefScanCache.db"
+  ],
+  "clientSourceHead": "58f82909300f9b973b15b2031ddc397b4b79d1c6",
+  "candidateClientVersion": "0.18.29",
+  "tools": {
+    "build.ps1": "191b39d5cf9d9e8745ffa769608e6ab8097b8fbfc1f79240851e69a1ec38e964",
+    "install.ps1": "d0e5a857020f30865ffef64917c8d89cccfecbcbbf2939e20e679e01852574ba",
+    "rollback.ps1": "2f8daed473d1560912707ade538b3de3cc76cb2912336da52f193e6c9eadb432"
+  },
+  "inputs": [
+    {
+      "path": "mods/rust/client/sources.txt",
+      "commit": "58f82909300f9b973b15b2031ddc397b4b79d1c6",
+      "sha256": "14e4515665fe94c6f3da762d7633344d38e18050e28e4f81544a556ca6592bf4",
+      "kind": "manifest"
+    },
+    {
+      "path": "mods/rust/client/src/Plugin.cs",
+      "commit": "58f82909300f9b973b15b2031ddc397b4b79d1c6",
+      "sha256": "3fe35ffe82994aabbd61537067b94ef97fab884356ab70dc8f7ea4ce9b3421bb",
+      "kind": "source"
+    },
+    {
+      "path": "mods/rust/client/src/SkateRig.cs",
+      "commit": "58f82909300f9b973b15b2031ddc397b4b79d1c6",
+      "sha256": "99adc6c837f4215af1ed4815d7c88bddc87953d4fdf4a8906a1b439dc845e43f",
+      "kind": "source"
+    },
+    {
+      "path": "mods/rust/client/src/SkateClock.cs",
+      "commit": "58f82909300f9b973b15b2031ddc397b4b79d1c6",
+      "sha256": "2a3f7559afcf5adcc6e6a19a9ab88124588791e20df334816a0e279dc4ba6340",
+      "kind": "source"
+    },
+    {
+      "path": "mods/rust/client/src/SkateKeys.cs",
+      "commit": "58f82909300f9b973b15b2031ddc397b4b79d1c6",
+      "sha256": "5026b910ab8a92baa0d3c096feb2dd609a6567cb54be7e1d68d310511571487b",
+      "kind": "source"
+    },
+    {
+      "path": "mods/rust/client/src/SkateRide.cs",
+      "commit": "58f82909300f9b973b15b2031ddc397b4b79d1c6",
+      "sha256": "99c6679c5682b49c2149435340f98f89c898aa17d53e0625a3fd1856827bcac9",
+      "kind": "source"
+    },
+    {
+      "path": "mods/rust/client/src/SkatePhysicsDiagnostic.cs",
+      "commit": "58f82909300f9b973b15b2031ddc397b4b79d1c6",
+      "sha256": "cc534573cbf40d807a3fb4ba08f762b02d04ec49ab4aaea72d65d811c93b715c",
+      "kind": "source"
+    },
+    {
+      "path": "mods/rust/client/src/SkateGrind.cs",
+      "commit": "58f82909300f9b973b15b2031ddc397b4b79d1c6",
+      "sha256": "689180eea47a8e2ba0e21c7ca9657cbe9f11c7704dfd987c6a890b0f4eefbdba",
+      "kind": "source"
+    },
+    {
+      "path": "mods/rust/client/src/SkateBoard.cs",
+      "commit": "58f82909300f9b973b15b2031ddc397b4b79d1c6",
+      "sha256": "fc13d5b7dadbd65d217d4f66d231cdda59b5387f7b9a4f6f7ebdd66fec6a3734",
+      "kind": "source"
+    },
+    {
+      "path": "mods/rust/client/src/RiderRig.cs",
+      "commit": "58f82909300f9b973b15b2031ddc397b4b79d1c6",
+      "sha256": "bff1d819aec624b786ddf4cd56963895d33ff68cb59659908fd3e123e089c537",
+      "kind": "source"
+    },
+    {
+      "path": "mods/rust/client/src/SkateCamera.cs",
+      "commit": "58f82909300f9b973b15b2031ddc397b4b79d1c6",
+      "sha256": "9f3ac1e55335ca9cea5f4d329ee772352f0ebab0093d65115fce93a3c3b3d467",
+      "kind": "source"
+    },
+    {
+      "path": "mods/rust/client/src/SkateHud.cs",
+      "commit": "58f82909300f9b973b15b2031ddc397b4b79d1c6",
+      "sha256": "f7135b06c93476297c7eb63b83274e58d912fd9cf8c737e9caf707cec3afe017",
+      "kind": "source"
+    },
+    {
+      "path": "mods/rust/client/src/SkateSfx.cs",
+      "commit": "58f82909300f9b973b15b2031ddc397b4b79d1c6",
+      "sha256": "208e097d9a1b855d060bf884c238daff07a126fa70864a4328a9a51de58f4223",
+      "kind": "source"
+    },
+    {
+      "path": "mods/rust/client/src/SkateFoley.cs",
+      "commit": "58f82909300f9b973b15b2031ddc397b4b79d1c6",
+      "sha256": "60442867c7d7163d57d2355fe319cb4f615038fa6e987da2a983282729bf9a5a",
+      "kind": "source"
+    },
+    {
+      "path": "mods/rust/client/src/Scenarios.cs",
+      "commit": "58f82909300f9b973b15b2031ddc397b4b79d1c6",
+      "sha256": "030cf194339cb6ed524166190dfcc5054d5389da0c205e02f029067758432d4b",
+      "kind": "source"
+    },
+    {
+      "path": "mods/rust/client/src/SkatePad.cs",
+      "commit": "58f82909300f9b973b15b2031ddc397b4b79d1c6",
+      "sha256": "613db02e791714d0ba2e1f124d1e4c4f429823d6a3f1bd6e719369675ad3bb66",
+      "kind": "source"
+    },
+    {
+      "path": "mods/rust/client/src/SkatePadLog.cs",
+      "commit": "58f82909300f9b973b15b2031ddc397b4b79d1c6",
+      "sha256": "5509d24337c03913e1d7995489091e42c57bdb6b15f63ad4966279878006ddd2",
+      "kind": "source"
+    },
+    {
+      "path": "mods/rust/client/src/SkatePieces.cs",
+      "commit": "58f82909300f9b973b15b2031ddc397b4b79d1c6",
+      "sha256": "53692c823f1b732cfc97ce9ab2cd2fd247c2e3912185f2d6bb975e3660a09edd",
+      "kind": "source"
+    },
+    {
+      "path": "mods/rust/client/src/SkateBuildWheel.cs",
+      "commit": "58f82909300f9b973b15b2031ddc397b4b79d1c6",
+      "sha256": "0bbf5277f4783704586557e224e7c51d202f63ff263c15a100aac938c5769b2c",
+      "kind": "source"
+    },
+    {
+      "path": "mods/rust/client/src/SkateConsole.cs",
+      "commit": "58f82909300f9b973b15b2031ddc397b4b79d1c6",
+      "sha256": "733408507e279a3cd8ecc047bb9b344702ec8c791c5c54c9cfb8f86badb711f7",
+      "kind": "source"
+    },
+    {
+      "path": "mods/rust/client/src/SkateParks.cs",
+      "commit": "58f82909300f9b973b15b2031ddc397b4b79d1c6",
+      "sha256": "f53188d44ee898d26576126c778e9dfce87ca75f68aac27e67b92934493b48eb",
+      "kind": "source"
+    },
+    {
+      "path": "mods/rust/client/src/SkateWatch.cs",
+      "commit": "58f82909300f9b973b15b2031ddc397b4b79d1c6",
+      "sha256": "6988ecb1cfeb29c459d1890cd5d557e84817b79b25f73682a7fef4a86297e1db",
+      "kind": "source"
+    },
+    {
+      "path": "mods/rust/client/src/SkateGestures.cs",
+      "commit": "58f82909300f9b973b15b2031ddc397b4b79d1c6",
+      "sha256": "c7530b4a40cfe0da6885d5a916ca72a10553755742cd2f396db3530d6c0dd702",
+      "kind": "source"
+    },
+    {
+      "path": "mods/rust/client/src/SkateHeld.cs",
+      "commit": "58f82909300f9b973b15b2031ddc397b4b79d1c6",
+      "sha256": "a58d313cc8eec4ecea5a63c62dde3273e0925b704496c88dfa3798a0c29f9d50",
+      "kind": "source"
+    },
+    {
+      "path": "mods/rust/client/src/SkateInbox.cs",
+      "commit": "58f82909300f9b973b15b2031ddc397b4b79d1c6",
+      "sha256": "81216398d9ae37765a19d3f0cdfb57295662e336f1e3c0a37eec6167e72721a3",
+      "kind": "source"
+    },
+    {
+      "path": "mods/rust/shared/SkateBoardMesh.cs",
+      "commit": "58f82909300f9b973b15b2031ddc397b4b79d1c6",
+      "sha256": "cd9c8f1d87f46d849ed8d3c5d9d56c4e14d8f84a28d903dc4c97704f72b8ef27",
+      "kind": "source"
+    },
+    {
+      "path": "mods/rust/shared/SkateMotion.cs",
+      "commit": "928eb7b91ad2644f96696384120aa509ab3bb727",
+      "sha256": "048fb2b82632fd46c58316c89706b259bf283e70471802b7fb15542fa60b5938",
+      "kind": "source"
+    },
+    {
+      "path": "mods/rust/shared/SkateRails.cs",
+      "commit": "58f82909300f9b973b15b2031ddc397b4b79d1c6",
+      "sha256": "a8607c321c239a8b0819798accb2426a1462c83d216d284bc7472f9a21bc57ae",
+      "kind": "source"
+    },
+    {
+      "path": "mods/rust/shared/SkatePose.cs",
+      "commit": "58f82909300f9b973b15b2031ddc397b4b79d1c6",
+      "sha256": "b7192a18beb3db2d4ae3456cf4bd5d1753e9a4532ebe6fca28b4c8404626d6f3",
+      "kind": "source"
+    },
+    {
+      "path": "mods/rust/shared/SkateTricks.cs",
+      "commit": "58f82909300f9b973b15b2031ddc397b4b79d1c6",
+      "sha256": "7e10bc8ff72c7f52cf3a9645a944387cc46eadbfc6c2584d054e727027767eaf",
+      "kind": "source"
+    },
+    {
+      "path": "mods/rust/shared/SkateRider.cs",
+      "commit": "58f82909300f9b973b15b2031ddc397b4b79d1c6",
+      "sha256": "1ecba58eb1e185b1bf18630fa0d865495e63c56e9742006dac982c44d240902e",
+      "kind": "source"
+    },
+    {
+      "path": "mods/rust/shared/SkateEdges.cs",
+      "commit": "58f82909300f9b973b15b2031ddc397b4b79d1c6",
+      "sha256": "42cd70f98355a4f94f100fc705a9e879e162878b962c656031a7580228feccdb",
+      "kind": "source"
+    },
+    {
+      "path": "mods/rust/shared/SkateAudio.cs",
+      "commit": "58f82909300f9b973b15b2031ddc397b4b79d1c6",
+      "sha256": "47b02676a8ad23e39fbec17e8d9aa172fd6592b5cc4e08ad08309f416dcf8a9c",
+      "kind": "source"
+    },
+    {
+      "path": "mods/rust/shared/SkateFlick.cs",
+      "commit": "58f82909300f9b973b15b2031ddc397b4b79d1c6",
+      "sha256": "ba65b1658b478f61cab72b709af8e9df4d346498e1c0ba060a911be0a3d1fa52",
+      "kind": "source"
+    },
+    {
+      "path": "mods/rust/shared/SkateRidePhysics.cs",
+      "commit": "58f82909300f9b973b15b2031ddc397b4b79d1c6",
+      "sha256": "8bbb61486b92d76d77ec121c7b14ba564b69c15c91f257abb52befd49a71622d",
+      "kind": "source"
+    },
+    {
+      "path": "mods/rust/shared/SkateRiderMotion.cs",
+      "commit": "58f82909300f9b973b15b2031ddc397b4b79d1c6",
+      "sha256": "a7c9c27930bde6b98d98bb20246eb8e3327797f5cb1443ce2d67f3d07ccbf60c",
+      "kind": "source"
+    },
+    {
+      "path": "mods/rust/shared/SkateModel.cs",
+      "commit": "58f82909300f9b973b15b2031ddc397b4b79d1c6",
+      "sha256": "35ca43b45ba0168ba40ded67ee2a33255dccbc00ca22f51d6bfb040b55acf2ac",
+      "kind": "source"
+    },
+    {
+      "path": "mods/rust/shared/SkatePark.cs",
+      "commit": "62311d583f4228679849b4768c80cf66dcc10936",
+      "sha256": "cd662ad2b369089878c92b2a4b27c31cac1e1509b64837cb802f8e1cb77c7fa9",
+      "kind": "source"
+    },
+    {
+      "path": "mods/rust/shared/SkateParkBuildItems.cs",
+      "commit": "58f82909300f9b973b15b2031ddc397b4b79d1c6",
+      "sha256": "028a222abf4ee6e1ba7aea7a5471bfca02999252706431a958edb504e14de31a",
+      "kind": "source"
+    },
+    {
+      "path": "mods/rust/client/models.txt",
+      "commit": "58f82909300f9b973b15b2031ddc397b4b79d1c6",
+      "sha256": "835ee02957faf6729ee81981d112a88b46149d7b988cff3ce09ae9d947d156de",
+      "kind": "manifest"
+    },
+    {
+      "path": "assets/authored/skate_bank.glb",
+      "commit": "58f82909300f9b973b15b2031ddc397b4b79d1c6",
+      "sha256": "cc379af1a38f2d125c0e3ba4028df5d0976556a2d5b2b071ae33b9bf3e84bff9",
+      "kind": "model"
+    },
+    {
+      "path": "assets/authored/skate_kicker.glb",
+      "commit": "58f82909300f9b973b15b2031ddc397b4b79d1c6",
+      "sha256": "7655b3b0d8204918e4a69fcc3f72b51625fb64426608056234fdb17480cc44a4",
+      "kind": "model"
+    },
+    {
+      "path": "assets/authored/skate_quarterpipe.glb",
+      "commit": "58f82909300f9b973b15b2031ddc397b4b79d1c6",
+      "sha256": "936ea89d63ab5c9688304496f0b00bcf801733edc3122e490b4a8863fcf26cb6",
+      "kind": "model"
+    },
+    {
+      "path": "assets/authored/skate_ledge_low.glb",
+      "commit": "58f82909300f9b973b15b2031ddc397b4b79d1c6",
+      "sha256": "bb71eb0239844a513a0fdf37066db6784a99a6eafb061be54d280ed348963c5d",
+      "kind": "model"
+    },
+    {
+      "path": "assets/authored/skate_ledge_high.glb",
+      "commit": "58f82909300f9b973b15b2031ddc397b4b79d1c6",
+      "sha256": "8a3bf3f0ccf7260280a28e15b4ed5749c66939cc4a87372a99da8cf3b4bfe03f",
+      "kind": "model"
+    },
+    {
+      "path": "assets/authored/skate_long_ledge.glb",
+      "commit": "58f82909300f9b973b15b2031ddc397b4b79d1c6",
+      "sha256": "da1e282b2e29ba20e74e86ad32513fe4807a2e1290ae77d890dfb2c1a01c47dc",
+      "kind": "model"
+    },
+    {
+      "path": "assets/authored/skate_funbox.glb",
+      "commit": "58f82909300f9b973b15b2031ddc397b4b79d1c6",
+      "sha256": "0bb1415ec1950f2056c7e481d5a0f1b1e6333613112fa18bff8c1fa34ab53733",
+      "kind": "model"
+    },
+    {
+      "path": "assets/authored/skate_halfpipe.glb",
+      "commit": "58f82909300f9b973b15b2031ddc397b4b79d1c6",
+      "sha256": "70d3a48ba21012dfdfed0a590b910dfb97a865de2e164fa2aa16dc4c1a16fe57",
+      "kind": "model"
+    }
+  ],
+  "documentationSha256": "c50d129af4263afa0f49cd024f9d35d62d9416d33b646fcf0ce1edbf28ddb02c"
+}
