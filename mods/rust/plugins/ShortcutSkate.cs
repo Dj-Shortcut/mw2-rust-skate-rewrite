@@ -1706,7 +1706,7 @@ namespace Shortcut.RustMod
 
 namespace Oxide.Plugins
 {
-    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.35")]
+    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.36")]
     [Description("Player-scoped skateboard movement bounds and saved park assemblies.")]
     public sealed class ShortcutSkate : RustPlugin
     {
@@ -1774,6 +1774,7 @@ namespace Oxide.Plugins
         private bool parkStorageFailed;
         private string parkStorageError;
         private bool parkReady;
+        private bool parkServerInitialized;
         private bool parkProfileRestoreRefreshNeeded;
         private bool parkBusy;
         private bool parkRefreshing;
@@ -2716,6 +2717,7 @@ namespace Oxide.Plugins
 
         private void OnServerInitialized()
         {
+            parkServerInitialized = true;
             InitializeGroundedBuildings();
             InitializeParks();
             CleanupWallAttachments();
@@ -4007,6 +4009,8 @@ namespace Oxide.Plugins
         private bool RefreshParkWorld(out string failure)
         {
             failure = null;
+            if (!parkServerInitialized)
+            { failure = "The server is still initializing; park metadata is preserved. Try again after startup completes."; return false; }
             if (parkClosing || parkDataBroken)
             { failure = "Park metadata is unavailable; the original file is preserved. Check the server log."; return false; }
             if (parkStorageFailed)
@@ -4150,6 +4154,8 @@ namespace Oxide.Plugins
 
         private void InitializeParks()
         {
+            // RCON may dispatch during native save loading, before saved entities and owners exist.
+            if (!parkServerInitialized) return;
             parkReady = false;
             if (parkDataBroken || parkClosing || parkStorageFailed || parkRefreshing) return;
             parkProfileRestoreRefreshNeeded = false;

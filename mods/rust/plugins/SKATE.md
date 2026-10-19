@@ -135,6 +135,12 @@ The preview accepts only finite support heights within the world coordinate boun
 
 While an administrator on foot holds a Skate park build item, the server draws that piece's footprint where they aim, four times a second, with Rust's own admin debug drawing (`ddraw.line`, `ddraw.arrow`, `ddraw.text`). The footprint is the outline of the piece's support cells (the exposed cell edges, so the large quarterpipe shows its L shape and not a 2x2 box), with an arrow to its forward edge and the item name above it. The aim ray uses the placement ray's mask, players included, so a player standing in the way blocks the preview the way they block a placement. It is green where the placement target rule (`TryParkTargetFrame`, the same rule a placement uses) accepts the aimed foundation, and red with a short reason elsewhere. The half-wall kicker goes through the wall rule instead (`TryWallPlacement`): aimed at the broad side of a saved half wall it draws the pitched floor against that wall in green, elsewhere a red cell with "aim at the side of a half wall". The client cannot read the held item in this Rust build (its member names are obfuscated), so the server shows it instead. The preview does not include the building plan's own R turn (the server does not receive it before placement), and green does not promise that support, occupancy and payment checks will pass; the placement itself still runs every check. Nothing is drawn within 3 s of riding speed (the same rule `OnPlayerLand` uses; the movement session alone does not mean riding, every permitted player has one). Not yet seen in the game.
 
+## Park inspection during startup in 0.3.36
+
+Park commands wait until server initialization completes before refreshing saved groups.
+An early `skate.pieces` request reports that startup is still in progress and preserves
+the saved metadata. Native save loading still restores verified support before spawning.
+
 ## Native park collision lifecycle in 0.3.34
 
 New park members receive their final grade before native spawn creates their first skin. Native grade, health, pose and lifetime validation still run afterward. This avoids capturing a previous grade's floor colliders while their native retirement is pending; missing original colliders still fail the strict collision-ownership checks.
