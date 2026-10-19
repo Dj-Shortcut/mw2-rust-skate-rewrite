@@ -181,7 +181,7 @@ public static class SkateRide
     // part into the face goes up it, the part along the face (along the coping) stays, and the two
     // agree with the shared frame at 72 degrees.
     private const float SharedNormalLeast = 0.3f;
-    private static Vector3 SurfaceTangent(Vector3 normal, Vector3 heading)
+    public static Vector3 SurfaceTangent(Vector3 normal, Vector3 heading)
     {
         var level = new Vector3(normal.x, 0f, normal.z); var lean = level.magnitude;
         if (lean < 0.0001f) return heading;
