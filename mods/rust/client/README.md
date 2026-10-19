@@ -17,6 +17,22 @@ nothing to the server: to the server the rider is a player who moves.
 
 ## Development verification
 
+Client 0.18.22 retries complete larger park assemblies before retaining smaller matches. A
+MEGA that first streamed as a bank or kicker can become the full round halfpipe when all its
+members arrive. Replacement prepares its surface first, preserves renderer/backing ownership,
+and waits if the rider intersects the new surface. Regular-halfpipe backing isolation selects
+only transition floors 4–11, preserving native flat, deck and wall collision.
+Partial MEGA recognition also withdraws old, wholly contained provisional overlays after the
+rider clears their surface and native parts; occupied overlays remain until a safe retry.
+A matched kit whose preparation fails keeps its members reserved against smaller matches.
+
+Rising contact on a verified ramp face uses its contact normal for wall classification,
+landing and gap closure. Side edges, undersides, coping and ordinary world walls remain
+obstructions. The held item is restored during rig teardown as well as normal dismount.
+Cached genuine IL2CPP-reference compilation and temporary exact-source regression checks pass;
+deployment, the complete visible server-placed MEGA and paired native riding acceptance remain
+open. These checks do not establish the actual capsule/network-root relationship or Skate feel.
+
 The handover corrections retain tangent-speed physics with horizontal server/HUD limits,
 process complete landing impact before accepted roll, preserve grind travel independently of
 visual board angle, and own one rig and its audio resources. The client menu matches the server's
@@ -28,9 +44,9 @@ the owner's earlier client.
   checks and 4,069 audio checks across 550 generated clips.
 - **Compiles but unverified:** the shared landing policy and authored waveform generator in
   native gameplay.
-- **Still missing:** compilation of the complete changed client against its generated IL2CPP
-  references, native ramp/seam/grind/revert/lifecycle checks and audible playback. Codex has run
-  no Rust client, Shadow PC or live-server commands for this handover.
+- **Still missing:** the installed-game build and visible/native ramp, seam, grind, revert,
+  lifecycle and audible-playback checks. The cached-reference client compile does not replace
+  those runtime checks.
 
 `SkateSfx` caches original generated roll, metal-truck and wooden-deck loops plus push, pop,
 landing and bail shots. It crossfades truck/deck contact by grind kind, scales bounded
@@ -271,6 +287,14 @@ so the board rolls through them, the coping edge left sharp, nowhere under a til
 about 10 cm above one; the riding surface is their collider, and their colour is the authored
 model's when it is there. Without the `.glb` files next to the plugin the other pieces are found
 and not drawn; the log says which file is missing. Unverified in game.
+
+The rider on the vertical (0.18.22): the rider stands square to the deck all the way up a
+transition, as the board does. Before, the rider's frame went back to the world's up from about 78
+degrees on while the board kept following the face, so on the vertical part of a halfpipe the body
+stuck out sideways from a board standing upright. The nose's way on a steep face is now laid on
+the face (the part of it into the face goes up the face, `SkateBoard.OnFace`), for the board, its
+pitch and the rider alike, so a nose pointed straight into a vertical wall points up the wall
+instead of having no way at all. Not yet seen in the game.
 
 Riding a transition (0.18.18, the client side of #487): on a transition's own collider the ground
 is read along the face's normal, from the centre of the body's bottom half sphere, rather than

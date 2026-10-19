@@ -8,7 +8,7 @@ using UnityEngine;
 [BepInPlugin("shortcut.skate.client", "Shortcut Skate Client", SkatePlugin.Version)]
 public class SkatePlugin : BasePlugin
 {
-    public const string Version = "0.18.18";
+    public const string Version = "0.18.26";
     internal static SkatePlugin Instance;
     private SkateRig rig;
 
@@ -42,7 +42,15 @@ public class SkatePlugin : BasePlugin
             case "nogrind": SkateGrind.Enabled = false; return "grinding off";
             case "yaw90": case "yaw180": case "yaw270": Scenarios.YawOffset = float.Parse(s.Substring(3)); return "scenario yaw offset " + Scenarios.YawOffset;
             case "mute": SkateRig.Mute = true; AudioListener.volume = SkateRig.MuteVolume; return "volume=" + AudioListener.volume;
-            default: return "unknown step";
+            default:
+                if (s.StartsWith("to:"))
+                {
+                    var xz = s.Substring(3).Split('/');
+                    Scenarios.Target = new Vector3(float.Parse(xz[0], System.Globalization.CultureInfo.InvariantCulture), 0f, float.Parse(xz[1], System.Globalization.CultureInfo.InvariantCulture));
+                    Scenarios.HasTarget = true;
+                    return "tour target " + Out.V1(Scenarios.Target);
+                }
+                return "unknown step";
         }
     }
 

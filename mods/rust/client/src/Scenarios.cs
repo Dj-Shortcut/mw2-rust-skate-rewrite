@@ -125,14 +125,14 @@ public static class Scenarios
     // The server's own park pieces, ridden one after another: to a point in front of each, then
     // across it along its way, at a speed that should carry the board up and over; what came of it
     // is logged per piece. The pieces are those SkateParks found near the player.
-    public const float TourRun = 8f, TourOut = 8f, TourReach = 0.7f, TourApproach = 25f, TourAcross = 5f, TourRest = 2f;
-    private static int tourIndex = -1, tourStage, tourHeld, tourResets, tourBails, tourGrinds;
-    private static float tourAt, tourStartY, tourRise, tourAir, tourTop, tourBack;
+    public const float TourPumpSeconds = 45f, TourRun = 8f, TourOut = 8f, TourReach = 0.7f, TourApproach = 25f, TourAcross = 5f, TourRest = 2f;
+    private static int tourIndex = -1, tourStage, tourHeld, tourResets, tourBails, tourGrinds, tourPumps;
+    private static float tourAt, tourStartY, tourRise, tourAir, tourTop, tourBack, tourSteep;
     private static bool tourPopped;
     private static string tourGrindKinds = "";
     private static float TourSpeed(SkateParks.Kind k)
     {
-        switch (k) { case SkateParks.Kind.QuarterPipe: case SkateParks.Kind.Halfpipe: case SkateParks.Kind.LargeQuarterPipe: return 8f; case SkateParks.Kind.MegaHalfpipe: return 11f; case SkateParks.Kind.MiniQuarterPipe: return 6f; case SkateParks.Kind.LedgeLow: case SkateParks.Kind.LedgeHigh: case SkateParks.Kind.LongLedge: return 5f; default: return 6.5f; }
+        switch (k) { case SkateParks.Kind.QuarterPipe: case SkateParks.Kind.Halfpipe: case SkateParks.Kind.LargeQuarterPipe: return 8f; case SkateParks.Kind.MegaHalfpipe: return 15f; case SkateParks.Kind.MiniQuarterPipe: return 6f; case SkateParks.Kind.LedgeLow: case SkateParks.Kind.LedgeHigh: case SkateParks.Kind.LongLedge: return 5f; default: return 6.5f; }
     }
     private static bool IsLedge(SkateParks.Kind k) { return k == SkateParks.Kind.LedgeLow || k == SkateParks.Kind.LedgeHigh || k == SkateParks.Kind.LongLedge; }
     // Toward the target, bent away from the pieces on the way (all of them, or all but the one being
@@ -187,11 +187,29 @@ public static class Scenarios
         return yaw;
     }
 
+    // A place to ride to first, from the step "to:x/z": a tour that starts out of reach of the park
+    // (a respawn far off) gets there on the board, steered by the script, the keyboard having no look.
+    public static bool HasTarget; public static Vector3 Target;
+    private static float travelSaid = -1f;
+    private static bool Travel(float game)
+    {
+        var pos = SkateRide.On ? SkateRide.Position : SkateRig.LocalT.position;
+        var flat = Target - pos; flat.y = 0f;
+        if (flat.magnitude < 30f && SkateParks.PieceCount > 0) { HasTarget = false; Say("tour: arrived near " + Out.V1(Target) + " at " + Out.V1(pos)); return false; }
+        if (!SkateRide.On) SkateRig.MountNow(SkateKeys.LookYaw);
+        SkateKeys.Brake = false; SkateKeys.Jump = false;
+        SkateKeys.LookYaw = Unstick(Steer(flat, pos, -1), game);
+        SkateKeys.Push = SkateRide.Speed < 9f;
+        if (travelSaid < 0f || game - travelSaid > 10f) { travelSaid = game; Say("tour: riding to " + Out.V1(Target) + ", " + flat.magnitude.ToString("F0") + " m to go, at " + Out.V1(pos)); }
+        return true;
+    }
+
     private static void Tour(float game)
     {
         if (tourIndex < 0)
         {
             if (game < 6f) return;
+            if (HasTarget && Travel(game)) return;
             Say("tour: " + SkateParks.PieceCount + " pieces | " + SkateParks.Line());
             if (SkateParks.PieceCount == 0) { Finish(); return; }
             SkateRig.MountNow(SkateKeys.LookYaw);
@@ -211,6 +229,11 @@ public static class Scenarios
         // First to a point further out on the piece's own line, then in along that line to the start:
         // seen live, a straight way to the start went through the pieces and stuck under one.
         var outer = start - along * TourOut;
+        // The MEGA's ends are its 9.6 m walls, closed underneath: seen live, the way in along its line
+        // stuck against the side of the south wall. It is entered from the side onto its flat, 2 m
+        // short of the middle, and then turned up its line.
+        var mega = kind == SkateParks.Kind.MegaHalfpipe;
+        if (mega) { start = origin - along * 2f; outer = start + SkateRide.Dir(heading + 90f) * 12f; }
         var flat = (tourStage == 0 ? outer : start) - pos; flat.y = 0f;
         var stage = game - tourAt;
         if (tourStage == 0)
@@ -233,7 +256,7 @@ public static class Scenarios
             if (flat.magnitude < TourReach || stage > TourApproach)
             {
                 Say("tour " + kind + " #" + tourIndex + ": " + (flat.magnitude < TourReach ? "at the start" : "start not reached, " + flat.magnitude.ToString("F1") + " m off") + " after " + stage.ToString("F1") + " s, at " + Out.V1(pos));
-                tourStage = 1; tourAt = game; tourPopped = false; tourStartY = pos.y; tourRise = 0f; tourAir = 0f; tourTop = 0f; tourBack = 0f; tourHeld = SkateRide.Held ? 1 : 0; tourResets = SkateRide.ResetsAll; tourBails = SkateRide.Bails; tourGrinds = SkateRide.GrindStarts; tourGrindKinds = "";
+                tourStage = 1; tourAt = game; tourPopped = false; tourStartY = pos.y; tourRise = 0f; tourSteep = 0f; tourAir = 0f; tourTop = 0f; tourBack = 0f; tourHeld = SkateRide.Held ? 1 : 0; tourResets = SkateRide.ResetsAll; tourPumps = SkateRide.Pumps; tourBails = SkateRide.Bails; tourGrinds = SkateRide.GrindStarts; tourGrindKinds = "";
             }
             return;
         }
@@ -249,7 +272,12 @@ public static class Scenarios
             var transition = SkateParks.IsTransition(kind);
             SkateKeys.Push = SkateRide.Speed < TourSpeed(kind) && !(transition && (tourRise > 0.3f || SkateRide.Speed < 0f));
             tourRise = Math.Max(tourRise, pos.y - tourStartY);
+            // On the MEGA the push alone tops out near 55 degrees (R 9.6 m, gravity 16): pump it, crouched
+            // down each face and up again through the bottom, pass after pass, to reach its vertical.
+            if (mega) SkateKeys.Crouch = SkateRide.Mode == RideMode.Ground && SkateRide.SlopeDegrees < -4f;
             tourTop = Math.Max(tourTop, SkateRide.Speed);
+            // How steep the face under the board got, degrees: the MEGA's vertical is above 72.
+            if (SkateRide.Mode == RideMode.Ground) tourSteep = Math.Max(tourSteep, Vector3.Angle(SkateRide.Normal, Vector3.up));
             if (SkateRide.Mode == RideMode.Ground) tourBack = Math.Min(tourBack, SkateRide.Speed);
             if (SkateRide.Mode == RideMode.Air) tourAir += Time.deltaTime;
             if (SkateRide.Held) tourHeld++;
@@ -262,11 +290,11 @@ public static class Scenarios
                 SkateKeys.JumpPressed = true; SkateKeys.PopKind = SkatePopKind.Ollie; SkateKeys.PopScale = 1f;
             }
             if (IsLedge(kind) && toLedge < 0.6f) SkateKeys.LookYaw = heading + 8f;
-            if (stage > TourAcross)
+            if (stage > (mega ? TourPumpSeconds : TourAcross))
             {
-                Say("TOUR " + kind + " #" + tourIndex + ": rose " + tourRise.ToString("F2") + " m, air " + tourAir.ToString("F2") + " s, top " + tourTop.ToString("F1") + " m/s, back " + (-tourBack).ToString("F1") + " m/s, held " + (tourHeld > 0 ? "yes" : "no")
-                    + ", grinds " + (SkateRide.GrindStarts - tourGrinds) + (tourGrindKinds != "" ? " (" + tourGrindKinds.Trim() + ")" : "") + ", bails " + (SkateRide.Bails - tourBails) + ", put backs " + (SkateRide.ResetsAll - tourResets) + ", end " + Out.V1(pos) + " " + SkateRide.Mode);
-                tourStage = 2; tourAt = game; SkateKeys.Jump = false;
+                Say("TOUR " + kind + " #" + tourIndex + ": rose " + tourRise.ToString("F2") + " m, steepest " + tourSteep.ToString("F0") + " deg, air " + tourAir.ToString("F2") + " s, top " + tourTop.ToString("F1") + " m/s, back " + (-tourBack).ToString("F1") + " m/s, held " + (tourHeld > 0 ? "yes" : "no")
+                    + ", grinds " + (SkateRide.GrindStarts - tourGrinds) + (tourGrindKinds != "" ? " (" + tourGrindKinds.Trim() + ")" : "") + ", pumps " + (SkateRide.Pumps - tourPumps) + ", bails " + (SkateRide.Bails - tourBails) + ", put backs " + (SkateRide.ResetsAll - tourResets) + ", end " + Out.V1(pos) + " " + SkateRide.Mode);
+                tourStage = 2; tourAt = game; SkateKeys.Jump = false; SkateKeys.Crouch = false;
             }
             return;
         }
@@ -408,7 +436,11 @@ public static class Scenarios
     // the kind of grab for a grab view, the board's turn under the feet in degrees for a shove view
     // and the part of the bail that has passed for a bail view.
     private static readonly View[] views = {
-        new View("stance, seen from the rider's front", 90f, "stance", 0f), new View("stance, seen along the board from behind", 180f, "stance", 0f),
+        new View("stance, seen from the rider's front", 90f, "stance", 0f),
+        new View("up a wall at 60 degrees, from the side", 90f, "wall", 60f), new View("up a wall at 80 degrees, from the side", 90f, "wall", 80f),
+        new View("up a wall at 88 degrees, from the side", 90f, "wall", 88f), new View("up a wall at 80 degrees, from behind", 180f, "wall", 80f),
+        new View("across a wall at 80 degrees, from below", 90f, "across", 80f),
+        new View("stance, seen along the board from behind", 180f, "stance", 0f),
         new View("stance, seen from the rider's back", 270f, "stance", 0f), new View("stance, seen along the board from ahead", 0f, "stance", 0f),
         new View("stance, seen from above", 90f, "above", 0f),
         new View("push, foot coming down", 90f, "push", 0.2f), new View("push, foot on the ground", 90f, "push", 0.45f),
@@ -532,6 +564,12 @@ public static class Scenarios
         SkateBoard.ShowLift = air ? 0.7f : 0f;
         SkateRide.Trick = new SkateTrickState(v.State == "switch");
         if (v.State == "bail") SkateRide.ModeAt = now - v.Value * SkateRide.BailSeconds;
+        // Standing on a face this steep, frozen, so the board and the body can be compared where the
+        // rider used to go back to the world's up (about 78 degrees on): "wall" faces the nose up it,
+        // "across" rides along it with the face on the rider's toe side.
+        var steep = v.State == "wall" || v.State == "across" ? v.Value * (float)(Math.PI / 180.0) : 0f;
+        var away = v.State == "across" ? SkateRide.Dir(SkateRide.Yaw - 90f * SkateRide.StanceSign) : -SkateRide.Dir(SkateRide.Yaw);
+        SkateRide.Normal = SkateRide.ViewNormal = (Vector3.up * (float)Math.Cos(steep) + away * (float)Math.Sin(steep)).normalized;
         if (v.State == "move") { SkateRide.Frozen = false; SkateRide.Mode = RideMode.Ground; }
         if (v.State == "turn") SkateKeys.LookYaw = yaw0 + 180f;
     }

@@ -190,22 +190,77 @@ public static class SkateHeld
     {
         const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
         selectLooked = true;
+        var seen = "";
         for (var at = player.GetType(); at != null && selectSlot == null; at = at.BaseType)
         {
             foreach (var f in at.GetFields(flags | BindingFlags.DeclaredOnly))
             {
-                var m = f.FieldType.GetMethod("SelectSlot", flags, null, new[] { typeof(int) }, null);
+                var m = SlotSelector(f.FieldType);
+                if (BeltLike(f.Name, f.FieldType)) seen += " field " + f.Name + ":" + f.FieldType.Name + Slotty(f.FieldType);
                 if (m != null) { selectSlot = m; selectMember = f; selectOwner = "field " + f.Name; break; }
             }
             if (selectSlot != null) break;
             foreach (var p in at.GetProperties(flags | BindingFlags.DeclaredOnly))
             {
                 if (p.GetIndexParameters().Length != 0) continue;
-                var m = p.PropertyType.GetMethod("SelectSlot", flags, null, new[] { typeof(int) }, null);
+                if (BeltLike(p.Name, p.PropertyType)) seen += " property " + p.Name + ":" + p.PropertyType.Name + Slotty(p.PropertyType);
+                var m = SlotSelector(p.PropertyType);
                 if (m != null) { selectSlot = m; selectMember = p; selectOwner = "property " + p.Name; break; }
             }
         }
-        Out.Say("HELD belt select route: " + (selectSlot == null ? "none found (no member with SelectSlot(int))" : selectOwner + "." + selectSlot.Name));
+        Out.Say("HELD belt select route: " + (selectSlot == null ? "none found (no member with SelectSlot(int, ...)); belt-like members:" + (seen == "" ? " (none)" : seen) : selectOwner + "." + selectSlot.Name + "(" + selectSlot.GetParameters().Length + " args)"));
+    }
+
+    // A member worth naming in the log: belt by name, or a type with slot methods.
+    private static bool BeltLike(string name, Type t)
+    {
+        if (name.IndexOf("Belt", StringComparison.OrdinalIgnoreCase) >= 0 || t.Name.IndexOf("Belt", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+        if (t.IsPrimitive || t == typeof(string)) return false;
+        return Slotty(t).IndexOf("Slot", StringComparison.OrdinalIgnoreCase) >= 0;
+    }
+
+    // A SelectSlot whose first argument is the slot and whose others can be left at their defaults.
+    private static MethodInfo SlotSelector(Type t)
+    {
+        const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
+        foreach (var m in t.GetMethods(flags))
+        {
+            if (m.Name != "SelectSlot") continue;
+            var ps = m.GetParameters();
+            if (ps.Length == 0 || ps[0].ParameterType != typeof(int)) continue;
+            var rest = true;
+            for (var i = 1; i < ps.Length; i++) if (!ps[i].IsOptional && !ps[i].ParameterType.IsValueType) rest = false;
+            if (rest) return m;
+        }
+        return null;
+    }
+
+    // The slot and selection methods of a type, for the log.
+    private static string Slotty(Type t)
+    {
+        var s = "";
+        try
+        {
+            foreach (var m in t.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static))
+                if (m.Name.IndexOf("Slot", StringComparison.OrdinalIgnoreCase) >= 0 || m.Name.IndexOf("Select", StringComparison.OrdinalIgnoreCase) >= 0 || m.Name.IndexOf("Active", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    var args = "";
+                    foreach (var pa in m.GetParameters()) args += (args == "" ? "" : ",") + pa.ParameterType.Name;
+                    s += " " + m.Name + "(" + args + ")";
+                }
+        }
+        catch (Exception) { }
+        return s == "" ? "" : " [" + s.Trim() + "]";
+    }
+
+    // The arguments for the belt's SelectSlot: the slot, then each other argument's default.
+    private static object[] SlotArgs(int slot)
+    {
+        var ps = selectSlot.GetParameters();
+        var args = new object[ps.Length];
+        args[0] = slot;
+        for (var i = 1; i < ps.Length; i++) args[i] = ps[i].IsOptional ? ps[i].DefaultValue : Activator.CreateInstance(ps[i].ParameterType);
+        return args;
     }
 
     // Makes that belt slot the active one through the game's own belt, the way a number key does,
@@ -224,7 +279,7 @@ public static class SkateHeld
             var field = selectMember as FieldInfo;
             owner = field != null ? field.GetValue(player) : ((PropertyInfo)selectMember).GetValue(player, null);
             if (owner == null) { how = selectOwner + " is empty"; return false; }
-            selectSlot.Invoke(owner, new object[] { slot });
+            selectSlot.Invoke(owner, SlotArgs(slot));
             how = selectOwner + ".SelectSlot(" + slot + ")";
             return true;
         }
@@ -235,18 +290,29 @@ public static class SkateHeld
     // The game's belt is asked to clear its selection (ClearSelection, else SelectSlot(-1)); the
     // route is logged once, and what still sits in the hand is logged each time it fails.
     private static bool clearLooked; private static MethodInfo clearSelection; private static string holsterRoute = "";
+    // This client build has no GetActiveItem (the log: "HELD methods returning Item: (none)"), so
+    // the held item cannot be read by name; then the belt's own selected slot says what is held.
     public static bool Holster(object player, out string how)
     {
         how = "";
-        if (player == null || !Read(player) || (Shortname == "" && Name == "")) return false;
+        if (player == null) return false;
+        var named = Read(player);
+        if (named && Shortname == "" && Name == "") return false;
         try
         {
             const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
             if (!selectLooked) LookForBelt(player);
-            if (selectSlot == null) { how = "no belt in this build"; return false; }
+            if (selectSlot == null) return Hide(player, out how);
             var field = selectMember as FieldInfo;
             var owner = field != null ? field.GetValue(player) : ((PropertyInfo)selectMember).GetValue(player, null);
             if (owner == null) { how = selectOwner + " is empty"; return false; }
+            if (!named)
+            {
+                var selected = SelectedSlot(owner);
+                if (selected == NotReadable) { how = "neither the held item nor the belt's selected slot can be read"; return false; }
+                if (selected < 0 || selected >= 6) return false;
+                Slot = selected; Name = "belt slot " + (selected + 1);
+            }
             if (!clearLooked)
             {
                 clearLooked = true;
@@ -255,11 +321,119 @@ public static class SkateHeld
                 Out.Say("HELD holster route: " + holsterRoute);
             }
             if (clearSelection != null) clearSelection.Invoke(owner, null);
-            else selectSlot.Invoke(owner, new object[] { -1 });
+            else selectSlot.Invoke(owner, SlotArgs(-1));
             how = holsterRoute + " put away " + (Name != "" ? Name : Shortname);
             return true;
         }
         catch (Exception e) { how = "holster threw " + e.GetType().Name + ": " + e.Message; return false; }
+    }
+
+    // Without a belt to clear (this build: no member of the player has a SelectSlot), the held
+    // entity itself is switched off on this client while riding: its model, its view model and a
+    // building plan's ghost go with it, and a switched-off plan takes no clicks. Each one is
+    // switched on again on stepping off (Show). What the held entity offers is logged once a type.
+    private static readonly System.Collections.Generic.List<UnityEngine.GameObject> hidden = new System.Collections.Generic.List<UnityEngine.GameObject>();
+    private static bool sceneSaid;
+    private static readonly System.Collections.Generic.HashSet<string> probed = new System.Collections.Generic.HashSet<string>();
+    private static bool Hide(object player, out string how)
+    {
+        how = "";
+        var root = player as UnityEngine.Component;
+        if (root == null) { how = "the player is not a component"; return false; }
+        // This client's member names are obfuscated (its type names are kept), and nothing on the
+        // player returns its held entity; so the held entity is found by its type among the
+        // player's children. (The first-person view model is RiderRig's: it hides it from the
+        // chase camera.)
+        // The held entity sits on a hand bone (r_prop, l_prop) of the rider's model, which is not
+        // under the player (the log: a building planner under r_prop in player_model.prefab);
+        // what hangs on the back (a gun under spine3) is left alone.
+        var model = RiderRig.Root != null ? (UnityEngine.Component)RiderRig.Root : root;
+        var off = 0; var names = "";
+        var heldOnes = model.GetComponentsInChildren<HeldEntity>(false);
+        for (var i = 0; i < heldOnes.Length; i++)
+        {
+            var c = heldOnes[i];
+            if (c == null) continue;
+            var bone = c.transform.parent;
+            if (bone == null || !bone.name.EndsWith("_prop", StringComparison.Ordinal)) continue;
+            var go = c.gameObject;
+            if (go == null || !go.activeSelf) continue;
+            var kind = c.GetType().Name;
+            if (probed.Add(kind)) Out.Say("HELD switching off a " + kind + " (" + go.name + ") while riding");
+            go.SetActive(false);
+            hidden.Add(go);
+            names += " " + kind + " (" + go.name + ")";
+            off++;
+        }
+        if (off == 0)
+        {
+            // Not under the player: where the game keeps its held entities is logged once.
+            if (!sceneSaid)
+            {
+                sceneSaid = true;
+                var all = UnityEngine.Object.FindObjectsOfType<HeldEntity>();
+                var where = "";
+                for (var i = 0; i < all.Length && i < 6; i++)
+                {
+                    if (all[i] == null) continue;
+                    var parent = all[i].transform.parent;
+                    where += " " + all[i].GetType().Name + "(" + all[i].gameObject.name + (all[i].gameObject.activeInHierarchy ? "" : ", off") + ") under " + (parent == null ? "nothing" : parent.name + (parent.root == null ? "" : " in " + parent.root.name));
+                }
+                Out.Say("HELD none under the player (" + root.gameObject.name + "); in the scene " + all.Length + ":" + (where == "" ? " (none)" : where));
+            }
+            return false;
+        }
+        how = "switched off" + names;
+        return true;
+    }
+
+    private static bool Derives(Type t, string name)
+    {
+        for (; t != null && t != typeof(object); t = t.BaseType) if (t.Name == name) return true;
+        return false;
+    }
+
+    // Stepping off: every held entity switched off for the ride is switched on again.
+    public static int Show()
+    {
+        var n = 0;
+        foreach (var go in hidden) if (go != null && !go.activeSelf) { go.SetActive(true); n++; }
+        hidden.Clear();
+        return n;
+    }
+
+    // The belt's selected slot (0..5, -1 for none) as the belt keeps it: a member named like
+    // SelectedSlot, static or not; NotReadable when the belt has none. The route is logged once.
+    public const int NotReadable = int.MinValue;
+    private static bool slotLooked; private static MemberInfo slotMember;
+    private static int SelectedSlot(object belt)
+    {
+        const BindingFlags all = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static;
+        if (!slotLooked)
+        {
+            slotLooked = true;
+            var t = belt.GetType();
+            foreach (var name in new[] { "SelectedSlot", "selectedSlot", "_selectedSlot", "currentSlot" })
+            {
+                var p = t.GetProperty(name, all);
+                if (p != null && p.PropertyType == typeof(int) && p.GetIndexParameters().Length == 0) { slotMember = p; break; }
+                var f = t.GetField(name, all);
+                if (f != null && f.FieldType == typeof(int)) { slotMember = f; break; }
+            }
+            var ints = "";
+            if (slotMember == null) foreach (var m in t.GetMembers(all))
+                {
+                    var pi = m as PropertyInfo; var fi = m as FieldInfo;
+                    if ((pi != null && pi.PropertyType == typeof(int) && pi.GetIndexParameters().Length == 0) || (fi != null && fi.FieldType == typeof(int))) ints += " " + m.Name;
+                }
+            Out.Say("HELD belt selected slot: " + (slotMember != null ? t.Name + "." + slotMember.Name : "none found; int members of " + t.Name + ":" + (ints == "" ? " (none)" : ints)));
+        }
+        if (slotMember == null) return NotReadable;
+        var target = belt;
+        var sp = slotMember as PropertyInfo; var sf = slotMember as FieldInfo;
+        if ((sp != null && sp.GetGetMethod(true).IsStatic) || (sf != null && sf.IsStatic)) target = null;
+        var v = sp != null ? sp.GetValue(target, null) : sf.GetValue(target);
+        return v is int ? (int)v : NotReadable;
     }
 
     // The building plan's own turn (R), in degrees about up: the held planner's rotationOffset, as

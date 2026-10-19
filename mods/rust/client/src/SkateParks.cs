@@ -193,10 +193,12 @@ public static class SkateParks
     private sealed class Loaded { public SkateModel Model; public Mesh[] Meshes; public Material[] Materials; public string Error; }
     private sealed class Placed
     {
-        public Kind Kind; public int[] Ids; public GameObject Root; public Vector3 Origin; public float Yaw;
+        public Kind Kind; public int[] Ids; public BuildingBlock[] Entities; public GameObject Root; public Vector3 Origin; public float Yaw; public int ColliderCount;
         public readonly List<Renderer> Hidden = new List<Renderer>();
         public readonly List<Collider> Backing = new List<Collider>();
         public readonly List<int> Ramp = new List<int>();
+        public readonly List<int> Coping = new List<int>();
+        public readonly List<Mesh> Meshes = new List<Mesh>();
     }
 
     public static void Frame(float now)
@@ -262,23 +264,37 @@ public static class SkateParks
             blocks.Add(new Block { Entity = b, Prefab = prefab, Position = t.position, Rotation = t.rotation, Yaw = e.y, Pitch = Wrap(e.x), Top = top, Bottom = bottom, Id = b.GetInstanceID() });
         }
         Blocks = blocks.Count;
-        // Assemblies that are still complete stay as they are; the rest go.
+        // Assemblies that are still complete stay as they are; the rest go. A block that is out of
+        // Reach but still exists keeps its assembly: riding away from a MEGA used to drop it once
+        // its far end left the sphere, and its near chords were then drawn as banks and kickers.
         var present = new HashSet<int>(); foreach (var b in blocks) present.Add(b.Id);
         for (var i = placed.Count - 1; i >= 0; i--)
         {
             var keep = true;
-            foreach (var id in placed[i].Ids) if (!present.Contains(id)) { keep = false; break; }
+            var ids = placed[i].Ids; var entities = placed[i].Entities;
+            for (var k = 0; k < ids.Length; k++)
+            {
+                if (present.Contains(ids[k])) continue;
+                if (entities != null && k < entities.Length && Alive(entities[k])) continue;
+                keep = false; break;
+            }
             if (!keep) { Remove(placed[i]); placed.RemoveAt(i); }
         }
-        var taken = new HashSet<int>(); foreach (var p in placed) foreach (var id in p.Ids) taken.Add(id);
+        var taken = new HashSet<int>();
+        var reserved = new HashSet<int>();
         // Cells of a metre, for the neighbourhood searches.
         var cells = new Dictionary<long, List<int>>();
         for (var i = 0; i < blocks.Count; i++) { var key = Cell(blocks[i].Position); List<int> l; if (!cells.TryGetValue(key, out l)) cells[key] = l = new List<int>(); l.Add(i); }
         var matched = new List<int>();
         // Pitched kinds first (the most distinctive), the halfpipe before the quarterpipe it contains.
         var order = new[] { Kind.MegaHalfpipe, Kind.Halfpipe, Kind.LargeQuarterPipe, Kind.MiniQuarterPipe, Kind.HalfWallKicker, Kind.QuarterPipe, Kind.Funbox, Kind.Kicker, Kind.Bank, Kind.LongLedge, Kind.LedgeHigh, Kind.LedgeLow };
-        foreach (var kind in order)
+        for (var priority = 0; priority < order.Length; priority++)
         {
+            var kind = order[priority];
+            taken.Clear(); taken.UnionWith(reserved);
+            foreach (var existing in placed)
+                if (Array.IndexOf(order, existing.Kind) <= priority)
+                    foreach (var id in existing.Ids) taken.Add(id);
             var layout = Layout(kind);
             for (var i = 0; i < blocks.Count; i++)
             {
@@ -294,16 +310,168 @@ public static class SkateParks
                 // A plain kicker is 25 degrees; 30 is the half-wall kicker's, even when its wall is out of reach.
                 if (kind == Kind.Kicker && Math.Abs(Delta(-30f, b.Pitch)) < 2.5f) continue;
                 var ids = new int[matched.Count];
-                for (var m = 0; m < matched.Count; m++) { ids[m] = blocks[matched[m]].Id; taken.Add(ids[m]); }
-                var p = new Placed { Kind = kind, Ids = ids };
-                Place(p, kind, blocks, matched, anchorYaw);
-                placed.Add(p);
+                for (var m = 0; m < matched.Count; m++) ids[m] = blocks[matched[m]].Id;
+                var candidate = new HashSet<int>(ids);
+                var displaced = new List<Placed>();
+                var overlap = false;
+                foreach (var existing in placed)
+                {
+                    var touches = false;
+                    foreach (var id in existing.Ids) if (candidate.Contains(id)) { touches = true; break; }
+                    if (!touches) continue;
+                    if (Array.IndexOf(order, existing.Kind) <= priority) { overlap = true; break; }
+                    foreach (var id in existing.Ids) if (!candidate.Contains(id)) { overlap = true; break; }
+                    if (overlap) break;
+                    displaced.Add(existing);
+                }
+                if (overlap) continue;
+                var entities = new BuildingBlock[matched.Count];
+                for (var m = 0; m < matched.Count; m++) entities[m] = blocks[matched[m]].Entity;
+                var p = new Placed { Kind = kind, Ids = ids, Entities = entities };
+                if (!Place(p, kind, blocks, matched, anchorYaw, displaced))
+                {
+                    // Geometry has identified this kit even when its model or safe activation
+                    // is unavailable. Do not reinterpret its members as a smaller obstacle.
+                    reserved.UnionWith(ids); taken.UnionWith(ids);
+                    continue;
+                }
+                foreach (var id in ids) taken.Add(id);
                 Say("found a " + fileStems[(int)kind].Substring(6) + " at " + Out.V1(p.Origin) + " yaw " + p.Yaw.ToString("F0") + (p.Root != null ? ", drawn" : ", not drawn: " + Status));
+            }
+            if (kind == Kind.MegaHalfpipe)
+            {
+                MegaNearMiss(blocks, cells, taken);
+                reserved.UnionWith(taken);
             }
         }
         Assemblies = placed.Count;
         var drawn = 0; foreach (var p in placed) if (p.Root != null) drawn++;
         Drawn = drawn;
+    }
+
+    // A MEGA kit the client can't match whole: its 9 and 27 degree chords would otherwise be taken
+    // for a bank and a kicker on one side (#495). The best partial match from any flat floor, at
+    // least half the kit, keeps its blocks from the smaller kinds; the first part missing is logged
+    // with the nearest block of its prefab, once for each new outcome.
+    private static string megaMiss = "";
+    private static void MegaNearMiss(List<Block> blocks, Dictionary<long, List<int>> cells, HashSet<int> taken)
+    {
+        var layout = Layout(Kind.MegaHalfpipe);
+        var best = new List<int>(); var bestMissing = -1; var bestYaw = 0f; var bestAt = Vector3.zero;
+        var found = new List<int>();
+        for (var i = 0; i < blocks.Count; i++)
+        {
+            var b = blocks[i];
+            if (taken.Contains(b.Id) || b.Prefab != FloorPrefab || Math.Abs(b.Pitch) > AngleTolerance) continue;
+            var anchorYaw = b.Yaw;
+            found.Clear();
+            var missing = -1;
+            var sin = (float)Math.Sin(anchorYaw * Degrees); var cos = (float)Math.Cos(anchorYaw * Degrees);
+            for (var k = 0; k < layout.Length; k++)
+            {
+                var hit = MegaPartAt(layout, k, blocks, cells, taken, b, sin, cos, anchorYaw, found);
+                if (hit >= 0) found.Add(hit); else if (missing < 0) missing = k;
+            }
+            if (found.Count > best.Count) { best = new List<int>(found); bestMissing = missing; bestYaw = anchorYaw; bestAt = b.Position; }
+        }
+        if (best.Count < layout.Length / 2 || bestMissing < 0)
+        {
+            if (megaMiss.Length > 0 && best.Count < layout.Length / 2) megaMiss = "";
+            return;
+        }
+        foreach (var m in best) taken.Add(blocks[m].Id);
+        WithdrawPartialMega(best, blocks);
+        var part = layout[bestMissing];
+        var first = blocks[best[0]];
+        var s = (float)Math.Sin(bestYaw * Degrees); var c = (float)Math.Cos(bestYaw * Degrees);
+        var dr = (float)(part.Right - layout[0].Right); var df = (float)(part.Forward - layout[0].Forward); var dh = (float)(part.Height - layout[0].Height);
+        var want = first.Position + new Vector3(dr * c + df * s, dh, -dr * s + df * c);
+        var near = -1; var nearD = float.MaxValue;
+        for (var i = 0; i < blocks.Count; i++)
+        {
+            if (blocks[i].Prefab != part.Prefab) continue;
+            var d = Vector3.Distance(blocks[i].Position, want);
+            if (d < nearD) { nearD = d; near = i; }
+        }
+        var line = "MEGA kit at " + Out.V1(bestAt) + " not whole: " + best.Count + "/" + layout.Length + " parts, first missing #" + bestMissing +
+            " (" + (part.Prefab == FloorPrefab ? "floor" : "low wall") + " pitch " + part.Pitch.ToString("F0") + " yaw " + (bestYaw + part.Yaw).ToString("F0") + " at " + Out.V1(want) + ")" +
+            (near < 0 ? ", no block of that prefab in reach" : ", nearest " + nearD.ToString("F2") + " m away, pitch " + blocks[near].Pitch.ToString("F1") + " yaw " + blocks[near].Yaw.ToString("F1") + " at " + Out.V1(blocks[near].Position)) +
+            "; its blocks are kept from the smaller kinds";
+        var key = best.Count + "/" + bestMissing;
+        if (key == megaMiss) return;
+        megaMiss = key;
+        Say(line);
+    }
+
+    // A partial MEGA can become recognizable after an earlier scan drew a bank or kicker.
+    // Withdraw only overlays wholly owned by that partial kit, and only while the actual
+    // rider is clear of both the old ride surface and the native geometry it will reveal.
+    private static void WithdrawPartialMega(List<int> matched, List<Block> blocks)
+    {
+        var ids = new HashSet<int>(); foreach (var index in matched) ids.Add(blocks[index].Id);
+        var withdrawn = new List<Placed>();
+        foreach (var existing in placed)
+        {
+            if (existing.Kind == Kind.MegaHalfpipe || existing.Ids.Length == 0) continue;
+            var contained = true;
+            foreach (var id in existing.Ids) if (!ids.Contains(id)) { contained = false; break; }
+            if (contained) withdrawn.Add(existing);
+        }
+        if (withdrawn.Count == 0) return;
+        var nextBacking = new HashSet<int>();
+        try
+        {
+            foreach (var existing in withdrawn)
+            {
+                if (existing.Root == null || !ReplacementClear(existing.Root))
+                    throw new InvalidOperationException("Step clear of the partial MEGA to remove its provisional overlays.");
+                foreach (var id in existing.Ids)
+                {
+                    var found = false;
+                    foreach (var block in blocks)
+                    {
+                        if (block.Id != id) continue;
+                        if (block.Entity == null || !ReplacementClear(block.Entity.gameObject))
+                            throw new InvalidOperationException("Step clear of the partial MEGA's native parts to remove its provisional overlays.");
+                        found = true; break;
+                    }
+                    if (!found) throw new InvalidOperationException("A partial MEGA member is unavailable.");
+                }
+            }
+            foreach (var remaining in placed)
+                if (!withdrawn.Contains(remaining))
+                    foreach (var collider in remaining.Backing) if (collider != null) nextBacking.Add(collider.GetInstanceID());
+        }
+        catch (Exception error)
+        {
+            Status = "partial MEGA overlay removal deferred: " + error.Message;
+            return;
+        }
+        foreach (var existing in withdrawn) { placed.Remove(existing); Remove(existing); }
+        BackingIds.Clear(); BackingIds.UnionWith(nextBacking); backingVersion++;
+        try { Isolate(SkateRide.On, SkateRig.Body, Time.realtimeSinceStartup); }
+        catch (Exception error) { Status = "backing isolation will retry: " + error.Message; }
+    }
+
+    private static int MegaPartAt(Part[] layout, int k, List<Block> blocks, Dictionary<long, List<int>> cells, HashSet<int> taken, Block first, float sin, float cos, float anchorYaw, List<int> found)
+    {
+        var part = layout[k];
+        var dr = (float)(part.Right - layout[0].Right); var df = (float)(part.Forward - layout[0].Forward); var dh = (float)(part.Height - layout[0].Height);
+        var want = first.Position + new Vector3(dr * cos + df * sin, dh, -dr * sin + df * cos);
+        var wantYaw = anchorYaw + (float)part.Yaw;
+        var best = -1; var bestDistance = PositionTolerance;
+        foreach (var i in Near(cells, want))
+        {
+            var b = blocks[i];
+            if (b.Prefab != part.Prefab || taken.Contains(b.Id) || found.Contains(i)) continue;
+            var d = Vector3.Distance(b.Position, want);
+            if (d > bestDistance) continue;
+            var yawOff = Math.Abs(Delta(wantYaw, b.Yaw));
+            if (part.Prefab != FloorPrefab) { yawOff %= 90f; yawOff = Math.Min(yawOff, 90f - yawOff); }
+            if (yawOff > AngleTolerance || Math.Abs(Delta((float)part.Pitch, b.Pitch)) > AngleTolerance) continue;
+            best = i; bestDistance = d;
+        }
+        return best;
     }
 
     // Every part of the layout has a block of its prefab within the tolerances, taking the given
@@ -445,62 +613,143 @@ public static class SkateParks
         return true;
     }
 
-    private static void Place(Placed p, Kind kind, List<Block> blocks, List<int> matched, float anchorYaw)
+    private static bool Place(Placed p, Kind kind, List<Block> blocks, List<int> matched, float anchorYaw, List<Placed> displaced)
     {
-        var first = blocks[matched[0]];
-        var yawRot = Quaternion.Euler(0f, anchorYaw, 0f);
-        var origin = Origin(kind, first.Position, first.Rotation, yawRot, first.Top);
-        origin += Vector3.up * Lift;
-        p.Origin = origin; p.Yaw = anchorYaw;
-        int colliders;
-        var root = Build(kind, origin, yawRot, true, out colliders);
-        if (root == null) return;
-        Colliders += colliders;
-        p.Root = root;
-        if (IsTransition(kind)) KeepRamp(p, root);
-        if (kind == Kind.Bank || kind == Kind.Kicker) Colliders += Entry(root, 0f, -1f);
-        if (IsQuarter(kind)) Colliders += Entry(root, (float)QuarterStart, -1f);
-        if (kind == Kind.HalfWallKicker) Colliders += Entry(root, (float)KickerRunIn, -1f);
-        // A funbox is entered from both ends.
-        if (kind == Kind.Funbox) { Colliders += Entry(root, -FunboxEnd, -1f); Colliders += Entry(root, FunboxEnd, 1f); }
-        // The native tiles and walls under the model are not drawn; the foundation stays.
-        foreach (var m in matched)
+        var newlyHidden = new List<Renderer>();
+        var inherited = new HashSet<Renderer>();
+        var nextBacking = new HashSet<int>();
+        try
         {
-            var entity = blocks[m].Entity;
-            try
+            var first = blocks[matched[0]];
+            var yawRot = Quaternion.Euler(0f, anchorYaw, 0f);
+            var origin = Origin(kind, first.Position, first.Rotation, yawRot, first.Top) + Vector3.up * Lift;
+            p.Origin = origin; p.Yaw = anchorYaw;
+            int colliders;
+            p.Root = IsTransition(kind) ? Transition(kind, origin, yawRot, true, out colliders, false, p.Meshes) : Build(kind, origin, yawRot, true, out colliders);
+            if (p.Root == null) return false;
+            p.Root.SetActive(false); p.ColliderCount = colliders;
+            if (IsTransition(kind)) ReadRamp(p, p.Root);
+            if (kind == Kind.Bank || kind == Kind.Kicker) p.ColliderCount += Entry(p.Root, 0f, -1f, p.Meshes);
+            if (IsQuarter(kind)) p.ColliderCount += Entry(p.Root, (float)QuarterStart, -1f, p.Meshes);
+            if (kind == Kind.HalfWallKicker) p.ColliderCount += Entry(p.Root, (float)KickerRunIn, -1f, p.Meshes);
+            if (kind == Kind.Funbox) { p.ColliderCount += Entry(p.Root, -FunboxEnd, -1f, p.Meshes); p.ColliderCount += Entry(p.Root, FunboxEnd, 1f, p.Meshes); }
+            foreach (var old in displaced)
+                foreach (var renderer in old.Hidden)
+                    if (renderer != null && inherited.Add(renderer)) p.Hidden.Add(renderer);
+            for (var part = 0; part < matched.Count; part++)
             {
-                var renderers = entity.GetComponentsInChildren<Renderer>(true);
-                for (var r = 0; r < renderers.Length; r++)
-                {
-                    var rend = renderers[r];
-                    if (rend == null || !rend.enabled) continue;
-                    rend.enabled = false; p.Hidden.Add(rend); HiddenRenderers++;
-                }
+                var entity = blocks[matched[part]].Entity;
+                foreach (var renderer in entity.GetComponentsInChildren<Renderer>(true))
+                    if (renderer != null && renderer.enabled && !p.Hidden.Contains(renderer)) p.Hidden.Add(renderer);
+                if (kind == Kind.MegaHalfpipe || IsQuarter(kind) || (kind == Kind.Halfpipe && part >= 4 && part < 12))
+                    foreach (var collider in entity.GetComponentsInChildren<Collider>(true))
+                        if (collider != null) p.Backing.Add(collider);
             }
-            catch (Exception e) { Status = "native renderers not hidden: " + e.Message; }
-        }
-        // The MEGA's native chords, floors and walls, and a quarterpipe's carrier floors and wall, are
-        // not the riding surface: their colliders are kept from the rider and from the ride's queries
-        // (Isolate, Ray, Sphere).
-        if (kind == Kind.MegaHalfpipe || IsQuarter(kind))
-        {
-            foreach (var m in matched)
+            foreach (var remaining in placed)
+                if (!displaced.Contains(remaining))
+                    foreach (var collider in remaining.Backing) if (collider != null) nextBacking.Add(collider.GetInstanceID());
+            foreach (var collider in p.Backing) nextBacking.Add(collider.GetInstanceID());
+            if (displaced.Count > 0 && !ReplacementClear(p.Root))
+                throw new InvalidOperationException("Step clear of the ramp to finish recognizing the complete park piece.");
+            foreach (var renderer in p.Hidden)
             {
-                try
+                if (!renderer.enabled) continue;
+                newlyHidden.Add(renderer); renderer.enabled = false;
+            }
+            p.Root.SetActive(true);
+        }
+        catch (Exception error)
+        {
+            foreach (var renderer in newlyHidden) try { if (renderer != null) renderer.enabled = true; } catch (Exception) { }
+            if (p.Root != null) { p.Root.SetActive(false); UnityEngine.Object.Destroy(p.Root); p.Root = null; }
+            foreach (var mesh in p.Meshes) if (mesh != null) UnityEngine.Object.Destroy(mesh);
+            p.Meshes.Clear();
+            Status = "park replacement deferred: " + error.Message;
+            return false;
+        }
+        // Transfer restore ownership before removing old overlays; their native renderers
+        // and backing can also belong to the complete assembly.
+        foreach (var old in displaced) old.Hidden.Clear();
+        HiddenRenderers += newlyHidden.Count;
+        foreach (var id in p.Ramp) RampIds.Add(id);
+        foreach (var id in p.Coping) CopingIds.Add(id);
+        Colliders += p.ColliderCount;
+        placed.Add(p);
+        foreach (var old in displaced) { placed.Remove(old); Remove(old); }
+        BackingIds.Clear(); BackingIds.UnionWith(nextBacking); backingVersion++;
+        try { Isolate(SkateRide.On, SkateRig.Body, Time.realtimeSinceStartup); }
+        catch (Exception error) { Status = "backing isolation will retry: " + error.Message; }
+        if (p.Backing.Count > 0) Say(KindName(kind) + " backing: " + p.Backing.Count + " native colliders kept from the ride");
+        return true;
+    }
+
+    private static bool ReplacementClear(GameObject replacement)
+    {
+        var body = SkateRig.Body;
+        if (body == null) return false;
+        var bodies = body.GetComponentsInChildren<Collider>(true);
+        var surfaces = replacement.GetComponentsInChildren<Collider>(true);
+        var observed = false;
+        foreach (var rider in bodies)
+        {
+            if (rider == null || rider.isTrigger || !rider.enabled || !rider.gameObject.activeInHierarchy) continue;
+            if (!PrimitiveBody(rider)) return false;
+            var bounds = rider.bounds;
+            if (!FiniteBounds(bounds) || !(bounds.size.x > 0f && bounds.size.y > 0f && bounds.size.z > 0f)) return false;
+            observed = true;
+            foreach (var surface in surfaces)
+            {
+                if (surface == null || surface.isTrigger || !surface.enabled) continue;
+                var meshCollider = surface.GetComponent<MeshCollider>();
+                if (meshCollider != null && meshCollider.GetInstanceID() == surface.GetInstanceID())
                 {
-                    var cols = blocks[m].Entity.GetComponentsInChildren<Collider>(true);
-                    for (var k = 0; k < cols.Length; k++)
+                    var mesh = meshCollider.sharedMesh;
+                    if (mesh == null) return false;
+                    var vertices = mesh.vertices; var triangles = mesh.triangles;
+                    if (triangles.Length == 0 || triangles.Length % 3 != 0) return false;
+                    // Bounds provide a conservative guard even for backfaced triangles or
+                    // a staged mesh that has not entered the active physics scene.
+                    for (var i = 0; i < triangles.Length; i += 3)
                     {
-                        var c = cols[k];
-                        if (c == null) continue;
-                        p.Backing.Add(c); BackingIds.Add(c.GetInstanceID());
+                        var triangle = new Bounds(surface.transform.TransformPoint(vertices[triangles[i]]), Vector3.zero);
+                        triangle.Encapsulate(surface.transform.TransformPoint(vertices[triangles[i + 1]]));
+                        triangle.Encapsulate(surface.transform.TransformPoint(vertices[triangles[i + 2]]));
+                        triangle.Expand(0.02f);
+                        if (!FiniteBounds(triangle) || bounds.Intersects(triangle)) return false;
                     }
                 }
-                catch (Exception e) { Status = "backing colliders not read: " + e.Message; }
+                else
+                {
+                    Vector3 direction; float distance;
+                    if (Physics.ComputePenetration(rider, rider.transform.position, rider.transform.rotation,
+                        surface, surface.transform.position, surface.transform.rotation, out direction, out distance)) return false;
+                }
             }
-            backingVersion++;
-            Say(KindName(kind) + " backing: " + p.Backing.Count + " native colliders kept from the ride");
         }
+        return observed;
+    }
+
+    private static bool PrimitiveBody(Collider collider)
+    {
+        var id = collider.GetInstanceID();
+        var capsule = collider.GetComponent<CapsuleCollider>();
+        if (capsule != null && capsule.GetInstanceID() == id) return true;
+        var box = collider.GetComponent<BoxCollider>();
+        if (box != null && box.GetInstanceID() == id) return true;
+        var sphere = collider.GetComponent<SphereCollider>();
+        if (sphere != null && sphere.GetInstanceID() == id) return true;
+        var mesh = collider.GetComponent<MeshCollider>();
+        return mesh != null && mesh.GetInstanceID() == id && mesh.convex;
+    }
+
+    private static bool FiniteBounds(Bounds bounds)
+    {
+        var centre = bounds.center; var size = bounds.size;
+        return !(float.IsNaN(centre.x) || float.IsNaN(centre.y) || float.IsNaN(centre.z) ||
+            float.IsInfinity(centre.x) || float.IsInfinity(centre.y) || float.IsInfinity(centre.z) ||
+            float.IsNaN(size.x) || float.IsNaN(size.y) || float.IsNaN(size.z) ||
+            float.IsInfinity(size.x) || float.IsInfinity(size.y) || float.IsInfinity(size.z)) &&
+            size.x >= 0f && size.y >= 0f && size.z >= 0f;
     }
 
     // Where a kind's model stands, from its first native block: at (its position), rotation (its full
@@ -868,7 +1117,7 @@ public static class SkateParks
         return outPts;
     }
 
-    private static GameObject Transition(Kind kind, Vector3 origin, Quaternion yawRot, bool solid, out int colliders)
+    private static GameObject Transition(Kind kind, Vector3 origin, Quaternion yawRot, bool solid, out int colliders, bool active = true, List<Mesh> owned = null)
     {
         colliders = 0;
         if (plain == null) plain = Out.Keep(MaterialFor(new SkateModelMaterial()));
@@ -878,32 +1127,37 @@ public static class SkateParks
         var profile = TransitionProfile(kind);
         var halfWidth = (float)(IsQuarter(kind) ? QuarterHalfWidth : kind == Kind.MegaHalfpipe ? 2 * 3.0 : kind == Kind.HalfWallKicker ? HalfLength : 2 * HalfLength);
         var root = new GameObject("skate_park_" + fileStems[(int)kind]);
-        root.transform.position = origin; root.transform.rotation = yawRot;
-        var surface = SurfaceMesh(profile, halfWidth);
-        var visual = new GameObject("VISUAL__transition"); visual.transform.SetParent(root.transform, false);
-        visual.AddComponent<MeshFilter>().sharedMesh = SolidMesh(profile, halfWidth, IsQuarter(kind) ? -(float)QuarterSkin : 0f);
-        visual.AddComponent<MeshRenderer>().sharedMaterial = material;
-        if (solid)
+        try
         {
-            var proxy = new GameObject("COLLISION__transition"); proxy.transform.SetParent(root.transform, false);
-            proxy.AddComponent<MeshCollider>().sharedMesh = surface; proxy.layer = 0; colliders++;
+            root.SetActive(active);
+            root.transform.position = origin; root.transform.rotation = yawRot;
+            var surface = Own(SurfaceMesh(profile, halfWidth), owned);
+            var visual = new GameObject("VISUAL__transition"); visual.transform.SetParent(root.transform, false);
+            visual.AddComponent<MeshFilter>().sharedMesh = Own(SolidMesh(profile, halfWidth, IsQuarter(kind) ? -(float)QuarterSkin : 0f), owned);
+            visual.AddComponent<MeshRenderer>().sharedMaterial = material;
+            if (solid)
+            {
+                var proxy = new GameObject("COLLISION__transition"); proxy.transform.SetParent(root.transform, false);
+                proxy.AddComponent<MeshCollider>().sharedMesh = surface; proxy.layer = 0; colliders++;
+            }
+            if (IsQuarter(kind)) colliders += Fittings(kind, root, material, solid, owned);
+            if (kind == Kind.MegaHalfpipe) MegaFittings(root, material, owned);
+            return root;
         }
-        if (IsQuarter(kind)) colliders += Fittings(kind, root, material, solid);
-        if (kind == Kind.MegaHalfpipe) MegaFittings(root, material);
-        return root;
+        catch { root.SetActive(false); UnityEngine.Object.Destroy(root); throw; }
     }
 
     // The coping, a round metal pipe along the lip with round ends and a capsule collider to grind
     // and stall on; the large one's apron, a level closed plate beside its entry. No guard rail: the
     // deck stays open.
-    private static int Fittings(Kind kind, GameObject root, Material material, bool solid)
+    private static int Fittings(Kind kind, GameObject root, Material material, bool solid, List<Mesh> owned = null)
     {
         double r, h, back; QuarterSize(kind, out r, out h, out back);
         float w = (float)QuarterHalfWidth, lip = (float)(QuarterFoot + r), radius = (float)CopingRadius;
         var added = 0;
         var coping = new GameObject("VISUAL__coping"); coping.transform.SetParent(root.transform, false);
         coping.transform.localPosition = new Vector3(0f, (float)h, lip);
-        coping.AddComponent<MeshFilter>().sharedMesh = Pipe(w, radius, 16);
+        coping.AddComponent<MeshFilter>().sharedMesh = Own(Pipe(w, radius, 16), owned);
         coping.AddComponent<MeshRenderer>().sharedMaterial = material;
         if (solid)
         {
@@ -916,11 +1170,11 @@ public static class SkateParks
         var apron = new List<Vector2> { new Vector2(-1.4f, 0f), new Vector2(1.4f, 0f) };
         var plate = new GameObject("VISUAL__apron"); plate.transform.SetParent(root.transform, false);
         plate.transform.localPosition = new Vector3(2.9f, 0f, 0f);
-        plate.AddComponent<MeshFilter>().sharedMesh = SolidMesh(apron, 1.5f, -(float)QuarterSkin);
+        plate.AddComponent<MeshFilter>().sharedMesh = Own(SolidMesh(apron, 1.5f, -(float)QuarterSkin), owned);
         plate.AddComponent<MeshRenderer>().sharedMaterial = material;
         if (!solid) return added;
         var floor = new GameObject("COLLISION__apron"); floor.transform.SetParent(plate.transform, false);
-        floor.AddComponent<MeshCollider>().sharedMesh = SurfaceMesh(apron, 1.5f); floor.layer = 0;
+        floor.AddComponent<MeshCollider>().sharedMesh = Own(SurfaceMesh(apron, 1.5f), owned); floor.layer = 0;
         return added + 1;
     }
 
@@ -952,7 +1206,7 @@ public static class SkateParks
     }
 
     // Coping at both lips, and a guard rail 1 m high along the back of each deck; the sides stay open.
-    private static void MegaFittings(GameObject root, Material material)
+    private static void MegaFittings(GameObject root, Material material, List<Mesh> owned = null)
     {
         float w = 6f, deck = (float)(MegaRadius + MegaLift - Lift), lip = (float)(MegaFlat / 2 + MegaRadius), back = (float)(MegaFlat / 2 + MegaRadius + MegaDeck) - 0.05f;
         var bars = new List<Vector3[]>();
@@ -963,7 +1217,7 @@ public static class SkateParks
             for (var x = -w; x <= w + 0.01f; x += 3f) bars.Add(new[] { new Vector3(x, deck, side * back), new Vector3(x, deck + 1f, side * back) });
         }
         var metal = new GameObject("VISUAL__rails"); metal.transform.SetParent(root.transform, false);
-        metal.AddComponent<MeshFilter>().sharedMesh = Bars(bars, (float)RailRadius);
+        metal.AddComponent<MeshFilter>().sharedMesh = Own(Bars(bars, (float)RailRadius), owned);
         metal.AddComponent<MeshRenderer>().sharedMaterial = material;
     }
 
@@ -1000,7 +1254,7 @@ public static class SkateParks
     public const float EntrySlope = 8f, EntryMost = 0.6f, EntryLook = 0.4f;
     public static float LastEntryDrop = -1f;
     public const float FunboxEnd = 4.4f;
-    private static int Entry(GameObject root, float entryForward, float outward)
+    private static int Entry(GameObject root, float entryForward, float outward, List<Mesh> owned = null)
     {
         var t = root.transform;
         var at = t.position + t.rotation * new Vector3(0f, 0f, entryForward);
@@ -1019,7 +1273,7 @@ public static class SkateParks
         var profile = outward < 0f
             ? new List<Vector2> { new Vector2(entryForward - length, -drop - 0.03f), new Vector2(entryForward, 0f) }
             : new List<Vector2> { new Vector2(entryForward, 0f), new Vector2(entryForward + length, -drop - 0.03f) };
-        var surface = SurfaceMesh(profile, (float)HalfLength);
+        var surface = Own(SurfaceMesh(profile, (float)HalfLength), owned);
         var wedge = new GameObject("COLLISION__entry"); wedge.transform.SetParent(t, false);
         wedge.AddComponent<MeshCollider>().sharedMesh = surface; wedge.layer = 0;
         if (plain == null) plain = MaterialFor(new SkateModelMaterial());
@@ -1166,20 +1420,21 @@ public static class SkateParks
         }
         if (riding && BackingIds.Count > 0)
         {
-            if (isolatedVersion == backingVersion) return;
-            isolatedVersion = backingVersion;
-            var added = 0;
-            foreach (var p in placed)
-                foreach (var c in p.Backing)
-                {
-                    int id;
-                    try { if (c == null) continue; id = c.GetInstanceID(); } catch (Exception) { continue; }
-                    if (!isolatedIds.Add(id)) continue;
-                    foreach (var r in riderColliders) Physics.IgnoreCollision(r, c, true);
-                    isolated.Add(c); added++;
-                }
-            if (added > 0) Say("MEGA isolation: " + added + " backing colliders ignored by the rider's " + riderColliders.Length);
-            if (!riding || isolated.Count == 0) return;
+            if (isolatedVersion != backingVersion)
+            {
+                var added = 0;
+                foreach (var p in placed)
+                    foreach (var c in p.Backing)
+                    {
+                        int id;
+                        try { if (c == null) continue; id = c.GetInstanceID(); } catch (Exception) { continue; }
+                        if (isolatedIds.Add(id)) { isolated.Add(c); added++; }
+                        foreach (var r in riderColliders) if (r != null) Physics.IgnoreCollision(r, c, true);
+                    }
+                isolatedVersion = backingVersion;
+                if (added > 0) Say("MEGA isolation: " + added + " backing colliders ignored by the rider's " + riderColliders.Length);
+            }
+            if (isolated.Count == 0) return;
         }
         if (isolated.Count == 0 || now < nextRestore) return;
         nextRestore = now + 0.1f;
@@ -1229,29 +1484,31 @@ public static class SkateParks
         if (CopingIds.Count == 0) return false;
         try { var c = hit.collider; return c != null && CopingIds.Contains(c.GetInstanceID()); } catch (Exception) { return false; }
     }
-    private static void KeepRamp(Placed p, GameObject root)
+    private static Mesh Own(Mesh mesh, List<Mesh> owned)
     {
-        try
+        if (owned != null) owned.Add(mesh);
+        return mesh;
+    }
+
+    private static void ReadRamp(Placed p, GameObject root)
+    {
+        foreach (var collider in root.GetComponentsInChildren<Collider>(true))
         {
-            var cols = root.GetComponentsInChildren<Collider>(true);
-            for (var i = 0; i < cols.Length; i++)
-            {
-                var c = cols[i];
-                if (c == null) continue;
-                var name = c.gameObject.name;
-                if (name != "COLLISION__transition" && name != "COLLISION__coping") continue;
-                var id = c.GetInstanceID();
-                p.Ramp.Add(id); RampIds.Add(id);
-                if (name == "COLLISION__coping") CopingIds.Add(id);
-            }
+            if (collider == null) continue;
+            var name = collider.gameObject.name;
+            if (name != "COLLISION__transition" && name != "COLLISION__coping") continue;
+            var id = collider.GetInstanceID(); p.Ramp.Add(id);
+            if (name == "COLLISION__coping") p.Coping.Add(id);
         }
-        catch (Exception e) { Status = "ramp colliders not read: " + e.Message; }
+        if (p.Ramp.Count == 0) throw new InvalidOperationException("The park riding surface is unavailable.");
     }
 
     private static void Remove(Placed p)
     {
+        if (p.Root != null) p.Root.SetActive(false);
+        Colliders -= p.ColliderCount; p.ColliderCount = 0;
         foreach (var id in p.Ramp) { RampIds.Remove(id); CopingIds.Remove(id); }
-        p.Ramp.Clear();
+        p.Ramp.Clear(); p.Coping.Clear();
         if (p.Backing.Count > 0)
         {
             foreach (var c in p.Backing) { try { if (c != null) BackingIds.Remove(c.GetInstanceID()); } catch (Exception) { } }
@@ -1260,6 +1517,8 @@ public static class SkateParks
         foreach (var r in p.Hidden) { try { if (r != null) r.enabled = true; } catch (Exception) { } HiddenRenderers--; }
         p.Hidden.Clear();
         if (p.Root != null) { try { UnityEngine.Object.Destroy(p.Root); } catch (Exception) { } p.Root = null; }
+        foreach (var mesh in p.Meshes) if (mesh != null) UnityEngine.Object.Destroy(mesh);
+        p.Meshes.Clear();
     }
 
     public static void Clear()
@@ -1338,6 +1597,10 @@ public static class SkateParks
         return flat;
     }
 
+    private static bool Alive(BuildingBlock b)
+    {
+        try { return b != null && b.gameObject != null && b.gameObject.activeInHierarchy; } catch (Exception) { return false; }
+    }
     private static long Cell(Vector3 p) { return ((long)Math.Floor(p.x) & 0xFFFFF) | (((long)Math.Floor(p.y) & 0xFFFFF) << 20) | (((long)Math.Floor(p.z) & 0xFFFFF) << 40); }
     private static IEnumerable<int> Near(Dictionary<long, List<int>> cells, Vector3 at)
     {
