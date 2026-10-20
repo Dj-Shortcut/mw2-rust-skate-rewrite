@@ -438,6 +438,9 @@ public class SkateRig : MonoBehaviour
         if (grinding) Shortcut.RustMod.SkateRider.GrindDeck(SkateRide.GrindKind, out gp, out gr, out gc);
         SkateBoard.GrindPitch += ((float)gp - SkateBoard.GrindPitch) * SkateRide.Clamp(frame * 12f, 0f, 1f);
         SkateBoard.GrindRoll += ((float)gr - SkateBoard.GrindRoll) * SkateRide.Clamp(frame * 12f, 0f, 1f);
+        var third = SkateRide.On && LocalT != null && (SkateCamera.Chase || SkateCamera.Fixed);
+        var t1 = SkateClock.Now(); RiderRig.Look(third); SkateClock.Add(SkateClock.Look, t1);
+        RiderRig.Prepare(frame);
         // An ollie pitches the board: nose up as it climbs, level at the top, nose a little down as
         // it falls; not held in a grab or a handplant, where the hands have the board.
         var ollie = SkateRide.On && SkateRide.Mode == RideMode.Air && SkateRide.Jumped && !SkateRide.Grabbing && !SkateRide.Handplant;
@@ -456,6 +459,14 @@ public class SkateRig : MonoBehaviour
         // A grab pulls the board up further, to the rider's hands, as the body folds into it.
         if (SkateRide.On && SkateRide.Mode == RideMode.Air) rise += SkateBoard.GrabRise * SkateBoard.GrabFold;
         SkateBoard.Pop += (rise - SkateBoard.Pop) * SkateRide.Clamp(frame * 18f, 0f, 1f);
+        var at = LocalT != null ? SkateBoard.Contact(LocalT) : Vector3.zero;
+        if (SkateRide.On && LocalT != null)
+        {
+            var feet = at; var up = SkateRide.ViewNormal; var tilted = up;
+            SkateBoard.Tilt(ref feet, ref tilted);
+            var t2 = SkateClock.Now(); RiderRig.Frame(feet, up, !third, frame); SkateClock.Add(SkateClock.Rider, t2);
+        }
+        // Held board placement is produced by this frame's solved pose.
         if (board != null)
         {
             var t0 = SkateClock.Now();
@@ -463,15 +474,7 @@ public class SkateRig : MonoBehaviour
             catch (Exception e) { Say("board update threw " + e.GetType().Name + ": " + e.Message); board = null; }
             SkateClock.Add(SkateClock.Board, t0);
         }
-        var third = SkateRide.On && LocalT != null && (SkateCamera.Chase || SkateCamera.Fixed);
-        var t1 = SkateClock.Now(); RiderRig.Look(third); SkateClock.Add(SkateClock.Look, t1);
         if (!SkateRide.On || LocalT == null) return;
-        var at = SkateBoard.Contact(LocalT);
-        // The rider stands on the deck's middle where the pitch puts it, but the body keeps the
-        // unpitched up; the module puts the feet on the pitched deck.
-        var feet = at; var up = SkateRide.ViewNormal; var tilted = up;
-        SkateBoard.Tilt(ref feet, ref tilted);
-        var t2 = SkateClock.Now(); RiderRig.Frame(feet, up, !third, frame); SkateClock.Add(SkateClock.Rider, t2);
         var t3 = SkateClock.Now(); SkateCamera.Apply(at - Vector3.up * SkateBoard.Pop); SteadyView(); SkateClock.Add(SkateClock.Camera, t3);
         try { SkateWatch.Frame(LocalT, board, now); }
         catch (Exception e) { if (!watchFailed) { watchFailed = true; Say("watch threw " + e.GetType().Name + ": " + e.Message); } }
