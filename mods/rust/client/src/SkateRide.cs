@@ -303,6 +303,7 @@ public static class SkateRide
 
     public static void Dismount(string reason)
     {
+        SkateRig.ReleaseRootProxy();
         if (Mode == RideMode.Off) return;
         Mode = RideMode.Off; Pump = default(SkatePumpState); PumpHeld = RevertLeft = 0f; Stalling = false; OffReason = reason; Grab = SkateGrabKind.None; Manual = NoseManual = false;
         SkateKeys.EndStep();
@@ -381,7 +382,7 @@ public static class SkateRide
             var sign = Speed < 0f ? -1f : 1f;
             lastPos = pos; lastDir = pace > 0.0001f ? flat / pace * sign : Dir(Yaw); lastSpeed = pace * sign; hasLast = true; Steps++;
             pastPos[pastNext] = pos; pastAt[pastNext] = now; pastNext = (pastNext + 1) % PastSteps; if (pastCount < PastSteps) pastCount++;
-            var target = Mode == RideMode.Ground ? Normal : Vector3.up;
+            var target = Mode == RideMode.Air ? ViewNormal : Mode == RideMode.Ground ? Normal : Vector3.up;
             ViewNormal = (ViewNormal + (target - ViewNormal) * 0.3f).normalized;
             SkateKeys.EndStep();
         }
@@ -874,6 +875,7 @@ public static class SkateRide
 
     private static void TakeOff(bool jumped, float vertical)
     {
+        if (Mode == RideMode.Ground) ViewNormal = Normal;
         // Read while the board still rolls: which end leads decides which way is frontside.
         spinSide = (TailFirst ? -1f : 1f) * StanceSign;
         Enter(RideMode.Air);
@@ -1348,6 +1350,7 @@ public class LateDriver : MonoBehaviour
     {
         Calls++;
         var t0 = SkateClock.Now(); SkateRide.Step(); SkateClock.Add(SkateClock.Ride, t0);
+        SkateRig.SyncRootProxy(0);
     }
 
     private void LateUpdate()

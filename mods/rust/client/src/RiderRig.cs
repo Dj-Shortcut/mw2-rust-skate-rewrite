@@ -48,7 +48,8 @@ public static class RiderRig
     // push, the air, a grab, a bail) the joints ease over, in the board's own frame so that a turning
     // or tipping board does not leave them behind.
     public const float EaseSeconds = 0.07f;
-    private static bool pinLeft, pinRight;
+    private static bool pinLeft, pinRight, pinHips;
+    private static float catchBlend;
     private static float chestLead;
     private const float SideBendShare = 0.6f;
     private const int PelvisJ = 0, LHipJ = 1, RHipJ = 2, LKneeJ = 3, RKneeJ = 4, LAnkleJ = 5, RAnkleJ = 6, LToeJ = 7, RToeJ = 8, ChestJ = 9, NeckJ = 10, HeadJ = 11,
@@ -326,6 +327,7 @@ public static class RiderRig
 
     public static void Unbind()
     {
+        ResetPresentation();
         try { Show(false, true); } catch (Exception) { }
         // What cannot be put back now is kept, and tried again from the next frame on.
         HeldRestore(false);
@@ -496,6 +498,33 @@ public static class RiderRig
         return root + axis * along + side * (float)Math.Sqrt(h2 > 0f ? h2 : 0f);
     }
 
+    private static void ResetPresentation()
+    {
+        grabSince = -1f; catchBlend = plantBlend = chestLead = crouchSpeed = 0f;
+        pinLeft = pinRight = pinHips = false;
+        motion = default(SkateRiderMotionState); easedAt = -99f;
+        SkateBoard.GrabFold = SkateBoard.Plant = 0f; SkateBoard.Held = false;
+    }
+
+    public static void Prepare(float frameSeconds)
+    {
+        SkateBoard.Held = false;
+        if (!SkateRide.On) { ResetPresentation(); return; }
+        var now = Time.realtimeSinceStartup;
+        var grab = SkateRide.Mode == RideMode.Air ? SkateRide.Grab : SkateGrabKind.None;
+        if (grab == SkateGrabKind.None) { grabSince = -1f; grabHold = -1f; } else if (grabSince < 0f) grabSince = now;
+        var held = grab == SkateGrabKind.None ? 0f : grabHold >= 0f ? grabHold : now - grabSince;
+        var fold = grab == SkateGrabKind.None ? 0f : SkateRide.Clamp(held / (float)SkateRider.GrabIn, 0f, 1f);
+        fold = fold * fold * (3f - 2f * fold);
+        SkateBoard.GrabFold += (fold * (0.8f + 0.2f * SkateRide.Clamp(held / 0.6f, 0f, 1f)) - SkateBoard.GrabFold) * SkateRide.Clamp(frameSeconds * 20f, 0f, 1f);
+        SkateBoard.Plant = SkateRide.FootPlanted ? SkateRide.Clamp((SkateRide.PlantedUntil - now) / SkateRide.PlantSeconds * 1.5f, 0f, 1f) * SkateRide.Clamp((now - (SkateRide.PlantedUntil - SkateRide.PlantSeconds)) / PlantIn, 0f, 1f) : 0f;
+        var plantWant = SkateRide.Handplant && !SkateRide.HandplantDown ? 1f : 0f;
+        var plantStep = SkateRide.Clamp(frameSeconds / PlantSeconds, 0f, 1f);
+        plantBlend = SkateRide.Mode == RideMode.Bail ? 0f : SkateRide.Clamp(plantBlend + SkateRide.Clamp(plantWant - plantBlend, -plantStep, plantStep), 0f, 1f);
+        var catching = SkateRide.Mode == RideMode.Air && SkateRide.VSpeed <= 0f && !SkateRide.Rotating && !SkateRide.Grabbing && !SkateRide.FootPlanted;
+        catchBlend = catching ? catchBlend + (1f - catchBlend) * (1f - (float)Math.Exp(-frameSeconds / EaseSeconds)) : 0f;
+    }
+
     public static void Frame(Vector3 feet, Vector3 up, bool legsOnly, float frameSeconds)
     {
         if (!Bound || failed) return;
@@ -546,33 +575,21 @@ public static class RiderRig
             var lean = SkateRide.Clamp(SkateRide.Trick.Switch ? -SkateRide.Lean : SkateRide.Lean, -(float)SkatePose.MaximumLean, (float)SkatePose.MaximumLean);
             var speed = Math.Min((float)SkateMotion.MaximumGroundSpeed, Math.Abs(SkateRide.Speed));
             var grab = mode == RideMode.Air ? SkateRide.Grab : SkateGrabKind.None;
-            if (grab == SkateGrabKind.None) { grabSince = -1f; grabHold = -1f; } else if (grabSince < 0f) grabSince = now;
-            // How far the grab has folded in, eased as the pose eases it; the board's rise and tweak follow it.
-            var held = grab == SkateGrabKind.None ? 0f : grabHold >= 0f ? grabHold : now - grabSince;
-            var fold = grab == SkateGrabKind.None ? 0f : SkateRide.Clamp(held / (float)SkateRider.GrabIn, 0f, 1f);
-            fold = fold * fold * (3f - 2f * fold);
-            SkateBoard.GrabFold += (fold * (0.8f + 0.2f * SkateRide.Clamp(held / 0.6f, 0f, 1f)) - SkateBoard.GrabFold) * SkateRide.Clamp(frameSeconds * 20f, 0f, 1f);
-            // The foot plant comes on over a few frames, not in one: the board kicks up and the foot
-            // goes down as fast as a kick, not at once.
-            var plant = SkateRide.FootPlanted ? SkateRide.Clamp((SkateRide.PlantedUntil - now) / SkateRide.PlantSeconds * 1.5f, 0f, 1f) * SkateRide.Clamp((now - (SkateRide.PlantedUntil - SkateRide.PlantSeconds)) / PlantIn, 0f, 1f) : 0f;
+            var plant = SkateBoard.Plant;
             // The chest ahead of a spin in the air; on the ground, wound up against the spin the
             // left stick asks for while the right stick is held back for the pop.
             var leadWant = mode == RideMode.Air ? SkateRide.SpinLead
                 : mode == RideMode.Ground && SkateKeys.Charging && SkateKeys.Spin != 0f ? SkateKeys.Spin * SkateRide.SpinSide * SkateRide.SpinWindUp : 0f;
             chestLead += (SkateRide.Clamp(leadWant, -(float)SkateRider.MaximumChestTurn, (float)SkateRider.MaximumChestTurn) - chestLead) * SkateRide.Clamp(frameSeconds * 10f, 0f, 1f);
-            var plantWant = SkateRide.Handplant && !SkateRide.HandplantDown ? 1f : 0f;
-            var plantStep = SkateRide.Clamp(frameSeconds / PlantSeconds, 0f, 1f);
-            plantBlend = SkateRide.Clamp(plantBlend + SkateRide.Clamp(plantWant - plantBlend, -plantStep, plantStep), 0f, 1f);
-            if (mode == RideMode.Bail || !SkateRide.On) plantBlend = 0f;
             var handplant = PlantBlend;
-            SkateBoard.Plant = plant;
             // The ollie's front foot sliding up toward the nose: the module slides the foot that leads
             // in the way of travel toward that end, which rolling tail first is the back foot toward
             // the tail, the mirror of a fakie ollie. No slide there until the module slides the
             // stance's front foot toward the stance's nose whichever end leads (asked in #337).
-            var noseSlide = mode == RideMode.Air && SkateRide.Jumped && !SkateRide.Grabbing && !SkateRide.TailFirst ? SkateRide.Clamp(1f - SkateRide.VSpeed / SkateRide.OlliePop, 0f, 1f) : 0f;
+            var noseSlide = mode == RideMode.Air && SkateRide.Jumped && !SkateRide.Grabbing && !SkateRide.TailFirst ? SkateRide.Clamp(1f - SkateRide.VSpeed / SkateRide.OlliePop, 0f, 1f) * (1f - catchBlend) : 0f;
+            var pushing = mode == RideMode.Ground && SkateRide.PushPhase > 0f;
             var input = new SkateRiderInput(new SkateVector(plane.x, plane.y, plane.z), new SkateVector(fx, fy, fz), new SkateVector(ux, uy, uz), SkateRide.Goofy ? SkateStance.Goofy : SkateStance.Regular, SkateRide.TailFirst,
-                speed, lean, Crouch, mode == RideMode.Air, mode == RideMode.Ground && SkateRide.PushPhase > 0f, SkateRide.Clamp(SkateRide.PushPhase, 0f, 1f),
+                speed, lean, Crouch, mode == RideMode.Air, pushing, SkateRide.Clamp(SkateRide.PushPhase, 0f, 1f),
                 SkateRide.FlipDeg, grab, mode == RideMode.Bail, SkateKeys.LookYaw % 360f, SkatePose.FootLift - AnkleHeight,
                 DeckTop, mode == RideMode.Bail ? SkateRide.Clamp((now - SkateRide.ModeAt) / SkateRide.BailSeconds, 0f, 1f) : 0f,
                 SkateRide.PushLead, plant, grabHold >= 0f ? grabHold : grabSince < 0f ? 0f : now - grabSince, handplant,
@@ -581,20 +598,16 @@ public static class RiderRig
             SkateRiderPose pose; string error;
             if (!SkateRider.TryCreate(Rig, input, out pose, out error))
             {
-                // A push the legs cannot reach (the module plants the leading foot 0.6 m ahead of the
-                // deck's middle, at their limit): the frame is shown without the push rather than
-                // not at all, so the rider never stands still for a frame while the board rolls on.
-                var pushed = mode == RideMode.Ground && SkateRide.PushPhase > 0f;
-                var withoutPush = pushed ? new SkateRiderInput(input.BoardPosition, input.BoardForward, input.BoardUp, input.Stance, input.Switch,
+                var withoutPush = pushing ? new SkateRiderInput(input.BoardPosition, input.BoardForward, input.BoardUp, input.Stance, input.Switch,
                     speed, lean, Crouch, false, false, 0, SkateRide.FlipDeg, grab, false, SkateKeys.LookYaw % 360f, SkatePose.FootLift - AnkleHeight,
                     DeckTop, 0, false, plant, 0, handplant, SkateRide.Clamp(SkateBoard.PitchDegrees, -40f, 40f) * Math.PI / 180.0, 0, chestLead) : input;
-                if (!pushed || !SkateRider.TryCreate(Rig, withoutPush, out pose, out error))
+                if (!pushing || !SkateRider.TryCreate(Rig, withoutPush, out pose, out error))
                 {
                     if (Refusals++ == 0 || error != Error) Say("pose refused: " + error);
                     Error = error; return;
                 }
                 if (WithoutPush++ == 0 || error != Error) Say("pose shown without the push: " + error);
-                Error = error;
+                Error = error; pushing = false;
             }
             Posed = pose; PosedPlane = plane;
             // Secondary motion: the pelvis springs and the shoulders and hands lag a little behind
@@ -653,7 +666,8 @@ public static class RiderRig
             var footDown = mode == RideMode.Ground && SkateRide.PushPhase > (float)SkateRider.PushDown && SkateRide.PushPhase < (float)SkateRider.PushUp;
             var trailingIsLeft = SkateRide.Goofy != SkateRide.TailFirst;
             var pushLeft = SkateRide.PushLead ? !trailingIsLeft : trailingIsLeft;
-            pinLeft = footDown && pushLeft; pinRight = footDown && !pushLeft;
+            pinHips = pushing;
+            pinLeft = pushing && (!pushLeft || footDown); pinRight = pushing && (pushLeft || footDown);
             Shown = pose;
             Ease(pose, plane, toToes, upV, new Vector3((float)fx, (float)fy, (float)fz), now, frameSeconds);
             Shape(upV);
@@ -680,7 +694,12 @@ public static class RiderRig
             var local = new Vector3(Vector3.Dot(w, x), Vector3.Dot(w, y), Vector3.Dot(w, z));
             // A foot on the ground is where the module puts it, at once: eased in the board's frame
             // it would trail the board and slide along the ground.
-            var pinned = (pinLeft && (i == LAnkleJ || i == LToeJ)) || (pinRight && (i == RAnkleJ || i == RToeJ));
+            // The solved hips must reach a planted foot; easing them independently can break that contact.
+            // The trunk goes with the hips in a push: the module turns the chest with the pelvis, and
+            // a chest eased behind pinned hips would untwist the spine for a moment each stroke.
+            var pinned = (pinHips && (i == PelvisJ || i == LHipJ || i == RHipJ || i == PelvisForwardJ || i == PelvisUpJ ||
+                    i == LShoulderJ || i == RShoulderJ || i == ChestForwardJ || i == ChestUpJ)) ||
+                (pinLeft && (i == LAnkleJ || i == LToeJ)) || (pinRight && (i == RAnkleJ || i == RToeJ));
             eased[i] = pinned ? local : eased[i] + (local - eased[i]) * share;
             var back = x * eased[i].x + y * eased[i].y + z * eased[i].z;
             joint[i] = i < Points ? origin + back : back.sqrMagnitude > 0.0001f ? back.normalized : fresh;

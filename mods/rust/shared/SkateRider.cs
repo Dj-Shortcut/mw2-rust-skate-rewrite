@@ -203,7 +203,7 @@ namespace Shortcut.RustMod
             double speed = Math.Min(1, input.Speed / PoseSpeed);
             double lean = input.LeanDegrees * Math.PI / 180;
             double turn = pushing ? PushTurn(input.PushPhase) : 0;
-            double swing = pushing ? Math.Sin(2 * Math.PI * input.PushPhase) : 0;
+            double swing = 0;
             double bail = input.Bailed ? input.BailPhase : 0;
 
             // In a flip the feet come up off the deck and apart, knees tucked, so the board turns over
@@ -261,11 +261,13 @@ namespace Shortcut.RustMod
                 var rest = input.BoardPosition + travel * SkatePose.FootOffset;
                 leadAnkle = PushFoot(rest, input.BoardPosition + travel * (LeadPlant - PushPlant), travel, pushSide, up, input.PushPhase, input.GroundDrop, out grounded, out heel);
                 leadToe = RidingLeadToe * Math.PI / 180 + (Math.PI / 2 - RidingLeadToe * Math.PI / 180) * grounded;
+                swing = StrokeSwing(leadAnkle, rest + up * SkatePose.FootLift, travel);
             }
             else if (pushing)
             {
                 backAnkle = PushFoot(input.BoardPosition - travel * SkatePose.FootOffset, input.BoardPosition, travel, facing, up, input.PushPhase, input.GroundDrop, out grounded, out heel);
                 backToe = backToe + (Math.PI / 2 - backToe) * grounded;
+                swing = StrokeSwing(backAnkle, backDeck, travel);
             }
             if (input.FootPlant > 0 && input.Airborne && !input.Bailed)
             {
@@ -294,7 +296,9 @@ namespace Shortcut.RustMod
 
             double balance = input.Bailed ? 0 : 0.04 + 0.03 * input.Crouch;
             double pelvisLean = (lean * side - balance) * leanScale;
-            double pelvisYaw = input.Bailed ? bailYaw : (RidingPelvisYaw + (PushPelvisYaw - RidingPelvisYaw) * turn) * yawScale * Math.PI / 180;
+            // The hips open as the pushing foot goes back and close as it comes forward, so the
+            // stroke runs through the pelvis and not only through the leg.
+            double pelvisYaw = input.Bailed ? bailYaw : (RidingPelvisYaw + (PushPelvisYaw - RidingPelvisYaw) * turn + PushHipTwist * swing * turn) * yawScale * Math.PI / 180;
             if (grabbing) pelvisYaw = 0;
             var pelvisFacing = facing * Math.Cos(pelvisYaw) + travel * Math.Sin(pelvisYaw);
             var pelvisUp = up * Math.Cos(pelvisLean) + facing * Math.Sin(pelvisLean);
@@ -313,6 +317,8 @@ namespace Shortcut.RustMod
                 centre += right * (rig.PelvisHeight * Math.Sin(lean) * (grabbing ? 0.1 : 0.45)) + travel * (0.035 * speed);
                 centre -= facing * (rig.SpineLength * balance * (grabbing ? 3 : 1));
                 centre += facing * (PushSide * turn);
+                // The hips ride a little toward the way of travel as the foot sweeps back.
+                centre += travel * (PushHipDrive * swing * turn);
                 if (namedGrab) centre += forward * grip.LegShift - facing * grip.BodyShift;
                 // On a pitched deck the weight goes over the end that is down.
                 centre -= travel * (PitchWeight * Math.Sin(input.DeckPitch));
@@ -404,7 +410,9 @@ namespace Shortcut.RustMod
             double armDown = armLength * (0.84 - 0.22 * crouch - 0.12 * carving - 0.34 * air);
             double armAhead = armLength * (0.14 + 0.12 * crouch + 0.05 * speed);
             var along = travel * (armLength * (backIsLeft ? -1 : 1));
-            var counterSwing = chestForward * (armLength * PushSwing * swing * (backIsLeft ? -1 : 1));
+            // The arm opposite the pushing foot goes forward as that foot goes back; a mongo push
+            // is the other foot, so the other arm.
+            var counterSwing = chestForward * (armLength * PushSwing * swing * ((mongo ? !backIsLeft : backIsLeft) ? -1 : 1));
             var leftTarget = leftShoulder - chestRight * armOut + chestForward * armAhead - up * armDown
                 + along * (backIsLeft ? 0.05 : 0.10) + counterSwing;
             var rightTarget = rightShoulder + chestRight * armOut + chestForward * armAhead - up * armDown
@@ -462,7 +470,7 @@ namespace Shortcut.RustMod
         // The leading foot's push comes down LeadPlant ahead of the board's middle, a little ahead
         // of its own end, and the weight shifts LeadPushWeight of the way to the standing foot.
         public const double LeadPlant = 0.25, LeadPushWeight = 0.12;
-        private const double PushHeel = 0.07;
+        private const double PushHeel = 0.07, PushHipTwist = 8, PushHipDrive = 0.03;
         private const double GrabRoll = 0.4, GrabFoldLimit = 1.0, GrabTuckMargin = 0.05, PlantDrop = 0.3, GrabBackLimit = 0.55, HeelTurn = 1.2;
         private const double HeelTurnSign = 1;
         private const double FlipTuck = 0.14, FlipSpread = 0.05, PitchWeight = 0.18, OllieSlide = 0.13;
@@ -713,6 +721,15 @@ namespace Shortcut.RustMod
                 if (second >= initial && second <= GrabFoldLimit) crossing = Math.Min(crossing, second);
             }
             return double.IsInfinity(crossing) ? best : crossing;
+        }
+
+        // Where the pushing foot is in its stroke, from -1 (planted ahead) to 1 (swept back), 0 on
+        // its place on the deck: read from the foot itself, so the arms and hips follow the contact
+        // and not a clock that has no relation to it.
+        private static double StrokeSwing(SkateVector foot, SkateVector rest, SkateVector travel)
+        {
+            double back = SkateVector.Dot(rest - foot, travel) / ((PushPlant + PushSweep) * 0.65);
+            return Math.Max(-1, Math.Min(1, back));
         }
 
         // The pushing foot through a stroke: from its resting spot on the deck (rest) down to the
