@@ -303,6 +303,7 @@ public static class SkateRide
 
     public static void Dismount(string reason)
     {
+        SkateRig.ReleaseRootProxy();
         if (Mode == RideMode.Off) return;
         Mode = RideMode.Off; Pump = default(SkatePumpState); PumpHeld = RevertLeft = 0f; Stalling = false; OffReason = reason; Grab = SkateGrabKind.None; Manual = NoseManual = false;
         SkateKeys.EndStep();
@@ -1348,6 +1349,7 @@ public class LateDriver : MonoBehaviour
     {
         Calls++;
         var t0 = SkateClock.Now(); SkateRide.Step(); SkateClock.Add(SkateClock.Ride, t0);
+        SkateRig.SyncRootProxy(0);
     }
 
     private void LateUpdate()
