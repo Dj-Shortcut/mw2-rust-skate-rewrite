@@ -481,7 +481,15 @@ public class SkateRig : MonoBehaviour
     }
     private static bool watchFailed;
 
-    private void OnDisable() { SkateRide.Dismount("the skate rig is disabled"); ReleaseRootProxy(); }
+    // Disabled without being destroyed, Update no longer runs the cleanup after the ride: the item
+    // put away for it is taken in hand again here, as OnDestroy does.
+    private void OnDisable()
+    {
+        SkateRide.Dismount("the skate rig is disabled");
+        try { Unholster(); }
+        catch (Exception e) { Out.Err("HELD restore while the rig is disabled threw " + e.GetType().Name + ": " + e.Message); }
+        ReleaseRootProxy();
+    }
 
     private void OnDestroy()
     {
