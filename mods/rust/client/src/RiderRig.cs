@@ -695,7 +695,10 @@ public static class RiderRig
             // A foot on the ground is where the module puts it, at once: eased in the board's frame
             // it would trail the board and slide along the ground.
             // The solved hips must reach a planted foot; easing them independently can break that contact.
-            var pinned = (pinHips && (i == PelvisJ || i == LHipJ || i == RHipJ || i == PelvisForwardJ || i == PelvisUpJ)) ||
+            // The trunk goes with the hips in a push: the module turns the chest with the pelvis, and
+            // a chest eased behind pinned hips would untwist the spine for a moment each stroke.
+            var pinned = (pinHips && (i == PelvisJ || i == LHipJ || i == RHipJ || i == PelvisForwardJ || i == PelvisUpJ ||
+                    i == LShoulderJ || i == RShoulderJ || i == ChestForwardJ || i == ChestUpJ)) ||
                 (pinLeft && (i == LAnkleJ || i == LToeJ)) || (pinRight && (i == RAnkleJ || i == RToeJ));
             eased[i] = pinned ? local : eased[i] + (local - eased[i]) * share;
             var back = x * eased[i].x + y * eased[i].y + z * eased[i].z;
