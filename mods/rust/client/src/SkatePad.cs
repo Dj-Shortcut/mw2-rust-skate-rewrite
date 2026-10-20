@@ -43,7 +43,7 @@ public static class SkatePad
     private static int pressed;
     private static long clock, beat;
     private static float nextOpen, beatAt;
-    private static bool primed, failed, said, fed, rightSuspended;
+    private static bool primed, failed, said, fed, rightSuspended, wasGrabbing;
 
     private static void Say(string m) { Out.Say("PAD " + m); }
 
@@ -109,7 +109,7 @@ public static class SkatePad
 
     private static void Lost()
     {
-        primed = rightSuspended = false; LeftSweep = leftAngle = 0f; leftOnRim = false; sweepFromUs = 0;
+        primed = rightSuspended = wasGrabbing = false; LeftSweep = leftAngle = 0f; leftOnRim = false; sweepFromUs = 0;
         Shared = false; Buttons = 0; LeftX = LeftY = RightX = RightY = LeftTrigger = RightTrigger = 0f;
         poppedCount = 0; BodyVarialDegrees = 0f; Charging = Manual = NoseManual = false; Charge = 0f; pressed = 0; flick = default(SkateFlickState);
     }
@@ -159,6 +159,10 @@ public static class SkatePad
         if (seconds > MostCatchUp) seconds = MostCatchUp;
         var air = SkateRide.Mode == RideMode.Air;
         var grabbing = air && (LeftTrigger > Pulled || RightTrigger > Pulled);
+        // The right stick picked the grab; let go of the trigger with it still out, it is no flick:
+        // it must come back to the middle before it moves the board again.
+        if (wasGrabbing && !grabbing && RightX * RightX + RightY * RightY > SkateFlick.RearmZone * SkateFlick.RearmZone) rightSuspended = true;
+        wasGrabbing = grabbing;
         // The left stick goes along for the body varial (a full circle in the air), and whether this
         // flight was popped: only then does a right-stick composition in the air count as a late flip.
         // The flick module's sides are those of a rider whose heels are on the stick's left; in the
