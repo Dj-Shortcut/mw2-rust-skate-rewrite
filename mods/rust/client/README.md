@@ -299,6 +299,21 @@ into a vertical wall points up the wall instead of having no way at all. This re
 contact, held-item and tour changes in 0.18.26. Native compilation and a real ride straight and
 diagonally up a vertical face remain to be verified for 0.18.27.
 
+Empty hands on the board (0.18.19, 0.18.30): this client has no readable held item and no belt
+member on the player (the log: `HELD methods returning Item: (none)`, `HELD belt select route:
+none found`), so the held entity is found by type on the rider model's hand bone and switched off
+while riding, and on again on stepping off. Seen on Shadow, 18 October: `HOLSTER switched off
+HeldEntity (…building_planner…)`; the building plan's red preview stayed standing in front of the
+rider all the same, so it is not under the plan. 0.18.30 reads, by shape, the scene objects the
+switched-off plan refers to (its members of a GameObject, Transform or Renderer type) and switches
+off with it one that is outside the plan and named like a guide (guide, preview, ghost,
+placeholder); it comes back with the plan. Logged once: all of those (`HELD the Planner refers
+to …`), what is drawn within 40 m under such a name (`HELD drawn near the rider …`), and the shape
+of every loaded game type named like a belt (`HELD belt survey …`: its static ints with their
+values, its instance ints, its methods taking one int), for a belt route that does not depend on
+member names; nothing of the survey is called. Not seen in the game: whether the preview goes with
+the plan, and what the three lines say.
+
 Riding a transition (0.18.18, the client side of #487): on a transition's own collider the ground
 is read along the face's normal, from the centre of the body's bottom half sphere, rather than
 straight down. Straight down, the ground under the body was lost from about 53 degrees on (the gap
