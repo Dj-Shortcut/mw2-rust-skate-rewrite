@@ -235,6 +235,7 @@ public class SkateRig : MonoBehaviour
     [HideFromIl2Cpp]
     private void LetGo(string why, string off, bool forgetServer)
     {
+        try { SkatePhysicsDiagnostic.Reset(); } catch { }
         try { SkatePieces.Reset(); }
         catch (Exception e) { Out.Err("PIECES reset during rig teardown threw " + e.GetType().Name); }
         Say(why + "; looking again");
@@ -429,6 +430,7 @@ public class SkateRig : MonoBehaviour
         else downSince = -1f;
         SkateParks.Frame(now);
         try { SkateParks.Isolate(SkateRide.On, Body, now); } catch (Exception e) { Say("isolation threw " + e.GetType().Name + ": " + e.Message); }
+        SkatePhysicsDiagnostic.Frame(now);
         SkatePieces.Frame(now);
         SkateInbox.Frame(now);
         // With a controller the rider looks where the board goes, a little into the turn; the view
@@ -489,6 +491,7 @@ public class SkateRig : MonoBehaviour
     // put away for it is taken in hand again here, as OnDestroy does.
     private void OnDisable()
     {
+        try { SkatePhysicsDiagnostic.Reset(); } catch { }
         try { SkatePieces.Reset(); }
         catch (Exception e) { Out.Err("PIECES reset during rig teardown threw " + e.GetType().Name); }
         SkateRide.Dismount("the skate rig is disabled");

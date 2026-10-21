@@ -318,6 +318,25 @@ about 10 cm above one; the riding surface is their collider, and their colour is
 model's when it is there. Without the `.glb` files next to the plugin the other pieces are found
 and not drawn; the log says which file is missing. Unverified in game.
 
+Optional physics observations (#512): an owner-controlled session may include
+`physicsdiag,skate` in its `steps.txt` inputs. The normal launcher supplies `skate`, so these
+observations are off by default. `PHYS` lines compare current non-trigger colliders under one
+already recognized ramp with its captured backing and the movement body's current colliders.
+The traversal skips foreign entity subtrees and is bounded by member, depth, node, pair and
+time budgets. At most 12 reports contain counts, ignore-pair reads and four recent movement
+samples on mounting, a reverse step, a stall, a lip exit or a pump award; quiet riding also
+permits a report every four seconds. Absolute positions, player/entity IDs and inventory are
+not reported. A reverse-step label is an observation, not proof of a server correction.
+
+The pair reader uses the generated Unity binding with the engine object's cached pointer;
+an unavailable binding is reported as unknown, never as an ignored pair. `pairs-not-ignored`
+describes that explicit pair flag, not whether layers or geometry will produce a contact.
+`complete=False` means a bounded read did not establish a complete, current snapshot. A snapshot
+spans its reported duration and is not an atomic physics scene capture. The diagnostic changes
+no collision, movement, pump, input or server state. The original 0.18.29 candidate compiled and produced native pair reads on Windows.
+The current integrated source needs its own native compile/load check; a completed snapshot does
+not establish effective layer contact, server collision parity, root-proxy coverage or a movement fix.
+
 The rider on the vertical (0.18.27): the rider stands square to the deck all the way up a
 transition, as the board does. Before, the rider's frame went back to the world's up from about 78
 degrees on while the board kept following the face, so on the vertical part of a halfpipe the body

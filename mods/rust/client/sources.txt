@@ -6,6 +6,7 @@ mods/rust/client/src/SkateRig.cs
 mods/rust/client/src/SkateClock.cs
 mods/rust/client/src/SkateKeys.cs
 mods/rust/client/src/SkateRide.cs
+mods/rust/client/src/SkatePhysicsDiagnostic.cs
 mods/rust/client/src/SkateGrind.cs
 mods/rust/client/src/SkateBoard.cs
 mods/rust/client/src/RiderRig.cs

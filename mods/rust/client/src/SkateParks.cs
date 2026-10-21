@@ -219,6 +219,41 @@ public static class SkateParks
         return true;
     }
 
+    internal sealed class PhysicsOwnership
+    {
+        internal Kind Kind;
+        internal GameObject Root;
+        internal BuildingBlock[] Members;
+        internal bool[] Backed;
+        internal Collider[] Captured, Rider;
+        internal int Version, Isolated;
+    }
+    internal static bool ReadPhysicsOwnership(Vector3 position, out PhysicsOwnership view)
+    {
+        view = null;
+        if (placed.Count > 256) return false;
+        Placed nearest = null; var distance = Reach * Reach;
+        foreach (var p in placed)
+        {
+            if (!IsTransition(p.Kind) || p.Root == null || !p.Root.activeInHierarchy) continue;
+            var d = (p.Origin - position).sqrMagnitude;
+            if (d < distance) { distance = d; nearest = p; }
+        }
+        if (nearest == null || nearest.Entities == null || nearest.Entities.Length > MegaParts ||
+            nearest.Backing.Count > 1024 || (riderColliders != null && riderColliders.Length > 8)) return false;
+        var backed = new bool[nearest.Entities.Length];
+        for (var i = 0; i < backed.Length; i++)
+            backed[i] = nearest.Kind == Kind.MegaHalfpipe || IsQuarter(nearest.Kind) || (nearest.Kind == Kind.Halfpipe && i >= 4 && i < 12);
+        view = new PhysicsOwnership { Kind = nearest.Kind, Root = nearest.Root,
+            Members = (BuildingBlock[])nearest.Entities.Clone(), Backed = backed, Captured = nearest.Backing.ToArray(),
+            Rider = riderColliders == null ? new Collider[0] : (Collider[])riderColliders.Clone(), Version = backingVersion, Isolated = isolated.Count };
+        return true;
+    }
+    internal static bool PhysicsOwnershipCurrent(PhysicsOwnership view)
+    {
+        return view != null && view.Root != null && view.Root.activeInHierarchy && view.Version == backingVersion;
+    }
+
     public static string Line()
     {
         return "blocks=" + Blocks + " assemblies=" + Assemblies + " drawn=" + Drawn + " colliders=" + Colliders + " hidden=" + HiddenRenderers +
