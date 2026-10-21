@@ -836,11 +836,13 @@ public static class SkateParks
     // (sources.txt) at a commit without that function, so the turn is added here; when the pin
     // moves to a commit that has it, this goes and TryGhostFrame adds it itself.
     public static float PlacementYaw(SkateParkKind kind) { return kind == SkateParkKind.Halfpipe ? 90f : 0f; }
-    public static bool Ghost(Kind kind, RaycastHit aim, float lookYaw, float turn, out Vector3 origin, out float yaw, out bool onHost, out string why)
+    public static bool Ghost(Kind kind, RaycastHit aim, float lookYaw, float turn, out Vector3 origin, out float yaw, out bool onHost, out string why, bool snapTerrain = false)
     {
         onHost = false; why = "";
         var shared = (SkateParkKind)(int)kind;
         var hint = new SkateParkTransform { X = aim.point.x, Y = aim.point.y, Z = aim.point.z, Yaw = Wrap(lookYaw + turn) };
+        double terrainYaw;
+        if (snapTerrain && SkateParkLayout.TrySnapYaw(hint.Yaw, 0, GhostStep, out terrainYaw)) hint.Yaw = terrainYaw;
         double? selected = null;
         try
         {

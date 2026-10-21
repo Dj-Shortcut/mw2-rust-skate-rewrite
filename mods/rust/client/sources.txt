@@ -17,6 +17,7 @@ mods/rust/client/src/Scenarios.cs
 mods/rust/client/src/SkatePad.cs
 mods/rust/client/src/SkatePadLog.cs
 mods/rust/client/src/SkatePieces.cs
+mods/rust/client/src/SkateBuildWheel.cs
 mods/rust/client/src/SkateConsole.cs
 mods/rust/client/src/SkateParks.cs
 mods/rust/client/src/SkateWatch.cs

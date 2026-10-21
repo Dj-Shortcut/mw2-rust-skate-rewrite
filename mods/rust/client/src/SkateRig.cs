@@ -235,6 +235,8 @@ public class SkateRig : MonoBehaviour
     [HideFromIl2Cpp]
     private void LetGo(string why, string off, bool forgetServer)
     {
+        try { SkatePieces.Reset(); }
+        catch (Exception e) { Out.Err("PIECES reset during rig teardown threw " + e.GetType().Name); }
         Say(why + "; looking again");
         SkateRide.Dismount(off);
         // Release only this ride's held-state ownership while its player/model
@@ -481,10 +483,14 @@ public class SkateRig : MonoBehaviour
     }
     private static bool watchFailed;
 
+    private void OnApplicationFocus(bool focused) { if (!focused) SkatePieces.CancelFocus(); }
+
     // Disabled without being destroyed, Update no longer runs the cleanup after the ride: the item
     // put away for it is taken in hand again here, as OnDestroy does.
     private void OnDisable()
     {
+        try { SkatePieces.Reset(); }
+        catch (Exception e) { Out.Err("PIECES reset during rig teardown threw " + e.GetType().Name); }
         SkateRide.Dismount("the skate rig is disabled");
         try { Unholster(); }
         catch (Exception e) { Out.Err("HELD restore while the rig is disabled threw " + e.GetType().Name + ": " + e.Message); }
@@ -493,6 +499,8 @@ public class SkateRig : MonoBehaviour
 
     private void OnDestroy()
     {
+        try { SkatePieces.Shutdown(); SkateBuildWheel.Clear(); }
+        catch (Exception e) { Out.Err("PIECES teardown threw " + e.GetType().Name); }
         try { SkateRide.Dismount("the skate rig is gone"); }
         catch (Exception e) { Out.Err("SKATE dismount threw " + e.GetType().Name + ": " + e.Message); }
         try { Unholster(); }
