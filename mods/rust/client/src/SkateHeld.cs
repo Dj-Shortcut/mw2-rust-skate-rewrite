@@ -353,6 +353,9 @@ public static class SkateHeld
     private static PieMenu closingWheel;
     private static object closingPlayer, closingBody;
     private static float closingAwakeAt;
+    private static Planner uncreatedWheelPlanner;
+    private static object uncreatedWheelPlayer, uncreatedWheelBody;
+    private static float uncreatedWheelAwakeAt;
     private static string wheelBindingNotice = "";
 
     private static bool WheelPlannerCurrent(object player)
@@ -367,7 +370,13 @@ public static class SkateHeld
 
     private static bool ConstructionWheel(object player, out PieMenu menu, out string why)
     {
-        menu = null; why = "";
+        bool registryAbsent;
+        return ConstructionWheel(player, out menu, out why, out registryAbsent);
+    }
+
+    private static bool ConstructionWheel(object player, out PieMenu menu, out string why, out bool registryAbsent)
+    {
+        menu = null; why = ""; registryAbsent = false;
         var root = player as UnityEngine.Component;
         if (root == null || !ReferenceEquals(player, SkateRig.Local)) { why = "The local player is unavailable."; return false; }
         var model = RiderRig.Bound && RiderRig.Root != null ? (UnityEngine.Component)RiderRig.Root : root;
@@ -397,7 +406,8 @@ public static class SkateHeld
         // This is the same construction-menu registry member that the native planner reads.
         // Its intact static-field getter and checked IL2CPP cast do not invoke an erased method.
         var native = PieMenu.ObjectNPublicAbstractSealedBoObBoObBoObBoObBoObUnique.field_Public_Static_Object_15;
-        if (ReferenceEquals(native, null)) { why = "Rust's construction wheel is not available yet."; return false; }
+        if (ReferenceEquals(native, null))
+        { registryAbsent = true; why = "Rust's construction wheel is not available yet."; return false; }
         menu = native.TryCast<PieMenu>();
         if (menu == null || menu.escapeCapture == null)
         { why = "Rust's construction-wheel binding is unavailable."; return false; }
@@ -416,7 +426,17 @@ public static class SkateHeld
 
     public static bool RustWheelHiddenForSkate(object player)
     {
-        try { PieMenu menu; string why; return ConstructionWheel(player, out menu, out why) && ConstructionWheelVisuallyHidden(menu); }
+        try
+        {
+            PieMenu menu; string why; bool registryAbsent;
+            if (ConstructionWheel(player, out menu, out why, out registryAbsent)) return ConstructionWheelVisuallyHidden(menu);
+            // A first custom opening may precede creation of Rust's radial. Continue only the
+            // same admitted plan/life and our own cursor lease; re-read the registry every time.
+            return registryAbsent && uncreatedWheelPlanner != null && pausedPlanner == uncreatedWheelPlanner &&
+                ReferenceEquals(plannerPlayer, player) && ReferenceEquals(uncreatedWheelPlayer, player) &&
+                ReferenceEquals(uncreatedWheelBody, SkateRig.Body) && uncreatedWheelAwakeAt == SkateRig.AwakeAt &&
+                SkatePieces.Open && SkatePieces.OwnsCursor && UnityEngine.Cursor.lockState == UnityEngine.CursorLockMode.None && !UnityEngine.Cursor.visible;
+        }
         catch (Exception) { return false; }
     }
 
@@ -451,8 +471,8 @@ public static class SkateHeld
         waiting = false; why = "";
         try
         {
-            PieMenu menu;
-            if (ConstructionWheel(player, out menu, out why))
+            PieMenu menu; bool registryAbsent;
+            if (ConstructionWheel(player, out menu, out why, out registryAbsent))
             {
                 bool open = menu.gameObject.activeInHierarchy && menu.escapeCapture.enabled;
                 if (nativeUiExpected && !open) why = "Close the other Rust screen before switching build modes.";
@@ -469,6 +489,14 @@ public static class SkateHeld
                 }
                 else why = "Rust's build wheel is still closing, or another screen owns the cursor.";
             }
+            else if (registryAbsent && !nativeUiExpected && UnityEngine.Cursor.lockState == UnityEngine.CursorLockMode.Locked && !UnityEngine.Cursor.visible)
+            {
+                // No native radial exists to close. An owned plan with a clear, locked cursor
+                // may open the custom wheel without manufacturing a native UI instance.
+                uncreatedWheelPlanner = wheelPlanner; uncreatedWheelPlayer = player;
+                uncreatedWheelBody = SkateRig.Body; uncreatedWheelAwakeAt = SkateRig.AwakeAt;
+                wheelBindingNotice = ""; why = ""; return true;
+            }
         }
         catch (Exception e) { why = "Rust construction-wheel access failed: " + e.GetType().Name; }
         if (why != wheelBindingNotice)
@@ -478,6 +506,7 @@ public static class SkateHeld
 
     public static void ResumePlanner()
     {
+        uncreatedWheelPlanner = null; uncreatedWheelPlayer = uncreatedWheelBody = null; uncreatedWheelAwakeAt = 0;
         var planner = pausedPlanner;
         pausedPlanner = null;
         plannerPlayer = null;

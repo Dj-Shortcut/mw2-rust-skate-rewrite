@@ -169,9 +169,9 @@ The centre deadzone cancels selection. `P` opens the same wheel; Left/Right arro
 and release `Back` or press `A`; `B` cancels. Hold `Y` in the wheel to switch stance.
 
 Press **X** in the building wheel to switch between **Skate building** and **Rust building**;
-on the keyboard use **Shift + P**. Both use your ordinary building plan. The custom wheel
+on the keyboard use **Shift + P**, or click the visible **Rust building** / **Skate building** button below the wheel. Both use your ordinary building plan. The custom wheel
 closes Rust's own construction wheel and waits for its fade and cursor capture to finish
-before opening. It does not hide unrelated Rust screens.
+before opening. The first Skate opening also works before Rust has created its wheel, provided the ordinary plan and clear cursor belong to the current player. It does not hide unrelated Rust screens.
 
 Switching to Rust building closes the Skate wheel after the server confirms `off`.
 Release, then hold your normal wheel control again (`Back` / right click) to open the

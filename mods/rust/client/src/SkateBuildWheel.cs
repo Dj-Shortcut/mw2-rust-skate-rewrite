@@ -155,7 +155,9 @@ public static class SkateBuildWheel
             if (SkatePieces.RustModeHint)
             {
                 var rustControls = footerText.Get("RUST BUILDING  |  X / Shift + P: Skate building\nRelease, then hold Back / right click for the Rust wheel.", footer, diameter);
-                GUI.Label(new Rect(cx - diameter / 2, Screen.height - Math.Max(70, footerText.Height + 18), diameter, Math.Max(52, footerText.Height)), rustControls, footer);
+                float y = Screen.height - Math.Max(110, footerText.Height + 56);
+                ModeButton(new Rect(cx - 110, y, 220, 34), "Skate building");
+                GUI.Label(new Rect(cx - diameter / 2, y + 38, diameter, Math.Max(52, footerText.Height)), rustControls, footer);
                 return;
             }
             int selected = SkatePieces.Hover;
@@ -173,7 +175,9 @@ public static class SkateBuildWheel
             var priceY = Math.Max(cy + 79, bodyY + bodyText.Height + 8);
             GUI.Label(new Rect(cx - hole / 2, priceY, hole, 28), "10 WOOD", footer);
             var controls = footerText.Get("SKATE BUILDING  |  X / Shift + P: Rust building\nArrows / D-pad: select  |  Release right click / Back, A / Enter: choose  |  B / Esc: close", footer, diameter);
-            GUI.Label(new Rect(cx - diameter / 2, Math.Max(cy + diameter / 2 + 14, priceY + 42), diameter, Math.Max(66, footerText.Height)), controls, footer);
+            float footerY = Math.Min(Screen.height - 110, Math.Max(cy + diameter / 2 + 14, priceY + 42));
+            ModeButton(new Rect(cx - 110, footerY, 220, 34), "Rust building");
+            GUI.Label(new Rect(cx - diameter / 2, footerY + 38, diameter, Math.Max(66, footerText.Height)), controls, footer);
             if (dot == null)
             {
                 dot = Out.Keep(new Texture2D(2, 2));
@@ -191,6 +195,9 @@ public static class SkateBuildWheel
         }
         finally { GUI.color = old; }
     }
+
+    private static void ModeButton(Rect area, string label)
+    { SkatePieces.ModeButton(area, GUI.Button(area, label)); }
 
     private static Texture2D Texture(int selected)
     {
