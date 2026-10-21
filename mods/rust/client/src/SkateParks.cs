@@ -1417,6 +1417,26 @@ public static class SkateParks
         for (var i = 0; i < all.Length; i++) found |= Take(all[i], true, ref best, ref hit);
         return found;
     }
+    // Passing a riding face must not hide a different wall farther along the same sweep.
+    // Keep the nearest obstruction among all hits, with the same backing/initial-overlap policy.
+    public static bool SphereWall(Vector3 from, float radius, Vector3 dir, out RaycastHit hit, float distance, int mask,
+                                  Func<Vector3, Vector3, float, RaycastHit, bool> ridingFace)
+    {
+        if (RampIds.Count == 0)
+            return Sphere(from, radius, dir, out hit, distance, mask) && hit.m_Normal.y < 0.5f;
+        var all = Physics.SphereCastAll(from, radius, dir, distance, mask, QueryTriggerInteraction.Ignore);
+        // A dense sweep keeps every steep hit as a wall rather than running many face queries.
+        var testFaces = all.Length <= 256;
+        hit = default(RaycastHit); var found = false; var best = float.MaxValue;
+        for (var i = 0; i < all.Length; i++)
+        {
+            var candidate = default(RaycastHit); var any = float.MaxValue;
+            if (!Take(all[i], true, ref any, ref candidate) || candidate.distance >= best ||
+                !(candidate.m_Normal.y < 0.5f) || (testFaces && ridingFace(from, dir, distance, candidate))) continue;
+            hit = candidate; best = candidate.distance; found = true;
+        }
+        return found;
+    }
     // A sweep that starts inside a collider reports it at distance 0 with no point, which a plain
     // SphereCast leaves out: so does this.
     private static bool Take(RaycastHit h, bool sweep, ref float best, ref RaycastHit hit)
@@ -1520,6 +1540,58 @@ public static class SkateParks
     {
         if (CopingIds.Count == 0) return false;
         try { var c = hit.collider; return c != null && CopingIds.Contains(c.GetInstanceID()); } catch (Exception) { return false; }
+    }
+    private static readonly List<Vector2> megaLipProfile = MegaProfile();
+    // Only the two internal curve/deck creases of our generated, open MEGA surface. A sphere's
+    // edge normal can agree with the curve while the ray to that same point selects the deck.
+    // Prove the owned frame, interior width, exact crease and the adjacent faces' upper normal
+    // cone; side/end edges, undersides, coping and every foreign collider remain obstructions.
+    public static bool MegaLipFace(Vector3 from, Vector3 dir, float radius, float distance, RaycastHit hit)
+    {
+        if (!(radius > 0f && radius <= 1f)) return false;
+        try
+        {
+            var collider = hit.collider;
+            if (collider == null) return false;
+            var id = collider.GetInstanceID();
+            if (!RampIds.Contains(id) || CopingIds.Contains(id)) return false;
+            foreach (var p in placed)
+            {
+                if (p.Kind != Kind.MegaHalfpipe || !p.Ramp.Contains(id) || p.Root == null || !p.Root.activeInHierarchy) continue;
+                var t = p.Root.transform;
+                if (t.parent != null || t.position != p.Origin || t.localScale != Vector3.one ||
+                    t.rotation != Quaternion.Euler(0f, p.Yaw, 0f)) return false;
+                var sin = (float)Math.Sin(p.Yaw * Degrees); var cos = (float)Math.Cos(p.Yaw * Degrees);
+                var point = hit.m_Point - p.Origin; var centre = from + dir * hit.distance - p.Origin;
+                var start = from - p.Origin; var finish = from + dir * distance - p.Origin;
+                var n = hit.m_Normal;
+                point = new Vector3(point.x * cos - point.z * sin, point.y, point.x * sin + point.z * cos);
+                centre = new Vector3(centre.x * cos - centre.z * sin, centre.y, centre.x * sin + centre.z * cos);
+                start = new Vector3(start.x * cos - start.z * sin, start.y, start.x * sin + start.z * cos);
+                finish = new Vector3(finish.x * cos - finish.z * sin, finish.y, finish.x * sin + finish.z * cos);
+                n = new Vector3(n.x * cos - n.z * sin, n.y, n.x * sin + n.z * cos);
+                const float tolerance = 0.01f;
+                var end0 = megaLipProfile[0].x + radius + tolerance;
+                var end1 = megaLipProfile[megaLipProfile.Count - 1].x - radius - tolerance;
+                if (!(Math.Abs(start.x) < 6f - radius - tolerance && Math.Abs(finish.x) < 6f - radius - tolerance &&
+                      start.z > end0 && start.z < end1 && finish.z > end0 && finish.z < end1 &&
+                      Math.Abs(n.x) < tolerance && n.y >= 0f && Math.Abs(n.sqrMagnitude - 1f) < tolerance &&
+                      (centre - point - n * radius).sqrMagnitude <= tolerance * tolerance)) return false;
+                for (var end = 0; end < 2; end++)
+                {
+                    var i = end == 0 ? 1 : megaLipProfile.Count - 2;
+                    var a = megaLipProfile[i - 1]; var edge = megaLipProfile[i]; var b = megaLipProfile[i + 1];
+                    if (!(Math.Abs(point.z - edge.x) <= tolerance && Math.Abs(point.y - edge.y) <= tolerance)) continue;
+                    var before = new Vector3(0f, edge.x - a.x, a.y - edge.y).normalized;
+                    var after = new Vector3(0f, b.x - edge.x, edge.y - b.y).normalized;
+                    return before.y * n.z - before.z * n.y >= -tolerance &&
+                           n.y * after.z - n.z * after.y >= -tolerance;
+                }
+                return false;
+            }
+        }
+        catch (Exception) { }
+        return false;
     }
     private static Mesh Own(Mesh mesh, List<Mesh> owned)
     {

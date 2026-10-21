@@ -8,7 +8,7 @@ public static class SkatePieces
 {
     public static readonly string[] Names = { "bank", "kicker", "quarterpipe", "ledge-low", "ledge-high", "long-ledge", "funbox", "halfpipe", "mini-quarterpipe", "large-quarterpipe", "half-wall-kicker", "mega-halfpipe" };
     public const int MenuButton = SkatePad.Back;
-    public const float ShownSeconds = 6f, PlaceSeconds = 120f, AimReach = 40f, TurnStep = 15f, ClearGround = 0.04f;
+    public const float ShownSeconds = 6f, PlaceSeconds = 120f, AimReach = 25f, TurnStep = 15f, ClearGround = 0.04f;
 
     public static bool Open;
     private static float stanceSince = -1f;
@@ -37,9 +37,19 @@ public static class SkatePieces
     private static Application.LogCallback replyListener;
     private static bool replyListenerFailed;
     private static bool builderRequested;
+    private static string selectionToken = "";
+    private static object selectionPlayer, selectionBody;
+    private static float selectionAwakeAt;
     private static float builderNoticeUntil;
     private static int builderTurn;
     private static bool wasPlaceTrigger, builderPad;
+    // One explicit placement at a time. A timeout is uncertainty, never permission to spend again.
+    private static string placementToken = "";
+    private static float placementUntil;
+    private static object placementPlayer, placementBody;
+    private static float placementAwakeAt;
+    private static int placementKind = -1;
+    private static bool placementUnknown;
     private static string BuilderControls { get { return builderPad
         ? "RT places, RB / LB rotate. Back, then B: Rust building."
         : "Left click places, R rotates. Shift + right click: Rust building."; } }
@@ -170,16 +180,34 @@ public static class SkatePieces
                 {
                     BlocksControls = true;
                     SaidAt = now;
-                    Said = SkateConsole.Send("skate.builder place " + builderTurn.ToString(CultureInfo.InvariantCulture))
-                        ? "Placement requested. The server checks the site and 10 Wood."
-                        : "Placement not sent. Check your connection, then " + (builderPad ? "press RT again." : "click again.");
-                    builderNoticeUntil = now + 2f;
+                    RequestPlacement(now);
+                    builderNoticeUntil = placementUnknown ? float.PositiveInfinity : now + 2.5f;
                 }
                 padDown &= ~(SkatePad.LeftBumper | SkatePad.RightBumper);
             }
         }
         wasP = p; wasBack = back; wasRight = right;
         return BlocksControls ? 0 : padDown;
+    }
+
+    private static void RequestPlacement(float now)
+    {
+        if (placementToken.Length != 0)
+            Said = placementUnknown ? "Placement unconfirmed. Reopen the wheel, then choose Rust building before retrying."
+                : "Waiting for placement confirmation...";
+        else
+        {
+            placementToken = Guid.NewGuid().ToString("N");
+            placementUntil = now + 5f; placementUnknown = false;
+            placementPlayer = SkateRig.Local; placementBody = SkateRig.Body; placementAwakeAt = SkateRig.AwakeAt; placementKind = BuilderKind;
+            if (SkateConsole.Send("skate.builder place " + builderTurn.ToString(CultureInfo.InvariantCulture) + " " + placementToken))
+                Said = "Placement requested. The server checks the site and 10 Wood.";
+            else
+            {
+                placementUnknown = true; placementUntil = now;
+                Said = "Placement could not be confirmed. Reopen the wheel, then choose Rust building before retrying.";
+            }
+        }
     }
 
     private static bool Begin(Entry from, float now)
@@ -215,7 +243,7 @@ public static class SkatePieces
         if (offPending) return false;
         if (!builderRequested) return true;
         SaidAt = now;
-        if (!SkateConsole.Send("skate.builder off"))
+        if (!SkateConsole.Send("skate.builder off" + (selectionToken.Length == 0 ? "" : " " + selectionToken)))
         { Said = Status = "Could not request Rust building. In F1 type: skate.builder off"; return false; }
         BuilderKind = requestedKind = -1; offPending = true; offUntil = now + 5f;
         Said = "Requested Rust building. Waiting for the server reply...";
@@ -239,10 +267,30 @@ public static class SkatePieces
         const string prefix = "[SKATE-BUILDER] ";
         if (message == null || !message.StartsWith(prefix, StringComparison.Ordinal)) return;
         string reply = message.Substring(prefix.Length).Trim();
+        bool placementReply = reply.StartsWith("placed ", StringComparison.Ordinal) ||
+            reply.StartsWith("placement-refused ", StringComparison.Ordinal) || reply.StartsWith("payment-review ", StringComparison.Ordinal);
+        if (placementReply)
+        {
+            string suffix = " [request=" + placementToken + "]";
+            if (placementToken.Length == 0 || !ReferenceEquals(placementPlayer, SkateRig.Local) ||
+                !ReferenceEquals(placementBody, SkateRig.Body) || placementAwakeAt != SkateRig.AwakeAt ||
+                placementKind != BuilderKind ||
+                !reply.EndsWith(suffix, StringComparison.Ordinal)) return;
+            reply = reply.Substring(0, reply.Length - suffix.Length);
+        }
+        bool selectionReply = reply == "off" || reply.StartsWith("off [selection=", StringComparison.Ordinal) ||
+            reply.StartsWith("selected ", StringComparison.Ordinal) || reply.StartsWith("refused ", StringComparison.Ordinal);
+        if (selectionReply)
+        {
+            string suffix = " [selection=" + selectionToken + "]";
+            if (selectionToken.Length == 0 || !ReferenceEquals(selectionPlayer, SkateRig.Local) ||
+                !ReferenceEquals(selectionBody, SkateRig.Body) || selectionAwakeAt != SkateRig.AwakeAt ||
+                !reply.EndsWith(suffix, StringComparison.Ordinal)) return;
+            reply = reply.Substring(0, reply.Length - suffix.Length);
+        }
         if (reply == "off")
         {
-            if (!offPending && requestedKind >= 0) return;
-            BuilderKind = requestedKind = -1; builderRequested = offPending = false; Said = "Rust building"; if (!Open) SkateHeld.ResumePlanner();
+            BuilderKind = requestedKind = -1; builderRequested = offPending = false; ClearPlacement(); ClearSelectionReceipt(); Said = "Rust building"; if (!Open) SkateHeld.ResumePlanner();
         }
         else if (reply.StartsWith("selected ", StringComparison.Ordinal))
         {
@@ -250,25 +298,33 @@ public static class SkatePieces
             if (offPending || requestedKind < 0 || requestedKind >= Names.Length || name != Names[requestedKind]) return;
             BuilderKind = requestedKind; requestedKind = -1;
             Picked = BuilderKind;
-            builderTurn = 0;
+            builderTurn = 0; ClearPlacement();
             Said = SkateBuildWheel.Labels[BuilderKind] + " selected. 10 Wood per successful piece. " + BuilderControls;
         }
         else if (reply.StartsWith("refused ", StringComparison.Ordinal))
         {
             if (offPending) return;
             BuilderKind = requestedKind = -1;
-            builderRequested = false; if (!Open) SkateHeld.ResumePlanner();
+            builderRequested = false; ClearPlacement(); ClearSelectionReceipt(); if (!Open) SkateHeld.ResumePlanner();
             Said = reply.Substring(8); if (Said.Length > 180) Said = Said.Substring(0, 180);
         }
         else if (reply.StartsWith("placed ", StringComparison.Ordinal) && BuilderKind >= 0 &&
             reply == "placed " + Names[BuilderKind] + " 10 Wood")
-        { Said = "Placed " + SkateBuildWheel.Labels[BuilderKind] + " for 10 Wood."; }
+        { ClearPlacement(); Placed++; Said = "Placed " + SkateBuildWheel.Labels[BuilderKind] + " for 10 Wood. " + BuilderControls; }
         else if (reply.StartsWith("placement-refused ", StringComparison.Ordinal) && BuilderKind >= 0)
-        { Said = reply.Substring(18); if (Said.Length > 180) Said = Said.Substring(0, 180); }
+        { ClearPlacement(); Said = reply.Substring(18); if (Said.Length > 180) Said = Said.Substring(0, 180); }
+        else if (reply.StartsWith("payment-review ", StringComparison.Ordinal) && BuilderKind >= 0)
+        { placementUnknown = true; Said = "Park saved; payment needs operator review. Do not retry. " + reply.Substring(15); }
         else return;
         SaidAt = Time.realtimeSinceStartup;
-        builderNoticeUntil = SaidAt + 2.5f;
+        builderNoticeUntil = placementUnknown ? float.PositiveInfinity : SaidAt + 2.5f;
     }
+
+    private static void ClearSelectionReceipt()
+    { selectionToken = ""; selectionPlayer = selectionBody = null; selectionAwakeAt = 0; }
+
+    private static void ClearPlacement()
+    { placementToken = ""; placementUntil = 0; placementUnknown = false; placementPlayer = placementBody = null; placementAwakeAt = 0; placementKind = -1; }
 
     private static void Close(bool resumePlanner = true)
     {
@@ -288,8 +344,19 @@ public static class SkatePieces
         SkateParks.PreviewClear(); previewKind = -1; previewYaw = 9999f;
     }
 
+    private static void CheckPlacement(float now)
+    {
+        if (placementToken.Length != 0 && !placementUnknown && now >= placementUntil)
+        {
+            placementUnknown = true;
+            Said = "Placement unconfirmed. No automatic retry. Reopen the wheel, then choose Rust building before retrying.";
+            SaidAt = now; builderNoticeUntil = float.PositiveInfinity;
+        }
+    }
+
     public static void Frame(float now)
     {
+        CheckPlacement(now);
         if (requestedKind >= 0 && now >= replyUntil)
         {
             NativeMode(now);
@@ -318,7 +385,12 @@ public static class SkatePieces
         var read = !SkateRide.On && SkateRig.Local != null && SkateHeld.Read(SkateRig.Local);
         HeldKind = read ? SkateHeld.HeldKind() : -1;
         if (!SkateRide.On && BuilderKind >= 0 && SkateHeld.HasPlanner(SkateRig.Local)) HeldKind = BuilderKind;
-        else if (!SkateRide.On && BuilderKind >= 0) BuilderKind = -1;
+        else if (!SkateRide.On && BuilderKind >= 0)
+        {
+            // Request off before forgetting the selection; clearing it here bypassed Input's cleanup.
+            bool ready = NativeMode(now);
+            Close(ready);
+        }
         if (HeldKind != was) Out.Say("PIECES held: " + (HeldKind < 0 ? "no park item" : SkateHeld.ItemNames[HeldKind]) + " (item " + SkateHeld.Shortname + " '" + SkateHeld.Name + "' marker " + SkateHeld.Marker.ToString("X") + ")");
         AimOk = false;
         if (HeldKind < 0) { HeldClear(); return; }
@@ -378,12 +450,14 @@ public static class SkatePieces
         if (requestedKind >= 0 || offPending) { Said = Status = "Waiting for the server reply..."; return; }
         if (SkateRig.Local == null || !SkateHeld.HasPlanner(SkateRig.Local))
         { Said = Status = "Hold your ordinary building plan first."; return; }
-        string command = "skate.builder " + Names[Chosen];
-        if (!SkateConsole.Send(command))
-        { Said = Status = "Not selected. In F1 type: " + command; return; }
+        selectionToken = Guid.NewGuid().ToString("N");
+        selectionPlayer = SkateRig.Local; selectionBody = SkateRig.Body; selectionAwakeAt = SkateRig.AwakeAt;
         requestedKind = Chosen; replyUntil = now + 5f; BuilderKind = -1; Picked = -1; builderRequested = true; builderPad = pad;
+        string command = "skate.builder " + Names[Chosen] + " " + selectionToken;
+        bool sent = SkateConsole.Send(command);
         Close(false);
-        Said = "Requested " + SkateBuildWheel.Labels[Chosen] + ". Server checks placement and 10 Wood. " + BuilderControls;
+        Said = sent ? "Requested " + SkateBuildWheel.Labels[Chosen] + ". Server checks placement and 10 Wood. " + BuilderControls
+            : "Selection unconfirmed. Waiting for a server reply before another request.";
     }
 
 
@@ -435,7 +509,7 @@ public static class SkatePieces
         builderRequested = offPending = false;
         Picked = -1; HeldKind = -1; Asked = Said = Status = ""; SaidAt = AskedAt = -99f; Chosen = 0;
         Sent = Placed = 0; Turn = 0f; AimOk = false;
-        builderTurn = 0; wasPlaceTrigger = builderPad = false;
+        builderTurn = 0; wasPlaceTrigger = builderPad = false; ClearPlacement(); ClearSelectionReceipt(); builderNoticeUntil = 0;
     }
     public static void Shutdown()
     {

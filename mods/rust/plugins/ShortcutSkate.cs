@@ -1706,7 +1706,7 @@ namespace Shortcut.RustMod
 
 namespace Oxide.Plugins
 {
-    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.36")]
+    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.37")]
     [Description("Player-scoped skateboard movement bounds and saved park assemblies.")]
     public sealed class ShortcutSkate : RustPlugin
     {
@@ -2006,6 +2006,7 @@ namespace Oxide.Plugins
             public ItemId Uid;
             public ItemDefinition Definition;
             public SkateParkKind Kind;
+            public string Receipt;
         }
 
         private sealed class BuilderWoodReceipt
@@ -2075,6 +2076,7 @@ namespace Oxide.Plugins
             public BuilderSelection Builder;
             public readonly List<BuilderWoodReceipt> WoodEscrow = new List<BuilderWoodReceipt>();
             public bool WoodDebitVerified, WoodRecoveryClaimed;
+            public string BuilderReceipt;
             public SkateParkKind ItemKind;
             public ItemId ItemUid;
             public ItemDefinition ItemDefinition;
@@ -4410,17 +4412,31 @@ namespace Oxide.Plugins
                 !item.uid.Equals(default(ItemId)) && ParkPlannerItem(player, player.inventory.containerBelt, item, planner) &&
                 ReferenceEquals(player.GetActiveItem(), item) && ReferenceEquals(player.GetHeldEntity(), planner);
             if (!owned && ReferenceEquals(selection.Player, player))
-            { builderSelections.Remove(player.userID); BuilderReply(player, "off"); }
+            { builderSelections.Remove(player.userID); BuilderSelectionReply(player, selection.Receipt, "off"); }
             return owned && BuilderAllowed(player);
         }
 
-        private void BuilderReply(BasePlayer player, string message)
+        private void BuilderReply(BasePlayer player, string message, string consoleSuffix = null)
         {
             if (player == null) return;
             string text = "[SKATE-BUILDER] " + message;
-            player.ConsoleMessage(text);
+            player.ConsoleMessage(text + (consoleSuffix ?? ""));
             player.ChatMessage(text);
         }
+
+        // Optional opaque receipt for the ordinary-plan frontend. Old console callers keep their replies.
+        private static bool BuilderReceiptToken(string token)
+        {
+            if (token == null || token.Length != 32) return false;
+            foreach (char c in token) if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) return false;
+            return true;
+        }
+
+        private void BuilderPlacementReply(BasePlayer player, string receipt, string message)
+        { BuilderReply(player, message, receipt == null ? null : " [request=" + receipt + "]"); }
+
+        private void BuilderSelectionReply(BasePlayer player, string receipt, string message)
+        { BuilderReply(player, message, receipt == null ? null : " [selection=" + receipt + "]"); }
 
         [ConsoleCommand("skate.builder")]
         private void SelectBuilderPiece(ConsoleSystem.Arg arg)
@@ -4428,45 +4444,53 @@ namespace Oxide.Plugins
             BasePlayer player = arg.Player();
             if (player == null) { arg.ReplyWith("Use the Skate builder with your held building plan in game."); return; }
             string[] args = arg.Args == null ? new string[0] : arg.Args.Select(value => value.ToString()).ToArray();
-            if (args.Length == 1 && string.Equals(args[0], "off", StringComparison.OrdinalIgnoreCase))
-            { builderSelections.Remove(player.userID); BuilderReply(player, "off"); return; }
+            string receipt = args.Length == 2 && BuilderReceiptToken(args[1]) ? args[1] : null;
+            if ((args.Length == 1 || receipt != null) && string.Equals(args[0], "off", StringComparison.OrdinalIgnoreCase))
+            {
+                BuilderSelection selected;
+                // A delayed off request must not remove a newer selection. Legacy console off remains explicit.
+                if (receipt == null || !builderSelections.TryGetValue(player.userID, out selected) || selected.Receipt == receipt)
+                    builderSelections.Remove(player.userID);
+                BuilderSelectionReply(player, receipt, "off"); return;
+            }
             if (args.Length >= 1 && string.Equals(args[0], "place", StringComparison.OrdinalIgnoreCase))
             {
                 int turn = 0;
-                if (args.Length > 2 || (args.Length == 2 && (!int.TryParse(args[1], NumberStyles.None, CultureInfo.InvariantCulture, out turn) || turn < 0 || turn > 3)))
-                { BuilderReply(player, "placement-refused Rotation must be a quarter-turn index from zero to three; no Wood was spent."); return; }
-                PlaceBuilderPiece(player, turn);
+                if (args.Length > 3 || (args.Length >= 2 && (!int.TryParse(args[1], NumberStyles.None, CultureInfo.InvariantCulture, out turn) || turn < 0 || turn > 3)) ||
+                    (args.Length == 3 && !BuilderReceiptToken(args[2])))
+                { BuilderReply(player, "placement-refused Use a quarter-turn index from zero to three and an optional 32-character receipt; no Wood was spent."); return; }
+                PlaceBuilderPiece(player, turn, args.Length == 3 ? args[2] : null);
                 return;
             }
             builderSelections.Remove(player.userID);
             SkateParkKind kind;
-            if (args.Length != 1 || !SkateParkLayout.TryKind(args[0], out kind))
-            { BuilderReply(player, "refused Choose one of the twelve Skate pieces, or off for normal building."); return; }
+            if ((args.Length != 1 && receipt == null) || !SkateParkLayout.TryKind(args[0], out kind))
+            { BuilderSelectionReply(player, receipt, "refused Choose one of the twelve Skate pieces, or off for normal building."); return; }
             if (!BuilderAllowed(player))
-            { BuilderReply(player, "refused Stand on foot, alive and on dry land with Skate access."); return; }
+            { BuilderSelectionReply(player, receipt, "refused Stand on foot, alive and on dry land with Skate access."); return; }
             if (parkBusy || parkRefreshing || parkNativeCleaning || parkClosing || SaveRestore.IsSaving || !parkReady)
-            { BuilderReply(player, "refused Park placement is busy or unavailable."); return; }
+            { BuilderSelectionReply(player, receipt, "refused Park placement is busy or unavailable."); return; }
             string failure;
-            if (!RefreshParkWorld(out failure)) { BuilderReply(player, "refused " + failure); return; }
+            if (!RefreshParkWorld(out failure)) { BuilderSelectionReply(player, receipt, "refused " + failure); return; }
             Item item = player.GetActiveItem();
             Planner planner = player.GetHeldEntity() as Planner;
             ItemContainer belt = player.inventory == null ? null : player.inventory.containerBelt;
             if (item == null || item.info == null || item.info.shortname != SkateParkBuildItems.Carrier ||
                 TaggedParkItem(item) || item.amount != 1 || item.IsRemoved() || !item.isServer ||
                 item.uid.Equals(default(ItemId)) || !ParkPlannerItem(player, belt, item, planner))
-            { BuilderReply(player, "refused Hold your ordinary building plan."); return; }
+            { BuilderSelectionReply(player, receipt, "refused Hold your ordinary building plan."); return; }
             foreach (var pair in builderSelections.ToArray())
             {
                 BuilderSelection ignored;
                 CurrentBuilderSelection(pair.Value.Player, pair.Value.Planner, out ignored);
             }
             if (!builderSelections.ContainsKey(player.userID) && builderSelections.Count >= MaximumParkSelections)
-            { BuilderReply(player, "refused The builder selection limit is reached."); return; }
+            { BuilderSelectionReply(player, receipt, "refused The builder selection limit is reached."); return; }
             parkSelections.Remove(player.userID);
             parkSelectionEpoch = new object();
             builderSelections[player.userID] = new BuilderSelection { Player = player, Planner = planner, Item = item,
-                Uid = item.uid, Definition = item.info, Kind = kind };
-            BuilderReply(player, "selected " + SkateParkLayout.Name(kind));
+                Uid = item.uid, Definition = item.info, Kind = kind, Receipt = receipt };
+            BuilderSelectionReply(player, receipt, "selected " + SkateParkLayout.Name(kind));
             player.ChatMessage(SkateParkBuildItems.Name(kind) + " costs 10 Wood. Left click with your ordinary building plan; failed placement costs nothing.");
         }
 
@@ -4478,22 +4502,22 @@ namespace Oxide.Plugins
                 ReferenceEquals(player.GetActiveItem(), selection.Item);
         }
 
-        private void PlaceBuilderPiece(BasePlayer player, int quarterTurn)
+        private void PlaceBuilderPiece(BasePlayer player, int quarterTurn, string receipt)
         {
             BuilderSelection selected;
             Planner planner = player == null ? null : player.GetHeldEntity() as Planner;
             if (!CurrentBuilderSelection(player, planner, out selected))
-            { BuilderReply(player, "placement-refused Hold the selected ordinary building plan on foot with Skate access; no Wood was spent."); return; }
+            { BuilderPlacementReply(player, receipt, "placement-refused Hold the selected ordinary building plan on foot with Skate access; no Wood was spent."); return; }
             double now = clock.Elapsed.TotalSeconds;
             double next;
             if (quarterTurn < 0 || quarterTurn > 3 ||
                 (builderPlaceTimes.TryGetValue(player.userID, out next) && now < next) || builderPending != null ||
                 parkBusy || parkRefreshing || parkNativeCleaning || parkClosing || !parkReady || SaveRestore.IsSaving ||
                 parkNativeRequests.Count != 0)
-            { BuilderReply(player, "placement-refused Placement is busy or not ready; no Wood was spent."); return; }
+            { BuilderPlacementReply(player, receipt, "placement-refused Placement is busy or not ready; no Wood was spent."); return; }
             foreach (var pair in builderPlaceTimes.Where(pair => pair.Value <= now).ToArray()) builderPlaceTimes.Remove(pair.Key);
             if (!builderPlaceTimes.ContainsKey(player.userID) && builderPlaceTimes.Count >= MaximumParkSelections)
-            { BuilderReply(player, "placement-refused Placement is busy; no Wood was spent."); return; }
+            { BuilderPlacementReply(player, receipt, "placement-refused Placement is busy; no Wood was spent."); return; }
             builderPlaceTimes[player.userID] = now + 0.25;
             builderPending = selected;
             try
@@ -4504,22 +4528,22 @@ namespace Oxide.Plugins
                     {
                         if (!ReferenceEquals(builderPending, selected)) return;
                         string failure;
-                        if (!RefreshParkWorld(out failure)) { BuilderReply(player, "placement-refused " + failure); return; }
+                        if (!RefreshParkWorld(out failure)) { BuilderPlacementReply(player, receipt, "placement-refused " + failure); return; }
                         BuilderSelection current;
                         if (!CurrentBuilderSelection(player, planner, out current) || !ReferenceEquals(current, selected))
-                        { BuilderReply(player, "placement-refused The selected plan changed; no Wood was spent."); return; }
+                        { BuilderPlacementReply(player, receipt, "placement-refused The selected plan changed; no Wood was spent."); return; }
                         if (BuilderWoodCount(player) < BuilderWoodPrice)
-                        { BuilderReply(player, "placement-refused This Skate piece costs 10 Wood; no Wood was spent."); return; }
+                        { BuilderPlacementReply(player, receipt, "placement-refused This Skate piece costs 10 Wood; no Wood was spent."); return; }
                         uint foundationId = StringPool.Get(ParkFoundationPrefab);
                         Construction foundation = PrefabAttribute.server == null ? null : PrefabAttribute.server.Find<Construction>(foundationId);
                         if (!NativeParkConstruction(foundation))
-                        { BuilderReply(player, "placement-refused The stock building-plan construction is unavailable; no Wood was spent."); return; }
+                        { BuilderPlacementReply(player, receipt, "placement-refused The stock building-plan construction is unavailable; no Wood was spent."); return; }
                         var failures = new List<string>();
                         ParkNativePart[] definitions;
                         if (!ParkPrefabs(selected.Kind, failures, out definitions) || failures.Count != 0)
-                        { BuilderReply(player, "placement-refused The selected piece's native prefabs are unavailable; no Wood was spent."); return; }
+                        { BuilderPlacementReply(player, receipt, "placement-refused The selected piece's native prefabs are unavailable; no Wood was spent."); return; }
                         var request = new ParkPlacementRequest { Player = player, Planner = planner, PlannerItem = selected.Item,
-                            Belt = player.inventory.containerBelt, Data = parkData, Builder = selected, ItemKind = selected.Kind,
+                            Belt = player.inventory.containerBelt, Data = parkData, Builder = selected, BuilderReceipt = receipt, ItemKind = selected.Kind,
                             ItemUid = selected.Uid, ItemDefinition = selected.Definition, ItemData = selected.Item.instanceData, Owner = player.userID };
                         Ray ray = player.eyes.HeadRay();
                         RaycastHit hit;
@@ -4529,12 +4553,12 @@ namespace Oxide.Plugins
                             !Physics.Raycast(ray.origin, ray.direction.normalized, out hit, MaximumParkPlacementDistance, mask, QueryTriggerInteraction.Ignore) ||
                             hit.collider == null || !Coordinate(hit.point) || !Coordinate(hit.normal) ||
                             (selected.Kind != SkateParkKind.HalfWallKicker && hit.normal.y <= 0))
-                        { BuilderReply(player, "placement-refused Aim at valid support within 25 metres; no Wood was spent."); return; }
+                        { BuilderPlacementReply(player, receipt, "placement-refused Aim at valid support within 25 metres; no Wood was spent."); return; }
                         ParkGroup group;
                         if (selected.Kind == SkateParkKind.HalfWallKicker)
                         {
                             if (!TryWallPlacement(request, ray, null, definitions, out group, out failure))
-                            { BuilderReply(player, "placement-refused " + failure); return; }
+                            { BuilderPlacementReply(player, receipt, "placement-refused " + failure); return; }
                         }
                         else
                         {
@@ -4543,16 +4567,16 @@ namespace Oxide.Plugins
                             if (host != null)
                             {
                                 if (!TryParkTargetFrame(request, host, hit, quarterTurn * 90, true, definitions, out x, out z, out yaw, out failure))
-                                { BuilderReply(player, "placement-refused " + failure); return; }
+                                { BuilderPlacementReply(player, receipt, "placement-refused " + failure); return; }
                             }
                             else if (!SkateParkLayout.TrySnapYaw(player.eyes.rotation.eulerAngles.y + quarterTurn * 90,
                                 0, ParkRotationStep(), out yaw))
-                            { BuilderReply(player, "placement-refused The native support rotation is unavailable; no Wood was spent."); return; }
+                            { BuilderPlacementReply(player, receipt, "placement-refused The native support rotation is unavailable; no Wood was spent."); return; }
                             group = new ParkGroup { Id = Guid.NewGuid().ToString("N"), Owner = request.Owner,
                                 Kind = SkateParkLayout.Name(selected.Kind), AnchorX = x, AnchorY = hit.point.y,
                                 AnchorZ = z, AnchorYaw = yaw, Members = new List<ParkMember>() };
                             if (!ResolveParkSupport(request, selected.Kind, definitions, group, out failure))
-                            { BuilderReply(player, "placement-refused " + failure); return; }
+                            { BuilderPlacementReply(player, receipt, "placement-refused " + failure); return; }
                         }
                         var target = new Construction.Target { valid = true, player = player, ray = ray,
                             entity = hit.collider.ToBaseEntity(), position = hit.point, normal = hit.normal,
@@ -4562,13 +4586,13 @@ namespace Oxide.Plugins
                         try { permitted = ParkBuildingHook(request, foundation, target); }
                         finally { parkBusy = false; }
                         if (!permitted || !CurrentParkRequest(request))
-                        { BuilderReply(player, "placement-refused A native building hook or plan check refused placement; no Wood was spent."); return; }
+                        { BuilderPlacementReply(player, receipt, "placement-refused A native building hook or plan check refused placement; no Wood was spent."); return; }
                         if (!BuildParkAssembly(request, selected.Kind, definitions, group, out failure))
-                        { BuilderReply(player, "placement-refused " + failure); return; }
+                        { BuilderPlacementReply(player, receipt, "placement-refused " + failure); return; }
                         ParkPlacementFeedback(player, group);
                     }
                     catch (Exception error)
-                    { BuilderReply(player, "placement-refused " + error.Message); }
+                    { BuilderPlacementReply(player, receipt, "placement-refused " + error.Message); }
                     finally { if (ReferenceEquals(builderPending, selected)) builderPending = null; }
                 });
             }
@@ -4587,7 +4611,7 @@ namespace Oxide.Plugins
             BuilderSelection selection;
             if (player != null && builderSelections.TryGetValue(player.userID, out selection) &&
                 ReferenceEquals(selection.Player, player) && !ReferenceEquals(newItem, selection.Item))
-            { builderSelections.Remove(player.userID); BuilderReply(player, "off"); }
+            { builderSelections.Remove(player.userID); BuilderSelectionReply(player, selection.Receipt, "off"); }
         }
 
         private static bool ParkPlannerItem(BasePlayer player, ItemContainer belt, Item item, Planner planner)
@@ -8416,7 +8440,7 @@ namespace Oxide.Plugins
                 parkReady = false;
                 PrintError("A committed park or Wood receipt changed during cleanup; new placement is disabled, saved parts remain tracked and no duplicate refund was created.");
             }
-            try { BuilderReply(request.Player, verified ? "placed " + SkateParkLayout.Name(request.ItemKind) + " 10 Wood" :
+            try { BuilderPlacementReply(request.Player, request.BuilderReceipt, verified ? "placed " + SkateParkLayout.Name(request.ItemKind) + " 10 Wood" :
                 "payment-review The park was saved, but payment cleanup changed unexpectedly. Do not retry; private operator recovery is required."); }
             catch (Exception) { PrintWarning("The saved park's payment confirmation could not be delivered."); }
         }

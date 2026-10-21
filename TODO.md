@@ -8,6 +8,21 @@ Nieuwe wensen van Andy komen eerst hier en in #469 te staan, met zijn eigen woor
 
 Oude lijst (alles tot 18 oktober): [docs/TODO-HISTORY.md](docs/TODO-HISTORY.md).
 
+## Eigenaarfeedback 21 oktober: open verzoeken blijven vooruitgaan
+
+Andy: "Er is een blockade ergens en dan stop je" en "de dingen die ik vroeg blijven open".
+Een geblokkeerde native proef legt het overige bronwerk niet stil. Codex werkt vanaf de huidige `main` parallel aan drie samenhangende onderdelen en brengt gecontroleerde wijzigingen samen voor de volgende ontwikkelbuild. Geen van deze onderdelen is al door Andy goedgekeurd.
+
+| Onderdeel | Codex-bronbranch | Waarneembaar resultaat dat nog nodig is |
+|---|---|---|
+| Kniepompen met de controller | `codex/knee-pump-flow` | Beide voeten blijven op het board; inveren en uitstrekken geven snelheid in beide rijrichtingen; loslaten of een menu openen start geen voetpush of pompimpuls |
+| Push, air, catch en landing | `codex/rider-motion-feedback` | Het lichaam en de voeten volgen het board vloeiend, zonder plots rechtzetten in de air; regular, goofy, fakie en mongo blijven coherent |
+| Gewoon bouwplan en grote skateparken | `codex/ordinary-plan-feedback` | Alle twaalf stukken via het gewone bouwplan kiezen, vooraf bekijken en herhaald plaatsen; exact 10 hout per geslaagd stuk; duidelijke bouwlimieten zonder verloren hout |
+
+De controller te voet en de native kijkrichting na afstappen blijven afzonderlijke open fouten. De huidige Rust-aanroep voor het herstellen van de kijkrichting is niet veilig beschikbaar via de gegenereerde bibliotheken. Daarvoor is nog geen werkende oplossing geleverd. Dit blokkeert het bovenstaande bronwerk niet.
+
+De gecombineerde ontwikkelkandidaat is client .40 met server .37. De bron bevat nu de gescheiden knie-pomp/voetpush, doorlopende voetcontacten en bevestigde plaatsingsaanvragen via het gewone bouwplan. Andy herhaalt: "geen air, nog altijd horizontaal trekken in de lucht". De automatische afvlakking van board en lichaam bij de vluchtapex is daarom verwijderd: het vertrekvlak blijft gelden totdat een gemeten landingsaanpak begint. De eigen MEGA-overgang naar het dek wordt afzonderlijk van echte muren beoordeeld; een obstakel achter die overgang blijft botsen. Deze versie is nog niet native gebouwd of geïnstalleerd. Geen van deze bronwijzigingen sluit de open ingamefeedback.
+
 ## Eigenaarfeedback 20 oktober: lichaam, push en air
 
 Andy over de .31-rit: "ik werd niet meer gerukt , en ik ben boven de coping geraakt, maar tijdens de air trekt mijn playermodel horizontaal recht".
@@ -34,11 +49,11 @@ Pompen betekent op het board inveren en getimed uitstrekken in de transition. Be
 
 ## Nu: de halfpipe moet rijdbaar zijn
 
-Niets anders gaat voor, tot dit klaar is.
+De halfpipe blijft een open rijprobleem. De laatste eigenaarinstructie vraagt daarnaast vooruitgang op de overige open feedback, ook wanneer deze rijproef geblokkeerd is.
 
 De eigen native .37-proef van 21 oktober koppelt terugzetten na het eerste opstappen aan een clientpauze van 1,9 seconde en zes gelogde servercorrecties. Client .38 is native gebouwd, met back-up geïnstalleerd en gereden: de voorbereiding gebeurt vóór het opstappen; het eerste gemeten rijinterval was gemiddeld 20,7 ms over 49 frames. De aparte bewegende rit met ollie en landing telde 1.272 native servercontroles zonder afwijzing of terugzetcommando. Dit zijn toetsenbordproeven op vlak terrein, geen controller- of halfpipegoedkeuring. Een halfpipevervolg kon niet opnieuw opstappen na teleport; de consolefout wordt nog onderzocht.
 
-De .39-bron verwerkt de review van deze voorbereiding: scenario's starten pas wanneer opstappen mogelijk is; gewone lage beeldsnelheid verlengt de voorbereiding niet, terwijl herhaalde echte stalls expliciet op herstel wachten. Een lege handcache krijgt bij opstappen een lokale zoekslag en lopen veroorzaakt geen periodieke volledige rijdermodelscan. De gezamenlijke actuele Rust/Unity-API en gerichte bronflow zijn gecontroleerd. Native bouw, installatie en rijvalidatie van .39 staan nog open. De beweging, servergrenzen en controllerbediening veranderen niet; de controller-, pomp-, coping- en animatiefeedback blijft open.
+De .39-voorbereiding is gemerged in PR #525, native gebouwd en na een gecontroleerde back-up geïnstalleerd en geladen. De eerste gemeten rit op vlak terrein haalde 11 m/s; het eerste timinginterval was gemiddeld 26,1 ms over 39 frames. De overlappende servermeting telde 766 validaties zonder afwijzing of terugzetcommando. Dit is geen maximale frametijd en geen halfpipe- of controllergoedkeuring. Opstappen op de bestaande MEGA lukte later, maar een geslaagde beklimming, fakie-terugkeer, knie-pomp en air boven de coping zijn daarmee niet bewezen. De eerdere blokkering bovenaan de halfpipe blijft open.
 
 | # | Wat | Issue / PR | Eigenaar | Klaar als |
 |---|-----|------------|----------|-----------|

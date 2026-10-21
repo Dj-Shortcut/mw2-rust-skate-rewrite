@@ -54,8 +54,8 @@ namespace Shortcut.RustMod
         private const double FrameTolerance = 0.000001;
         private const double Substep = 1.0 / 120;
 
-        // Display only: leave the support frame continuously, level near the flight apex,
-        // then meet the sensed landing plane. Neither catch state nor stance snaps this frame.
+        // Display only: keep the departure support frame until a sensed landing approach,
+        // then meet that plane continuously. Neither apex, catch nor stance levels the flight.
         public const double AirReleaseMinimum = 0.18, AirLandingLead = 0.25, AirFrameRadiansPerSecond = Math.PI * 2;
         public static bool TryAirFrame(SkateRiderAirFrameState state, double dt,
                                        SkateVector takeoffUp, double sinceRelease, double riseAtRelease, double gravity,
@@ -70,10 +70,6 @@ namespace Shortcut.RustMod
                 (state.Initialized && (!Normal(state.Up) || state.Up.Y <= 0 || !Normal(state.LandingUp) || state.LandingUp.Y <= 0 ||
                     !Finite(state.LandingShare) || state.LandingShare < 0 || state.LandingShare > 1)))
             { error = "Invalid rider air display frame."; return false; }
-            var duration = Math.Max(AirReleaseMinimum, riseAtRelease / gravity);
-            var release = Math.Min(1, sinceRelease / duration);
-            release *= release * (3 - 2 * release);
-            var released = Unit(takeoffUp * (1 - release) + new SkateVector(0, 1, 0) * release);
             var land = closingSpeed > 0.000001 ? Math.Max(0, Math.Min(1,
                 1 - Math.Max(0, gapToContact) / (closingSpeed * AirLandingLead))) : 0;
             land *= land * (3 - 2 * land);
@@ -82,7 +78,7 @@ namespace Shortcut.RustMod
             var plane = state.Initialized ? state.LandingUp : landingUp;
             if (land > 0) plane = held > 0 ? AirTurn(plane, landingUp, dt) : landingUp;
             land = Math.Max(held, land);
-            var target = Unit(released * (1 - land) + plane * land);
+            var target = Unit(takeoffUp * (1 - land) + plane * land);
             up = AirTurn(state.Initialized ? state.Up : takeoffUp, target, dt);
             if (!Normal(up) || up.Y <= 0) { up = takeoffUp; error = "Rider air display frame left the upper hemisphere."; return false; }
             next = new SkateRiderAirFrameState(up, plane, land);

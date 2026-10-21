@@ -655,7 +655,7 @@ public static class RiderRig
                 DeckTop, mode == RideMode.Bail ? SkateRide.Clamp((now - SkateRide.ModeAt) / SkateRide.BailSeconds, 0f, 1f) : 0f,
                 SkateRide.PushLead, plant, contact.Initialized ? contact.GrabSeconds : grabHold >= 0f ? grabHold : grabSince < 0f ? 0f : now - grabSince, handplant,
                 SkateRide.Clamp(SkateBoard.PitchDegrees, -40f, 40f) * Math.PI / 180.0,
-                noseSlide, chestLead, mode == RideMode.Air ? SkateRide.ShoveDeg : 0.0, landing, contact);
+                noseSlide, chestLead, mode == RideMode.Air ? SkateRide.ShoveDeg : 0.0, landing, contact, SkateRide.PushPeriod);
             SkateRiderPose pose; string error;
             if (!SkateRider.TryCreate(Rig, input, out pose, out error))
             {
@@ -734,7 +734,15 @@ public static class RiderRig
             if (pinR) { joint[RHandJ] = V(pose.RightHand); joint[RElbowJ] = V(pose.RightElbow); }
             if (pinL && !pinR) ReachFreeHand(RShoulderJ, RHandJ);
             if (pinR && !pinL) ReachFreeHand(LShoulderJ, LHandJ);
-            Apply(upV, legsOnly);
+            // The trunk keeps the support frame; the soles meet the pitched deck. Only the
+            // pushing foot rolls onto the ground plane during its existing contact window.
+            var groundContact = pushing ? (float)SkateRider.PushContact(input.PushPhase) : 0f;
+            var footTravel = new Vector3((float)fx, (float)fy, (float)fz) * (input.Switch ? -1f : 1f);
+            var leftPitch = mode == RideMode.Bail ? 0 : input.DeckPitch * (pushing && pushLeft ? 1f - groundContact : 1f);
+            var rightPitch = mode == RideMode.Bail ? 0 : input.DeckPitch * (pushing && !pushLeft ? 1f - groundContact : 1f);
+            var leftSole = upV * (float)Math.Cos(leftPitch) - footTravel * (float)Math.Sin(leftPitch);
+            var rightSole = upV * (float)Math.Cos(rightPitch) - footTravel * (float)Math.Sin(rightPitch);
+            Apply(upV, legsOnly, leftSole, rightSole);
             Applied++;
         }
         catch (Exception e) { failed = true; Say("pose threw " + e.GetType().Name + ": " + e.Message); }
@@ -817,7 +825,7 @@ public static class RiderRig
     }
     public const float StallArms = 1.6f;
 
-    private static void Apply(Vector3 up, bool legsOnly)
+    private static void Apply(Vector3 up, bool legsOnly, Vector3 leftSole, Vector3 rightSole)
     {
         var hipsNow = RHip.position - LHip.position; var upNow = spine[0].position - Pelvis.position;
         if (hipsNow.sqrMagnitude > 0.000001f && upNow.sqrMagnitude > 0.000001f)
@@ -902,13 +910,13 @@ public static class RiderRig
 
         Limb(LHip, LKnee, LFoot, joint[LAnkleJ], joint[LKneeJ], Thigh, Shin, "left ankle");
         Limb(RHip, RKnee, RFoot, joint[RAnkleJ], joint[RKneeJ], Thigh, Shin, "right ankle");
-        var drop = up * (AnkleHeight - ToeHeight);
-        Aim(LFoot, LToe, joint[LToeJ] - drop - LFoot.position);
-        Aim(RFoot, RToe, joint[RToeJ] - drop - RFoot.position);
+        var soleL = SkateBoard.Held ? SkateBoard.HeldUp : leftSole;
+        var soleR = SkateBoard.Held ? SkateBoard.HeldUp : rightSole;
+        Aim(LFoot, LToe, joint[LToeJ] - soleL * (AnkleHeight - ToeHeight) - LFoot.position);
+        Aim(RFoot, RToe, joint[RToeJ] - soleR * (AnkleHeight - ToeHeight) - RFoot.position);
         // The feet lie flat on the deck: with the board held against them, their tops face the pelvis.
-        var sole = SkateBoard.Held ? SkateBoard.HeldUp : up;
-        Roll(LFoot, (LToe.position - LFoot.position).normalized, lSole, sole);
-        Roll(RFoot, (RToe.position - RFoot.position).normalized, rSole, sole);
+        Roll(LFoot, (LToe.position - LFoot.position).normalized, lSole, soleL);
+        Roll(RFoot, (RToe.position - RFoot.position).normalized, rSole, soleR);
         HeadPosed = Head.position;
     }
 

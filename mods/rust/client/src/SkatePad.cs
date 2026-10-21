@@ -24,6 +24,7 @@ public static class SkatePad
 
     // What the reader last said, and when a hand was last on the controller.
     public static bool Shared;
+    public static uint InputEpoch { get; private set; }
     public static int Buttons;
     public static float LeftX, LeftY, RightX, RightY, LeftTrigger, RightTrigger, TouchedAt = -99f;
     // What the right stick has asked for since the ride last took it: a pop with what the board does
@@ -114,6 +115,7 @@ public static class SkatePad
 
     private static void Lost()
     {
+        if (Shared || primed) InputEpoch++;
         primed = rightSuspended = wasGrabbing = false; grabStick = 0; LeftSweep = leftAngle = 0f; leftOnRim = false; sweepFromUs = 0;
         Shared = false; Buttons = 0; LeftX = LeftY = RightX = RightY = LeftTrigger = RightTrigger = 0f;
         poppedCount = 0; BodyVarialDegrees = 0f; Charging = Manual = NoseManual = false; Charge = 0f; pressed = 0; flick = default(SkateFlickState);

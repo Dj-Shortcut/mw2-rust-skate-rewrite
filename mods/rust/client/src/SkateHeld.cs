@@ -292,7 +292,7 @@ public static class SkateHeld
     public static bool PausePlanner(object player, out string why)
     {
         why = "";
-        if (pausedPlanner != null && ReferenceEquals(plannerPlayer, player)) return HasPlanner(player);
+        if (pausedPlanner != null && ReferenceEquals(plannerPlayer, player) && HasPlanner(player)) return true;
         if (pausedPlanner != null) ResumePlanner();
         var root = player as UnityEngine.Component;
         if (root == null) { why = "The local player is unavailable."; return false; }
