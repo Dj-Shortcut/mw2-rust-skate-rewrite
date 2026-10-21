@@ -16,9 +16,17 @@ Het goedgekeurde vervolg is eerst één samenhangende push → afzet → air →
 
 | Wat | Issue | Eigenaar | Klaar als |
 |---|---|---|---|
-| Board en lichaam delen dezelfde actuele pose; vloeiende push en air zonder ongevraagd rechtzetten | #469 | Codex, `codex/client-motion-032` | Andy ziet en rijdt normale/mongo-push, een ollie/flip, transition-air en landing met samenhangende voet-/boardcontacten; de .31-rit zonder put-backs blijft behouden |
+| Board en lichaam delen dezelfde actuele pose; vloeiende push en air zonder ongevraagd rechtzetten | #469 | Codex, `codex/client-flow-034-public` | Andy ziet en rijdt normale/mongo-push, een ollie/flip, transition-air en landing met samenhangende voet-/boardcontacten; de .31-rit zonder put-backs blijft behouden |
 
-Status: implementatie gestart vanaf client .31; nog geen nieuwe build, installatie of rijvalidatie. De .31-verbetering is door Andy voor één rit gemeld; de volledige oude halfpipecriteria hieronder blijven afzonderlijk te bevestigen.
+Status: client .33 is native gebouwd en geïnstalleerd; daarna meldde Andy nog de ongewenste airpose, controllerproblemen na afstappen en terugzetten tijdens het rijden. De .34-ontwikkelbron bevat de beoordeelde air-, grab- en controller-pushcorrecties en behoudt de gemergede parkwheel, fakiecorrectie en optionele diagnose. Er is nog geen geïnstalleerde of gereden .34. De .31-verbetering gold voor één rit en sluit deze latere feedback niet.
+
+De geregistreerde MEGA is na de toegestane serverherstart met zijn 80 delen en gladde botsingsvlakken gecontroleerd. De oude, ongeregistreerde MEGA werd niet hersteld: de 80 oude entiteiten ontbraken. Dat is geen bewijs voor een foutloze rit op de huidige parkstukken.
+
+## Eigenaarfeedback 21 oktober: pompen is geen voetpush
+
+Andy: "door de knieen buigen om snelheid te maken, niet afpushen met een voet".
+
+Pompen betekent op het board inveren en getimed uitstrekken in de transition. Beide voeten blijven op het board; sturen of de triggers loslaten mag geen ongevraagde voetpush starten. De .34-bron onderbreekt een voetstroke bij controllercrouch en wacht bij een aangehouden voorwaartse stick op terugkeer voordat die opnieuw pusht. Klaar wanneer Andy de kniebuiging en het uitstrekken ziet, daardoor voelbaar snelheid opbouwt en boven de coping komt zonder servercorrecties. Een push- of grabverbetering sluit dit punt niet.
 
 ## Nu: de halfpipe moet rijdbaar zijn
 
@@ -42,8 +50,8 @@ Niets anders gaat voor, tot dit klaar is.
 
 | # | Wat | Issue / PR | Eigenaar | Klaar als |
 |---|-----|------------|----------|-----------|
-| 7 | Niets in de hand en niet bouwen tijdens het rijden | #469 punten 7 en 11; bouwplan uit sinds client 0.18.19, rode preview blijft; PR #518 (open, niet in het spel gezien) | Claude | Op het board: geen item zichtbaar, geen rode bouwpreview, niets te bouwen |
-| 8 | Flip en grab niet tegelijk | #469 punt 10; PR #520 (grab loslaten met de stick nog opzij flipt niet meer; niet in het spel gezien) | Claude | Met controller: grab vasthouden en flicken geeft geen flip+grab, en de grab loslaten flipt het board niet |
+| 7 | Niets in de hand en niet bouwen tijdens het rijden | #469 punten 7 en 11; PR #519 en #521 gemerged, volledige rijvalidatie blijft open | Claude | Op het board: geen item zichtbaar, geen rode bouwpreview, niets te bouwen |
+| 8 | Flip en grab niet tegelijk | #469 punt 10; PR #520 gemerged, volledige controller-/rijvalidatie blijft open | Claude | Met controller: grab vasthouden en flicken geeft geen flip+grab, en de grab loslaten flipt het board niet |
 | 9 | Boardgeluid klinkt als echt skaten | #469 punt 12 | open | Andy vindt het geluid oké |
 | 9b | Altijd dag op de server, zodat tests niet in het donker gebeuren | PR #502 | Claude | Overdag in het spel, en het blijft dag |
 

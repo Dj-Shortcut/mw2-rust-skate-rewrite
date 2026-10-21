@@ -52,6 +52,10 @@ namespace Shortcut.RustMod
         // ChestTurnDegrees: the chest turned ahead of a spin (positive frontside), or wound up
         // against the one that is coming; on top of the riding and pushing turn.
         public readonly double ChestTurnDegrees;
+        // ShoveDegrees: how far the deck has turned under the rider in a shove-it (negative
+        // backside), as FlipDegrees is for a flip. Landing (0..1): how much of a landing's impact
+        // the body is still taking up; it falls to 0 as the rider settles.
+        public readonly double ShoveDegrees, Landing;
         public SkateRiderInput(SkateVector boardPosition, SkateVector boardForward, SkateVector boardUp,
                                SkateStance stance, bool ridingSwitch, double speed, double leanDegrees,
                                double crouch, bool airborne, bool pushing, double pushPhase,
@@ -120,7 +124,16 @@ namespace Shortcut.RustMod
                                double flipDegrees, SkateGrabKind grabKind, bool bailed, double lookYawDegrees, double deckOffset,
                                double groundDrop, double bailPhase, bool mongoPush, double footPlant, double grabSeconds, double handplant,
                                double deckPitch, double noseSlide, double chestTurnDegrees)
-        { ChestTurnDegrees = chestTurnDegrees; NoseSlide = noseSlide; DeckPitch = deckPitch; MongoPush = mongoPush; FootPlant = footPlant; GrabSeconds = grabSeconds; Handplant = handplant;
+            : this(boardPosition, boardForward, boardUp, stance, ridingSwitch, speed, leanDegrees,
+                   crouch, airborne, pushing, pushPhase, flipDegrees, grabKind, bailed, lookYawDegrees, deckOffset,
+                   groundDrop, bailPhase, mongoPush, footPlant, grabSeconds, handplant, deckPitch, noseSlide, chestTurnDegrees, 0, 0) { }
+        public SkateRiderInput(SkateVector boardPosition, SkateVector boardForward, SkateVector boardUp,
+                               SkateStance stance, bool ridingSwitch, double speed, double leanDegrees,
+                               double crouch, bool airborne, bool pushing, double pushPhase,
+                               double flipDegrees, SkateGrabKind grabKind, bool bailed, double lookYawDegrees, double deckOffset,
+                               double groundDrop, double bailPhase, bool mongoPush, double footPlant, double grabSeconds, double handplant,
+                               double deckPitch, double noseSlide, double chestTurnDegrees, double shoveDegrees, double landing)
+        { ShoveDegrees = shoveDegrees; Landing = landing; ChestTurnDegrees = chestTurnDegrees; NoseSlide = noseSlide; DeckPitch = deckPitch; MongoPush = mongoPush; FootPlant = footPlant; GrabSeconds = grabSeconds; Handplant = handplant;
           BoardPosition = boardPosition; BoardForward = boardForward; BoardUp = boardUp; Stance = stance;
           Switch = ridingSwitch; Speed = speed; LeanDegrees = leanDegrees; Crouch = crouch; Airborne = airborne;
           Pushing = pushing; PushPhase = pushPhase; FlipDegrees = flipDegrees; GrabKind = grabKind; Grab = grabKind != SkateGrabKind.None;
@@ -208,8 +221,13 @@ namespace Shortcut.RustMod
 
             // In a flip the feet come up off the deck and apart, knees tucked, so the board turns over
             // under them; they come back down onto it as it comes round.
-            double flipping = input.Airborne && !input.Bailed ? Math.Abs(Math.Sin((input.FlipDegrees % 360) * Math.PI / 360)) : 0;
-            double lift = SkatePose.FootLift + (SkatePose.FlipFootLift + FlipTuck) * flipping;
+            bool tricking = input.Airborne && !input.Bailed;
+            double flipping = tricking ? Math.Abs(Math.Sin((input.FlipDegrees % 360) * Math.PI / 360)) : 0;
+            // In a shove-it the deck turns flat under the feet: they come up off it, less than for a
+            // flip, the board being level, and back down on it each half turn as its ends line up.
+            double shoving = tricking ? Math.Abs(Math.Sin((input.ShoveDegrees % 180) * Math.PI / 180)) : 0;
+            double clear = Math.Max(flipping, ShoveClear * shoving);
+            double lift = SkatePose.FootLift + (SkatePose.FlipFootLift + FlipTuck) * clear;
             var deck = input.BoardPosition + up * lift;
             var leftAnkle = deck + forward * (side * SkatePose.FootOffset);
             var rightAnkle = deck - forward * (side * SkatePose.FootOffset);
@@ -235,6 +253,19 @@ namespace Shortcut.RustMod
                 // The ollie's front foot, slid up toward the nose along the deck.
                 var slide = travel * (OllieSlide * input.NoseSlide);
                 if (backIsLeft) rightAnkle = rightAnkle + slide; else leftAnkle = leftAnkle + slide;
+            }
+            if (tricking && (input.FlipDegrees != 0 || input.ShoveDegrees != 0))
+            {
+                // What sets the board turning, at the start of each turn: the leading foot (the one
+                // that slides toward the leading end) flicks off the heel-side edge for a kickflip and
+                // the toe-side edge for a heelflip; the trailing foot scoops the tail toward the heels
+                // in a backside shove-it, toward the toes in a frontside one. Each foot comes back
+                // over the deck as the turn goes on, to be over it for the catch.
+                var flick = facing * (-Math.Sign(input.FlipDegrees) * FlickOut * Kick(Math.Abs(input.FlipDegrees) % 360 / 360)) +
+                    travel * (FlickAhead * Kick(Math.Abs(input.FlipDegrees) % 360 / 360));
+                var scoop = facing * (Math.Sign(input.ShoveDegrees) * ScoopOut * Kick(Math.Abs(input.ShoveDegrees) % 180 / 180));
+                if (backIsLeft) { rightAnkle = rightAnkle + flick; leftAnkle = leftAnkle + scoop; }
+                else { leftAnkle = leftAnkle + flick; rightAnkle = rightAnkle + scoop; }
             }
             var leadDeck = backIsLeft ? rightAnkle : leftAnkle;
             var backDeck = backIsLeft ? leftAnkle : rightAnkle;
@@ -363,7 +394,8 @@ namespace Shortcut.RustMod
             bool heelReach = grabbing && namedGrab && grip.Across < 0 && !grip.Both && grip.ChestTurn == 0;
             if (heelReach) chestFacing = facing * Math.Cos(grip.HeelTurn) + travel * (Math.Sin(grip.HeelTurn) * HeelTurnSign);
             double carve = lean * 0.65 * side * leanScale;
-            double pitch = input.Bailed ? chestPitch : 0.1 + 0.12 * crouch + PushLean * turn;
+            double landing = input.Bailed || input.Airborne ? 0 : input.Landing;
+            double pitch = input.Bailed ? chestPitch : 0.1 + 0.12 * crouch + PushLean * turn + LandLean * landing;
             var carved = up * Math.Cos(carve) + facing * Math.Sin(carve);
             var ahead = Unit(Project(chestFacing, carved));
             var grab = input.BoardPosition + up * input.DeckOffset + facing * 0.1 - travel * 0.12;
@@ -407,9 +439,10 @@ namespace Shortcut.RustMod
             double air = input.Airborne ? 1 : 0;
             // At rest the arms hang loosely a little out and ahead, the elbows bent, not straight
             // down at the sides; they come up and out with a crouch, a carve and in the air.
-            double armOut = armLength * (0.26 + 0.10 * crouch + 0.15 * carving + 0.30 * air);
+            // A board turning under the feet takes the arms a little further out, for the balance.
+            double armOut = armLength * (0.26 + 0.10 * crouch + 0.15 * carving + 0.30 * air + 0.12 * clear + LandArms * landing);
             double armDown = armLength * (0.84 - 0.22 * crouch - 0.12 * carving - 0.34 * air);
-            double armAhead = armLength * (0.14 + 0.12 * crouch + 0.05 * speed);
+            double armAhead = armLength * (0.14 + 0.12 * crouch + 0.05 * speed + LandArms * landing);
             var along = travel * (armLength * (backIsLeft ? -1 : 1));
             // The arm opposite the pushing foot goes forward as that foot goes back; a mongo push
             // is the other foot, so the other arm.
@@ -474,6 +507,12 @@ namespace Shortcut.RustMod
         private const double PushHeel = 0.07, PushHipTwist = 8, PushHipDrive = 0.03;
         private const double GrabRoll = 0.4, GrabFoldLimit = 1.0, GrabTuckMargin = 0.05, PlantDrop = 0.3, GrabBackLimit = 0.55, HeelTurn = 1.2;
         private const double HeelTurnSign = 1;
+        // A board turning under the rider: how much of a flip's clearance a shove-it takes, and how
+        // far the flicking and scooping feet go out past the edge and ahead (metres, at the peak).
+        private const double ShoveClear = 0.6, FlickOut = 0.13, FlickAhead = 0.05, ScoopOut = 0.1;
+        // Landing: the chest folds forward over the knees and the arms come forward and out as the
+        // impact is taken up.
+        private const double LandLean = 0.22, LandArms = 0.16;
         private const double FlipTuck = 0.14, FlipSpread = 0.05, PitchWeight = 0.18, OllieSlide = 0.13;
         // The handplant: the side bend at the start (radians from upright), where the feet are folded
         // in by, how long the mix from the riding pose runs (of Handplant), the hand beside the board,
@@ -724,6 +763,11 @@ namespace Shortcut.RustMod
             return double.IsInfinity(crossing) ? best : crossing;
         }
 
+        // The kick at the start of a turn (fraction 0..1 of it): out over the first quarter, back
+        // over the deck by the half, not at all after it.
+        private static double Kick(double turned)
+        { return turned < 0.5 ? Math.Sin(turned * 2 * Math.PI) : 0; }
+
         // Where the pushing foot is in its stroke, from -1 (planted ahead) to 1 (swept back), 0 on
         // its place on the deck: read from the foot itself, so the arms and hips follow the contact
         // and not a clock that has no relation to it. Each side is measured against that stroke's
@@ -889,6 +933,7 @@ namespace Shortcut.RustMod
             Fraction(input.FootPlant) && Fraction(input.Handplant) && Finite(input.GrabSeconds) && input.GrabSeconds >= 0 && input.GrabSeconds <= 86400 &&
             Finite(input.DeckPitch) && Math.Abs(input.DeckPitch) <= MaximumDeckPitch && Fraction(input.NoseSlide) &&
             Finite(input.ChestTurnDegrees) && Math.Abs(input.ChestTurnDegrees) <= MaximumChestTurn &&
+            Finite(input.ShoveDegrees) && Math.Abs(input.ShoveDegrees) <= 3600000 && Fraction(input.Landing) &&
             Fraction(input.BailPhase) && input.GrabKind >= SkateGrabKind.None && input.GrabKind <= SkateGrabKind.Tailbone; }
         private static bool Finite(SkateRiderPose p)
         { return Vector(p.Pelvis) && Vector(p.LeftHip) && Vector(p.RightHip) && Vector(p.LeftKnee) && Vector(p.RightKnee) &&

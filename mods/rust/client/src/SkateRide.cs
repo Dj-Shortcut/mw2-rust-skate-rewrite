@@ -711,7 +711,10 @@ public static class SkateRide
         var pushLimit = h > 0.0001f ? MaxPush / h : 0f;
         // Rolling tail first, a push drives the board on the way it rolls (a fakie push), not to a stop.
         var fakiePush = Speed < -0.3f;
-        var pushing = SkateKeys.Push && !SkateKeys.Brake && !Manual && !NoseManual && (fakiePush ? Speed > -pushLimit : Speed < pushLimit);
+        // A controller pump interrupts a foot stroke too; the existing rider ease returns it to the deck.
+        var pumpCrouch = SkateKeys.Pad && SkateKeys.Crouch;
+        if (pumpCrouch) PushPhase = 0f;
+        var pushing = SkateKeys.Push && !pumpCrouch && !SkateKeys.Brake && !Manual && !NoseManual && (fakiePush ? Speed > -pushLimit : Speed < pushLimit);
         // Part of a push's speed comes as soon as it is asked for; the rest, the kick, comes while the
         // foot is on the ground driving the board on (below), so the surge is seen with the stroke.
         if (pushing && fakiePush) Speed = Math.Max(-pushLimit, Speed - PushAccel * PushSteady * dt);
@@ -883,7 +886,7 @@ public static class SkateRide
 
     private static void TakeOff(bool jumped, float vertical)
     {
-        if (Mode == RideMode.Ground) ViewNormal = Normal;
+        if (Mode == RideMode.Ground && Grounded) ViewNormal = Normal;
         // Read while the board still rolls: which end leads decides which way is frontside.
         spinSide = (TailFirst ? -1f : 1f) * StanceSign;
         Enter(RideMode.Air);

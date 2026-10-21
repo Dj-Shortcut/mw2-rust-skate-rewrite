@@ -18,6 +18,21 @@ validates placement and charges the price.
 
 ## Development verification
 
+Client 0.18.34 retains the displayed support frame when contact is lost at a transition
+take-off. Held grabs keep their hand and elbow targets through pose easing and shaping;
+during a single grab the free hand stays within its measured arm reach. Controller crouching interrupts a foot stroke,
+and a forward stick held through a pump must return before it can ask for another foot push.
+An explicit `A` or `X` push after trigger release remains available. These changes retain the
+current root lease, collision, outgoing ticks and park-building behavior.
+The wheel, fakie stroke correction and optional physics observations remain included.
+
+This is development source, not an installed 0.18.34 client. Earlier native builds and a
+successful 0.18.31 ride do not establish acceptance of this version: later 0.18.33 feedback
+still reported an unwanted air pose, controller/dismount trouble and server put-backs.
+Visible push/grab/air continuity, pumping with both feet on the board, and correction-free
+transition rides remain to be checked in the game. The server's registered MEGA health check
+does not establish those riding outcomes.
+
 Client 0.18.22 retries complete larger park assemblies before retaining smaller matches. A
 MEGA that first streamed as a bank or kicker can become the full round halfpipe when all its
 members arrive. Replacement prepares its surface first, preserves renderer/backing ownership,
