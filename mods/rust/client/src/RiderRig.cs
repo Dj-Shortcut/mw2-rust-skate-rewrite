@@ -74,6 +74,7 @@ public static class RiderRig
     private static int lookFailures;
     private static long skinSet;
     private static float nextScan, lookRetryAt;
+    private static bool lookPrepared;
     public const float ScanEvery = 5f;
     public static string LookState = "first person";
 
@@ -104,7 +105,7 @@ public static class RiderRig
     private static HeldThing[] held = new HeldThing[0];
     private static long heldSet;
     private static float nextHeld;
-    private static bool heldForced = true, heldThird, heldOff;
+    private static bool heldForced = true, heldThird, heldOff, heldPrepared;
     private static long heldSlow;
     // A frame's worth of this is a frame lost: past this the handling is switched off for the session.
     private const double HeldBudgetMs = 8.0; private const int HeldSlowFrames = 30;
@@ -112,17 +113,21 @@ public static class RiderRig
     private static float nextWhole, wholeWait = HeldWhole;
     private static int heldScanFailures;
 
-    private static void Held(bool wantThird, float now)
+    private static void Held(bool wantThird, float now, bool preparing = false)
     {
         if (heldOff) return;
         var began = SkateClock.Now();
         // The view going behind the rider is worth one look through the whole scene.
-        if (wantThird && !heldThird) { nextHeld = nextWhole = 0f; wholeWait = HeldWhole; }
+        if (wantThird && !heldThird)
+        {
+            if (!heldPrepared) { nextHeld = nextWhole = 0f; wholeWait = HeldWhole; }
+            else { nextHeld = now + HeldEvery; nextWhole = Math.Max(nextWhole, now + wholeWait); }
+        }
         heldThird = wantThird;
         // A set that lost a thing is looked for again at once, but once: the lost thing is dropped
         // so that it cannot ask for a look every frame, which cost the owner his frame rate.
         if (wantThird && HeldGone()) { nextHeld = nextWhole = 0f; wholeWait = HeldWhole; }
-        if (wantThird && now >= nextHeld && heldScanFailures < HeldScans)
+        if ((wantThird || preparing) && now >= nextHeld && heldScanFailures < HeldScans)
         {
             nextHeld = now + HeldEvery;
             try
@@ -153,7 +158,7 @@ public static class RiderRig
                     held = found.ToArray(); heldSet = set;
                     if (parts > 0 || names != "") Say("held item: " + names + ", " + parts + " parts out of the camera's way");
                 }
-                heldScanFailures = 0;
+                heldScanFailures = 0; heldPrepared = true;
             }
             catch (Exception e)
             {
@@ -280,11 +285,18 @@ public static class RiderRig
         catch (Exception e) { Say("near threw " + e.GetType().Name + ": " + e.Message); }
     }
 
+    // Read/cache presentation inputs before boarding, without hiding a hand or changing camera mode.
+    public static void PrepareLook(bool heldViews)
+    {
+        if (heldViews) Held(false, Time.realtimeSinceStartup, true);
+        else { lookPrepared = true; Look(false); }
+    }
+
     public static void Look(bool wantThird)
     {
         var now = Time.realtimeSinceStartup;
         var began = SkateClock.Now(); Held(wantThird, now); SkateClock.Add(SkateClock.Held, began);
-        if (!Bound || Root == null || lookFailures >= 3 || now < lookRetryAt) return;
+        if ((!lookPrepared && !SkateRide.On) || !Bound || Root == null || lookFailures >= 3 || now < lookRetryAt) return;
         try
         {
             if (now >= nextScan || SkinGone())
@@ -339,8 +351,8 @@ public static class RiderRig
         // What cannot be put back now is kept, and tried again from the next frame on.
         HeldRestore(false);
         var left = new System.Collections.Generic.List<HeldThing>(); HeldKeep(left);
-        held = left.ToArray(); heldSet = 0; heldScanFailures = 0; nextHeld = nextWhole = 0f; wholeWait = HeldWhole; heldHolder = null; heldOff = false; heldSlow = 0;
-        Bound = false; Mirrored = false; body = new SkinnedMeshRenderer[0]; legSet = new SkinnedMeshRenderer[0]; skinSet = 0;
+        held = left.ToArray(); heldSet = 0; heldScanFailures = 0; nextHeld = nextWhole = 0f; wholeWait = HeldWhole; heldHolder = null; heldOff = false; heldSlow = 0; heldPrepared = false;
+        Bound = false; Mirrored = false; lookPrepared = false; body = new SkinnedMeshRenderer[0]; legSet = new SkinnedMeshRenderer[0]; skinSet = 0;
     }
 
     private static void Show(bool wantThird, bool always)

@@ -36,6 +36,8 @@ Pompen betekent op het board inveren en getimed uitstrekken in de transition. Be
 
 Niets anders gaat voor, tot dit klaar is.
 
+De eigen native .37-proef van 21 oktober koppelt terugzetten na het eerste opstappen aan een clientpauze van 1,9 seconde en zes gelogde servercorrecties. De tweede, reeds voorbereide rit liep ruim vijf minuten zonder gemeten terugzettingen. De .38-bron verdeelt de eerste rijder-, hand- en geluidsvoorbereiding over frames vóór het opstappen, gevolgd door rustige frames. De beweging, servergrenzen en controllerbediening veranderen niet. Native bouw, installatie en een nieuwe koude-startproef staan nog open; dit sluit de controller-, pomp-, coping- en animatiefeedback niet af.
+
 | # | Wat | Issue / PR | Eigenaar | Klaar als |
 |---|-----|------------|----------|-----------|
 | 1 | Gewone halfpipe: server zet je niet terug op de wand | #494, PR #495 (gemerged; live nog niet bevestigd) | Codex | Andy rijdt 3× omhoog en fakie terug, `skate.log` toont 0 put-backs |

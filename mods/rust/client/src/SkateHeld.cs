@@ -296,7 +296,7 @@ public static class SkateHeld
         if (pausedPlanner != null) ResumePlanner();
         var root = player as UnityEngine.Component;
         if (root == null) { why = "The local player is unavailable."; return false; }
-        var model = RiderRig.Root != null ? (UnityEngine.Component)RiderRig.Root : root;
+        var model = RiderRig.Bound && RiderRig.Root != null ? (UnityEngine.Component)RiderRig.Root : root;
         var planners = model.GetComponentsInChildren<Planner>(false);
         Planner found = null;
         for (int i = 0; i < planners.Length; i++)
@@ -326,7 +326,7 @@ public static class SkateHeld
         }
         var root = player as UnityEngine.Component;
         if (root == null) return false;
-        var model = RiderRig.Root != null ? (UnityEngine.Component)RiderRig.Root : root;
+        var model = RiderRig.Bound && RiderRig.Root != null ? (UnityEngine.Component)RiderRig.Root : root;
         var planners = model.GetComponentsInChildren<Planner>(false);
         int found = 0;
         for (int i = 0; i < planners.Length; i++)
@@ -349,6 +349,17 @@ public static class SkateHeld
         plannerWasEnabled = false;
     }
 
+    // Resolve only the normal local routes while off the board. Do not select, hide or survey the scene.
+    public static void Prepare(object player)
+    {
+        if (player == null) return;
+        Read(player);
+        if (!selectLooked) LookForBelt(player);
+        var root = player as UnityEngine.Component;
+        var model = RiderRig.Bound && RiderRig.Root != null ? (UnityEngine.Component)RiderRig.Root : root;
+        if (model != null) model.GetComponentsInChildren<HeldEntity>(false);
+    }
+
     // Puts away what the hand holds, as on a vehicle: nothing is built, swung or fired while riding.
     // The game's belt is asked to clear its selection (ClearSelection, else SelectSlot(-1)); the
     // route is logged once, and what still sits in the hand is logged each time it fails.
@@ -365,7 +376,7 @@ public static class SkateHeld
         {
             const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
             if (!selectLooked) LookForBelt(player);
-            if (selectSlot == null) { SurveyBelt(); return Hide(player, out how); }
+            if (selectSlot == null) return Hide(player, out how);
             var field = selectMember as FieldInfo;
             var owner = field != null ? field.GetValue(player) : ((PropertyInfo)selectMember).GetValue(player, null);
             if (owner == null) { how = selectOwner + " is empty"; return false; }
@@ -396,7 +407,6 @@ public static class SkateHeld
     // building plan's ghost go with it, and a switched-off plan takes no clicks. Each one is
     // switched on again on stepping off (Show). What the held entity offers is logged once a type.
     private static readonly System.Collections.Generic.List<UnityEngine.GameObject> hidden = new System.Collections.Generic.List<UnityEngine.GameObject>();
-    private static bool sceneSaid;
     private static readonly System.Collections.Generic.HashSet<string> probed = new System.Collections.Generic.HashSet<string>();
     private static bool Hide(object player, out string how)
     {
@@ -410,7 +420,7 @@ public static class SkateHeld
         // The held entity sits on a hand bone (r_prop, l_prop) of the rider's model, which is not
         // under the player (the log: a building planner under r_prop in player_model.prefab);
         // what hangs on the back (a gun under spine3) is left alone.
-        var model = RiderRig.Root != null ? (UnityEngine.Component)RiderRig.Root : root;
+        var model = RiderRig.Bound && RiderRig.Root != null ? (UnityEngine.Component)RiderRig.Root : root;
         var off = 0; var names = "";
         var heldOnes = model.GetComponentsInChildren<HeldEntity>(false);
         for (var i = 0; i < heldOnes.Length; i++)
@@ -429,24 +439,8 @@ public static class SkateHeld
             names += " " + kind + " (" + go.name + ")" + Guides(c, first);
             off++;
         }
-        if (off == 0)
-        {
-            // Not under the player: where the game keeps its held entities is logged once.
-            if (!sceneSaid)
-            {
-                sceneSaid = true;
-                var all = UnityEngine.Object.FindObjectsOfType<HeldEntity>();
-                var where = "";
-                for (var i = 0; i < all.Length && i < 6; i++)
-                {
-                    if (all[i] == null) continue;
-                    var parent = all[i].transform.parent;
-                    where += " " + all[i].GetType().Name + "(" + all[i].gameObject.name + (all[i].gameObject.activeInHierarchy ? "" : ", off") + ") under " + (parent == null ? "nothing" : parent.name + (parent.root == null ? "" : " in " + parent.root.name));
-                }
-                Out.Say("HELD none under the player (" + root.gameObject.name + "); in the scene " + all.Length + ":" + (where == "" ? " (none)" : where));
-            }
-            return false;
-        }
+        // A scene-wide survey is diagnostic work, not part of every first boarding.
+        if (off == 0) return false;
         how = "switched off" + names;
         return true;
     }
@@ -462,9 +456,8 @@ public static class SkateHeld
     // have gone off with it. So what the plan refers to is read by shape, with its member names
     // obfuscated: every member whose type is a scene object (a GameObject, or a component) and
     // whose object is not under the plan. One named like a guide is switched off with the plan and
-    // comes back with it (Show). The first plan of a type logs all of them, and what is drawn near
-    // the rider under a guide-like name, so that the next log says where the preview lives when
-    // no member of the plan names it.
+    // comes back with it (Show). The first plan of a type logs those bounded local references;
+    // normal holstering does not survey every renderer in the scene.
     private static string Guides(UnityEngine.Component plan, bool log)
     {
         var names = ""; var line = ""; var n = 0;
@@ -504,7 +497,6 @@ public static class SkateHeld
             if (log) Out.Say("HELD the " + plan.GetType().Name + " refers to" + (line == "" ? " no scene object" : ":" + Short(line, 1200)));
         }
         catch (Exception e) { if (log) Out.Say("HELD reading the " + plan.GetType().Name + " threw: " + e.GetType().Name + ": " + e.Message); }
-        if (log) NearbyGuides(plan.transform.position);
         return names;
     }
 
