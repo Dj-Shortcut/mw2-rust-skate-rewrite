@@ -43,7 +43,7 @@ Niets anders gaat voor, tot dit klaar is.
 | # | Wat | Issue / PR | Eigenaar | Klaar als |
 |---|-----|------------|----------|-----------|
 | 7 | Niets in de hand en niet bouwen tijdens het rijden | #469 punten 7 en 11; bouwplan uit sinds client 0.18.19, rode preview blijft; PR #518 (open, niet in het spel gezien) | Claude | Op het board: geen item zichtbaar, geen rode bouwpreview, niets te bouwen |
-| 8 | Flip en grab niet tegelijk | #469 punt 10 | Claude | Met controller: grab vasthouden en flicken geeft geen flip+grab |
+| 8 | Flip en grab niet tegelijk | #469 punt 10; PR #520 (grab loslaten met de stick nog opzij flipt niet meer; niet in het spel gezien) | Claude | Met controller: grab vasthouden en flicken geeft geen flip+grab, en de grab loslaten flipt het board niet |
 | 9 | Boardgeluid klinkt als echt skaten | #469 punt 12 | open | Andy vindt het geluid oké |
 | 9b | Altijd dag op de server, zodat tests niet in het donker gebeuren | PR #502 | Claude | Overdag in het spel, en het blijft dag |
 
