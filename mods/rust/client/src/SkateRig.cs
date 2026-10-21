@@ -21,7 +21,122 @@ public class SkateRig : MonoBehaviour
     public static PlayerWalkMovement Walk;
     public static float AwakeAt = -1f;
     public static bool Ready { get { return Body != null && AwakeAt > 0f; } }
-    public static bool CanMount { get { return Ready && late != null && Walk != null && Walk.enabled && !SkateRide.On && Time.realtimeSinceStartup - offAt > 0.7f; } }
+    public static bool CanMount { get { return Ready && late != null && Walk != null && Walk.enabled && !SkateRide.On && Time.realtimeSinceStartup - offAt > 0.7f && MountPrepared; } }
+
+    // Preparation owns no movement or input. One unit per rendered frame, followed by quiet
+    // frames, keeps cold reflection/clip uploads out of the first mounted network tick.
+    private const float PrepareQuietSeconds = 3f, PrepareExtraWaitSeconds = 3f, PrepareStallGap = 0.8f;
+    private const double PrepareBudgetMs = 2.0;
+    private static BasePlayer preparePlayer;
+    private static Transform prepareRoot, prepareModel;
+    private static Rigidbody prepareBody;
+    private static PlayerWalkMovement prepareWalk;
+    private static float prepareLife, prepareFrame = -1f, prepareQuietUntil, prepareWaitLimit;
+    private static int prepareStage, prepareBindAttempts;
+    private static float prepareRetryAt;
+    private const int PrepareBindAttempts = 3;
+    private const float PrepareBindRetrySeconds = 5f;
+    private static bool prepareRider;
+    private static double prepareMaximumMs;
+    private static bool MountPreparationIdentity()
+    {
+        return Ready && Local != null && LocalT != null && Body != null && Walk != null && Walk.enabled &&
+            Local.lifestate == BaseCombatEntity.LifeState.Alive && Local == preparePlayer && LocalT == prepareRoot &&
+            Body == prepareBody && Walk == prepareWalk && AwakeAt == prepareLife &&
+            (!prepareRider || (RiderRig.Bound && RiderRig.Root != null && RiderRig.Root == prepareModel && RiderRig.Anim != null));
+    }
+    private static bool MountPrepared
+    {
+        get { return prepareStage == 6 && Time.realtimeSinceStartup >= prepareQuietUntil && MountPreparationIdentity(); }
+    }
+    private static void ForgetPreparation()
+    {
+        preparePlayer = null; prepareRoot = prepareModel = null; prepareBody = null; prepareWalk = null;
+        prepareLife = prepareQuietUntil = prepareWaitLimit = 0f; prepareStage = prepareBindAttempts = 0; prepareRetryAt = 0f; prepareRider = false; prepareMaximumMs = 0;
+    }
+    private static void PrepareMountFrame(float now)
+    {
+        var gap = prepareFrame < 0f ? 0f : now - prepareFrame; prepareFrame = now;
+        if (SkateRide.On) return;
+        if (!Ready || late == null || Local == null || LocalT == null || Walk == null || !Walk.enabled ||
+            Local.lifestate != BaseCombatEntity.LifeState.Alive)
+        { ForgetPreparation(); return; }
+        if (!MountPreparationIdentity())
+        {
+            ForgetPreparation();
+            preparePlayer = Local; prepareRoot = LocalT; prepareBody = Body; prepareWalk = Walk; prepareLife = AwakeAt;
+            prepareQuietUntil = now + PrepareQuietSeconds;
+            Say("PREPARE started; off-board cached setup");
+        }
+        // A delayed avatar gets bounded off-board retries, never a blocking retry during a ride.
+        if (!RiderRig.Bound && prepareStage >= 5 && prepareBindAttempts < PrepareBindAttempts && now >= prepareRetryAt)
+            prepareStage = 0;
+        if (prepareStage == 6) return;
+        var stalled = gap < 0f || gap >= PrepareStallGap;
+        if (prepareStage == 7)
+        {
+            // Repeated network-length stalls cannot safely be declared quiet. Keep the
+            // completed caches, report a bounded refusal, and retry only the recovery wait.
+            if (!stalled)
+            {
+                prepareQuietUntil = now + PrepareQuietSeconds;
+                prepareWaitLimit = prepareQuietUntil + PrepareExtraWaitSeconds;
+                prepareStage = 5;
+            }
+            return;
+        }
+        if (prepareStage == 5)
+        {
+            // Ordinary low frame rates do not keep cold setup pending forever. Only a
+            // gap as long as Rust's standard stall threshold restarts the recovery wait.
+            if (stalled)
+            {
+                if (now >= prepareWaitLimit)
+                {
+                    prepareStage = 7;
+                    Say("PREPARE waiting for frame recovery; setup is cached");
+                    return;
+                }
+                prepareQuietUntil = now + PrepareQuietSeconds;
+            }
+            if (now < prepareQuietUntil) return;
+            prepareStage = 6;
+            Say("PREPARE ready rider=" + RiderRig.Bound + " audio=" + SkateSfx.State + " max-unit-ms=" + prepareMaximumMs.ToString("F2") + "; press the mount control");
+            return;
+        }
+        var began = SkateClock.Now(); var stage = prepareStage;
+        try
+        {
+            if (stage == 0)
+            {
+                // A failed optional avatar mapping still permits the same board-only fallback.
+                prepareBindAttempts++;
+                prepareRetryAt = now + PrepareBindRetrySeconds;
+                RiderRig.Bind(LocalT);
+                prepareRider = RiderRig.Bound; prepareModel = RiderRig.Root;
+            }
+            else if (stage == 1) RiderRig.PrepareLook(false);
+            else if (stage == 2) RiderRig.PrepareLook(true);
+            else if (stage == 3) SkateHeld.Prepare(Local);
+            else if (!SkateSfx.PrepareStep()) return;
+        }
+        catch (Exception e)
+        {
+            // Presentation failure is optional, just as it was during MountNow; never force a body.
+            Say("PREPARE unit=" + stage + " unavailable: " + e.GetType().Name);
+        }
+        finally
+        {
+            var ms = (SkateClock.Now() - began) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+            prepareMaximumMs = Math.Max(prepareMaximumMs, ms);
+            // A unit can contain one uninterruptible engine call. Budget excess is reported,
+            // then followed by quiet off-board time; this is a cooperative budget, not a deadline.
+            prepareQuietUntil = Time.realtimeSinceStartup + PrepareQuietSeconds;
+            prepareWaitLimit = prepareQuietUntil + PrepareExtraWaitSeconds;
+            if (ms > PrepareBudgetMs) Say("PREPARE unit=" + stage + " ms=" + ms.ToString("F2") + "; waiting off board");
+        }
+        prepareStage++;
+    }
 
     private static GameObject board;
     private static LateDriver late;
@@ -181,6 +296,8 @@ public class SkateRig : MonoBehaviour
             if (Walk == null) SkateRide.Dismount("the movement object is gone");
             else if (!Walk.enabled) SkateRide.Dismount("the game took over the movement");
         }
+        try { PrepareMountFrame(now); }
+        catch (Exception e) { ForgetPreparation(); Say("PREPARE unavailable: " + e.GetType().Name); }
         if ((!Scenarios.Active || Scenarios.Plays) && Ready)
         {
             if (SkateRide.On)
@@ -194,11 +311,21 @@ public class SkateRig : MonoBehaviour
             {
                 var twice = false;
                 if (SkateKeys.JumpTap) { twice = now - lastJumpTap < 0.4f; lastJumpTap = twice ? -1f : now; }
-                if ((SkateKeys.ToggleTap || twice) && CanMount) MountNow(SkateCamera.LookYaw);
+                if (SkateKeys.ToggleTap || twice)
+                {
+                    if (CanMount) MountNow(SkateCamera.LookYaw);
+                    else if (!MountPrepared) SkateHud.Notice(prepareStage == 7 ? "Waiting for client frame recovery... press again when ready" : "Preparing skateboard... press again when ready");
+                }
             }
         }
         if (SkateRide.On && now >= nextLog) { nextLog = now + 1f; Say(SkateRide.Status() + " | " + RootProxyStatus() + " | " + SkateClock.Report()); }
-        if (wasOn && !SkateRide.On) { offAt = now; Say("OFF (" + SkateRide.OffReason + ") top=" + SkateRide.Top.ToString("F1") + " pull-backs=" + SkateRide.Resets + " score=" + SkateRide.Trick.TotalPoints); LevelView(); Unholster(); }
+        if (wasOn && !SkateRide.On)
+        {
+            offAt = now;
+            // This edge runs after keyboard dismount too; do not miss it in the earlier prep call.
+            if (!RiderRig.Bound) { prepareBindAttempts = 0; prepareRetryAt = now + PrepareBindRetrySeconds; }
+            Say("OFF (" + SkateRide.OffReason + ") top=" + SkateRide.Top.ToString("F1") + " pull-backs=" + SkateRide.Resets + " score=" + SkateRide.Trick.TotalPoints); LevelView(); Unholster();
+        }
         // Nothing in the hand while riding, as on a vehicle: no building or swinging from the board,
         // and nothing held to be seen. Every frame, so a slot picked mid-ride never shows.
         if (SkateRide.On && Local != null)
@@ -245,6 +372,7 @@ public class SkateRig : MonoBehaviour
         try { Unholster(); }
         catch (Exception e) { Out.Err("HELD restore during movement teardown threw " + e.GetType().Name + ": " + e.Message); }
         RiderRig.Unbind();
+        ForgetPreparation();
         if (forgetServer) SkateRide.ForgetServer();
         // The old driver is queued behind the old walk component, not the next one.
         if (late != null) { UnityEngine.Object.Destroy(late); late = null; }
@@ -338,11 +466,9 @@ public class SkateRig : MonoBehaviour
 
     public static void MountNow(float yaw)
     {
-        if (Body == null || SkateRide.On || !AcquireRootProxy()) return;
+        if (Body == null || SkateRide.On || !MountPrepared || !AcquireRootProxy()) return;
         try
         {
-            if (!RiderRig.Bound) { try { RiderRig.Bind(LocalT); } catch (Exception e) { Out.Say("RIDER bind threw " + e.GetType().Name + ": " + e.Message); } }
-            SkateSfx.Start();
             SkateRide.Mount(Body, yaw); viewAhead = true; steadyFailed = false;
             SkateHud.MountedAt = Time.realtimeSinceStartup;
             Say("MOUNT yaw=" + SkateRide.Yaw.ToString("F0") + " speed=" + SkateRide.Speed.ToString("F1") + " rider=" + RiderRig.Bound + " audio=" + SkateSfx.State);
@@ -411,7 +537,6 @@ public class SkateRig : MonoBehaviour
             catch (Exception e) { late = null; Say("late driver threw " + e.GetType().Name + ": " + e.Message); }
             if (!lateAdded) { lateFailures++; lateRetryAt = now + 3f; }
         }
-        if (SkateRide.On && !RiderRig.Bound) { try { RiderRig.Bind(LocalT); } catch (Exception e) { Say("rider bind threw " + e.GetType().Name + ": " + e.Message); } }
     }
 
     public static void LateFrame()
@@ -522,6 +647,7 @@ public class SkateRig : MonoBehaviour
         catch (Exception e) { Out.Err("SKATE board teardown threw " + e.GetType().Name + ": " + e.Message); }
         try { SkateSfx.Shutdown(); }
         catch (Exception e) { Out.Err("AUDIO teardown threw " + e.GetType().Name + ": " + e.Message); }
+        ForgetPreparation();
         Local = null; LocalT = null; Body = null; Walk = null; AwakeAt = -1f; wasOn = false;
     }
 

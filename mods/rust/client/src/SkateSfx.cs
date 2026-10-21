@@ -65,27 +65,47 @@ public static class SkateSfx
         return s;
     }
 
-    public static void Start()
+    private static int preparation;
+    // One clip/source per call. Native upload cannot be preempted; the caller measures this unit.
+    // Existing explicit audio checks may still ask for synchronous Start; boarding never does.
+    public static void Start() { while (!PrepareStep()) { } }
+    public static bool PrepareStep()
     {
-        if (Ready || failed) return;
+        if (Ready || failed) return true;
         try
         {
-            audio = new GameObject("skate_audio");
-            UnityEngine.Object.DontDestroyOnLoad(audio);
-            roll = Source(audio, Clip(SkateSound.Rolling, 11u), true);
-            grind = Source(audio, Clip(SkateSound.Grind, 12u), true);
-            slide = Source(audio, Clip(SkateSound.DeckSlide, 17u), true);
-            shots = Source(audio, null, false);
-            push = Clip(SkateSound.Push, 13u); ollie = Clip(SkateSound.Ollie, 14u); landing = Clip(SkateSound.Landing, 15u); bail = Clip(SkateSound.Bail, 16u);
-            for (var i = 0; i < SkateFoley.Count; i++) if (!SkateFoley.IsLoop((SkateFoleySound)i)) foley[i] = Clip((SkateFoleySound)i, 21u + (uint)i);
-            hollow = Source(audio, Clip(SkateFoleySound.Hollow, 31u), true);
-            grit = Source(audio, Clip(SkateFoleySound.Grit, 32u), true);
-            whirr = Source(audio, Clip(SkateFoleySound.Whirr, 33u), true);
-            Sync(); wasOn = false;
-            Ready = true; State = "ready";
-            Out.Say("AUDIO ready: six loops and eleven one-shots at " + Rate + " Hz");
+            var step = preparation++;
+            if (step == 0)
+            {
+                audio = new GameObject("skate_audio");
+                UnityEngine.Object.DontDestroyOnLoad(audio);
+                shots = Source(audio, null, false);
+                State = "preparing";
+            }
+            else if (step == 1) roll = Source(audio, Clip(SkateSound.Rolling, 11u), true);
+            else if (step == 2) grind = Source(audio, Clip(SkateSound.Grind, 12u), true);
+            else if (step == 3) slide = Source(audio, Clip(SkateSound.DeckSlide, 17u), true);
+            else if (step == 4) push = Clip(SkateSound.Push, 13u);
+            else if (step == 5) ollie = Clip(SkateSound.Ollie, 14u);
+            else if (step == 6) landing = Clip(SkateSound.Landing, 15u);
+            else if (step == 7) bail = Clip(SkateSound.Bail, 16u);
+            else if (step < 8 + SkateFoley.Count)
+            {
+                var i = step - 8;
+                if (!SkateFoley.IsLoop((SkateFoleySound)i)) foley[i] = Clip((SkateFoleySound)i, 21u + (uint)i);
+            }
+            else if (step == 8 + SkateFoley.Count) hollow = Source(audio, Clip(SkateFoleySound.Hollow, 31u), true);
+            else if (step == 9 + SkateFoley.Count) grit = Source(audio, Clip(SkateFoleySound.Grit, 32u), true);
+            else if (step == 10 + SkateFoley.Count) whirr = Source(audio, Clip(SkateFoleySound.Whirr, 33u), true);
+            else
+            {
+                Sync(); wasOn = false;
+                Ready = true; State = "ready";
+                Out.Say("AUDIO ready: six loops and eleven one-shots at " + Rate + " Hz");
+            }
         }
         catch (Exception e) { Fail("failed", e); }
+        return Ready || failed;
     }
 
     public static void Shutdown()
@@ -106,7 +126,7 @@ public static class SkateSfx
 
     private static bool Cleanup()
     {
-        Ready = false;
+        Ready = false; preparation = 0;
         Silence(roll); Silence(grind); Silence(slide); Silence(shots); Silence(hollow); Silence(grit); Silence(whirr);
         var clean = DestroyOwned(audio);
         if (clean) { audio = null; roll = grind = slide = shots = hollow = grit = whirr = null; }

@@ -36,6 +36,10 @@ Pompen betekent op het board inveren en getimed uitstrekken in de transition. Be
 
 Niets anders gaat voor, tot dit klaar is.
 
+De eigen native .37-proef van 21 oktober koppelt terugzetten na het eerste opstappen aan een clientpauze van 1,9 seconde en zes gelogde servercorrecties. Client .38 is native gebouwd, met back-up geïnstalleerd en gereden: de voorbereiding gebeurt vóór het opstappen; het eerste gemeten rijinterval was gemiddeld 20,7 ms over 49 frames. De aparte bewegende rit met ollie en landing telde 1.272 native servercontroles zonder afwijzing of terugzetcommando. Dit zijn toetsenbordproeven op vlak terrein, geen controller- of halfpipegoedkeuring. Een halfpipevervolg kon niet opnieuw opstappen na teleport; de consolefout wordt nog onderzocht.
+
+De .39-bron verwerkt de review van deze voorbereiding: scenario's starten pas wanneer opstappen mogelijk is; gewone lage beeldsnelheid verlengt de voorbereiding niet, terwijl herhaalde echte stalls expliciet op herstel wachten. Een lege handcache krijgt bij opstappen een lokale zoekslag en lopen veroorzaakt geen periodieke volledige rijdermodelscan. De gezamenlijke actuele Rust/Unity-API en gerichte bronflow zijn gecontroleerd. Native bouw, installatie en rijvalidatie van .39 staan nog open. De beweging, servergrenzen en controllerbediening veranderen niet; de controller-, pomp-, coping- en animatiefeedback blijft open.
+
 | # | Wat | Issue / PR | Eigenaar | Klaar als |
 |---|-----|------------|----------|-----------|
 | 1 | Gewone halfpipe: server zet je niet terug op de wand | #494, PR #495 (gemerged; live nog niet bevestigd) | Codex | Andy rijdt 3× omhoog en fakie terug, `skate.log` toont 0 put-backs |

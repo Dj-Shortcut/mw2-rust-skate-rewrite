@@ -53,7 +53,8 @@ public static class Scenarios
         if (done) return;
         if (startAt < 0f)
         {
-            if (now - SkateRig.AwakeAt < 4f) return;
+            // Start the scenario clock only when its first one-shot mount can succeed.
+            if (now - SkateRig.AwakeAt < 4f || (!SkateRide.On && !SkateRig.CanMount)) return;
             startAt = now; startGame = Time.time; yaw0 = YawOffset != 0f ? SkateCamera.LookYaw + YawOffset : Runway(SkateCamera.LookYaw);
             SkateKeys.Scripted = true; SkateKeys.Reset(); SkateKeys.LookYaw = yaw0;
             Say(Name + " begins, view yaw=" + yaw0.ToString("F0") + " at " + Out.V1(SkateRig.LocalT.position));
