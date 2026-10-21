@@ -353,9 +353,14 @@ public static class SkateHeld
     private static PieMenu closingWheel;
     private static object closingPlayer, closingBody;
     private static float closingAwakeAt;
-    private static Planner uncreatedWheelPlanner;
-    private static object uncreatedWheelPlayer, uncreatedWheelBody;
-    private static float uncreatedWheelAwakeAt;
+    private static UnityEngine.GameObject skateCursorHost;
+    private static NeedsCursor skateCursorRequest;
+    private static Planner skateCursorPlanner;
+    private static UnityEngine.Component skateCursorModel;
+    private static object skateCursorPlayer, skateCursorBody;
+    private static float skateCursorAwakeAt;
+    private static string cursorReleaseNotice = "";
+    public static string RustWheelGate { get; private set; } = "not-checked";
     private static string wheelBindingNotice = "";
 
     private static bool WheelPlannerCurrent(object player)
@@ -428,16 +433,105 @@ public static class SkateHeld
     {
         try
         {
+            string ownerWhy;
+            if (!SkateCursorCurrent(player, out ownerWhy)) { RustWheelGate = ownerWhy; return false; }
             PieMenu menu; string why; bool registryAbsent;
-            if (ConstructionWheel(player, out menu, out why, out registryAbsent)) return ConstructionWheelVisuallyHidden(menu);
-            // A first custom opening may precede creation of Rust's radial. Continue only the
-            // same admitted plan/life and our own cursor lease; re-read the registry every time.
-            return registryAbsent && uncreatedWheelPlanner != null && pausedPlanner == uncreatedWheelPlanner &&
-                ReferenceEquals(plannerPlayer, player) && ReferenceEquals(uncreatedWheelPlayer, player) &&
-                ReferenceEquals(uncreatedWheelBody, SkateRig.Body) && uncreatedWheelAwakeAt == SkateRig.AwakeAt &&
-                SkatePieces.Open && SkatePieces.OwnsCursor && UnityEngine.Cursor.lockState == UnityEngine.CursorLockMode.None && !UnityEngine.Cursor.visible;
+            if (ConstructionWheel(player, out menu, out why, out registryAbsent))
+            {
+                bool hidden = ConstructionWheelVisuallyHidden(menu);
+                RustWheelGate = hidden ? "native-wheel-hidden" : "native-wheel-input-or-fade-active";
+                return hidden;
+            }
+            // Rust may not have created its radial yet. Our own active native cursor request
+            // is the lease; its next Update, not a one-time raw cursor setter, asks Rust for focus.
+            RustWheelGate = registryAbsent ? "native-wheel-uncreated-owned-cursor" : "planner-or-native-binding-unavailable";
+            return registryAbsent;
         }
+        catch (Exception e) { RustWheelGate = "native-wheel-query-" + e.GetType().Name; return false; }
+    }
+
+    private static bool SkateCursorCurrent(object player, out string why)
+    {
+        why = "cursor-lease-not-owned";
+        if (!UnityEngine.Application.isFocused || SkateRide.On || !SkateRig.Ready)
+        { why = "cursor-lease-not-offboard-focused"; return false; }
+        if (!ReferenceEquals(player, SkateRig.Local) || !ReferenceEquals(skateCursorPlayer, player) ||
+            ReferenceEquals(SkateRig.Body, null) || !ReferenceEquals(skateCursorBody, SkateRig.Body) ||
+            skateCursorAwakeAt <= 0f || skateCursorAwakeAt != SkateRig.AwakeAt)
+        { why = "cursor-lease-life-changed"; return false; }
+        if (skateCursorHost == null || skateCursorRequest == null || !skateCursorHost.activeInHierarchy || !skateCursorRequest.isActiveAndEnabled)
+        { why = "cursor-lease-inactive"; return false; }
+        if (pausedPlanner == null || !ReferenceEquals(skateCursorPlanner, pausedPlanner) || !ReferenceEquals(plannerPlayer, player) ||
+            pausedPlanner.enabled || !pausedPlanner.gameObject.activeInHierarchy)
+        { why = "cursor-lease-plan-changed"; return false; }
+        var root = player as UnityEngine.Component;
+        var model = RiderRig.Bound && RiderRig.Root != null ? (UnityEngine.Component)RiderRig.Root : root;
+        if (model == null || !ReferenceEquals(skateCursorModel, model) || !pausedPlanner.transform.IsChildOf(model.transform))
+        { why = "cursor-lease-model-changed"; return false; }
+        why = "cursor-lease-current"; return true;
+    }
+
+    public static bool SkateCursorOwned(object player)
+    {
+        try { string why; return SkateCursorCurrent(player, out why); }
         catch (Exception) { return false; }
+    }
+
+    public static bool AcquireSkateCursor(object player, out string why)
+    {
+        why = "";
+        try
+        {
+            var admittedPlanner = pausedPlanner;
+            var admittedBody = SkateRig.Body;
+            float admittedLife = SkateRig.AwakeAt;
+            var root = player as UnityEngine.Component;
+            var admittedModel = RiderRig.Bound && RiderRig.Root != null ? (UnityEngine.Component)RiderRig.Root : root;
+            // Acquire after PausePlanner: replacing an old paused plan cannot erase a new lease.
+            if (!UnityEngine.Application.isFocused || SkateRide.On || !SkateRig.Ready || ReferenceEquals(SkateRig.Body, null) || SkateRig.AwakeAt <= 0f ||
+                pausedPlanner == null || !ReferenceEquals(plannerPlayer, player) || pausedPlanner.enabled)
+            { why = "cursor-acquire-needs-paused-plan"; ReleaseSkateCursor(); return false; }
+            PieMenu menu; bool registryAbsent;
+            bool bound = ConstructionWheel(player, out menu, out why, out registryAbsent);
+            if ((!bound && !registryAbsent) || (bound && !ConstructionWheelHidden(menu)) ||
+                (registryAbsent && (UnityEngine.Cursor.lockState != UnityEngine.CursorLockMode.Locked || UnityEngine.Cursor.visible)))
+            { why = "cursor-acquire-native-screen-not-clear"; ReleaseSkateCursor(); return false; }
+            if (skateCursorHost == null)
+            {
+                skateCursorHost = new UnityEngine.GameObject("Skate build cursor");
+                skateCursorHost.SetActive(false);
+                skateCursorRequest = skateCursorHost.AddComponent<NeedsCursor>();
+            }
+            if (skateCursorRequest == null) { why = "cursor-acquire-component-unavailable"; ReleaseSkateCursor(true); return false; }
+            skateCursorPlanner = admittedPlanner; skateCursorModel = admittedModel; skateCursorPlayer = player;
+            skateCursorBody = admittedBody; skateCursorAwakeAt = admittedLife;
+            skateCursorRequest.enabled = true;
+            skateCursorHost.SetActive(true);
+            if (!SkateCursorCurrent(player, out why)) { ReleaseSkateCursor(); return false; }
+            RustWheelGate = why; why = ""; return true;
+        }
+        catch (Exception e) { why = "cursor-acquire-" + e.GetType().Name; ReleaseSkateCursor(true); return false; }
+    }
+
+    public static void ReleaseSkateCursor(bool destroy = false)
+    {
+        skateCursorPlanner = null; skateCursorModel = null; skateCursorPlayer = skateCursorBody = null; skateCursorAwakeAt = 0;
+        try { if (skateCursorHost != null) skateCursorHost.SetActive(false); }
+        catch (Exception e)
+        {
+            if (cursorReleaseNotice != e.GetType().Name)
+            { cursorReleaseNotice = e.GetType().Name; Out.Say("PIECES own cursor release unavailable: " + cursorReleaseNotice); }
+        }
+        try { if (skateCursorRequest != null) skateCursorRequest.enabled = false; }
+        catch (Exception e)
+        {
+            if (cursorReleaseNotice != e.GetType().Name)
+            { cursorReleaseNotice = e.GetType().Name; Out.Say("PIECES own cursor release unavailable: " + cursorReleaseNotice); }
+        }
+        if (!destroy) return;
+        var host = skateCursorHost; skateCursorHost = null; skateCursorRequest = null;
+        try { if (host != null) UnityEngine.Object.Destroy(host); }
+        catch (Exception e) { Out.Say("PIECES own cursor cleanup unavailable: " + e.GetType().Name); }
     }
 
     private static bool ConstructionWheelVisuallyHidden(PieMenu menu)
@@ -493,8 +587,6 @@ public static class SkateHeld
             {
                 // No native radial exists to close. An owned plan with a clear, locked cursor
                 // may open the custom wheel without manufacturing a native UI instance.
-                uncreatedWheelPlanner = wheelPlanner; uncreatedWheelPlayer = player;
-                uncreatedWheelBody = SkateRig.Body; uncreatedWheelAwakeAt = SkateRig.AwakeAt;
                 wheelBindingNotice = ""; why = ""; return true;
             }
         }
@@ -506,7 +598,7 @@ public static class SkateHeld
 
     public static void ResumePlanner()
     {
-        uncreatedWheelPlanner = null; uncreatedWheelPlayer = uncreatedWheelBody = null; uncreatedWheelAwakeAt = 0;
+        ReleaseSkateCursor();
         var planner = pausedPlanner;
         pausedPlanner = null;
         plannerPlayer = null;

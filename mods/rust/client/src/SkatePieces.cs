@@ -47,8 +47,6 @@ public static class SkatePieces
     public static int Hover = -1;
     public static bool BlocksControls;
     public static bool OwnsCursor;
-    private static CursorLockMode cursorBefore;
-    private static bool cursorVisibleBefore;
     public static int BuilderKind = -1;
     private static int requestedKind = -1;
     private static float replyUntil;
@@ -355,16 +353,13 @@ public static class SkatePieces
             SaidAt = now;
             return false;
         }
-        try
+        if (!SkateHeld.AcquireSkateCursor(SkateRig.Local, out why))
         {
-            cursorBefore = Cursor.lockState; cursorVisibleBefore = Cursor.visible;
-            Cursor.lockState = CursorLockMode.None; Cursor.visible = false; OwnsCursor = true;
-        }
-        catch (Exception)
-        {
+            SkateHeld.ReleaseSkateCursor();
             if (!builderRequested && requestedKind < 0 && !offPending) SkateHeld.ResumePlanner();
-            Said = "The skate wheel cannot take cursor focus."; SaidAt = now; return false;
+            Said = "The skate wheel cannot take cursor focus. " + why; SaidAt = now; return false;
         }
+        OwnsCursor = true;
         openingSkate = false; openingPlayer = openingBody = null; openingAwakeAt = openingUntil = 0;
         Open = true; entry = from; menuPlayer = SkateRig.Local; menuBody = SkateRig.Body; menuAwakeAt = SkateRig.AwakeAt;
         rustBuilding = rustWheelOpen = switchingToRust = RustModeHint = false; modePlayer = modeBody = null; modeAwakeAt = 0;
@@ -500,20 +495,14 @@ public static class SkatePieces
 
     private static void Close(bool resumePlanner = true)
     {
+        // The native cursor manager settles the request after our component stops updating.
+        // Do not restore global cursor flags over another menu's current request.
+        SkateHeld.ReleaseSkateCursor();
+        OwnsCursor = false;
         Open = false; entry = Entry.None; menuPlayer = menuBody = null; menuAwakeAt = 0; Hover = -1; switchingToRust = switchingFromClosed = RustModeHint = false;
         openingSkate = false; openingEntry = Entry.None; openingPlayer = openingBody = null; openingAwakeAt = openingUntil = 0;
         ClearModeButton();
         stanceSince = -1f;
-        if (OwnsCursor)
-        {
-            OwnsCursor = false;
-            try
-            {
-                if (Cursor.lockState == CursorLockMode.None && !Cursor.visible)
-                { Cursor.lockState = cursorBefore; Cursor.visible = cursorVisibleBefore; }
-            }
-            catch (Exception e) { Out.Say("PIECES cursor restore unavailable: " + e.GetType().Name); }
-        }
         if (resumePlanner) SkateHeld.ResumePlanner();
         SkateSupportFootprint.Hide();
         SkateParks.PreviewClear(); previewKind = -1; previewYaw = 9999f;
@@ -556,6 +545,7 @@ public static class SkatePieces
                 if (sameMenu && SkateHeld.RustWheelOpen(SkateRig.Local)) { var from = entry; Close(false); Begin(from, now, true); }
                 else
                 {
+                    Out.Say("PIECES build wheel closed: " + (sameMenu ? SkateHeld.RustWheelGate : "player-or-focus-changed"));
                     bool ready = NativeMode(now); Close(ready);
                     Said = "The Rust build screen changed. Close other screens, then reopen the wheel."; SaidAt = now;
                 }
@@ -712,6 +702,7 @@ public static class SkatePieces
     public static void Shutdown()
     {
         Reset();
+        SkateHeld.ReleaseSkateCursor(true);
         if (replyListener != null)
         {
             try { Application.remove_logMessageReceived(replyListener); } catch (Exception) { }

@@ -171,7 +171,7 @@ and release `Back` or press `A`; `B` cancels. Hold `Y` in the wheel to switch st
 Press **X** in the building wheel to switch between **Skate building** and **Rust building**;
 on the keyboard use **Shift + P**, or click the visible **Rust building** / **Skate building** button below the wheel. Both use your ordinary building plan. The custom wheel
 closes Rust's own construction wheel and waits for its fade and cursor capture to finish
-before opening. The first Skate opening also works before Rust has created its wheel, provided the ordinary plan and clear cursor belong to the current player. It does not hide unrelated Rust screens.
+before opening. The first Skate opening also works before Rust has created its wheel, provided the ordinary plan and clear cursor belong to the current player. The custom wheel requests its cursor through an owned native `NeedsCursor` component; closing it releases that request through Rust's own cursor manager. It does not hide unrelated Rust screens.
 
 Switching to Rust building closes the Skate wheel after the server confirms `off`.
 Release, then hold your normal wheel control again (`Back` / right click) to open the
@@ -200,9 +200,11 @@ placement and **10 Wood per successfully completed piece**. It does not charge f
 refused placement. A server `placed` reply is the source of successful-placement feedback.
 
 The .42 client was built and loaded on Shadow. The owner approved the wheel's appearance
-but reported overlap with Rust's original wheel. The .43 mode switch addresses that report;
-its two-way switching, focus, reply callbacks and actual placement still need matching-build
-native validation. Compilation and controlled input checks do not close those gameplay gates.
+but reported overlap with Rust's original wheel. Native .43 and .44 tests then found first-opening
+failures: an uncreated native wheel, followed by a lost cursor lease. The .45 correction uses
+Rust's native cursor requests instead of one-shot cursor flags. Its two-way switching, focus,
+reply callbacks and actual placement still need matching-build native validation. Compilation
+and controlled input checks do not close those gameplay gates.
 
 A server line can reach the client without a hook only as text: `SkateInbox` reads the BepInEx log
 (`LogOutput.log`, written with `UnityLogListening` on: `sv plisten 1` before `zz play`) and logs every
