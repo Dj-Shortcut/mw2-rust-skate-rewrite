@@ -270,6 +270,7 @@ public static class SkateRide
     public static void Mount(Rigidbody b, float yaw)
     {
         body = b; Yaw = yaw;
+        wallDetailStops = 0; wallDetailBail = false;
         try
         {
             var cap = b.gameObject.GetComponent<CapsuleCollider>();
@@ -410,6 +411,15 @@ public static class SkateRide
     public const float WallProbe = 0.3f, WallSkin = 0.1f, WallSlam = 8f, WallFrom = 3f;
     private static readonly float[] wallHeights = { 0.6f, 1.3f };
     public static int WallStops, WallSlams;
+    private static int wallDetailStops;
+    private static bool wallDetailBail;
+    private struct WallFaceProbe
+    {
+        internal string Reason;
+        internal bool Ramp, Coping, CopingKnown, RayAttempted, RayHit, SameCollider, FaceRead, DotKnown;
+        internal Vector3 Normal, Point;
+        internal float Dot;
+    }
     // A transition's riding face is ground to roll up or come down onto, including contact while
     // rising through the air. Its undersides, side edges and coping stay walls. A sphere sweep's
     // normal points at the sphere, not out of the face (round on an edge
@@ -419,33 +429,58 @@ public static class SkateRide
     // The face is ridden as far as the vertical lip, so a face is one up to level.
     private static bool RampFaceAhead(Vector3 from, RaycastHit hit)
     {
+        WallFaceProbe ignored;
+        return RampFaceAhead(from, hit, out ignored);
+    }
+    private static bool RampFaceAhead(Vector3 from, RaycastHit hit, out WallFaceProbe probe)
+    {
+        probe = default(WallFaceProbe); probe.Reason = "mode";
         if (Mode != RideMode.Ground && Mode != RideMode.Air) return false;
-        if (!SkateParks.IsRamp(hit) || SkateParks.IsCoping(hit)) return false;
+        probe.Ramp = SkateParks.IsRamp(hit); probe.Reason = "not-own-ramp";
+        if (!probe.Ramp) return false;
+        probe.Coping = SkateParks.IsCoping(hit); probe.CopingKnown = true; probe.Reason = "own-coping";
+        if (probe.Coping) return false;
         var to = hit.m_Point - from; var reach = to.magnitude;
         RaycastHit face;
-        if (reach < 0.001f || !SkateParks.Ray(from, to / reach, out face, reach + WallProbe, GroundMask) || face.collider != hit.collider) return false;
-        return face.m_Normal.y > -0.05f && Vector3.Dot(face.m_Normal, hit.m_Normal) > 0.9f;
+        probe.Reason = "short-face-ray"; if (reach < 0.001f) return false;
+        probe.RayAttempted = true; probe.RayHit = SkateParks.Ray(from, to / reach, out face, reach + WallProbe, GroundMask);
+        probe.Reason = "face-ray-miss"; if (!probe.RayHit) return false;
+        probe.Reason = "different-collider"; if (face.collider != hit.collider) return false;
+        probe.SameCollider = true; probe.Normal = face.m_Normal; probe.Point = face.m_Point; probe.FaceRead = true;
+        probe.Reason = "face-normal-low"; if (!(face.m_Normal.y > -0.05f)) return false;
+        probe.Dot = Vector3.Dot(face.m_Normal, hit.m_Normal); probe.DotKnown = true;
+        probe.Reason = probe.Dot > 0.9f ? "ridable-face" : "normal-disagreement";
+        return probe.Dot > 0.9f;
     }
     // The whole measured pace of the last step, along the path the body took (for the checks' logs).
     public static float PathSpeed;
     private static Vector3 WallAhead(Vector3 pos, Vector3 v, float dt)
     {
+        var modeBeforeWall = Mode;
         var pace = v.magnitude;
         if (pace < WallFrom) return v;
         var dir = v / pace; var reach = pace * dt + CapsuleReach + WallSkin;
         var found = false; var nearest = float.MaxValue; var normal = Vector3.zero;
+        var chosen = default(RaycastHit); var chosenFace = default(WallFaceProbe); var chosenHeight = 0f;
         for (var i = 0; i < wallHeights.Length; i++)
         {
             RaycastHit hit;
             var from = pos + Vector3.up * wallHeights[i];
             if (SkateParks.Sphere(from, WallProbe, dir, out hit, reach, GroundMask)
-                && hit.m_Normal.y < 0.5f && hit.distance < nearest && !RampFaceAhead(from, hit)) { found = true; nearest = hit.distance; normal = hit.m_Normal; }
+                && hit.m_Normal.y < 0.5f && hit.distance < nearest)
+            {
+                WallFaceProbe face;
+                if (RampFaceAhead(from, hit, out face)) continue;
+                found = true; nearest = hit.distance; normal = hit.m_Normal;
+                chosen = hit; chosenFace = face; chosenHeight = wallHeights[i];
+            }
         }
         if (!found) return v;
         var into = -Vector3.Dot(v, normal);
         if (into <= 0f) return v;
         var kept = v + normal * into;
         WallStops++;
+        WallDetail(pos, v, chosen, chosenFace, chosenHeight, modeBeforeWall, into > WallSlam && Mode == RideMode.Ground);
         if (into > WallSlam && Mode == RideMode.Ground)
         {
             WallSlams++;
@@ -462,6 +497,31 @@ public static class SkateRide
         }
         if (WallStops <= 20 || WallStops % 50 == 0) Out.Say("SKATE wall: " + into.ToString("F1") + " m/s into it taken out (" + WallStops + ") at " + Out.V3(pos));
         return kept;
+    }
+    private static string WallF(float value) { return value.ToString("F3", System.Globalization.CultureInfo.InvariantCulture); }
+    private static string WallV(Vector3 value) { return WallF(value.x) + "," + WallF(value.y) + "," + WallF(value.z); }
+    private static void WallDetail(Vector3 pos, Vector3 desired, RaycastHit hit, WallFaceProbe face, float height, RideMode before, bool bail)
+    {
+        if (bail) { if (wallDetailBail) return; wallDetailBail = true; }
+        else { if (wallDetailStops >= 4) return; wallDetailStops++; }
+        try
+        {
+            var collider = hit.collider;
+            var backing = collider != null && SkateParks.BackingIds.Contains(collider.GetInstanceID());
+            var kind = face.Coping ? "own-coping" : face.Ramp ? "own-ramp" : backing ? "own-backing" :
+                collider == null ? "none" : collider.GetComponentInParent<BuildingBlock>() != null ? "native-building" : "world";
+            var line = "SKATE wall-detail utc=" + DateTime.UtcNow.ToString("O", System.Globalization.CultureInfo.InvariantCulture)
+                + " event=" + WallStops + " outcome=" + (bail ? "bail" : "slide") + " mode=" + before
+                + " land-age=" + (LandAt < 0f ? "none" : WallF(now - LandAt)) + " air-time=" + WallF(AirTime)
+                + " kind=" + kind + " ramp=" + face.Ramp + " coping=" + (face.CopingKnown ? face.Coping.ToString() : "unread") + " backing=" + backing
+                + " height=" + WallF(height) + " distance=" + WallF(hit.distance) + " hit-delta=" + WallV(hit.m_Point - pos) + " hit-normal=" + WallV(hit.m_Normal)
+                + " face-attempt=" + face.RayAttempted + " face-hit=" + (face.RayAttempted ? face.RayHit.ToString() : "unread") + " same=" + (face.RayHit ? face.SameCollider.ToString() : "unread")
+                + " face-delta=" + (face.FaceRead ? WallV(face.Point - pos) : "unread") + " face-normal=" + (face.FaceRead ? WallV(face.Normal) : "unread")
+                + " dot=" + (face.DotKnown ? WallF(face.Dot) : "unread") + " reason=" + face.Reason
+                + " desired=" + WallV(desired) + " normal=" + WallV(Normal) + " below=" + WallV(BelowNormal) + " clearance=" + WallF(Clearance);
+            Out.Say(line.Length <= 2048 ? line : "SKATE wall-detail output-limit");
+        }
+        catch (Exception e) { try { Out.Say("SKATE wall-detail unavailable " + e.GetType().Name); } catch { } }
     }
     // How far the player's capsule reaches past the probe's sphere, read from its collider.
     private static float CapsuleReach = 0.2f;
