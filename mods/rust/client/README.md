@@ -12,8 +12,9 @@ plugin are in [`../shared`](../shared/README.md).
 
 The plugin is loaded by BepInEx (IL2CPP). On the client that runs it, it changes the velocity of
 the local player's movement body, the pose in which the local player's model is drawn and the
-position of the main camera, and it adds a board, sounds and a score display of its own. It sends
-nothing to the server: to the server the rider is a player who moves.
+position of the main camera, and it adds a board, sounds and a score display of its own. Movement
+uses Rust's ordinary outgoing player ticks. The park wheel sends building commands; the server
+validates placement and charges the price.
 
 ## Development verification
 
@@ -82,7 +83,7 @@ game; see [The controller](#the-controller).
 | Right stick | The board: see below. Kept part of the way back or forward for 0.2 s: manual or nose manual. | Flicked to a side or a forward diagonal: a flip; after a pop, a whole composition (held back then flicked, or rolled) is a late flip or late shove on top of what is under way, when the jump still lasts long enough. Pulled back: set for the pop after the landing. |
 | `LT`, `RT` | Held going down a transition and let go through its bottom: a pump (speed, by how long it was held and how steep the descent, once a pass; nothing on the flat or let go on the slope itself). | Held: grab; with the right stick held, another grab. |
 | Right stick click | View from behind or the game's first person | |
-| `Back` held on the board | Every controller trick and grab in a panel at the top left, for as long as it is held (the first seconds on the board show the short version). On foot `Back` opens the picker. Not yet seen in game. | |
+| `Back` held on the board | Every controller trick and grab in a panel at the top left, for as long as it is held (the first seconds on the board show the short version). On foot with an ordinary building plan, `Back` opens the skate park wheel. Native validation pending. | |
 | Left stick swept half round its rim, within 0.6 s of landing a trick (as in the skate. games; a hard steer alone is a carve) | Revert: the rider and the board pivot a half turn together on the ground and roll on the same way, the other end of the deck leading (fakie after a regular landing, regular again after a fakie one); it joins the combo. | |
 | Right stick back or forward, on an edge | Along the edge: 5-0 or nosegrind instead of the 50-50. Across it on the tail, held back: bluntslide instead of the tailslide; on the nose, held forward: nosebluntslide. Let go, the slide goes back to the plain one. | |
 | A flip asked for coming down onto an edge, with room for half of it | Darkslide: the board is caught upside down on the edge, griptape on it; a pop finishes the flip the same way round (a kickflip lands as a kickflip); rolled off without a pop, the board comes down upside down and it is a bail. | |
@@ -143,19 +144,42 @@ with a stock-wheel gesture ("I need wood" by default; the owner's build does not
 so `skate.piece <name>` in F1 is the working route there) and place a square foundation within
 two minutes; thumbs up cancels. Gesture names and the piece order are configurable.
 
-**Park items and the picker** (owner's choice, 2026-10-13: own build picker and hotbar items).
-The server (Codex's ShortcutSkate 0.3.11) gives eight park items, building plans marked with their
-kind ("Skate Bank" … "Skate Halfpipe"); one is placed with the game's own building controls as a
-square foundation (left click, R turns it) and the server builds the piece in its place. The
-client sends nothing for this: it cannot (no console packet path in this build; typed keys never
-reach the console). While a park item is held, its piece is drawn as a ghost where the player aims,
-facing the view. The picker (on foot: hold `Back` on the controller, D-pad chooses, `A` takes, `B`
-closes; on the keyboard `P` opens and steps, `O` takes, `Backspace` closes) puts the chosen piece's
-item in the player's hand through the game's own belt (`SelectSlot`, found by shape and logged as a
-`HELD` line); without one in the belt it says so, and where the belt cannot be selected it names the
-number key to press. Seen in game: the client has no readable held item, so no ghost is drawn
-(an unidentified building plan is never shown as a park piece). Not yet seen in game: the belt
-selection, the ghost against the native foundation ghost, and the server building the piece.
+**Skate park wheel — ordinary building plan** (#509; requires the server's
+`skate.builder` protocol). Hold your normal building plan and hold right click
+for the twelve-piece wheel. Move the mouse toward an icon, then release right click
+to choose it. The ring has original line icons, a red selected wedge and the selected
+piece's English name, description and **10 Wood** price, including the MEGA halfpipe.
+The centre deadzone cancels selection. `P` opens the same wheel; `Q`/`E` choose and
+`Enter`/`O` confirms. On a controller hold `Back`, choose with the right stick or D-pad,
+and release `Back` or press `A`; `B` cancels. Hold `Y` in the wheel to switch stance.
+
+`Escape` / `Backspace` / `B` returns to normal Rust building. Hold **Shift + right click**
+to open Rust's original building wheel. The ordinary planner is paused while the wheel owns focus, while a selection reply is
+pending, and throughout confirmed skate-building mode. It is restored after the server
+confirms `off`, on refusing a selection, or during player/rig teardown. Losing focus requests
+`off` before restoring the native plan.
+Movement and ride actions are not taken from the menu's input. No park inventory item
+is required or issued. Existing tagged park items remain compatible with their old
+placement route.
+
+A choice sends `skate.builder <kind>` through the existing console-command connection;
+returning to Rust sends `skate.builder off`. The HUD says **Requested** until the server
+answers `[SKATE-BUILDER] selected <kind>`. Only that reply enables the selected preview. Left click or a fresh controller right-trigger
+press sends `skate.builder place <quarterTurn>`; holding the trigger does not repeat it.
+`R` / right bumper rotates one quarter turn; left bumper rotates back. The server reads
+its own player aim and selected kind, rather than trusting client coordinates. The native
+planner stays paused during skate-building mode, so its old Rust wall/foundation selection
+cannot leak a normal building action or charge. Pending selections are serialized. A reply
+timeout requests `off`; native building resumes only after the `off` reply or re-equipping.
+No reply, a refused command, a missing local planner or an unavailable connection is
+reported honestly; no client-side wood is removed. The server verifies the held plan,
+placement and **10 Wood per successfully completed piece**. It does not charge for a
+refused placement. A server `placed` reply is the source of successful-placement feedback.
+
+Client compilation against the local October 8 API snapshot and headless wheel direction /
+artwork checks passed. Current Windows compilation, native planner recognition, reply
+callback delivery, both wheels, camera/input focus and an actual placement still require
+matching-build Shadow validation; this source status is not an in-game acceptance result.
 
 A server line can reach the client without a hook only as text: `SkateInbox` reads the BepInEx log
 (`LogOutput.log`, written with `UnityLogListening` on: `sv plisten 1` before `zz play`) and logs every
