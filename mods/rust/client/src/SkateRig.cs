@@ -25,7 +25,7 @@ public class SkateRig : MonoBehaviour
 
     // Preparation owns no movement or input. One unit per rendered frame, followed by quiet
     // frames, keeps cold reflection/clip uploads out of the first mounted network tick.
-    private const float PrepareQuietSeconds = 2f, PrepareLongFrame = 0.1f;
+    private const float PrepareQuietSeconds = 3f, PrepareLongFrame = 0.1f;
     private const double PrepareBudgetMs = 2.0;
     private static BasePlayer preparePlayer;
     private static Transform prepareRoot, prepareModel;
