@@ -1,5 +1,7 @@
 using System;
+using System.Text;
 using UnityEngine;
+using Shortcut.RustMod;
 
 public static class SkateWheelChoice
 {
@@ -129,6 +131,7 @@ public static class SkateBuildWheel
         "A wider, taller quarterpipe.", "A curved kicker attached to a half wall.", "The full-size halfpipe with tall transitions." };
     private static readonly Texture2D[] wheel = new Texture2D[13];
     private static GUIStyle title, body, footer;
+    private static readonly SkateWheelText titleText = new SkateWheelText(), bodyText = new SkateWheelText(), footerText = new SkateWheelText();
     private static Texture2D dot;
     private static bool failed;
     public static bool Available { get { return !failed; } }
@@ -153,12 +156,16 @@ public static class SkateBuildWheel
             EnsureStyles(diameter);
             float hole = diameter * 0.52f;
             GUI.color = new Color(0.98f, 0.97f, 0.94f);
-            GUI.Label(new Rect(cx - hole / 2, cy - 63, hole, 58), selected < 0 ? "SKATE PARK" : Labels[selected].ToUpperInvariant(), title);
-            GUI.Label(new Rect(cx - hole / 2 + 10, cy - 7, hole - 20, 74), SkatePieces.Status.Length > 0 ? SkatePieces.Status :
-                selected < 0 ? "Move the mouse or right stick to choose a piece." : Descriptions[selected], body);
-            GUI.Label(new Rect(cx - hole / 2, cy + 79, hole, 28), "10 WOOD", footer);
-            GUI.Label(new Rect(cx - diameter / 2, cy + diameter / 2 + 14, diameter, 66),
-                "Release right click / Back to choose   |   A / Enter: choose\nEsc / B: Rust building   |   Shift + right click: Rust wheel", footer);
+            var heading = titleText.Get(selected < 0 ? "SKATE PARK" : Labels[selected].ToUpperInvariant(), title, hole);
+            var description = bodyText.Get(SkatePieces.Status.Length > 0 ? SkatePieces.Status :
+                selected < 0 ? "Move the mouse or right stick to choose a piece." : Descriptions[selected], body, hole - 20);
+            var bodyY = Math.Max(cy - 7, cy - 63 + titleText.Height + 4);
+            GUI.Label(new Rect(cx - hole / 2, cy - 63, hole, Math.Max(58, titleText.Height)), heading, title);
+            GUI.Label(new Rect(cx - hole / 2 + 10, bodyY, hole - 20, Math.Max(74, bodyText.Height)), description, body);
+            var priceY = Math.Max(cy + 79, bodyY + bodyText.Height + 8);
+            GUI.Label(new Rect(cx - hole / 2, priceY, hole, 28), "10 WOOD", footer);
+            var controls = footerText.Get("Release right click / Back to choose   |   A / Enter: choose\nEsc / B: Rust building   |   Shift + right click: Rust wheel", footer, diameter);
+            GUI.Label(new Rect(cx - diameter / 2, Math.Max(cy + diameter / 2 + 14, priceY + 42), diameter, Math.Max(66, footerText.Height)), controls, footer);
             if (dot == null)
             {
                 dot = Out.Keep(new Texture2D(2, 2));
@@ -196,9 +203,10 @@ public static class SkateBuildWheel
     {
         int scale = (int)Math.Max(16, Math.Min(22, diameter / 28));
         if (title != null && title.fontSize == scale + 9) return;
-        title = new GUIStyle(); title.alignment = TextAnchor.MiddleCenter; title.wordWrap = true; title.fontSize = scale + 9; title.fontStyle = FontStyle.Bold;
-        body = new GUIStyle(); body.alignment = TextAnchor.UpperCenter; body.wordWrap = true; body.fontSize = scale;
-        footer = new GUIStyle(); footer.alignment = TextAnchor.UpperCenter; footer.wordWrap = true; footer.fontSize = scale - 2;
+        // This client's wordWrap setter is an unstripping stub. Insert measured line breaks instead.
+        title = new GUIStyle(GUI.skin.label); title.alignment = TextAnchor.MiddleCenter; title.fontSize = scale + 9; title.fontStyle = FontStyle.Bold;
+        body = new GUIStyle(GUI.skin.label); body.alignment = TextAnchor.UpperCenter; body.fontSize = scale;
+        footer = new GUIStyle(GUI.skin.label); footer.alignment = TextAnchor.UpperCenter; footer.fontSize = scale - 2;
         title.normal.textColor = body.normal.textColor = footer.normal.textColor = new Color(0.98f, 0.97f, 0.94f);
     }
 
@@ -207,5 +215,241 @@ public static class SkateBuildWheel
         for (int i = 0; i < wheel.Length; i++) if (wheel[i] != null) { UnityEngine.Object.Destroy(wheel[i]); wheel[i] = null; }
         if (dot != null) { UnityEngine.Object.Destroy(dot); dot = null; }
         title = body = footer = null;
+        titleText.Clear(); bodyText.Clear(); footerText.Clear();
     }
+}
+
+// Cached, measured wrapping avoids the stripped GUIStyle.wordWrap setter. Only changed
+// text, style size or width performs native measurement; stable repaint frames reuse it.
+public sealed class SkateWheelText
+{
+    private string source = "", shown = "";
+    private GUIStyle measuredStyle;
+    private GUIStyle measuringStyle;
+    private GUIContent content;
+    private float measuredWidth;
+    private int measuredSize;
+    public float Height { get; private set; }
+    public string Get(string text, GUIStyle style, float width)
+    {
+        if (ReferenceEquals(measuredStyle, style) && measuredSize == style.fontSize && measuredWidth == width && source == text) return shown;
+        if (content == null) content = new GUIContent();
+        measuringStyle = style;
+        var wrapped = Wrap(text, width, Measure);
+        content.text = wrapped; var height = style.CalcSize(content).y;
+        if (float.IsNaN(height) || float.IsInfinity(height) || height < 0) throw new InvalidOperationException("Text height is unavailable.");
+        measuredStyle = style; measuredSize = style.fontSize; measuredWidth = width; source = text; shown = wrapped; Height = height;
+        return shown;
+    }
+    private float Measure(string text)
+    {
+        content.text = text; var width = measuringStyle.CalcSize(content).x;
+        if (float.IsNaN(width) || float.IsInfinity(width) || width < 0) throw new InvalidOperationException("Text width is unavailable.");
+        return width;
+    }
+    public void Clear() { measuredStyle = measuringStyle = null; content = null; source = shown = ""; Height = 0; }
+    public static string Wrap(string text, float width, Func<string, float> measure)
+    {
+        if (text == null) return "";
+        if (float.IsNaN(width) || float.IsInfinity(width) || width <= 0) throw new ArgumentOutOfRangeException("width");
+        var result = new StringBuilder(); var paragraphs = text.Replace("\r", "").Split('\n');
+        for (var p = 0; p < paragraphs.Length; p++)
+        {
+            if (p != 0) result.Append('\n');
+            var line = "";
+            foreach (var word in paragraphs[p].Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                var candidate = line.Length == 0 ? word : line + " " + word;
+                if (line.Length != 0 && measure(candidate) > width) { result.Append(line).Append('\n'); line = ""; }
+                var rest = word;
+                while (rest.Length > 1 && measure(rest) > width)
+                {
+                    var low = 1; var high = rest.Length;
+                    while (low + 1 < high) { var middle = (low + high) / 2; if (measure(rest.Substring(0, middle)) <= width) low = middle; else high = middle; }
+                    result.Append(rest.Substring(0, low)).Append('\n'); rest = rest.Substring(low);
+                }
+                line = line.Length == 0 ? rest : line + " " + rest;
+            }
+            result.Append(line);
+        }
+        return result.ToString();
+    }
+}
+
+// Required support, not a permission to build: all cells share one neutral outline. The server
+// still checks support, ownership, clearance and payment. No physics/network query is added here.
+public static class SkateSupportFootprint
+{
+    private const int MaximumCells = 84;
+    private const float Width = 0.04f;
+    private static readonly Vector2[] cells = new Vector2[MaximumCells];
+    private static int kind = -1, count;
+    private static float minX, maxX, minZ, maxZ;
+    private static bool visible, clientFits, worldFailed, worldShown, poseSet, saidWorld, saidGui;
+    private static SkateParkTransform shownFrame;
+    private static string title = "";
+    private static GameObject root;
+    private static Mesh mesh;
+    private static Material material;
+    private static Texture2D pixel;
+    private static GUIStyle label;
+    private static readonly SkateWheelText titleText = new SkateWheelText(), statusText = new SkateWheelText(), helpText = new SkateWheelText();
+    private static readonly Color Amber = new Color(1f, 0.71f, 0.25f, 0.85f);
+
+    public static void Show(SkateParkKind choice, SkateParkTransform frame, bool fits)
+    {
+        visible = false;
+        if (!Finite(frame.X) || !Finite(frame.Y) || !Finite(frame.Z) || !Finite(frame.Yaw)) { Hide(); return; }
+        var wanted = SkateParkLayout.SupportCellCount(choice);
+        if (wanted <= 0 || wanted > MaximumCells) { Hide(); return; }
+        try
+        {
+            if (kind != (int)choice || count != wanted)
+            {
+                Hide(); count = 0; minX = minZ = float.MaxValue; maxX = maxZ = float.MinValue;
+                for (var i = 0; i < wanted; i++)
+                {
+                    SkateParkTransform cell;
+                    if (!SkateParkLayout.TrySupportCellPose(choice, i, 0, 0, 0, out cell)) return;
+                    cells[i] = new Vector2((float)cell.X, (float)cell.Z);
+                    var half = (float)SkateParkLayout.CellSize / 2f;
+                    minX = Math.Min(minX, cells[i].x - half); maxX = Math.Max(maxX, cells[i].x + half);
+                    minZ = Math.Min(minZ, cells[i].y - half); maxZ = Math.Max(maxZ, cells[i].y + half);
+                }
+                count = wanted; kind = (int)choice;
+                title = SkateBuildWheel.Labels[kind] + " - " + count + " support cells";
+                RebuildWorld();
+            }
+            clientFits = fits; visible = true;
+            if (root != null && !worldFailed)
+            {
+                if (!poseSet || frame.X != shownFrame.X || frame.Y != shownFrame.Y || frame.Z != shownFrame.Z || frame.Yaw != shownFrame.Yaw)
+                {
+                    root.transform.position = new Vector3((float)frame.X, (float)frame.Y + 0.04f, (float)frame.Z);
+                    root.transform.rotation = Quaternion.Euler(0, (float)frame.Yaw, 0); shownFrame = frame; poseSet = true;
+                }
+                if (!worldShown) { root.SetActive(true); worldShown = true; }
+            }
+        }
+        catch (Exception e)
+        {
+            // Rendering is optional; a failed outline must not block the building plan or its input.
+            worldFailed = true; Deactivate();
+            if (!saidWorld) { saidWorld = true; Out.Say("PIECES support outline unavailable: " + e.GetType().Name); }
+            visible = count == wanted;
+        }
+    }
+    private static bool Finite(double n) { return !double.IsNaN(n) && !double.IsInfinity(n); }
+
+    private static void RebuildWorld()
+    {
+        Deactivate(); poseSet = false;
+        if (mesh != null) { UnityEngine.Object.Destroy(mesh); mesh = null; }
+        if (worldFailed) return;
+        if (material == null)
+        {
+            var shader = Shader.Find(SkateBoard.PlainShader);
+            if (shader == null) throw new InvalidOperationException("No support outline shader.");
+            material = Out.Keep(new Material(shader)); material.color = Amber;
+            material.SetFloat("_SrcBlend", (float)UnityEngine.Rendering.BlendMode.SrcAlpha);
+            material.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            material.SetFloat("_Cull", (float)UnityEngine.Rendering.CullMode.Off);
+            material.SetFloat("_ZWrite", 0);
+            material.SetFloat("_ZTest", (float)UnityEngine.Rendering.CompareFunction.Always);
+        }
+        var vertices = new Vector3[count * 16 + 8]; var triangles = new int[count * 24 + 12];
+        var colors = new Color[vertices.Length]; var v = 0; var t = 0;
+        for (var i = 0; i < count; i++)
+        {
+            var half = (float)SkateParkLayout.CellSize / 2f;
+            float x = cells[i].x - half, z = cells[i].y - half, size = half * 2f;
+            Quad(vertices, triangles, ref v, ref t, x, z, size, Width);
+            Quad(vertices, triangles, ref v, ref t, x, z + size - Width, size, Width);
+            Quad(vertices, triangles, ref v, ref t, x, z, Width, size);
+            Quad(vertices, triangles, ref v, ref t, x + size - Width, z, Width, size);
+        }
+        // The same anchor marked in the inset, without changing the ghost/model's own origin.
+        Quad(vertices, triangles, ref v, ref t, -0.3f, -Width, 0.6f, Width * 2);
+        Quad(vertices, triangles, ref v, ref t, -Width, -0.3f, Width * 2, 0.6f);
+        for (var i = 0; i < colors.Length; i++) colors[i] = Color.white;
+        mesh = Out.Keep(new Mesh()); mesh.name = "skate required support";
+        mesh.vertices = vertices; mesh.triangles = triangles; mesh.colors = colors; mesh.RecalculateBounds();
+        if (root == null)
+        {
+            root = new GameObject("skate required support"); root.SetActive(false);
+            root.AddComponent<MeshFilter>(); root.AddComponent<MeshRenderer>().sharedMaterial = material;
+        }
+        root.GetComponent<MeshFilter>().sharedMesh = mesh;
+    }
+    private static void Quad(Vector3[] vertices, int[] triangles, ref int v, ref int t, float x, float z, float width, float depth)
+    {
+        vertices[v] = new Vector3(x, 0, z); vertices[v + 1] = new Vector3(x + width, 0, z);
+        vertices[v + 2] = new Vector3(x + width, 0, z + depth); vertices[v + 3] = new Vector3(x, 0, z + depth);
+        triangles[t++] = v; triangles[t++] = v + 2; triangles[t++] = v + 1;
+        triangles[t++] = v; triangles[t++] = v + 3; triangles[t++] = v + 2; v += 4;
+    }
+
+    public static void Hide()
+    {
+        visible = false; Deactivate();
+    }
+    private static void Deactivate()
+    { try { if (root != null && worldShown) root.SetActive(false); } catch (Exception) { worldFailed = true; } worldShown = false; }
+    private static void DestroyOwned(UnityEngine.Object value)
+    { try { if (value != null) UnityEngine.Object.Destroy(value); } catch (Exception) { } }
+    public static void Reset()
+    {
+        Hide();
+        DestroyOwned(root); DestroyOwned(mesh); DestroyOwned(material); DestroyOwned(pixel);
+        root = null; mesh = null; material = null; pixel = null; label = null;
+        titleText.Clear(); statusText.Clear(); helpText.Clear();
+        kind = -1; count = 0; worldFailed = poseSet = saidWorld = saidGui = false;
+    }
+
+    public static void Draw()
+    {
+        if (!visible || count == 0 || SkateRide.On || SkatePieces.Open) return;
+        var old = GUI.color;
+        try
+        {
+            if (pixel == null) { pixel = Out.Keep(new Texture2D(1, 1)); pixel.SetPixel(0, 0, Color.white); pixel.Apply(); }
+            if (label == null) { label = new GUIStyle(GUI.skin.label); label.normal.textColor = Color.white; }
+            var k = Math.Max(0.6f, Math.Min(Screen.height / 1080f, Screen.width / 1600f));
+            float w = 280f * k, x = Screen.width - w - 24f * k, y = 155f * k, textWidth = w - 24f * k;
+            label.fontSize = (int)(15f * k); var heading = titleText.Get(title, label, textWidth);
+            var titleH = Math.Max(38f * k, titleText.Height);
+            label.fontSize = (int)(13f * k); var status = statusText.Get(clientFits ? "Client support found. Server must still confirm." : "Support unverified. Outline shows all required cells.", label, textWidth);
+            var statusH = Math.Max(35f * k, statusText.Height); var statusY = y + 9f * k + titleH + 4f * k;
+            float chartY = statusY + statusH + 8f * k, chartH = 165f * k;
+            label.fontSize = (int)(12f * k); var help = helpText.Get(worldFailed ? "World outline unavailable. Full required grid shown above."
+                : "Top view: front is up, + marks the anchor. Cells are requirements, not verified foundations.", label, textWidth);
+            var helpY = chartY + chartH + 9f * k; var helpH = Math.Max(46f * k, helpText.Height);
+            Box(new Rect(x, y, w, helpY + helpH + 9f * k - y), new Color(0.06f, 0.07f, 0.09f, 0.9f));
+            label.fontSize = (int)(15f * k); GUI.color = Color.white;
+            GUI.Label(new Rect(x + 12f * k, y + 9f * k, textWidth, titleH), heading, label);
+            label.fontSize = (int)(13f * k);
+            GUI.Label(new Rect(x + 12f * k, statusY, textWidth, statusH), status, label);
+            float chartX = x + 16f * k, chartW = w - 32f * k;
+            float unit = Math.Min(chartW / (maxX - minX), chartH / (maxZ - minZ));
+            chartX += (chartW - (maxX - minX) * unit) / 2f;
+            chartY += (chartH - (maxZ - minZ) * unit) / 2f;
+            var half = (float)SkateParkLayout.CellSize / 2f;
+            for (var i = 0; i < count; i++)
+            {
+                var cell = new Rect(chartX + (cells[i].x - half - minX) * unit,
+                    chartY + (maxZ - cells[i].y - half) * unit, half * 2f * unit, half * 2f * unit);
+                Box(new Rect(cell.x + 1, cell.y + 1, cell.width - 2, cell.height - 2), new Color(1f, 0.71f, 0.25f, 0.12f));
+                Box(new Rect(cell.x, cell.y, cell.width, 1), Amber); Box(new Rect(cell.x, cell.yMax - 1, cell.width, 1), Amber);
+                Box(new Rect(cell.x, cell.y, 1, cell.height), Amber); Box(new Rect(cell.xMax - 1, cell.y, 1, cell.height), Amber);
+            }
+            float ax = chartX - minX * unit, ay = chartY + maxZ * unit;
+            Box(new Rect(ax - 4 * k, ay - k, 8 * k, 2 * k), Color.white);
+            Box(new Rect(ax - k, ay - 4 * k, 2 * k, 8 * k), Color.white);
+            GUI.color = Color.white; label.fontSize = (int)(12f * k);
+            GUI.Label(new Rect(x + 12f * k, helpY, textWidth, helpH), help, label);
+        }
+        catch (Exception e) { if (!saidGui) { saidGui = true; Out.Say("PIECES support inset unavailable: " + e.GetType().Name); } }
+        finally { GUI.color = old; }
+    }
+    private static void Box(Rect r, Color color) { GUI.color = color; GUI.DrawTexture(r, pixel); }
 }

@@ -291,3 +291,5 @@ The genuine cached-reference C#7.3/net48 shared/plugin builds and all five
 approved runner builds report **0 warnings / 0 errors**. These are headless
 source-contract checks; native placement, PhysX geometry, ghost alignment,
 callbacks, payment/refund, persistence and riding remain unverified.
+
+Server .38 gives newly placed low/high/long ledges their authored closed support body and 0.4/0.8m top height. The optional `SupportedLedge` save marker restores only new bodies on reload; existing saved groups retain their positions and native floors. Placement still checks the complete body, support, permissions and the existing 10 Wood transaction. See [the placement contract](../../../docs/RUST-SKATE-PLACEMENT.md) and `TODO.md` for native acceptance.

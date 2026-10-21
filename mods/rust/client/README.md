@@ -517,3 +517,5 @@ server address) with an installer; a friend unpacks it, makes the `RustClient` S
 runs `Install Rust Skate.cmd`, and plays from the same two desktop files as the owner. Steps,
 limits and what has and has not been seen are in [FRIEND.md](FRIEND.md). Code present and dry-run
 on stand-in files only; no pack has been made on the owner's PC or installed on a second PC yet.
+
+The .41 development client fixes the native skate-wheel text failure without using the stripped `GUIStyle.wordWrap` setter. With the ordinary building plan, the preview also shows the complete required support footprint and a top view for large pieces. Amber cells describe requirements; the server still checks the site and payment. Supported ledges use their authored low/high top-to-support height, while legacy elevated plates retain their recognition path. Native wheel, placement and riding results remain separate acceptance checks in `TODO.md`.

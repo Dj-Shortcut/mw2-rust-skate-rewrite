@@ -963,6 +963,18 @@ namespace Shortcut.RustMod
             transform = new SkateParkTransform { X = x, Y = y, Z = z, Yaw = partYaw, Pitch = part.Pitch };
             return true;
         }
+        // The authored ledges are closed concrete boxes, not unsupported floor plates.
+        // Bounds are in the model's base frame; long ledge uses the same three native members.
+        public static bool TryLedgeBody(SkateParkKind kind, out SkateParkBox body)
+        {
+            body = new SkateParkBox();
+            if (kind != SkateParkKind.LedgeLow && kind != SkateParkKind.LedgeHigh && kind != SkateParkKind.LongLedge) return false;
+            double height = kind == SkateParkKind.LedgeHigh ? 0.8 : 0.4;
+            body = new SkateParkBox { Y = height / 2, SizeX = kind == SkateParkKind.LongLedge ? 9 : 3,
+                SizeY = height, SizeZ = 3 };
+            return true;
+        }
+
         public static bool TrySupportedAnchor(SkateParkKind kind, double supportTop, double floorCenterY,
             double floorCenterZ, double floorSizeY, double floorSizeZ, out double anchorY)
         {
@@ -970,6 +982,15 @@ namespace Shortcut.RustMod
             if (kind == SkateParkKind.HalfWallKicker || PartCount(kind) == 0 || !Coordinate(supportTop) || !Coordinate(floorCenterY) ||
                 !Coordinate(floorCenterZ) || !Coordinate(floorSizeY) || !Coordinate(floorSizeZ) ||
                 floorSizeY <= 0 || floorSizeZ <= 0) return false;
+            SkateParkBox ledge;
+            if (TryLedgeBody(kind, out ledge))
+            {
+                // The base rests on support; the native floor TOP remains at the authored height.
+                double supported = supportTop - (floorCenterY + floorSizeY / 2);
+                if (!Coordinate(supported)) return false;
+                anchorY = supported;
+                return true;
+            }
             double baseline = double.NegativeInfinity;
             for (int i = 0; i < PartCount(kind); i++)
             {
@@ -1210,6 +1231,10 @@ namespace Shortcut.RustMod
             double x, double z, double yaw, out SkateParkTransform point)
         {
             point = new SkateParkTransform();
+            SkateParkBox ledge;
+            // The ledge's complete concrete base is covered by its support cells below.
+            // Its raised carrier floor is not a support contact.
+            if (TryLedgeBody(kind, out ledge)) return false;
             double baseline;
             SkateParkPart part;
             SkateParkTransform pose;
@@ -1706,7 +1731,7 @@ namespace Shortcut.RustMod
 
 namespace Oxide.Plugins
 {
-    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.37")]
+    [Info("ShortcutSkate", "Dj-Shortcut", "0.3.38")]
     [Description("Player-scoped skateboard movement bounds and saved park assemblies.")]
     public sealed class ShortcutSkate : RustPlugin
     {
@@ -1914,6 +1939,8 @@ namespace Oxide.Plugins
             public SkateParkBuildItemState BuildItemState;
             [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)] public int WoodCost;
             [JsonProperty(NullValueHandling = NullValueHandling.Ignore)] public ParkWallAttachment Wall;
+            // Omitted for legacy groups: never move or reinterpret their saved native members.
+            [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)] public bool SupportedLedge;
         }
 
         public sealed class ParkWallAttachment
@@ -2188,6 +2215,11 @@ namespace Oxide.Plugins
                     {
                         string property = (string)reader.Value;
                         if (!keys.Peek().Add(property)) throw new InvalidDataException("Duplicate park data property.");
+                        if (string.Equals(property, "SupportedLedge", StringComparison.OrdinalIgnoreCase))
+                        {
+                            if (!reader.Read() || reader.TokenType != JsonToken.Boolean)
+                                throw new InvalidDataException("SupportedLedge must be a Boolean.");
+                        }
                         if (string.Equals(property, "WoodCost", StringComparison.OrdinalIgnoreCase))
                         {
                             if (!reader.Read() || reader.TokenType != JsonToken.Integer ||
@@ -2227,6 +2259,9 @@ namespace Oxide.Plugins
                     !SkateParkLayout.TryKind(group.Kind, out kind) || group.Kind != SkateParkLayout.Name(kind) ||
                     group.Members == null || group.Members.Count < 1 || group.Members.Count > SkateParkLayout.PartCount(kind))
                     throw new InvalidDataException("Invalid park group identity or kind.");
+                SkateParkBox ledgeBody;
+                if (group.SupportedLedge && !SkateParkLayout.TryLedgeBody(kind, out ledgeBody))
+                    throw new InvalidDataException("Supported ledge metadata has a different park kind.");
                 SkateParkTransform wallAnchor;
                 if (kind == SkateParkKind.HalfWallKicker ? !ValidWallAttachment(group.Wall, out wallAnchor) : group.Wall != null)
                     throw new InvalidDataException("Invalid half-wall attachment metadata.");
@@ -4232,7 +4267,24 @@ namespace Oxide.Plugins
                     SkateParkKind kind;
                     SkateParkQuarterProfile profile;
                     if (!SkateParkLayout.TryKind(group.Kind, out kind) ||
-                        (!ParkOwnedHalfpipe(kind) && !SkateParkLayout.TryQuarterProfile(kind, out profile))) continue;
+                        (!group.SupportedLedge && !ParkOwnedHalfpipe(kind) && !SkateParkLayout.TryQuarterProfile(kind, out profile))) continue;
+                    if (group.SupportedLedge)
+                    {
+                        try
+                        {
+                            var ledgeFailures = new List<string>(); ParkNativePart[] ledgeDefinitions;
+                            if (!ParkPrefabs(kind, ledgeFailures, out ledgeDefinitions))
+                                throw new InvalidDataException("Ledge native floor metadata is unavailable.");
+                            EnsureParkProfileCollision(kind, group, group.Members, ledgeDefinitions[0].Construction.bounds);
+                        }
+                        catch (ParkProfileActivationOccupiedException) { parkProfileRestoreRefreshNeeded = true; }
+                        catch (Exception error)
+                        {
+                            RemoveParkProfileCollision(group);
+                            PrintWarning("Saved ledge body is unavailable (" + error.GetType().Name + "); native floors remain unchanged.");
+                        }
+                        continue;
+                    }
                     if (ParkOwnedHalfpipe(kind))
                     {
                         // An altered saved kit keeps native collision without blocking other parks.
@@ -5705,6 +5757,13 @@ namespace Oxide.Plugins
             {
                 if (!parkBusy || !ReferenceEquals(instance, this) || parkClosing || parkRefreshing || SaveRestore.IsSaving) return;
                 ParkProfileCollision current;
+                if (pair.Key.SupportedLedge)
+                {
+                    bool ledgeHealthy;
+                    try { ledgeHealthy = ParkLedgeCollisionHealthy(pair.Key, pair.Value); } catch (Exception) { ledgeHealthy = false; }
+                    if (!ledgeHealthy) { RemoveParkProfileCollision(pair.Key); parkProfileRestoreRefreshNeeded = true; }
+                    continue;
+                }
                 if (!ParkOwnedHalfpipe(pair.Key.Kind) || !parkProfileCollisions.TryGetValue(pair.Key, out current) ||
                     !ReferenceEquals(current, pair.Value)) continue;
                 bool healthy;
@@ -6270,6 +6329,7 @@ namespace Oxide.Plugins
             public GameObject Root;
             public Mesh Mesh;
             public float Datum;
+            public BoxCollider LedgeBody;
             public readonly List<ParkProfilePatch> Patches = new List<ParkProfilePatch>();
             public readonly List<Collider> Disabled = new List<Collider>();
             public readonly List<BuildingBlock> Members = new List<BuildingBlock>();
@@ -6293,6 +6353,7 @@ namespace Oxide.Plugins
         private sealed class ParkProfileActivationOccupiedException : Exception
         {
             public ParkProfileActivationOccupiedException() : base("Leave the regular halfpipe transition volume before its smooth collision can be installed.") { }
+            public ParkProfileActivationOccupiedException(string message) : base(message) { }
         }
 
         private sealed class ParkProfileRestorePendingException : Exception
@@ -7203,8 +7264,102 @@ namespace Oxide.Plugins
             return true;
         }
 
+        private bool ParkLedgeCollisionHealthy(ParkGroup group, ParkProfileCollision collision, IList<ParkMember> members = null)
+        {
+            if (group == null) return false;
+            members = members ?? group.Members;
+            SkateParkKind kind; SkateParkBox body;
+            if (group == null || !group.SupportedLedge || !SkateParkLayout.TryKind(group.Kind, out kind) ||
+                !SkateParkLayout.TryLedgeBody(kind, out body) || collision == null ||
+                collision.Members.Count != SkateParkLayout.PartCount(kind) || collision.Members[0] == null || collision.Root == null ||
+                collision.LedgeBody == null || !collision.Root.activeInHierarchy || !collision.LedgeBody.enabled ||
+                collision.LedgeBody.isTrigger || collision.Root.layer != LayerMask.NameToLayer("Construction") ||
+                collision.Root.transform.parent != collision.Members[0].transform ||
+                collision.Root.transform.localScale != Vector3.one ||
+                (collision.Root.transform.position - new Vector3((float)group.AnchorX, (float)group.AnchorY + collision.Datum, (float)group.AnchorZ)).sqrMagnitude > 1e-6f ||
+                Quaternion.Angle(collision.Root.transform.rotation, Quaternion.Euler(0, (float)group.AnchorYaw, 0)) > 0.01f ||
+                collision.LedgeBody.center != new Vector3(0, (float)body.Y, 0) ||
+                collision.LedgeBody.size != new Vector3((float)body.SizeX, (float)body.SizeY, (float)body.SizeZ) ||
+                members == null || members.Count != collision.Members.Count) return false;
+            for (int i = 0; i < collision.Members.Count; i++)
+            {
+                ParkMember part = null;
+                for (int j = 0; j < members.Count; j++)
+                    if (members[j] != null && members[j].Index == i)
+                    { if (part != null) return false; part = members[j]; }
+                if (part == null || !ParkMatches(collision.Members[i], group, part) ||
+                    collision.Members[i].transform.lossyScale != Vector3.one) return false;
+            }
+            return true;
+        }
+
+        private void EnsureParkLedgeCollision(SkateParkKind kind, ParkGroup group, IEnumerable<ParkMember> members, Bounds floor)
+        {
+            SkateParkBox body;
+            if (!group.SupportedLedge || !SkateParkLayout.TryLedgeBody(kind, out body)) return;
+            ParkMember[] parts = members.OrderBy(member => member.Index).ToArray();
+            if (parts.Length != SkateParkLayout.PartCount(kind)) { RemoveParkProfileCollision(group); return; }
+            var blocks = new List<BuildingBlock>();
+            for (int i = 0; i < parts.Length; i++)
+            {
+                BuildingBlock block = FindParkBlock(parts[i].Id);
+                if (parts[i].Index != i || !ParkMatches(block, group, parts[i]) || block.transform.lossyScale != Vector3.one)
+                    throw new InvalidDataException("Ledge body requires the complete unchanged native group.");
+                blocks.Add(block);
+            }
+            ParkProfileCollision old;
+            if (parkProfileCollisions.TryGetValue(group, out old))
+            {
+                if (ParkLedgeCollisionHealthy(group, old)) return;
+                RemoveParkProfileCollision(group);
+            }
+            int layer = LayerMask.NameToLayer("Construction");
+            if (layer < 0 || !Coordinate(floor.max) || floor.max.y <= 0 || floor.max.y >= 0.5f)
+                throw new InvalidDataException("Ledge floor-top datum is unavailable.");
+            var collision = new ParkProfileCollision { Datum = floor.max.y };
+            collision.Members.AddRange(blocks); parkProfileCollisions.Add(group, collision);
+            try
+            {
+                collision.Root = new GameObject("ShortcutSkate supported ledge body");
+                collision.Root.SetActive(false); collision.Root.layer = layer;
+                collision.Root.transform.position = new Vector3((float)group.AnchorX, (float)group.AnchorY + collision.Datum, (float)group.AnchorZ);
+                collision.Root.transform.rotation = Quaternion.Euler(0, (float)group.AnchorYaw, 0);
+                collision.Root.transform.SetParent(blocks[0].transform, true);
+                collision.LedgeBody = collision.Root.AddComponent<BoxCollider>();
+                collision.LedgeBody.center = new Vector3(0, (float)body.Y, 0);
+                collision.LedgeBody.size = new Vector3((float)body.SizeX, (float)body.SizeY, (float)body.SizeZ);
+                Bounds local = new Bounds(collision.LedgeBody.center, collision.LedgeBody.size);
+                Bounds world = new Bounds(collision.Root.transform.TransformPoint(local.min), Vector3.zero);
+                for (int i = 1; i < 8; i++) world.Encapsulate(collision.Root.transform.TransformPoint(new Vector3(
+                    (i & 1) == 0 ? local.min.x : local.max.x, (i & 2) == 0 ? local.min.y : local.max.y,
+                    (i & 4) == 0 ? local.min.z : local.max.z)));
+                // Restore after reload must also leave loose objects and unrelated structures alone.
+                // A small interior inset excludes mere boundary contact with the existing support.
+                var hits = new Collider[128];
+                int hitCount = Physics.OverlapBoxNonAlloc(collision.Root.transform.TransformPoint(local.center),
+                    local.extents - Vector3.one * 0.005f, hits, collision.Root.transform.rotation, ~0, QueryTriggerInteraction.Ignore);
+                if (hitCount < 0 || hitCount >= hits.Length)
+                    throw new ParkProfileActivationOccupiedException("Ledge body clearance is unavailable or saturated.");
+                for (int i = 0; i < hitCount; i++)
+                    if (hits[i] == null || !blocks.Any(block => ReferenceEquals(hits[i].ToBaseEntity(), block)))
+                        throw new ParkProfileActivationOccupiedException("Clear the ledge body of other objects before it is installed.");
+                world.Expand(0.02f);
+                foreach (BasePlayer player in ParkRestorePlayers())
+                {
+                    Bounds playerBody;
+                    if (!ParkRestoreBody(player, out playerBody) || world.Intersects(playerBody))
+                        throw new ParkProfileActivationOccupiedException("Step clear of the ledge body before it is installed.");
+                }
+                // Add the authored closed concrete body; existing native floors stay solid throughout.
+                collision.Root.SetActive(true); Physics.SyncTransforms();
+                if (!ParkLedgeCollisionHealthy(group, collision, parts)) throw new InvalidDataException("Ledge body activation changed.");
+            }
+            catch { RemoveParkProfileCollision(group); throw; }
+        }
+
         private void EnsureParkProfileCollision(SkateParkKind kind, ParkGroup group, IEnumerable<ParkMember> members, Bounds floor)
         {
+            if (group.SupportedLedge) { EnsureParkLedgeCollision(kind, group, members, floor); return; }
             bool mega = kind == SkateParkKind.MegaHalfpipe;
             bool ownedHalfpipe = ParkOwnedHalfpipe(kind);
             // Older plugin assemblies can still own a deferred restore. Never capture their
@@ -7366,6 +7521,14 @@ namespace Oxide.Plugins
         {
             var spaces = new List<ParkSpace>();
             Quaternion rotation = Quaternion.Euler(0, (float)group.AnchorYaw, 0);
+            SkateParkBox ledge;
+            if (group.SupportedLedge && SkateParkLayout.TryLedgeBody(kind, out ledge))
+            {
+                spaces.Add(new ParkSpace { Position = new Vector3((float)group.AnchorX, (float)group.AnchorY + floor.max.y, (float)group.AnchorZ),
+                    Rotation = rotation, Bounds = new Bounds(new Vector3(0, (float)ledge.Y, 0),
+                        new Vector3((float)ledge.SizeX, (float)ledge.SizeY, (float)ledge.SizeZ)) });
+                return spaces;
+            }
             for (int i = 0; i < SkateParkLayout.CellCount(kind); i++)
             {
                 int right, forward;
@@ -7405,7 +7568,7 @@ namespace Oxide.Plugins
             failure = "The reserved park cells need dry, clear space and building permission through the complete ramp/deck/rail height.";
             Bounds floor = definitions[0].Construction.bounds;
             List<ParkSpace> spaces = ParkSpaces(kind, group, floor);
-            bool module = spaces.Count != 0;
+            bool module = SkateParkLayout.CellCount(kind) != 0;
             int mask = LayerMask.GetMask("World", "Construction", "Deployed", "Player (Server)");
             foreach (ParkSpace space in spaces)
             {
@@ -7426,7 +7589,7 @@ namespace Oxide.Plugins
             {
                 SkateParkKind existingKind;
                 if (ReferenceEquals(existing, group) || !SkateParkLayout.TryKind(existing.Kind, out existingKind) ||
-                    SkateParkLayout.CellCount(existingKind) == 0) continue;
+                    (SkateParkLayout.CellCount(existingKind) == 0 && !existing.SupportedLedge)) continue;
                 foreach (ParkSpace reserved in ParkSpaces(existingKind, existing, floor))
                 foreach (ParkSpace space in spaces)
                     if (ParkSpacesOverlap(space, reserved))
@@ -8034,6 +8197,8 @@ namespace Oxide.Plugins
             BasePlayer player = request.Player;
             Planner planner = request.Planner;
             if (request.Builder != null) { group.WoodCost = BuilderWoodPrice; group.BuildItemState = SkateParkBuildItemState.Preparing; }
+            SkateParkBox ledgeBody;
+            group.SupportedLedge = SkateParkLayout.TryLedgeBody(kind, out ledgeBody);
             BuildingBlock anchor = request.WallBlock ?? request.Foundation ?? request.Support;
             if (kind != SkateParkKind.HalfWallKicker && request.Supports == null &&
                 !ResolveParkSupport(request, kind, definitions, group, out failure)) return false;

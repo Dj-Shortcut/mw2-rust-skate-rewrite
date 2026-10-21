@@ -1,105 +1,61 @@
-# TODO
+# TODO — verzoeken van Andy, in gespreksvolgorde
 
-**Doel:** skaten in Rust dat goed voelt, voor Andy en zijn vrienden, op zijn eigen server.
+**Doel:** de Skate-mod in Rust voor Andy en zijn vrienden op zijn eigen server. De woorden en feedback van Andy bepalen de scope.
 
-**Regel:** iets is pas *klaar* als Andy het in het spel heeft gereden of gezien. Gemerged, CI groen of "N checks geslaagd" telt niet als klaar.
-Elke regel hieronder heeft één issue, één eigenaar en één zin die zegt wanneer het klaar is.
-Nieuwe wensen van Andy komen eerst hier en in #469 te staan, met zijn eigen woorden, voordat iemand eraan begint.
+**Uitvoering:** Codex werkt deze lijst van boven naar beneden af. Onderzoek van latere rijen mag een blokkade oplossen; het sluit die rijen niet stilzwijgend. Geen tussenvragen nodig voor routinekeuzes. Twijfels worden hieronder vastgelegd en binnen de gegeven grote lijn opgelost.
 
-Oude lijst (alles tot 18 oktober): [docs/TODO-HISTORY.md](docs/TODO-HISTORY.md).
+**Klaar betekent:** native in het spel gezien/gereden met vastgelegde versie en resultaat. Bron aanwezig, compilatie, CI, installatie en eigenaaracceptatie blijven aparte feiten. Een geslaagde agentproef vervangt Andy's oordeel over het skategevoel niet.
 
-## Eigenaarfeedback 21 oktober: open verzoeken blijven vooruitgaan
+## Geordende featurelijst
 
-Andy: "Er is een blockade ergens en dan stop je" en "de dingen die ik vroeg blijven open".
-Een geblokkeerde native proef legt het overige bronwerk niet stil. Codex werkt vanaf de huidige `main` parallel aan drie samenhangende onderdelen en brengt gecontroleerde wijzigingen samen voor de volgende ontwikkelbuild. Geen van deze onderdelen is al door Andy goedgekeurd.
-
-| Onderdeel | Codex-bronbranch | Waarneembaar resultaat dat nog nodig is |
-|---|---|---|
-| Kniepompen met de controller | `codex/knee-pump-flow` | Beide voeten blijven op het board; inveren en uitstrekken geven snelheid in beide rijrichtingen; loslaten of een menu openen start geen voetpush of pompimpuls |
-| Push, air, catch en landing | `codex/rider-motion-feedback` | Het lichaam en de voeten volgen het board vloeiend, zonder plots rechtzetten in de air; regular, goofy, fakie en mongo blijven coherent |
-| Gewoon bouwplan en grote skateparken | `codex/ordinary-plan-feedback` | Alle twaalf stukken via het gewone bouwplan kiezen, vooraf bekijken en herhaald plaatsen; exact 10 hout per geslaagd stuk; duidelijke bouwlimieten zonder verloren hout |
-
-De controller te voet en de native kijkrichting na afstappen blijven afzonderlijke open fouten. De huidige Rust-aanroep voor het herstellen van de kijkrichting is niet veilig beschikbaar via de gegenereerde bibliotheken. Daarvoor is nog geen werkende oplossing geleverd. Dit blokkeert het bovenstaande bronwerk niet.
-
-De gecombineerde ontwikkelkandidaat is client .40 met server .37. De bron bevat nu de gescheiden knie-pomp/voetpush, doorlopende voetcontacten en bevestigde plaatsingsaanvragen via het gewone bouwplan. Andy herhaalt: "geen air, nog altijd horizontaal trekken in de lucht". De automatische afvlakking van board en lichaam bij de vluchtapex is daarom verwijderd: het vertrekvlak blijft gelden totdat een gemeten landingsaanpak begint. De eigen MEGA-overgang naar het dek wordt afzonderlijk van echte muren beoordeeld; een obstakel achter die overgang blijft botsen. Deze versie is nog niet native gebouwd of geïnstalleerd. Geen van deze bronwijzigingen sluit de open ingamefeedback.
-
-## Eigenaarfeedback 20 oktober: lichaam, push en air
-
-Andy over de .31-rit: "ik werd niet meer gerukt , en ik ben boven de coping geraakt, maar tijdens de air trekt mijn playermodel horizontaal recht".
-Vervolg: "de rigging van het playermodel is nog altijd niet skate, elke truck is nog vreemd, pushen is nog raar" en "er ontbreken veel truuken".
-Het goedgekeurde vervolg is eerst één samenhangende push → afzet → air → catch → landing, daarna meer tricks.
-
-| Wat | Issue | Eigenaar | Klaar als |
+| # | Verzoek en herkomst | Waarneembaar klaarcriterium | Actuele stand |
 |---|---|---|---|
-| Board en lichaam delen dezelfde actuele pose; vloeiende push en air zonder ongevraagd rechtzetten | #469 | Codex, `codex/rider-air-frame-036` | Andy ziet en rijdt normale/mongo-push, een ollie/flip, transition-air en landing met samenhangende voet-/boardcontacten; de .31-rit zonder put-backs blijft behouden |
+| 1 | **Bouwkiezer voor skateparkstukken en hotbar-items; gewoon bouwplan met cirkelmenu.** Eerdere bouwplanwens; 19 okt: beeld van Rust-bouwwiel en "ik wil dit kunnen doen met mijn gewoon bouwplan". | Met een gewoon bouwplan opent het wiel, werken alle twaalf keuzes met controller en muis, en kun je na selectie herhaald plaatsen zonder aparte skate-items. | ACTIEF — native .40-proef mislukt: gewoon bouwplan + P geeft "The skate wheel cannot be drawn here"; actuele render-API wordt hersteld. |
+| 2 | **MEGA-halfpipe kunnen plaatsen.** #469.1; "het lukt me nog steeds niet om de mega pipe neer te zetten ... fout melding over funderingen". | Op geschikte vrije grond én bestaande funderingen komt één volledige MEGA; ongeschikte steun weigert duidelijk zonder verlies of resten. | Open — eerdere weigeringen blijven acceptatiefout. |
+| 3 | **Echte ronde quarterpipes.** #469.2; quarterpipe is geen wedge maar een bruikbare ronde transition. | Mini, normaal en groot hebben ronde berijdbare overgang, verticale raaklijn, dek, coping en gesloten achterkant; geen spike of gat. | Open — bron en modellen aanwezig; rijcontrole per formaat nodig. |
+| 4 | **Alle twaalf parkstukken plaatsen, ook vanuit inventory.** #469.3–4; "correctie geen enkele werkt". | Elk stuk vanuit inventory naar belt en via gewoon bouwplan plaatsen; alle twaalf geregistreerd en zichtbaar, inclusief QP, HP en MEGA. | Open — ledgehoogte/herkenning eerst corrigeren en native vergelijken. |
+| 5 | **Parkstukken steunen op grond of fundering zonder te zweven.** #469.5. | Ondersteuning zichtbaar correct, lage/hoge ledges behouden bruikbare verschillende hoogte en QP/HP staan niet los in de lucht. | Open — huidige vloer-ledges verliezen hun bedoelde hoogte. |
+| 6 | **Snappen en plaatsingspreview zoals Rust-bouwen.** #469.6; reeds geplaatste funderingen en aansluitende stukken. | Preview en resultaat delen positie/rotatie; meerdere funderingen worden correct gebruikt; volledige steunruimte en een afwijzing zijn begrijpelijk. | Open — gewoon-planpreview toont nog niet de volledige vereiste steunruimte. |
+| 7 | **Geen bouwen of andere held-itemacties tijdens rijden.** #469.7. | Op board werken bouwen en held-itemacties niet; na afstappen herstelt de gewone bouwroute. | Open — bron aanwezig; native voor/na opstappen controleren. |
+| 8 | **Stabiel kompas tijdens rijden.** #469.8. | Kompas volgt het bedoelde camerazicht en gaat niet door een boardtrick of flick ongevraagd draaien. | Open — opnieuw in eerste en derde persoon controleren. |
+| 9 | **Camera na afstappen horizontaal in de rijrichting.** #469.9. | Herhaald afstappen, ook van een transition, herstelt horizon en kijkrichting zonder naar boven schieten. | Open — vroegere visuele proef is geen controllerregressiecontrole. |
+| 10 | **Flip/shuv en grab sluiten elkaar correct uit.** #469.10. | Vooraf grab vasthouden en flicken geeft geen gelijktijdige flip/grab; loslaten veroorzaakt geen ongevraagde flip. | Open — echte controllerroute en timing controleren. |
+| 11 | **Handen leeg op het board, eigen item terug na afstappen.** #469.11. | In eerste en derde persoon verdwijnen item én rode bouwpreview op het board; na afstappen keert het item bruikbaar terug. | Open — bron aanwezig; volledige spelcontrole nodig. |
+| 12 | **Geloofwaardig skateboardgeluid.** #469.12: huidig boardgeluid klinkt slecht. | Rollen, pop, landing en grind klinken herkenbaar als skateboard en volgen materiaal, snelheid en contact; beoordeling in spel vastleggen. | Open — geen eigenaaracceptatie vastgelegd. |
+| 13 | **Bouwplan zichtbaar in de hand.** #469.13: "Bouwplan zichtbaar in de hand"; gewoon-bouwplanwens verduidelijkt op 19 okt. | Buiten het board blijft het gewone bouwplan herkenbaar in eerste en derde persoon, tegelijk met de skatepreview. | Open — samen met rij 1 en 11 controleren. |
+| 14 | **MEGA volledig zichtbaar met beide ronde zijden.** Eerdere MEGA-feedback: ontbrekende zijden of alleen een kicker is niet voldoende. | Beide transitions, midden, decks en gesloten kanten zijn zichtbaar en berijdbaar zonder gaten. | Open — alleen model laden is geen rijbewijs. |
+| 15 | **Altijd dag op de server.** "Zet gewoon de tijd altijd dag op de server." | Het blijft overdag tijdens bouwen en rijden, ook na herverbinden of serverherstart. | Serverinstelling 12:00 bevroren bevestigd; native duurcontrole open. |
+| 16 | **Grote skateparken kunnen bouwen.** 19 okt: "ik wil grote skateparken kunnen bouwen". | Herhaald uitbreiden en herverbinden behoudt het park; actuele capaciteit is duidelijk, weigering is zonder houtverlies; frametijd en metadata blijven bruikbaar. | Bron: standaard 1024 groepen, instelbaar 1–4096, metadata 16 MiB. Geen onbeperkte capaciteit beloofd; prestatietest open. |
+| 17 | **Exact 10 hout voor één skatestuk.** 19 okt: "de kostprijs is 10 hout voor 1 skatestuk". | Elk geslaagd stuk kost precies 10 hout; weigering, dubbele invoer en timeout kosten nooit tweemaal; herhalen werkt. | Bron bevat transacties en antwoordcorrelatie; native voorraadcontrole open. |
+| 18 | **Vloeiende halfpipe en geen terugtrekken, ook elders op de map.** "de afremming is op de 2e witte lijn"; "alsof ... stoot op en hoek"; later opnieuw teruggetrokken op board en na respawn. | Drie volledige beklimmingen en fakie-terugkeren zonder hapering op witte lijn/coping; nul put-backs in overlappende servermeting; ook vlak terrein en respawn. | Open — .40 heeft creasecontactcorrectie; nog geen .40 halfpiperit. |
+| 19 | **Air boven de coping.** "ik krijg geen air over de coping"; herhaald op 21 okt. | Met controller bouwt een normale HP/MEGA-rit genoeg snelheid op om zonder cheat boven de coping uit te komen en terug te landen. | Open — eerdere ene positieve rit werd gevolgd door nieuwe afwijzende feedback. |
+| 20 | **Pompen door de knieën, niet voetpushen.** "door de knieen buigen om snelheid te maken, niet afpushen met een voet". | Beide voeten blijven op board; getimed inveren/uitstrekken geeft snelheid in beide richtingen; geen voetpush of extra impuls door menu/loslaten. | Bron .40 aanwezig; echte controller-HP-proef open. |
+| 21 | **Geen bevriezen of invoerblokkering tijdens spelen.** "rust bevriest ik kan niks meer doen". | Opstappen, respawn, menu en herinstappen laten game en controller reageren; relevante pauzes en foutlogs onderzoeken. | Open — eerdere vlakke toetsenbordritten bewijzen geen volledige sessie. |
+| 22 | **Geen horizontaal rechtgetrokken playermodel in air.** "tijdens de air trekt mijn playermodel horizontaal recht"; "nog steeds horizontale air". | Afzetvlak, lichaam en board blijven samenhangend in de lucht en richten pas doelgericht naar een echte landing; geen apex-snap naar wereldhorizontaal. | Bron .40 verwijdert automatische apex-afvlakking; native airbeeld open. |
+| 23 | **Volledige samenhangende rijdersanimatie en Skate-gevoel.** "de rigging ... nog altijd niet skate ... pushen is nog raar"; "Ja, volledige rijdersanimatie". | Regular/goofy, fakie/mongo, push → afzet → trick/grab/catch → landing tonen vloeiende heupen/romp/armen, bereikbare handen en stabiele voetcontacten. | Open — .40 bronverbeteringen zijn geen visuele goedkeuring. |
+| 24 | **Meer bruikbare en uitgewerkte tricks.** "er ontbreken veel truuken"; op 21 okt: "de tricks zien er nog steeds basic uit". Geen specifieke namenlijst opgelegd. | Bestaande trickcatalogus, ontbrekende families en controllergebaren vastleggen; iedere trick krijgt herkenbare eigen board-/lichaamsbeweging, voet-/handcontacten, catch en landing, in plaats van alleen een draaiend board. In het spel vergelijken. | Open — geen onbeperkte of door assistenten verzonnen individuele wensen afvinken. |
+| 25 | **Betrouwbare controller op board én te voet na afstappen.** "ik speel met een contrller niet met muis en keyboard"; "te voet,is niet de eerste keer". | Sticks, camera, lopen, afstappen, herinstappen en menus werken zonder muis/toetsenbord; geen serverterugtrekking te voet. | Open — detectie van Xbox-device telt niet als werkende bediening. |
 
-Status: client .35 is native gebouwd, met geverifieerde clientback-up geïnstalleerd en geladen. Een korte rit met toetsenbord bevestigde opstappen en beweging op de bestaande MEGA. Dat bewijst nog geen correcte controllerbesturing, airpose of hand-/voetcontacten. De eerdere feedback over controllerproblemen na afstappen en terugzetten tijdens het rijden blijft open.
+| 26 | **Uitzoeken hoe Skate de trick-, rijder- en boardanimaties en rigs koppelt.** 21 okt: "kan je niet gewoon uitzoeken hoe de trick skater en board animaties of rigs werken ?" en "en dat bij e lijst zetten". | Concrete waarnemingen uit beschikbare bestanden of runtime over skeleton/rig, boardrotatie, trickfasen, voeten/handen, catch en landing; vertalen naar eigen uitvoerbare verbeteringen en die in het spel vergelijken. | ACTIEF onderzoek, parallel aan de eerste bouwgroep; geen volledige reconstructie of zichtbaar resultaat geclaimd. |
 
-De .35-presentatie koppelt rotatie, catch en grab-loslaten aan één vluchtstatus voor lichaam en board. De bronproeven dekken een doorlopende dubbele flip zonder tussentijdse catch/herhaalde flick, grab-loslaten tijdens een bodyspin en reset/herinstap. Deze contacten zijn nog niet visueel in het spel goedgekeurd.
+## Vastgelegde aanpak en twijfels
 
-De nieuwe .36-bron laat het getekende lichaam en board de vertrekhelling geleidelijk verlaten en de waargenomen landingshelling naderen. Een gemiste grondmeting wist die naderingsstand niet; een hoeklimiet voorkomt een plotselinge wissel. De echte gedeelde bron en actuele Rust/Unity-API zijn gecontroleerd. De fysieke beweging, netwerk-handoff en bediening blijven ongewijzigd. Native bouw, installatie en visuele rijvalidatie van .36 staan nog open. Bij een laat waargenomen steile tegenwand kan de houding door de hoeklimiet nog achterlopen op de landingshelling. Klaar pas wanneer Andy de volledige afzet → air → catch → landing samenhangend ziet en rijdt.
+- De oudere meldingen in [#469](https://github.com/Dj-Shortcut/mw2-rust-skate-rewrite/issues/469) bewaren hun volgorde. Herhaalde directe feedback uit dit gesprek verduidelijkt dezelfde wens en is geen tweede voltooide feature. De eerdere samenvatting staat ongewijzigd in [het archief](docs/TODO-2026-10-21-BEFORE-OWNER-ORDER.md).
+- "Alle features" betreft de Skate-mod. Verzoeken over Android, cloud-pc-huur en videodelen zijn geen spelmechanics. Gunplay en de oude standalone-rewrite blijven geparkeerd.
+- "Grote skateparken" betekent bruikbare grote parken; geen onbeperkt aantal entiteiten. Huidige bronlimieten en meetresultaten worden expliciet gehouden.
+- Voor "meer tricks" is geen exacte menselijke namenlijst teruggevonden. Bestaande catalogus en ontbrekende families bepalen de implementatievolgorde, met controllerbediening en geloofwaardige animatie.
+- Het verzoek om van Skate-binaries/assets en ReSkate te leren ondersteunt de bovenstaande speelbare uitkomsten. Onderzoeksbestanden blijven privé; publiek runtimewerk houdt de benodigde licenties en credits. Geen claim dat volledig reverse-engineeren klaar is.
+- Broncontrole van de eerste bouwgroep vond vloer-ledges waarvan de bedoelde hoogte bij plaatsing wegvalt, en een gewone bouwplanpreview die de volledige steunruimte niet toont. Dit wordt binnen rijen 1–6 opgelost, zonder bestaande opgeslagen parken te verplaatsen.
 
-De geregistreerde MEGA is na de toegestane serverherstart met zijn 80 delen en gladde botsingsvlakken gecontroleerd. De oude, ongeregistreerde MEGA werd niet hersteld: de 80 oude entiteiten ontbraken. Dat is geen bewijs voor een foutloze rit op de huidige parkstukken.
+## Gecontroleerd uitgangspunt 21 oktober
 
-## Eigenaarfeedback 21 oktober: pompen is geen voetpush
+- Publieke `main`: `26a1023e9ed91a2aaafa8519494d19d5221ae9e8`; geen open PR bij deze inventarisatie.
+- Client **0.18.40** is native gebouwd, met gecontroleerde back-up geïnstalleerd en vers geladen. Dat is nog geen .40 rij- of controlleracceptatie.
+- Server **0.3.37** is na gecontroleerde back-up geladen; configuratie en parken bleven behouden.
+- Een lokaal vriendenpakket **0.18.40** is voorbereid en de zip volledig nagelezen. Niet gedeeld; installeren bij vrienden en gameplay zijn nog niet getest. Deze verpakking sluit geen feature hierboven.
 
-Andy: "door de knieen buigen om snelheid te maken, niet afpushen met een voet".
+## Spelcontrole en voortgang
 
-Pompen betekent op het board inveren en getimed uitstrekken in de transition. Beide voeten blijven op het board; sturen of de triggers loslaten mag geen ongevraagde voetpush starten. De .34-bron onderbreekt een voetstroke bij controllercrouch en wacht bij een aangehouden voorwaartse stick op terugkeer voordat die opnieuw pusht. Klaar wanneer Andy de kniebuiging en het uitstrekken ziet, daardoor voelbaar snelheid opbouwt en boven de coping komt zonder servercorrecties. Een push- of grabverbetering sluit dit punt niet.
+Nog geen feature uit deze nieuwe volledige doorloop gesloten. Native proef 21 oktober, client .40/server .37: normaal gestart, verbonden, wakker, gewoon bouwplan in belt, 200 hout in inventory. Met P faalt het skatewiel; de melding vraagt een consolefallback. Er is geen stuk geplaatst en geen hout afgeschreven. De bouwplanhand is wel zichtbaar in eerste persoon. De mislukte wielroute blijft rij 1; tweede/derde persoon en controller zijn nog niet bevestigd. Per volgende proef worden versie, route, waargenomen resultaat en resterende fouten bijgewerkt. Privélogs, account- en servergegevens blijven buiten GitHub.
 
-## Nu: de halfpipe moet rijdbaar zijn
-
-De halfpipe blijft een open rijprobleem. De laatste eigenaarinstructie vraagt daarnaast vooruitgang op de overige open feedback, ook wanneer deze rijproef geblokkeerd is.
-
-De eigen native .37-proef van 21 oktober koppelt terugzetten na het eerste opstappen aan een clientpauze van 1,9 seconde en zes gelogde servercorrecties. Client .38 is native gebouwd, met back-up geïnstalleerd en gereden: de voorbereiding gebeurt vóór het opstappen; het eerste gemeten rijinterval was gemiddeld 20,7 ms over 49 frames. De aparte bewegende rit met ollie en landing telde 1.272 native servercontroles zonder afwijzing of terugzetcommando. Dit zijn toetsenbordproeven op vlak terrein, geen controller- of halfpipegoedkeuring. Een halfpipevervolg kon niet opnieuw opstappen na teleport; de consolefout wordt nog onderzocht.
-
-De .39-voorbereiding is gemerged in PR #525, native gebouwd en na een gecontroleerde back-up geïnstalleerd en geladen. De eerste gemeten rit op vlak terrein haalde 11 m/s; het eerste timinginterval was gemiddeld 26,1 ms over 39 frames. De overlappende servermeting telde 766 validaties zonder afwijzing of terugzetcommando. Dit is geen maximale frametijd en geen halfpipe- of controllergoedkeuring. Opstappen op de bestaande MEGA lukte later, maar een geslaagde beklimming, fakie-terugkeer, knie-pomp en air boven de coping zijn daarmee niet bewezen. De eerdere blokkering bovenaan de halfpipe blijft open.
-
-| # | Wat | Issue / PR | Eigenaar | Klaar als |
-|---|-----|------------|----------|-----------|
-| 1 | Gewone halfpipe: server zet je niet terug op de wand | #494, PR #495 (gemerged; live nog niet bevestigd) | Codex | Andy rijdt 3× omhoog en fakie terug, `skate.log` toont 0 put-backs |
-| 2 | Client: contact en momentum in de transitie tot de lip | #487, PR #496 (open) | Codex | Zelfde rit als 1, zonder schokken of stilstaan op de wand |
-| 3 | MEGA-halfpipe: volledig zichtbaar en rijdbaar | #487, PR #496 | Codex | Andy ziet beide ronde zijden en rijdt er 3× op en af |
-
-## Daarna: bouwen moet werken
-
-| # | Wat | Issue / PR | Eigenaar | Klaar als |
-|---|-----|------------|----------|-----------|
-| 4 | Bouwplan zichtbaar in de hand: het Skate-stuk is te zien waar je mikt | #469 punt 13, PR #497 | Claude | Andy houdt een Skate-item vast en ziet een groene omtrek op een fundering |
-| 5 | Alle 12 parkstukken plaatsen | #480 | Codex | Per stuk "geplaatst" of de exacte F1-weigertekst, alle 12 geplaatst |
-| 6 | Stukken liggen op de grond/fundering, niet zwevend; snappen zoals Rust-bouwen | #469 punten 5–6 | Codex | Andy plaatst een kicker en een quarterpipe op funderingen, ze sluiten aan |
-
-## Daarna: rijden zelf
-
-| # | Wat | Issue / PR | Eigenaar | Klaar als |
-|---|-----|------------|----------|-----------|
-| 7 | Niets in de hand en niet bouwen tijdens het rijden | #469 punten 7 en 11; PR #519 en #521 gemerged, volledige rijvalidatie blijft open | Claude | Op het board: geen item zichtbaar, geen rode bouwpreview, niets te bouwen |
-| 8 | Flip en grab niet tegelijk | #469 punt 10; PR #520 gemerged, volledige controller-/rijvalidatie blijft open | Claude | Met controller: grab vasthouden en flicken geeft geen flip+grab, en de grab loslaten flipt het board niet |
-| 9 | Boardgeluid klinkt als echt skaten | #469 punt 12 | open | Andy vindt het geluid oké |
-| 9b | Altijd dag op de server, zodat tests niet in het donker gebeuren | PR #502 | Claude | Overdag in het spel, en het blijft dag |
-
-## Nodig om sneller te gaan
-
-| # | Wat | Eigenaar | Klaar als |
-|---|-----|----------|-----------|
-| 10 | Agents kunnen zelf op Shadow testen (Tailscale SSH of OpenSSH, Shadow staat aan) | Andy beslist | Een agent installeert een client en leest `skate.log` zonder Andy |
-
-## Bij elke speltest kijken we naar meer dan het ene punt
-
-Niet alleen "werkt het nieuwe ding", maar elke keer ook (overdag, in third person én first person, met screenshots):
-
-- **Rijder en board:** staat het lichaam recht op het board, ook op steile stukken en de vert? Zweeft of zakt het board door iets? Kloppen voeten, handen en hoofd?
-- **Beweging:** schokken, terugzetten (put-backs in `skate.log`), haperen op naden, plots stilstaan of wegschieten?
-- **Camera en zicht:** draait het kompas, staat het zicht scheef, kijkt de camera door muren of de grond?
-- **Stukken:** liggen ze op de grond, sluiten ze aan, zijn alle delen zichtbaar (geen ontbrekende zijden of gaten)?
-- **Hand en HUD:** wat zit er in de hand, staan er oude previews of meldingen in beeld?
-- **Geluid:** klopt het geluid met wat je ziet?
-- **Logs:** `skate.log` en de Oxide-log op fouten en waarschuwingen nakijken, niet alleen de ene verwachte regel.
-
-Alles wat opvalt komt in het testverslag, ook als het niet bij de PR hoort.
-
-## Bijhouden
-
-- Eén PR per regel. In de PR staat: gereden of gezien ja/nee, en wat er gebeurde.
-- Wordt een regel klaar, dan gaat hij hier weg en komt de datum en het bewijs (wie reed, wat te zien was) in het issue.
-- Geen nieuwe functies tot rij 1–3 klaar zijn, tenzij Andy het vraagt.
+Bij iedere rit: controllerinput, eerste/derde persoon, kompas/horizon, hand-item/preview, contact/board/pose, geluid en overlappende mod-/serverfouten controleren. Voor halfpipeacceptatie: drie beklimmingen en fakie-terugkeren zonder put-backs.

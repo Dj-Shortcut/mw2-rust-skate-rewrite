@@ -95,8 +95,8 @@ support plane. This also applies to a command containing a literal Y such as `3.
 No `3.1` placement literal exists in the current server source; the former explicit
 command path accepted any supplied layout Y without support adjustment.
 
-Read actual native floor Construction bounds `(cx,cy,cz,sx,sy,sz)`. For every floor
-part with authored height `h` and pitch `p`, compute its lowest bound:
+Read actual native floor Construction bounds `(cx,cy,cz,sx,sy,sz)`. For non-ledge floor
+parts with authored height `h` and pitch `p`, compute their lowest bound:
 
 ```text
 bottom = h + cy*cos(p) - cz*sin(p) - sy/2*abs(cos(p)) - sz/2*abs(sin(p))
@@ -110,13 +110,36 @@ This seats the native recognition carriers; the three quarterpipe kinds retain
 their separate yaw-only [closed shell and coping](RUST-SKATE-QUARTERPIPES.md),
 whose riding datum is the final anchor plus the measured unpitched floor top.
 Do not pitch that shell with the original quarterpipe's carrier floors.
-Ledges currently contain floors without legs: new supported placements lower their
-whole anchor so the floor underside meets support. Keeping their old unsupported
-0.4/0.8m elevation would require additional geometry; low/high remain distinct IDs.
+Ledges use the existing authored closed concrete body: low and long ledges are
+0.4 m high, high ledges are 0.8 m high; widths are 3 m and 9 m for the long ledge,
+with a 3 m depth. Their base, rather than the underside of their raised carrier
+floor, meets the support plane. For these three kinds, `anchorY = supportTop -
+(floorCenterY + floorSizeY/2)`: every native floor top then meets the authored
+body top. Native part counts, IDs and relative layouts remain unchanged.
+
+New ledges persist an optional `SupportedLedge=true` marker. The server adds one
+closed Construction-layer BoxCollider, parented to the first verified native floor,
+covering the complete authored concrete body. Every native floor remains solid;
+none is disabled or replaced. Full-body occupancy and building-permission checks
+run before placement, after creation and before completion. Activation also refuses
+an intersecting active or sleeping player body, any foreign solid collider inside
+the body, or a saturated 128-entry clearance query. Reload restores only this owned
+body after verifying the complete unchanged saved member set. Demolition, removal
+and unload destroy only the added body; the native floors remain available.
+
+Legacy groups omit this marker and retain their saved positions and collision.
+No group is moved, lifted, deleted or automatically migrated. Previously seated
+low/high floor-only groups may remain indistinguishable until deliberately rebuilt.
+The client checks measured top-to-support height for new low/high recognition,
+retaining the historical pivot-gap fallback for older elevated plates. A new
+supported height cannot be reassigned by that legacy fallback. The model's existing
+base-origin routine places its full body on the same support plane (plus the
+existing visual lift); no generated model or retail asset changes are required.
 
 Use `TrySupportSample(kind,index,0..8,floorBox,x,z,yaw)` to enumerate each underside
 3×3 grid's samples at the global minimum (within 1e-6m): world X/Z and local Y.
-Other samples return false.
+Other samples return false. Ledge carrier floors are elevated; their whole concrete
+base is verified by the complete support-cell probes instead.
 For ray probes only, inset local Right by at most0.01m toward the part centre;
 flat floors also inset Forward by at most0.01m. Keep an inclined floor's low edge.
 Cast down from candidateY+2m, length27m, first obstruction, ignoring triggers,

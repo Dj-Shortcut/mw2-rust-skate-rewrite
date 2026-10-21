@@ -445,6 +445,18 @@ namespace Shortcut.RustMod
             transform = new SkateParkTransform { X = x, Y = y, Z = z, Yaw = partYaw, Pitch = part.Pitch };
             return true;
         }
+        // The authored ledges are closed concrete boxes, not unsupported floor plates.
+        // Bounds are in the model's base frame; long ledge uses the same three native members.
+        public static bool TryLedgeBody(SkateParkKind kind, out SkateParkBox body)
+        {
+            body = new SkateParkBox();
+            if (kind != SkateParkKind.LedgeLow && kind != SkateParkKind.LedgeHigh && kind != SkateParkKind.LongLedge) return false;
+            double height = kind == SkateParkKind.LedgeHigh ? 0.8 : 0.4;
+            body = new SkateParkBox { Y = height / 2, SizeX = kind == SkateParkKind.LongLedge ? 9 : 3,
+                SizeY = height, SizeZ = 3 };
+            return true;
+        }
+
         public static bool TrySupportedAnchor(SkateParkKind kind, double supportTop, double floorCenterY,
             double floorCenterZ, double floorSizeY, double floorSizeZ, out double anchorY)
         {
@@ -452,6 +464,15 @@ namespace Shortcut.RustMod
             if (kind == SkateParkKind.HalfWallKicker || PartCount(kind) == 0 || !Coordinate(supportTop) || !Coordinate(floorCenterY) ||
                 !Coordinate(floorCenterZ) || !Coordinate(floorSizeY) || !Coordinate(floorSizeZ) ||
                 floorSizeY <= 0 || floorSizeZ <= 0) return false;
+            SkateParkBox ledge;
+            if (TryLedgeBody(kind, out ledge))
+            {
+                // The base rests on support; the native floor TOP remains at the authored height.
+                double supported = supportTop - (floorCenterY + floorSizeY / 2);
+                if (!Coordinate(supported)) return false;
+                anchorY = supported;
+                return true;
+            }
             double baseline = double.NegativeInfinity;
             for (int i = 0; i < PartCount(kind); i++)
             {
@@ -692,6 +713,10 @@ namespace Shortcut.RustMod
             double x, double z, double yaw, out SkateParkTransform point)
         {
             point = new SkateParkTransform();
+            SkateParkBox ledge;
+            // The ledge's complete concrete base is covered by its support cells below.
+            // Its raised carrier floor is not a support contact.
+            if (TryLedgeBody(kind, out ledge)) return false;
             double baseline;
             SkateParkPart part;
             SkateParkTransform pose;
