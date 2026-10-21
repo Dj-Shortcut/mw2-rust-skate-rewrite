@@ -56,6 +56,10 @@ public static class SkatePieces
     private static string selectionToken = "";
     private static object selectionPlayer, selectionBody;
     private static float selectionAwakeAt;
+    private static object selectionCursorPlan;
+    private static string selectionCursorToken = "";
+    private static float selectionCursorUntil;
+    private static int selectionCursorPolls;
     private static float builderNoticeUntil;
     private static int builderTurn;
     private static bool wasPlaceTrigger, builderPad;
@@ -84,7 +88,15 @@ public static class SkatePieces
         modeButtonArea = area; modeButtonAt = Time.realtimeSinceStartup;
         modeButtonPlayer = SkateRig.Local; modeButtonBody = SkateRig.Body; modeButtonAwakeAt = SkateRig.AwakeAt;
         modeButtonToRust = Open;
-        if (clicked) modeButtonQueued = true;
+        if (clicked)
+        {
+            var mouse = Mouse.current;
+            if (mouse != null && mouse.leftButton.wasReleasedThisFrame)
+            {
+                var p = mouse.position.ReadValue();
+                if (area.Contains(new Vector2(p.x, Screen.height - p.y))) modeButtonQueued = true;
+            }
+        }
     }
 
     private static bool ModeButtonInput(float now, Mouse mouse)
@@ -125,6 +137,27 @@ public static class SkatePieces
         modeButtonPaused = false;
     }
 
+    private static void ClearSelectionCursor()
+    { selectionCursorPlan = null; selectionCursorToken = ""; selectionCursorUntil = 0f; selectionCursorPolls = 0; }
+
+    private static bool SelectionCursorSettling(float now, bool uiBlocked, bool cancel)
+    {
+        if (selectionCursorPlan == null) return false;
+        // Rust's cursor manager retains the previous positive request. Only this just-closed
+        // selection may wait for its next two input frames; no build input is allowed meanwhile.
+        if (!uiBlocked || cancel || Open || openingSkate || !Application.isFocused || SkateRide.On || !SkateRig.Ready ||
+            SkateRig.Local == null || SkateRig.Local.lifestate != BaseCombatEntity.LifeState.Alive ||
+            !ReferenceEquals(selectionPlayer, SkateRig.Local) || !ReferenceEquals(selectionBody, SkateRig.Body) || selectionAwakeAt != SkateRig.AwakeAt ||
+            !builderRequested || offPending || selectionToken != selectionCursorToken ||
+            (requestedKind < 0 && BuilderKind < 0) || (requestedKind >= 0 && now >= replyUntil) ||
+            !ReferenceEquals(selectionCursorPlan, SkateHeld.PausedPlanner(SkateRig.Local)) ||
+            now >= selectionCursorUntil || selectionCursorPolls >= 2)
+        { ClearSelectionCursor(); return false; }
+        selectionCursorPolls++;
+        BlocksControls = true;
+        return true;
+    }
+
     public static int Input(int padDown, float now, Keyboard keyboard, Mouse mouse, bool uiBlocked)
     {
         try { return InputFrame(padDown, now, keyboard, mouse, uiBlocked); }
@@ -163,6 +196,7 @@ public static class SkatePieces
         RustModeHint = rustBuilding && offboard && (!uiBlocked || rustWheelOpen);
         switchPressed |= ModeButtonInput(now, mouse);
         bool cancelKey = (padDown & SkatePad.B) != 0 || (keyboard != null && (keyboard.escapeKey.wasPressedThisFrame || keyboard.f1Key.wasPressedThisFrame || keyboard.tabKey.wasPressedThisFrame));
+        bool selectionSettling = SelectionCursorSettling(now, uiBlocked, cancelKey);
         if (openingSkate)
         {
             BlocksControls = true;
@@ -191,10 +225,13 @@ public static class SkatePieces
         bool canOpen = !uiBlocked && !SkateRide.On && SkateRig.Ready && SkateRig.Local != null && Application.isFocused;
         if (!canOpen || (Open && (!ReferenceEquals(menuPlayer, SkateRig.Local) || !ReferenceEquals(menuBody, SkateRig.Body) || menuAwakeAt != SkateRig.AwakeAt)))
         {
-            bool ready = NativeMode(now);
-            if (Open) Close(ready);
+            if (!selectionSettling)
+            {
+                bool ready = NativeMode(now);
+                if (Open) Close(ready);
+            }
             wasP = p; wasBack = back; wasRight = right;
-            return padDown;
+            return selectionSettling ? 0 : padDown;
         }
         bool wantsOpen = (right && !wasRight) || (p && !wasP) || (back && !wasBack);
         if (rustBuilding)
@@ -405,6 +442,7 @@ public static class SkatePieces
 
     private static bool NativeMode(float now)
     {
+        ClearSelectionCursor();
         if (offPending) return false;
         if (!builderRequested) return true;
         SaidAt = now;
@@ -488,13 +526,14 @@ public static class SkatePieces
     }
 
     private static void ClearSelectionReceipt()
-    { selectionToken = ""; selectionPlayer = selectionBody = null; selectionAwakeAt = 0; }
+    { ClearSelectionCursor(); selectionToken = ""; selectionPlayer = selectionBody = null; selectionAwakeAt = 0; }
 
     private static void ClearPlacement()
     { placementToken = ""; placementUntil = 0; placementUnknown = false; placementPlayer = placementBody = null; placementAwakeAt = 0; placementKind = -1; }
 
     private static void Close(bool resumePlanner = true)
     {
+        ClearSelectionCursor();
         // The native cursor manager settles the request after our component stops updating.
         // Do not restore global cursor flags over another menu's current request.
         SkateHeld.ReleaseSkateCursor();
@@ -636,10 +675,17 @@ public static class SkatePieces
         { Said = Status = "Hold your ordinary building plan first."; return; }
         selectionToken = Guid.NewGuid().ToString("N");
         selectionPlayer = SkateRig.Local; selectionBody = SkateRig.Body; selectionAwakeAt = SkateRig.AwakeAt;
+        var plan = SkateHeld.PausedPlanner(SkateRig.Local);
         requestedKind = Chosen; replyUntil = now + 5f; BuilderKind = -1; Picked = -1; builderRequested = true; builderPad = pad;
         string command = "skate.builder " + Names[Chosen] + " " + selectionToken;
         bool sent = SkateConsole.Send(command);
         Close(false);
+        if (sent && plan != null && builderRequested && !offPending && selectionToken.Length != 0)
+        {
+            // A selection ACK does not extend this independent, already-running cursor bound.
+            selectionCursorPlan = plan; selectionCursorToken = selectionToken;
+            selectionCursorUntil = Time.realtimeSinceStartup + 0.5f;
+        }
         Said = sent ? "Requested " + SkateBuildWheel.Labels[Chosen] + ". Server checks placement and 10 Wood. " + BuilderControls
             : "Selection unconfirmed. Waiting for a server reply before another request.";
     }

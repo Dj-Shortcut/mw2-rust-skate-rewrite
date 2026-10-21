@@ -289,12 +289,14 @@ public static class SkateHeld
     private static Planner pausedPlanner;
     private static bool plannerWasEnabled;
     private static object plannerPlayer;
+    private static object plannerBody;
+    private static float plannerAwakeAt;
     // Wheel/builder previews are a separate owner from the holstered riding models.
     private static readonly System.Collections.Generic.List<UnityEngine.GameObject> plannerGuides = new System.Collections.Generic.List<UnityEngine.GameObject>();
     public static bool PausePlanner(object player, out string why)
     {
         why = "";
-        if (pausedPlanner != null && ReferenceEquals(plannerPlayer, player) && HasPlanner(player))
+        if (PausedPlanner(player) != null)
         { Guides(pausedPlanner, false, plannerGuides, true); return true; }
         if (pausedPlanner != null) ResumePlanner();
         var root = player as UnityEngine.Component;
@@ -315,10 +317,29 @@ public static class SkateHeld
         plannerWasEnabled = found.enabled;
         pausedPlanner = found;
         plannerPlayer = player;
+        plannerBody = SkateRig.Body;
+        plannerAwakeAt = SkateRig.AwakeAt;
         found.enabled = false;
         Guides(found, false, plannerGuides, true);
         Out.Say("PIECES ordinary building plan paused on local hand");
         return true;
+    }
+
+    public static object PausedPlanner(object player)
+    {
+        try
+        {
+            if (player == null || !ReferenceEquals(player, SkateRig.Local) || !ReferenceEquals(plannerPlayer, player) ||
+                plannerBody == null || !ReferenceEquals(plannerBody, SkateRig.Body) || plannerAwakeAt <= 0f ||
+                plannerAwakeAt != SkateRig.AwakeAt || pausedPlanner == null || pausedPlanner.enabled ||
+                !pausedPlanner.gameObject.activeInHierarchy) return null;
+            var root = player as UnityEngine.Component;
+            var model = RiderRig.Bound && RiderRig.Root != null ? (UnityEngine.Component)RiderRig.Root : root;
+            var parent = pausedPlanner.transform.parent;
+            return model != null && pausedPlanner.transform.IsChildOf(model.transform) && parent != null &&
+                parent.name.EndsWith("_prop", StringComparison.Ordinal) ? pausedPlanner : null;
+        }
+        catch { return null; }
     }
 
     public static bool HasPlanner(object player)
@@ -602,6 +623,8 @@ public static class SkateHeld
         var planner = pausedPlanner;
         pausedPlanner = null;
         plannerPlayer = null;
+        plannerBody = null;
+        plannerAwakeAt = 0f;
         for (var i = plannerGuides.Count - 1; i >= 0; i--)
         {
             try

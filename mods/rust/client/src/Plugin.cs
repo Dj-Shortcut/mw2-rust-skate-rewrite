@@ -8,7 +8,7 @@ using UnityEngine;
 [BepInPlugin("shortcut.skate.client", "Shortcut Skate Client", SkatePlugin.Version)]
 public class SkatePlugin : BasePlugin
 {
-    public const string Version = "0.18.45";
+    public const string Version = "0.18.46";
     internal static SkatePlugin Instance;
     private SkateRig rig;
 
