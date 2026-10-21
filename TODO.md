@@ -18,7 +18,9 @@ Het goedgekeurde vervolg is eerst één samenhangende push → afzet → air →
 |---|---|---|---|
 | Board en lichaam delen dezelfde actuele pose; vloeiende push en air zonder ongevraagd rechtzetten | #469 | Codex, `codex/client-flow-034-public` | Andy ziet en rijdt normale/mongo-push, een ollie/flip, transition-air en landing met samenhangende voet-/boardcontacten; de .31-rit zonder put-backs blijft behouden |
 
-Status: client .33 is native gebouwd en geïnstalleerd; daarna meldde Andy nog de ongewenste airpose, controllerproblemen na afstappen en terugzetten tijdens het rijden. De .34-ontwikkelbron bevat de beoordeelde air-, grab- en controller-pushcorrecties en behoudt de gemergede parkwheel, fakiecorrectie en optionele diagnose. Er is nog geen geïnstalleerde of gereden .34. De .31-verbetering gold voor één rit en sluit deze latere feedback niet.
+Status: client .34 is native gebouwd, geïnstalleerd en geladen; de rig is toegevoegd. Dat bewijst nog geen correcte controllerbesturing, rit, airpose of hand-/voetcontacten. De eerdere feedback op .33 over controllerproblemen na afstappen en terugzetten tijdens het rijden blijft open. De .31-verbetering gold voor één rit en sluit deze latere feedback niet.
+
+De nieuwe .35-presentatiebron koppelt rotatie, catch en grab-loslaten aan één vluchtstatus voor lichaam en board. De bronproeven dekken een doorlopende dubbele flip zonder tussentijdse catch/herhaalde flick, grab-loslaten tijdens een bodyspin en reset/herinstap. Deze wijziging is nog niet native geïnstalleerd of in het spel gezien; de fysieke beweging en netwerk-handoff blijven ongewijzigd. Klaar pas wanneer Andy de volledige afzet → air → catch → landing samenhangend ziet en rijdt.
 
 De geregistreerde MEGA is na de toegestane serverherstart met zijn 80 delen en gladde botsingsvlakken gecontroleerd. De oude, ongeregistreerde MEGA werd niet hersteld: de 80 oude entiteiten ontbraken. Dat is geen bewijs voor een foutloze rit op de huidige parkstukken.
 

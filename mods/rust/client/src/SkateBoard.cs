@@ -59,7 +59,7 @@ public static class SkateBoard
     // (the feet are near the middle, where the tweak moves the deck least).
     public static Quaternion GrabTweak(Vector3 up)
     {
-        var g = (int)SkateRide.Grab;
+        var g = (int)RiderRig.ShownGrab;
         if (SkateRide.Mode != RideMode.Air || g <= 0 || g >= grabRoll.Length || GrabFold <= 0.001f) return Quaternion.identity;
         var nose = SkateRide.Dir(SkateRide.NoseYaw); nose = nose - up * Vector3.Dot(nose, up);
         if (nose.sqrMagnitude < 0.0001f) return Quaternion.identity;
