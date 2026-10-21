@@ -339,7 +339,7 @@ public static class SkateParks
                 var anchorYaw = b.Yaw - (float)layout[0].Yaw;
                 matched.Clear();
                 if (!Match(kind, layout, blocks, cells, taken, b, anchorYaw, matched)) continue;
-                if ((kind == Kind.LedgeLow || kind == Kind.LedgeHigh || kind == Kind.LongLedge) && !OverFoundation(b, blocks, cells, kind == Kind.LedgeHigh) && !OverGround(b, kind == Kind.LedgeHigh)) continue;
+                if ((kind == Kind.LedgeLow || kind == Kind.LedgeHigh || kind == Kind.LongLedge) && !OverFoundation(b, blocks, cells, kind) && !OverGround(b, kind)) continue;
                 if (IsGridQuarter(kind) && !GridQuarter(kind, b, blocks, cells, anchorYaw)) continue;
                 if (kind == Kind.HalfWallKicker && !KickerWall(b, blocks, cells)) continue;
                 // A plain kicker is 25 degrees; 30 is the half-wall kicker's, even when its wall is out of reach.
@@ -540,47 +540,52 @@ public static class SkateParks
         return true;
     }
 
-    // A ledge is a floor tile 0.4 or 0.8 above a foundation and nothing else (pivot to pivot that is
-    // 0.4 or 0.8 plus the tile's thickness, about 0.6 or 1.0 in the game: seen live, a long ledge on
-    // the owner's platform was taken for a high ledge at 0.62): an ordinary floor never
-    // sits that close above a foundation (half walls put one 1.5 above). The gap is pivot to pivot.
+    // Recognition compares the actual floor top with the support top. Carrier-pivot gaps
+    // depend on native thickness and cannot distinguish the authored low/high heights safely.
     public static float LedgeGap = -1f;
-    private static bool OverFoundation(Block floor, List<Block> blocks, Dictionary<long, List<int>> cells, bool high)
+    private static bool LedgeHeight(Kind kind, float height)
+    {
+        SkateParkBox body;
+        return SkateParkLayout.TryLedgeBody((SkateParkKind)(int)kind, out body) &&
+            !float.IsNaN(height) && !float.IsInfinity(height) && Math.Abs(height - body.SizeY) <= SkateParkLayout.SupportTolerance;
+    }
+    private static bool OverFoundation(Block floor, List<Block> blocks, Dictionary<long, List<int>> cells, Kind kind)
     {
         foreach (var i in Near(cells, floor.Position - Vector3.up * 0.6f))
         {
             var b = blocks[i];
-            if (b.Prefab != FoundationPrefab) continue;
+            if (b.Prefab != FoundationPrefab || b.Top <= 0f) continue;
             var flat = b.Position - floor.Position; flat.y = 0f;
             if (flat.magnitude > 1.6f) continue;
+            var height = floor.Position.y + (floor.Top > 0 ? floor.Top : FloorTop) - (b.Position.y + b.Top);
+            if (LedgeHeight(kind, height)) { LedgeGap = height; return true; }
+            // A clear new supported height must not fall through to the old pivot-gap classifier.
+            if (LedgeHeight(Kind.LedgeLow, height) || LedgeHeight(Kind.LedgeHigh, height)) continue;
             var gap = floor.Position.y - b.Position.y;
             if (gap < 0.15f || gap > 1.3f) continue;
-            LedgeGap = gap;
-            return high ? gap >= LedgeSplit : gap < LedgeSplit;
+            if (kind == Kind.LedgeHigh ? gap >= LedgeSplit : gap < LedgeSplit)
+            { LedgeGap = gap; return true; }
         }
         return false;
     }
 
-    // Or a floor tile standing free that high above the ground, as the server's own placement
-    // (`skate.place`, 0.3.8) leaves a ledge: its anchor rests on the ground and the tile is 0.4 or
-    // 0.8 above that, with nothing under it. A building's floor stands on walls, a storey up.
     public static float LedgeGroundGap = -1f;
-    // Measured from the tile's pivot, which is its top in the game (the tile's own bounds are not
-    // always readable on the client): 0.4 plus the tile's thickness for a low ledge, 0.8 plus it for
-    // a high one. Seen live: a long ledge's tiles 0.6 up were taken for high ledges when measured from
-    // a bottom the client could not read.
-    public const float LedgeSplit = 0.8f;
-    private static bool OverGround(Block floor, bool high)
+    public const float LedgeSplit = 0.8f; // Historical diagnostics retain their public field.
+    private static bool OverGround(Block floor, Kind kind)
     {
         if (Math.Abs(floor.Pitch) > AngleTolerance) return false;
         var mask = SkateRide.GroundMask;
         if (constructionLayer >= 0) mask &= ~(1 << constructionLayer);
         RaycastHit hit;
         if (!Physics.Raycast(floor.Position, Vector3.down, out hit, 1.5f, mask, QueryTriggerInteraction.Ignore)) return false;
+        var height = hit.distance + (floor.Top > 0 ? floor.Top : FloorTop);
+        if (LedgeHeight(kind, height)) { LedgeGroundGap = height; return true; }
+        if (LedgeHeight(Kind.LedgeLow, height) || LedgeHeight(Kind.LedgeHigh, height)) return false;
+        // Keep historical elevated plates recognizable without moving their saved members.
         var gap = hit.distance;
-        if (gap < 0.3f || gap > 1.3f) return false;
+        if (gap < 0.3f || gap > 1.3f || (kind == Kind.LedgeHigh ? gap < LedgeSplit : gap >= LedgeSplit)) return false;
         LedgeGroundGap = gap;
-        return high ? gap >= LedgeSplit : gap < LedgeSplit;
+        return true;
     }
 
     // Flat floors in an L (or a floor and a low wall) are common in any base, a storey up on walls.
@@ -866,14 +871,16 @@ public static class SkateParks
     // with a ray down, as the server reads it. Origin is where the model is drawn; Valid only when
     // the whole support is found, and Why says what is missing when it is not.
     public const float GhostStep = 90f;
-    // The halfpipe is placed across the view, not back over the player: the server adds the same
-    // quarter turn in SkateParkLayout.PlacementYaw. The shared file this client compiles is pinned
-    // (sources.txt) at a commit without that function, so the turn is added here; when the pin
-    // moves to a commit that has it, this goes and TryGhostFrame adds it itself.
-    public static float PlacementYaw(SkateParkKind kind) { return kind == SkateParkKind.Halfpipe ? 90f : 0f; }
     public static bool Ghost(Kind kind, RaycastHit aim, float lookYaw, float turn, out Vector3 origin, out float yaw, out bool onHost, out string why, bool snapTerrain = false)
     {
+        SkateParkTransform footprintFrame;
+        return Ghost(kind, aim, lookYaw, turn, out origin, out yaw, out onHost, out why, out footprintFrame, snapTerrain);
+    }
+
+    public static bool Ghost(Kind kind, RaycastHit aim, float lookYaw, float turn, out Vector3 origin, out float yaw, out bool onHost, out string why, out SkateParkTransform footprintFrame, bool snapTerrain = false)
+    {
         onHost = false; why = "";
+        footprintFrame = new SkateParkTransform();
         var shared = (SkateParkKind)(int)kind;
         var hint = new SkateParkTransform { X = aim.point.x, Y = aim.point.y, Z = aim.point.z, Yaw = Wrap(lookYaw + turn) };
         double terrainYaw;
@@ -891,7 +898,7 @@ public static class SkateParks
             {
                 var t = host.transform;
                 SkateParkTransform frame;
-                if (SkateParkLayout.TryGhostFrame(shared, adjacent, t.position.x, t.position.z, t.eulerAngles.y, aim.point.x, aim.point.z, turn + PlacementYaw(shared), true, GhostStep, out frame))
+                if (SkateParkLayout.TryGhostFrame(shared, adjacent, t.position.x, t.position.z, t.eulerAngles.y, aim.point.x, aim.point.z, turn, true, GhostStep, out frame))
                 {
                     onHost = true;
                     hint = new SkateParkTransform { X = frame.X, Y = aim.point.y, Z = frame.Z, Yaw = frame.Yaw };
@@ -901,6 +908,7 @@ public static class SkateParks
             }
         }
         catch (Exception e) { why = "target not read: " + e.GetType().Name; }
+        footprintFrame = hint;
         SkateParkTransform anchor; double top; string failure;
         var valid = SkateParkLayout.TryGhostAnchor(shared, FloorBox, hint, selected, ReadSupport, out anchor, out top, out failure);
         if (!valid)
@@ -911,6 +919,7 @@ public static class SkateParks
             origin = ModelOriginForAnchor(kind, new Vector3((float)hint.X, (float)hint.Y, (float)hint.Z), yaw);
             return false;
         }
+        footprintFrame = new SkateParkTransform { X = anchor.X, Y = top, Z = anchor.Z, Yaw = anchor.Yaw };
         yaw = (float)anchor.Yaw;
         origin = ModelOriginForFinal(kind, anchor);
         return true;

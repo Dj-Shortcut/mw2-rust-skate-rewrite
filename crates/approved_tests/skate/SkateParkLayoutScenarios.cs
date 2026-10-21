@@ -1795,7 +1795,15 @@ internal static class SkateParkLayoutScenarios
                     lowest = Math.Min(lowest, worldY);
                 }
             }
-            Near(lowest, top, piece.Name + ": lowest actual floor corner meets support exactly, with no hover gap.");
+            SkateParkBox ledge;
+            if (SkateParkLayout.TryLedgeBody(piece.Kind, out ledge))
+            {
+                Near(baseY + centerY + thickness / 2, top, piece.Name + ": concrete body base meets support.");
+                Near(lowest, top + ledge.SizeY - thickness, piece.Name + ": carrier floor rests inside the closed body.");
+                Near(baseY + piece.Parts[0].Height + centerY + thickness / 2, top + ledge.SizeY,
+                    piece.Name + ": native floor top meets the authored concrete top.");
+            }
+            else Near(lowest, top, piece.Name + ": lowest actual floor corner meets support exactly, with no hover gap.");
             double shifted;
             Require(SkateParkLayout.TrySupportedAnchor(piece.Kind, top + 7.25, centerY, centerZ, thickness, depth, out shifted),
                     piece.Name + ": translated support refused.");
@@ -1805,8 +1813,12 @@ internal static class SkateParkLayoutScenarios
         {
             double y;
             Require(SkateParkLayout.TrySupportedAnchor(kind, 0, 0, 0, 0.2, 3, out y), "ledge: nominal support refused.");
-            Near(y, kind == SkateParkKind.LedgeHigh ? -0.7 : -0.3,
-                "ledge: authored 0.4/0.8m height is compensated instead of hovering over a phantom upright floor.");
+            Near(y, -0.1, "ledge: concrete base is supported while its native floor retains the authored height.");
+            SkateParkBox body;
+            Require(SkateParkLayout.TryLedgeBody(kind, out body), "ledge: a closed concrete body is required.");
+            Near(body.SizeY, kind == SkateParkKind.LedgeHigh ? 0.8 : 0.4, "ledge: distinct authored heights.");
+            Near(body.SizeX, kind == SkateParkKind.LongLedge ? 9 : 3, "ledge: full authored width.");
+            Near(body.SizeZ, 3, "ledge: full authored depth.");
         }
         SupportedAnchorRefused((SkateParkKind)99, 0, 0, 0, 0.2, 3, "unknown support kind.");
         SupportedAnchorRefused(SkateParkKind.HalfWallKicker, 0, 0, 0, 0.2, 3,
@@ -2189,8 +2201,11 @@ internal static class SkateParkLayoutScenarios
                 Require(SkateParkLayout.TryGhostAnchor(kind, floor, hint, 10, dry, out anchor, out top, out failure) &&
                     failure == null && top == 10 && anchor.X == 100 && anchor.Z == -100 && anchor.Yaw == yaw,
                     "ghost: complete level support resolves atomically for every ground kind and yaw.");
-                Require(cells == 9 * SkateParkLayout.SupportCellCount(kind) && calls > cells,
-                    "ghost: all reserved cells and native lowest contacts are queried.");
+                SkateParkBox ledge;
+                bool bodySupported = SkateParkLayout.TryLedgeBody(kind, out ledge);
+                Require(cells == 9 * SkateParkLayout.SupportCellCount(kind) && (bodySupported ? calls == cells : calls > cells),
+                    "ghost: complete body-base cells or native lowest contacts are queried as applicable.");
+                if (bodySupported) Near(anchor.Y + floor.Y + floor.SizeY / 2, top, "ghost: concrete base meets the full support plane.");
                 if (kind == SkateParkKind.MiniQuarterPipe) Near(anchor.Y, 10.2, "ghost: measured native underside seats exactly.");
                 for (int bad = 1; bad <= calls; bad++)
                 {
@@ -2292,6 +2307,10 @@ internal static class SkateParkLayoutScenarios
             double anchorY;
             Require(SkateParkLayout.TrySupportedAnchor(piece.Kind, supportTop, floor.Y, floor.Z,
                 floor.SizeY, floor.SizeZ, out anchorY), piece.Name + ": sample fixture support refused.");
+            SkateParkBox ledge;
+            bool bodySupported = SkateParkLayout.TryLedgeBody(piece.Kind, out ledge);
+            if (bodySupported)
+                Near(anchorY + floor.Y + floor.SizeY / 2, supportTop, piece.Name + ": complete support cells carry the concrete base.");
             int contacts = 0;
             for (int i = 0; i < piece.Parts.Length; i++)
             for (int sample = 0; sample < 9; sample++)
@@ -2303,7 +2322,7 @@ internal static class SkateParkLayoutScenarios
                     Yaw = yaw + part.Yaw, Pitch = part.Pitch };
                 Point expected = SurfacePoint(pose, floor.X + (sample % 3 - 1) * floor.SizeX / 2,
                     floor.Y - floor.SizeY / 2, floor.Z + (sample / 3 - 1) * floor.SizeZ / 2);
-                bool contact = part.Prefab == FloorPrefab && Math.Abs(expected.Y - minimum) <= 1e-6;
+                bool contact = !bodySupported && part.Prefab == FloorPrefab && Math.Abs(expected.Y - minimum) <= 1e-6;
                 SkateParkTransform point = new SkateParkTransform { X = 91, Y = 92, Z = 93, Yaw = 94, Pitch = 95 };
                 bool accepted = SkateParkLayout.TrySupportSample(piece.Kind, i, sample, floor, ax, az, yaw, out point);
                 Require(accepted == contact, piece.Name + ": only actual global-lowest floor samples can claim contact.");
@@ -2318,7 +2337,8 @@ internal static class SkateParkLayoutScenarios
                 Near(anchorY + point.Y, supportTop, piece.Name + ": returned local underside meets support after translation.");
                 Require(point.Yaw == 0 && point.Pitch == 0, piece.Name + ": a support sample is a point, without orientation.");
             }
-            Require(contacts > 0, piece.Name + ": every supported assembly exposes at least one real contact sample.");
+            Require(bodySupported ? contacts == 0 && SkateParkLayout.SupportCellCount(piece.Kind) > 0 : contacts > 0,
+                piece.Name + ": concrete bases use full support cells; other assemblies expose native underside contacts.");
         }
         foreach (int index in new[] { 64, 65, 70, 71, 72, 79 })
             SupportSampleRefused(SkateParkKind.MegaHalfpipe, index, 4, nominal, 0, 0, 0,

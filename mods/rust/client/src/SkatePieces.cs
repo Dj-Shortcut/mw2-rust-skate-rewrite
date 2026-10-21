@@ -341,6 +341,7 @@ public static class SkatePieces
             catch (Exception e) { Out.Say("PIECES cursor restore unavailable: " + e.GetType().Name); }
         }
         if (resumePlanner) SkateHeld.ResumePlanner();
+        SkateSupportFootprint.Hide();
         SkateParks.PreviewClear(); previewKind = -1; previewYaw = 9999f;
     }
 
@@ -407,14 +408,15 @@ public static class SkatePieces
         catch (Exception) { HeldClear(); return; }
         // Snapped and seated by the server's own rules (#476): onto a standing foundation, or beside a
         // park floor, turned by the planner's R; Valid only when every support cell is found.
-        Vector3 origin; float yaw; bool onHost; string why;
-        Valid = SkateParks.Ghost((SkateParks.Kind)HeldKind, aimHit, Yaw, BuilderKind >= 0 ? builderTurn * 90f : SkateHeld.PlannerTurn(SkateRig.Local), out origin, out yaw, out onHost, out why, BuilderKind >= 0);
+        Vector3 origin; float yaw; bool onHost; string why; SkateParkTransform footprint;
+        Valid = SkateParks.Ghost((SkateParks.Kind)HeldKind, aimHit, Yaw, BuilderKind >= 0 ? builderTurn * 90f : SkateHeld.PlannerTurn(SkateRig.Local), out origin, out yaw, out onHost, out why, out footprint, BuilderKind >= 0);
         OnFoundation = onHost; Yaw = yaw; GhostWhy = why;
+        SkateSupportFootprint.Show((SkateParkKind)HeldKind, footprint, Valid);
         if (HeldKind != previewKind) { SkateParks.PreviewAt((SkateParks.Kind)HeldKind, origin, Yaw, false); previewKind = HeldKind; previewAt = origin; previewYaw = Yaw; }
         else if (Vector3.Distance(previewAt, origin) > 0.01f || Math.Abs(previewYaw - Yaw) > 0.01f) { SkateParks.PreviewMove(origin, Yaw); previewAt = origin; previewYaw = Yaw; }
         if (now >= builderNoticeUntil)
         {
-            Said = SkateHeld.ItemNames[HeldKind] + (Valid ? ": preview fits here; server verifies placement and 10 Wood" : ": preview does not fit: " + GhostWhy) + "  |  " + (BuilderKind >= 0 ? BuilderControls : "Shift + right click: Rust building"); SaidAt = now;
+            Said = SkateHeld.ItemNames[HeldKind] + (Valid ? ": client support fits; server still verifies placement and 10 Wood" : ": support unverified: " + GhostWhy) + "  |  " + (BuilderKind >= 0 ? BuilderControls : "Shift + right click: Rust building"); SaidAt = now;
         }
         if (GhostWhy != lastWhy) { lastWhy = GhostWhy; Out.Say("PIECES ghost " + SkateHeld.ItemNames[HeldKind] + (Valid ? " fits" + (OnFoundation ? " on a foundation" : "") : ": " + GhostWhy)); }
     }
@@ -423,6 +425,7 @@ public static class SkatePieces
     // server would put it on the half wall aimed at, and nowhere else.
     private static void HeldWallFrame(float now)
     {
+        SkateSupportFootprint.Hide(); // A half-wall attachment has no ground-cell mask.
         var origin = Vector3.zero; var yaw = 0f; var why = "no camera"; var ok = false;
         try
         {
@@ -439,7 +442,7 @@ public static class SkatePieces
             : ": against this half wall (left click with the square foundation)");
     }
 
-    private static void HeldClear() { if (previewKind >= 0) { SkateParks.PreviewClear(); previewKind = -1; } }
+    private static void HeldClear() { SkateSupportFootprint.Hide(); if (previewKind >= 0) { SkateParks.PreviewClear(); previewKind = -1; } }
 
     // The piece last taken with the picker; -1 before any.
     public static int Picked = -1;
@@ -506,6 +509,7 @@ public static class SkatePieces
         if (builderRequested) NativeMode(Time.realtimeSinceStartup);
         // Player/rig teardown cannot retain a disabled component after its input driver is gone.
         Close(); inputPrimed = false; cancelledHold = BlocksControls = false; BuilderKind = requestedKind = -1;
+        SkateSupportFootprint.Reset();
         builderRequested = offPending = false;
         Picked = -1; HeldKind = -1; Asked = Said = Status = ""; SaidAt = AskedAt = -99f; Chosen = 0;
         Sent = Placed = 0; Turn = 0f; AimOk = false;
