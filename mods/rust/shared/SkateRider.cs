@@ -27,6 +27,18 @@ namespace Shortcut.RustMod
     // Presentation only: one rotation/release/catch history per flight, independent of forces.
     public enum SkateRiderContactPhase { Ground, Air, Rotating, Holding, Releasing, Catching, Caught, Landing }
 
+    // The scored take-off is a description, not a request to turn or catch the board. In particular,
+    // Late is sticky gameplay metadata; changing it must never restart a release or a flick.
+    public struct SkateRiderTrickContext
+    {
+        public readonly SkatePopKind PopKind;
+        public readonly bool PopSwitch, PopTailLeads, RiderTailFirst, Late;
+        public bool Known { get { return PopKind != SkatePopKind.None; } }
+        public bool FootPop { get { return PopKind == SkatePopKind.Ollie || PopKind == SkatePopKind.Nollie; } }
+        public SkateRiderTrickContext(SkatePopKind popKind, bool popSwitch, bool popTailLeads, bool riderTailFirst, bool late)
+        { PopKind = popKind; PopSwitch = popSwitch; PopTailLeads = popTailLeads; RiderTailFirst = riderTailFirst; Late = late; }
+    }
+
     public struct SkateRiderContactState
     {
         public readonly bool Initialized, Airborne, Rotating;
@@ -35,18 +47,40 @@ namespace Shortcut.RustMod
         public readonly int FlipDirection, ShoveDirection;
         public readonly SkateGrabKind GrabKind;
         public readonly double GrabWeight, GrabSeconds, Landing;
+        public readonly SkateRiderTrickContext Trick;
+        public readonly double FlightSeconds;
         public SkateGrabKind VisibleGrab { get { return GrabWeight > 0 ? GrabKind : SkateGrabKind.None; } }
         public double BoardFold { get { return GrabWeight * (0.8 + 0.2 * Math.Min(1, GrabSeconds / 0.6)); } }
+        // The frame points toward the stance's nose. Reversing travel does not exchange the feet
+        // that pop and slide. The board's pitch, however, is expressed relative to travel.
+        public double PopPitchSign { get { return !Trick.FootPop ? 1 :
+            (Trick.PopKind == SkatePopKind.Nollie ? -1 : 1) * (Trick.RiderTailFirst ? -1 : 1); } }
+        public double PopRelease { get { return !Airborne || !Trick.FootPop ? 0 :
+            Ease(FlightSeconds / 0.05) * (1 - Ease((FlightSeconds - 0.05) / 0.17)); } }
+        // The first foot can meet the deck before the other one. Both remain released throughout
+        // an unfinished multi-turn burst: only the existing aligned Catch can start either return.
+        public double FrontFootContact { get { return FootContact(Trick.PopKind != SkatePopKind.Nollie); } }
+        public double BackFootContact { get { return FootContact(Trick.PopKind == SkatePopKind.Nollie); } }
+        public double FrontFootClearance { get { return Clearance(FrontFootContact); } }
+        public double BackFootClearance { get { return Clearance(BackFootContact); } }
+        private double Clearance(double footContact)
+        { return Math.Max(Ease(FlipTravel / 90), 0.6 * Ease(ShoveTravel / 45)) * (1 - footContact); }
+        private double FootContact(bool first)
+        { return !Trick.FootPop || FlipTravel + ShoveTravel == 0 ? 1 :
+            first ? Ease(Catch / 0.75) : Ease((Catch - 0.15) / 0.85); }
+        private static double Ease(double x) { x = Math.Max(0, Math.Min(1, x)); return x * x * (3 - 2 * x); }
         internal SkateRiderContactState(bool air, bool rotating, SkateRiderContactPhase phase,
             double flip, double shove, double flipTravel, double shoveTravel, int flipDirection, int shoveDirection,
             double flipLift, double shoveLift, double flick, double scoop, double caught,
-            SkateGrabKind grab, double grabWeight, double grabSeconds, double landing)
+            SkateGrabKind grab, double grabWeight, double grabSeconds, double landing,
+            SkateRiderTrickContext trick, double flightSeconds)
         {
             Initialized = true; Airborne = air; Rotating = rotating; Phase = phase;
             LastFlip = flip; LastShove = shove; FlipTravel = flipTravel; ShoveTravel = shoveTravel;
             FlipDirection = flipDirection; ShoveDirection = shoveDirection;
             FlipLift = flipLift; ShoveLift = shoveLift; Flick = flick; Scoop = scoop; Catch = caught;
             GrabKind = grab; GrabWeight = grabWeight; GrabSeconds = grabSeconds; Landing = landing;
+            Trick = trick; FlightSeconds = flightSeconds;
         }
     }
 
@@ -217,18 +251,29 @@ namespace Shortcut.RustMod
             bool footPlanted, double flip, double shove, SkateGrabKind grab, double grabSeconds, double landing,
             double dt, out SkateRiderContactState next, out string error)
         {
+            return TryStepContact(state, airborne, rotating, descending, footPlanted, flip, shove, grab,
+                grabSeconds, landing, default(SkateRiderTrickContext), dt, out next, out error);
+        }
+        public static bool TryStepContact(SkateRiderContactState state, bool airborne, bool rotating, bool descending,
+            bool footPlanted, double flip, double shove, SkateGrabKind grab, double grabSeconds, double landing,
+            SkateRiderTrickContext trick, double dt, out SkateRiderContactState next, out string error)
+        {
             next = state; error = null;
-            if (!Valid(state) || !Finite(dt) || dt <= 0 || dt > 0.1 || !Finite(flip) || Math.Abs(flip) > 3600000 ||
+            if (!Valid(state) || !Valid(trick) || !Finite(dt) || dt <= 0 || dt > 0.1 || !Finite(flip) || Math.Abs(flip) > 3600000 ||
                 !Finite(shove) || Math.Abs(shove) > 3600000 || !Finite(grabSeconds) || grabSeconds < 0 || grabSeconds > 86400 ||
                 !Fraction(landing) || grab < SkateGrabKind.None || grab > SkateGrabKind.Tailbone)
             { error = "Invalid rider contact phase request."; return false; }
             if (!airborne)
             {
                 next = new SkateRiderContactState(false, false, landing > 0 ? SkateRiderContactPhase.Landing : SkateRiderContactPhase.Ground,
-                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, SkateGrabKind.None, 0, 0, landing);
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, SkateGrabKind.None, 0, 0, landing,
+                    default(SkateRiderTrickContext), 0);
                 return true;
             }
             bool fresh = !state.Initialized || !state.Airborne;
+            var takeoff = fresh || !state.Trick.Known ? trick : state.Trick;
+            if (takeoff.Known && trick.Late && !takeoff.Late)
+                takeoff = new SkateRiderTrickContext(takeoff.PopKind, takeoff.PopSwitch, takeoff.PopTailLeads, takeoff.RiderTailFirst, true);
             double df = flip - (fresh ? 0 : state.LastFlip), ds = shove - (fresh ? 0 : state.LastShove);
             bool changed = Math.Abs(df) > 0.000001 || Math.Abs(ds) > 0.000001;
             bool burst = fresh || (rotating && !state.Rotating) || (changed && state.Catch > 0);
@@ -256,7 +301,8 @@ namespace Shortcut.RustMod
                 : weight > 0 ? SkateRiderContactPhase.Releasing : catching ? caught < 1 ? SkateRiderContactPhase.Catching : SkateRiderContactPhase.Caught
                 : rotating ? SkateRiderContactPhase.Rotating : SkateRiderContactPhase.Air;
             next = new SkateRiderContactState(true, rotating, phase, flip, shove, ft, st, fd, sd, fl, sl,
-                Kick(Math.Min(1, ft / 360)), Kick(Math.Min(1, st / 180)), caught, visible, weight, seconds, 0);
+                Kick(Math.Min(1, ft / 360)), Kick(Math.Min(1, st / 180)), caught, visible, weight, seconds, 0,
+                takeoff, Math.Min(86400, (fresh ? 0 : state.FlightSeconds) + dt));
             return true;
         }
         public const double ContactCatchSeconds = 0.12;
@@ -359,6 +405,8 @@ namespace Shortcut.RustMod
             // In a flip the feet come up off the deck and apart, knees tucked, so the board turns over
             // under them; they come back down onto it as it comes round.
             bool tricking = input.Airborne && !input.Bailed;
+            bool footPop = tricking && input.Contact.Trick.FootPop && input.FootPlant == 0 && !grabbing;
+            if (footPop) backIsLeft = input.Stance == SkateStance.Goofy;
             double flipping = tricking ? input.Contact.Initialized ? input.Contact.FlipLift : Math.Abs(Math.Sin((input.FlipDegrees % 360) * Math.PI / 360)) : 0;
             // In a shove-it the deck turns flat under the feet: they come up off it, less than for a
             // flip, the board being level, and back down on it each half turn as its ends line up.
@@ -368,6 +416,13 @@ namespace Shortcut.RustMod
             var deck = input.BoardPosition + up * lift;
             var leftAnkle = deck + forward * (side * SkatePose.FootOffset);
             var rightAnkle = deck - forward * (side * SkatePose.FootOffset);
+            if (footPop)
+            {
+                var frontLift = SkatePose.FootLift + (SkatePose.FlipFootLift + FlipTuck) * input.Contact.FrontFootClearance;
+                var backLift = SkatePose.FootLift + (SkatePose.FlipFootLift + FlipTuck) * input.Contact.BackFootClearance;
+                leftAnkle += up * ((backIsLeft ? backLift : frontLift) - lift);
+                rightAnkle += up * ((backIsLeft ? frontLift : backLift) - lift);
+            }
             double pitchDrop = 0;
             if (input.DeckPitch != 0)
             {
@@ -383,13 +438,21 @@ namespace Shortcut.RustMod
             if (flipping > 0)
             {
                 var spread = forward * (side * FlipSpread * flipping);
-                leftAnkle = leftAnkle + spread; rightAnkle = rightAnkle - spread;
+                if (footPop)
+                {
+                    var released = Smooth(Math.Min(1, input.Contact.FlipTravel / 90));
+                    leftAnkle += forward * (side * FlipSpread * released * (1 - (backIsLeft ? input.Contact.BackFootContact : input.Contact.FrontFootContact)));
+                    rightAnkle -= forward * (side * FlipSpread * released * (1 - (backIsLeft ? input.Contact.FrontFootContact : input.Contact.BackFootContact)));
+                }
+                else { leftAnkle += spread; rightAnkle -= spread; }
             }
             if (input.NoseSlide > 0 && input.Airborne && !input.Bailed)
             {
                 // The ollie's front foot, slid up toward the nose along the deck.
-                var slide = travel * (OllieSlide * input.NoseSlide);
-                if (backIsLeft) rightAnkle = rightAnkle + slide; else leftAnkle = leftAnkle + slide;
+                bool nosePop = footPop && input.Contact.Trick.PopKind == SkatePopKind.Nollie;
+                var slide = (footPop ? forward * (nosePop ? -1 : 1) : travel) * (OllieSlide * input.NoseSlide);
+                bool slideLeft = nosePop ? backIsLeft : !backIsLeft;
+                if (slideLeft) leftAnkle += slide; else rightAnkle += slide;
             }
             if (tricking && (input.FlipDegrees != 0 || input.ShoveDegrees != 0))
             {
@@ -402,10 +465,13 @@ namespace Shortcut.RustMod
                 var scoopAmount = input.Contact.Initialized ? input.Contact.Scoop : Kick(Math.Abs(input.ShoveDegrees) % 180 / 180);
                 var flipDirection = input.Contact.Initialized ? input.Contact.FlipDirection : Math.Sign(input.FlipDegrees);
                 var shoveDirection = input.Contact.Initialized ? input.Contact.ShoveDirection : Math.Sign(input.ShoveDegrees);
-                var flick = facing * (-flipDirection * FlickOut * flickAmount) + travel * (FlickAhead * flickAmount);
+                bool nosePop = footPop && input.Contact.Trick.PopKind == SkatePopKind.Nollie;
+                var flickAlong = footPop ? forward * (nosePop ? -1 : 1) : travel;
+                var flick = facing * (-flipDirection * FlickOut * flickAmount) + flickAlong * (FlickAhead * flickAmount);
                 var scoop = facing * (shoveDirection * ScoopOut * scoopAmount);
-                if (backIsLeft) { rightAnkle = rightAnkle + flick; leftAnkle = leftAnkle + scoop; }
-                else { leftAnkle = leftAnkle + flick; rightAnkle = rightAnkle + scoop; }
+                bool flickLeft = nosePop ? backIsLeft : !backIsLeft;
+                if (flickLeft) { leftAnkle += flick; rightAnkle += scoop; }
+                else { rightAnkle += flick; leftAnkle += scoop; }
             }
             var leadDeck = backIsLeft ? rightAnkle : leftAnkle;
             var backDeck = backIsLeft ? leftAnkle : rightAnkle;
@@ -461,8 +527,9 @@ namespace Shortcut.RustMod
                 reaching = true; leanScale = 0; yawScale = 0;
             }
             if (backIsLeft) { leftAnkle = backAnkle; rightAnkle = leadAnkle; } else { leftAnkle = leadAnkle; rightAnkle = backAnkle; }
-            var leadToeDir = facing * Math.Cos(leadToe) + travel * Math.Sin(leadToe);
-            var backToeDir = facing * Math.Cos(backToe) + travel * Math.Sin(backToe);
+            var footForward = footPop ? forward : travel;
+            var leadToeDir = facing * Math.Cos(leadToe) + footForward * Math.Sin(leadToe);
+            var backToeDir = facing * Math.Cos(backToe) + footForward * Math.Sin(backToe);
             var leftToeDir = backIsLeft ? backToeDir : leadToeDir;
             var rightToeDir = backIsLeft ? leadToeDir : backToeDir;
             // A foot still on the deck follows its pitch, toes as well as ankle. The pushing
@@ -482,6 +549,10 @@ namespace Shortcut.RustMod
             // The hips open as the pushing foot goes back and close as it comes forward, so the
             // stroke runs through the pelvis and not only through the leg.
             double pelvisYaw = input.Bailed ? bailYaw : (RidingPelvisYaw + (PushPelvisYaw - RidingPelvisYaw) * turn + PushHipTwist * swing * turn) * yawScale * Math.PI / 180;
+            double release = footPop ? input.Contact.PopRelease : 0;
+            double counter = footPop ? input.Contact.FlipDirection * input.Contact.Flick * 0.07
+                + input.Contact.ShoveDirection * input.Contact.Scoop * 0.05 : 0;
+            pelvisYaw -= counter * 0.5;
             if (grabbing) pelvisYaw = 0;
             var pelvisFacing = facing * Math.Cos(pelvisYaw) + travel * Math.Sin(pelvisYaw);
             var pelvisUp = up * Math.Cos(pelvisLean) + facing * Math.Sin(pelvisLean);
@@ -502,6 +573,7 @@ namespace Shortcut.RustMod
                 centre += facing * (PushSide * turn);
                 // The hips ride a little toward the way of travel as the foot sweeps back.
                 centre += travel * (PushHipDrive * swing * turn);
+                if (footPop) centre += forward * ((input.Contact.Trick.PopKind == SkatePopKind.Nollie ? 1 : -1) * 0.025 * release);
                 if (namedGrab) centre += forward * grip.LegShift - facing * grip.BodyShift;
                 // On a pitched deck the weight goes over the end that is down.
                 centre -= travel * (PitchWeight * Math.Sin(input.DeckPitch));
@@ -516,6 +588,7 @@ namespace Shortcut.RustMod
             // moved while the foot stands on the ground would drag it, since the secondary motion's
             // pelvis lags the pose and the leg then falls short.
             double requested = rig.PelvisHeight - Math.Min(SkatePose.CrouchDrop, rig.PelvisHeight * 0.65) * crouch - PushDip * turn;
+            if (footPop) requested -= 0.025 * release + 0.05 * Math.Max(input.Contact.FrontFootClearance, input.Contact.BackFootClearance);
             double folded = grabbing ? Math.Min(1, input.GrabSeconds / GrabIn) : 0;
             folded = folded * folded * (3 - 2 * folded);
             double riding = requested;
@@ -535,6 +608,7 @@ namespace Shortcut.RustMod
             { error = "Skate rider legs cannot reach above the ground plane."; return false; }
 
             double chestYaw = input.Bailed ? bailYaw : (RidingChestYaw + (PushChestYaw - RidingChestYaw) * turn) * yawScale * Math.PI / 180;
+            chestYaw -= counter;
             if (grabbing) chestYaw = 0;
             if (!input.Bailed) chestYaw += input.ChestTurnDegrees * Math.PI / 180;
             var chestFacing = facing * Math.Cos(chestYaw) + travel * Math.Sin(chestYaw);
@@ -547,6 +621,7 @@ namespace Shortcut.RustMod
             double carve = lean * 0.65 * side * leanScale;
             double landing = input.Bailed || input.Airborne ? 0 : input.Landing;
             double pitch = input.Bailed ? chestPitch : 0.1 + 0.12 * crouch + PushLean * turn + LandLean * landing;
+            if (footPop) pitch += 0.06 * release;
             var carved = up * Math.Cos(carve) + facing * Math.Sin(carve);
             var ahead = Unit(Project(chestFacing, carved));
             var grab = input.BoardPosition + up * input.DeckOffset + facing * 0.1 - travel * 0.12;
@@ -1112,8 +1187,12 @@ namespace Shortcut.RustMod
                 Finite(s.FlipTravel) && s.FlipTravel >= 0 && s.FlipTravel <= 3600000 && Finite(s.ShoveTravel) && s.ShoveTravel >= 0 && s.ShoveTravel <= 3600000 &&
                 s.FlipDirection >= -1 && s.FlipDirection <= 1 && s.ShoveDirection >= -1 && s.ShoveDirection <= 1 &&
                 Fraction(s.FlipLift) && Fraction(s.ShoveLift) && Fraction(s.Flick) && Fraction(s.Scoop) && Fraction(s.Catch) && Fraction(s.GrabWeight) && Fraction(s.Landing) &&
-                Finite(s.GrabSeconds) && s.GrabSeconds >= 0 && s.GrabSeconds <= 86400 && s.GrabKind >= SkateGrabKind.None && s.GrabKind <= SkateGrabKind.Tailbone);
+                Finite(s.GrabSeconds) && s.GrabSeconds >= 0 && s.GrabSeconds <= 86400 && s.GrabKind >= SkateGrabKind.None && s.GrabKind <= SkateGrabKind.Tailbone &&
+                Valid(s.Trick) && Finite(s.FlightSeconds) && s.FlightSeconds >= 0 && s.FlightSeconds <= 86400);
         }
+        private static bool Valid(SkateRiderTrickContext t)
+        { return t.PopKind >= SkatePopKind.None && t.PopKind <= SkatePopKind.Beanplant &&
+            (t.Known || (!t.PopSwitch && !t.PopTailLeads && !t.RiderTailFirst && !t.Late)); }
         private static bool Valid(SkateRiderInput input)
         { return Vector(input.BoardPosition) && Math.Abs(input.BoardPosition.X) <= 100000 &&
             Math.Abs(input.BoardPosition.Y) <= 100000 && Math.Abs(input.BoardPosition.Z) <= 100000 &&

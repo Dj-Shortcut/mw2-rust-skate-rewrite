@@ -150,9 +150,9 @@ public static class SkatePieces
                     pointer = Vector2.ClampMagnitude(pointer, SkateBuildWheel.PointerRadius);
                     Hover = SkateWheelChoice.Sector(pointer.x, -pointer.y, SkateBuildWheel.PointerRadius * 0.24);
                 }
-                if ((padDown & (SkatePad.DpadRight | SkatePad.DpadDown)) != 0 || (keyboard != null && keyboard.eKey.wasPressedThisFrame))
+                if ((padDown & (SkatePad.DpadRight | SkatePad.DpadDown)) != 0 || (keyboard != null && keyboard.rightArrowKey.wasPressedThisFrame))
                 { Hover = (Chosen + 1) % Names.Length; pointer = SkateBuildWheel.PointerFor(Hover); stickChosen = false; }
-                if ((padDown & (SkatePad.DpadLeft | SkatePad.DpadUp)) != 0 || (keyboard != null && keyboard.qKey.wasPressedThisFrame))
+                if ((padDown & (SkatePad.DpadLeft | SkatePad.DpadUp)) != 0 || (keyboard != null && keyboard.leftArrowKey.wasPressedThisFrame))
                 { Hover = (Chosen + Names.Length - 1) % Names.Length; pointer = SkateBuildWheel.PointerFor(Hover); stickChosen = false; }
                 if (Hover >= 0) Chosen = Hover;
                 bool released = (entry == Entry.MouseHold && wasRight && !right) || (entry == Entry.ControllerHold && wasBack && !back);

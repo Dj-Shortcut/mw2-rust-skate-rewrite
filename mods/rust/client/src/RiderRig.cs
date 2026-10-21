@@ -116,8 +116,10 @@ public static class RiderRig
     private static void Held(bool wantThird, float now, bool preparing = false)
     {
         if (heldOff) return;
+        // Empty hands are a riding rule in both cameras; full-body visibility still uses wantThird.
+        var hideHeld = SkateRide.On || wantThird;
         var began = SkateClock.Now();
-        var transition = wantThird && !heldThird;
+        var transition = hideHeld && !heldThird;
         var emptyTransition = transition && heldPrepared && !HeldPresent();
         // A prepared empty set needs a fresh local look, without a cold scene scan on boarding.
         if (transition)
@@ -126,11 +128,11 @@ public static class RiderRig
             else if (emptyTransition) nextHeld = 0f;
             else { nextHeld = now + HeldEvery; nextWhole = Math.Max(nextWhole, now + wholeWait); }
         }
-        heldThird = wantThird;
+        heldThird = hideHeld;
         // A set that lost a thing is looked for again at once, but once: the lost thing is dropped
         // so that it cannot ask for a look every frame, which cost the owner his frame rate.
-        if (wantThird && HeldGone()) { nextHeld = nextWhole = 0f; wholeWait = HeldWhole; }
-        if ((wantThird || preparing) && now >= nextHeld && heldScanFailures < HeldScans)
+        if (hideHeld && HeldGone()) { nextHeld = nextWhole = 0f; wholeWait = HeldWhole; }
+        if ((hideHeld || preparing) && now >= nextHeld && heldScanFailures < HeldScans)
         {
             nextHeld = now + HeldEvery;
             try
@@ -178,8 +180,8 @@ public static class RiderRig
                 Say("held item: looking for it threw " + e.GetType().Name + ": " + e.Message + (heldScanFailures >= HeldScans ? "; given up until the rider is found anew" : ""));
             }
         }
-        if (wantThird) HeldHide();
-        HeldRestore(wantThird);
+        if (hideHeld) HeldHide();
+        HeldRestore(hideHeld);
         var ms = (SkateClock.Now() - began) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
         heldSlow = ms > HeldBudgetMs ? heldSlow + 1 : 0;
         if (heldSlow >= HeldSlowFrames)
@@ -564,8 +566,14 @@ public static class RiderRig
             {
                 SkateRiderContactState next; string error;
                 var contactDelta = Math.Min(frameSeconds, 0.05f);
+                // A passive fall has no scored take-off. Do not turn a stale/default trick into an
+                // ollie, and do not reinterpret a sticky late flag as a new release request.
+                var trick = SkateRide.Mode == RideMode.Air && SkateRide.Trick.Airborne
+                    ? new SkateRiderTrickContext(SkateRide.Trick.PopKind, SkateRide.Trick.PopSwitch,
+                        SkateRide.Trick.PopTailLeads, SkateRide.TailFirst, SkateRide.Trick.Late)
+                    : default(SkateRiderTrickContext);
                 if (SkateRider.TryStepContact(contact, SkateRide.Mode == RideMode.Air, SkateRide.Rotating, SkateRide.VSpeed <= 0f,
-                    SkateRide.FootPlanted, SkateRide.FlipDeg, SkateRide.ShoveDeg, grab, held, landing, contactDelta, out next, out error))
+                    SkateRide.FootPlanted, SkateRide.FlipDeg, SkateRide.ShoveDeg, grab, held, landing, trick, contactDelta, out next, out error))
                     contact = next;
                 else
                 {
@@ -643,11 +651,9 @@ public static class RiderRig
                 : mode == RideMode.Ground && SkateKeys.Charging && SkateKeys.Spin != 0f ? SkateKeys.Spin * SkateRide.SpinSide * SkateRide.SpinWindUp : 0f;
             chestLead += (SkateRide.Clamp(leadWant, -(float)SkateRider.MaximumChestTurn, (float)SkateRider.MaximumChestTurn) - chestLead) * SkateRide.Clamp(frameSeconds * 10f, 0f, 1f);
             var handplant = PlantBlend;
-            // The ollie's front foot sliding up toward the nose: the module slides the foot that leads
-            // in the way of travel toward that end, which rolling tail first is the back foot toward
-            // the tail, the mirror of a fakie ollie. No slide there until the module slides the
-            // stance's front foot toward the stance's nose whichever end leads (asked in #337).
-            var noseSlide = mode == RideMode.Air && SkateRide.Jumped && grab == SkateGrabKind.None && !SkateRide.TailFirst ? SkateRide.Clamp(1f - SkateRide.VSpeed / SkateRide.OlliePop, 0f, 1f) * (1f - (float)contact.Catch) : 0f;
+            // The opposite foot slides away from the popped end, including when the tail leads.
+            // The shared take-off description chooses that foot without changing the ride's inputs.
+            var noseSlide = mode == RideMode.Air && SkateRide.Jumped && grab == SkateGrabKind.None && contact.Trick.FootPop ? SkateRide.Clamp(1f - SkateRide.VSpeed / SkateRide.OlliePop, 0f, 1f) * (1f - (float)contact.Catch) : 0f;
             var pushing = mode == RideMode.Ground && SkateRide.PushPhase > 0f;
             var input = new SkateRiderInput(new SkateVector(plane.x, plane.y, plane.z), new SkateVector(fx, fy, fz), new SkateVector(ux, uy, uz), SkateRide.Goofy ? SkateStance.Goofy : SkateStance.Regular, SkateRide.TailFirst,
                 speed, lean, Crouch, mode == RideMode.Air, pushing, SkateRide.Clamp(SkateRide.PushPhase, 0f, 1f),

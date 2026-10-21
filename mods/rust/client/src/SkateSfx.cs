@@ -178,7 +178,8 @@ public static class SkateSfx
         RaycastHit hit;
         if (!SkateParks.Ray(from, Vector3.down, out hit, 1f, SkateRide.GroundMask)) return;
         var d = hit.m_Distance + 0.02f;
-        if (SkateParks.Ray(from, Vector3.down, out hit, d, 1)) Surface = Ground.Wood;
+        SkateParkMaterial material;
+        if (SkateParks.TrySoundMaterial(hit.collider, hit.point, out material)) Surface = material == SkateParkMaterial.Wood ? Ground.Wood : Ground.Hard;
         else if (buildLayer >= 0 && SkateParks.Ray(from, Vector3.down, out hit, d, 1 << buildLayer)) Surface = Ground.Build;
         else if (terrainLayer >= 0 && SkateParks.Ray(from, Vector3.down, out hit, d, 1 << terrainLayer)) Surface = Ground.Dirt;
         else Surface = Ground.Hard;

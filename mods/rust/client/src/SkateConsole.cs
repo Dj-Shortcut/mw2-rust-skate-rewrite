@@ -91,12 +91,23 @@ public static class SkateConsole
         if (sent != inputs.Length) throw new InvalidOperationException("SendInput sent " + sent + " of " + inputs.Length + " (error " + Marshal.GetLastWin32Error() + ")");
     }
 
-    public static void Reset() { pending = ""; step = -1; Typed = Failed = 0; Last = ""; LeftOpen = false; SentLines = 0; SendState = ""; sendPrepared = sendFailed = false; }
+    public static void Reset()
+    {
+        var owned = commandOwner;
+        commandOwner = null; commandRunner = null;
+        ResetState();
+        if (!ReferenceEquals(owned, null))
+        { try { UnityEngine.Object.Destroy(owned); } catch (Exception) { } }
+    }
 
-    // A command sent to the server the way the game's own console sends one: a ConsoleCommand
-    // packet on the player's connection, written with the network library (Facepunch.Network keeps
-    // its names; the game's console class does not). Found by name at run time, so a client build
-    // without these names refuses here instead of failing to compile; SendState says what was found.
+    private static void ResetState() { pending = ""; step = -1; Typed = Failed = 0; Last = ""; LeftOpen = false; SentLines = 0; SendState = ""; sendPrepared = sendFailed = false; }
+
+    // The game's public command component uses the same client options and command runner as F1.
+    // A return means handed to that runner, never a server acknowledgement. Builder nonces still
+    // decide selection/placement success. The older network shape path remains for its explicit
+    // offline shape check; it is not a retry after native dispatch.
+    private static GameObject commandOwner;
+    private static RunConsoleCommand commandRunner;
     public static int SentLines;
     public static string SendState = "";
     private static object connection, netClient;
@@ -114,6 +125,13 @@ public static class SkateConsole
         try
         {
             if (!Prepare()) return false;
+            if (!ByShapeOnly)
+            {
+                commandRunner.ClientRun(line);
+                SentLines++; Last = line; SendState = "native console invoked; awaiting server acknowledgement";
+                Out.Say("CONSOLE invoked native client command: " + line);
+                return true;
+            }
             var write = startWrite.Invoke(netClient, null);
             if (write == null) { SendState = "the network client gave no write"; return false; }
             packetId.Invoke(write, new[] { consoleCommandId });
@@ -134,8 +152,33 @@ public static class SkateConsole
 
     public static bool CanSend { get { return Prepare(); } }
 
+    private static bool PrepareNativeCommand()
+    {
+        if (commandRunner != null) return true;
+        GameObject created = null;
+        try
+        {
+            created = new GameObject("ShortcutSkate.Command");
+            UnityEngine.Object.DontDestroyOnLoad(created);
+            var runner = created.AddComponent<RunConsoleCommand>();
+            if (runner == null) throw new InvalidOperationException("Native command component was not created");
+            runner.runQuiet = false;
+            commandOwner = created; commandRunner = runner;
+            SendState = "native console ready; server acknowledgement still required";
+            return true;
+        }
+        catch (Exception e)
+        {
+            if (!ReferenceEquals(created, null))
+            { try { UnityEngine.Object.Destroy(created); } catch (Exception) { } }
+            SendState = "native command preparation threw " + e.GetType().Name;
+            return false;
+        }
+    }
+
     private static bool Prepare()
     {
+        if (!ByShapeOnly) return PrepareNativeCommand();
         if (sendPrepared) return !sendFailed;
         sendPrepared = true; sendFailed = true;
         try
