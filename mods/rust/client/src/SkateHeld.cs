@@ -323,10 +323,14 @@ public static class SkateHeld
 
     public static bool HasPlanner(object player)
     {
+        if (WheelPlannerCurrent(player)) return true;
         if (pausedPlanner != null)
         {
             var parent = pausedPlanner.transform.parent;
-            return ReferenceEquals(plannerPlayer, player) && pausedPlanner.gameObject.activeInHierarchy && parent != null && parent.name.EndsWith("_prop", StringComparison.Ordinal);
+            var pausedRoot = player as UnityEngine.Component;
+            var pausedModel = RiderRig.Bound && RiderRig.Root != null ? (UnityEngine.Component)RiderRig.Root : pausedRoot;
+            return ReferenceEquals(plannerPlayer, player) && pausedModel != null && pausedPlanner.gameObject.activeInHierarchy &&
+                pausedPlanner.transform.IsChildOf(pausedModel.transform) && parent != null && parent.name.EndsWith("_prop", StringComparison.Ordinal);
         }
         var root = player as UnityEngine.Component;
         if (root == null) return false;
@@ -341,6 +345,135 @@ public static class SkateHeld
             if (parent != null && parent.name.EndsWith("_prop", StringComparison.Ordinal)) found++;
         }
         return found == 1;
+    }
+
+    private static Planner wheelPlanner;
+    private static object wheelPlayer, wheelBody;
+    private static float wheelAwakeAt;
+    private static PieMenu closingWheel;
+    private static object closingPlayer, closingBody;
+    private static float closingAwakeAt;
+    private static string wheelBindingNotice = "";
+
+    private static bool WheelPlannerCurrent(object player)
+    {
+        if (wheelPlanner == null || !ReferenceEquals(player, SkateRig.Local) || !ReferenceEquals(wheelPlayer, player) || !ReferenceEquals(wheelBody, SkateRig.Body) ||
+            wheelAwakeAt != SkateRig.AwakeAt || !wheelPlanner.enabled || !wheelPlanner.gameObject.activeInHierarchy) return false;
+        var root = player as UnityEngine.Component;
+        var model = RiderRig.Bound && RiderRig.Root != null ? (UnityEngine.Component)RiderRig.Root : root;
+        var parent = wheelPlanner.transform.parent;
+        return model != null && wheelPlanner.transform.IsChildOf(model.transform) && parent != null && parent.name.EndsWith("_prop", StringComparison.Ordinal);
+    }
+
+    private static bool ConstructionWheel(object player, out PieMenu menu, out string why)
+    {
+        menu = null; why = "";
+        var root = player as UnityEngine.Component;
+        if (root == null || !ReferenceEquals(player, SkateRig.Local)) { why = "The local player is unavailable."; return false; }
+        var model = RiderRig.Bound && RiderRig.Root != null ? (UnityEngine.Component)RiderRig.Root : root;
+        var plan = pausedPlanner;
+        if (plan == null || !ReferenceEquals(plannerPlayer, player))
+        {
+            plan = wheelPlanner;
+            if (!WheelPlannerCurrent(player))
+            {
+                plan = null;
+                var planners = model.GetComponentsInChildren<Planner>(false);
+                for (var i = 0; i < planners.Length; i++)
+                {
+                    var candidate = planners[i];
+                    if (candidate == null || !candidate.enabled || !candidate.gameObject.activeInHierarchy) continue;
+                    var parent = candidate.transform.parent;
+                    if (parent == null || !parent.name.EndsWith("_prop", StringComparison.Ordinal)) continue;
+                    if (plan != null) { why = "More than one active building plan was found."; return false; }
+                    plan = candidate;
+                }
+            }
+        }
+        if (plan == null || !plan.gameObject.activeInHierarchy || !plan.transform.IsChildOf(model.transform) || plan.transform.parent == null ||
+            !plan.transform.parent.name.EndsWith("_prop", StringComparison.Ordinal))
+        { why = "Hold your ordinary building plan first."; return false; }
+        wheelPlanner = plan; wheelPlayer = player; wheelBody = SkateRig.Body; wheelAwakeAt = SkateRig.AwakeAt;
+        // This is the same construction-menu registry member that the native planner reads.
+        // Its intact static-field getter and checked IL2CPP cast do not invoke an erased method.
+        var native = PieMenu.ObjectNPublicAbstractSealedBoObBoObBoObBoObBoObUnique.field_Public_Static_Object_15;
+        if (ReferenceEquals(native, null)) { why = "Rust's construction wheel is not available yet."; return false; }
+        menu = native.TryCast<PieMenu>();
+        if (menu == null || menu.escapeCapture == null)
+        { why = "Rust's construction-wheel binding is unavailable."; return false; }
+        return true;
+    }
+
+    public static bool RustWheelOpen(object player)
+    {
+        try
+        {
+            PieMenu menu; string why;
+            return ConstructionWheel(player, out menu, out why) && menu.gameObject.activeInHierarchy && menu.escapeCapture.enabled;
+        }
+        catch (Exception) { return false; }
+    }
+
+    public static bool RustWheelHiddenForSkate(object player)
+    {
+        try { PieMenu menu; string why; return ConstructionWheel(player, out menu, out why) && ConstructionWheelVisuallyHidden(menu); }
+        catch (Exception) { return false; }
+    }
+
+    private static bool ConstructionWheelVisuallyHidden(PieMenu menu)
+    {
+        if (!menu.gameObject.activeInHierarchy) return true;
+        var needsCursor = menu.GetComponent<NeedsCursor>();
+        var canvas = menu.GetComponent<UnityEngine.CanvasGroup>();
+        if (needsCursor == null || canvas == null) return false;
+        return !needsCursor.enabled && !menu.escapeCapture.enabled && canvas.alpha <= 0f;
+    }
+
+    private static bool ConstructionWheelHidden(PieMenu menu)
+    { return ConstructionWheelVisuallyHidden(menu) && UnityEngine.Cursor.lockState == UnityEngine.CursorLockMode.Locked; }
+
+    public static bool RustWheelClosed(object player, out string why)
+    {
+        why = "";
+        try
+        {
+            PieMenu menu;
+            if (!ReferenceEquals(closingPlayer, player) || !ReferenceEquals(closingBody, SkateRig.Body) ||
+                closingAwakeAt != SkateRig.AwakeAt || !ConstructionWheel(player, out menu, out why) || menu != closingWheel)
+            { why = "The building plan or Rust wheel changed while switching."; return false; }
+            return ConstructionWheelHidden(menu);
+        }
+        catch (Exception e) { why = "Rust construction-wheel access failed: " + e.GetType().Name; return false; }
+    }
+
+    public static bool CloseRustWheel(object player, bool nativeUiExpected, out bool waiting, out string why)
+    {
+        waiting = false; why = "";
+        try
+        {
+            PieMenu menu;
+            if (ConstructionWheel(player, out menu, out why))
+            {
+                bool open = menu.gameObject.activeInHierarchy && menu.escapeCapture.enabled;
+                if (nativeUiExpected && !open) why = "Close the other Rust screen before switching build modes.";
+                else if (!open && ConstructionWheelHidden(menu)) { wheelBindingNotice = ""; return true; }
+                else if (open)
+                {
+                    // Use the normal cancel route; its own cursor release and fade finish before
+                    // the custom wheel may take focus. No native UI object is toggled or rebuilt.
+                    closingWheel = menu; closingPlayer = player; closingBody = SkateRig.Body; closingAwakeAt = SkateRig.AwakeAt;
+                    menu.Close(false);
+                    if (ConstructionWheelHidden(menu)) { wheelBindingNotice = ""; return true; }
+                    waiting = true; why = "Waiting for the Rust build wheel to close.";
+                    return false;
+                }
+                else why = "Rust's build wheel is still closing, or another screen owns the cursor.";
+            }
+        }
+        catch (Exception e) { why = "Rust construction-wheel access failed: " + e.GetType().Name; }
+        if (why != wheelBindingNotice)
+        { wheelBindingNotice = why; Out.Say("PIECES Rust-wheel switch refused: " + why); }
+        return false;
     }
 
     public static void ResumePlanner()

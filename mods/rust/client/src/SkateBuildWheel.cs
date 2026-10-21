@@ -145,11 +145,19 @@ public static class SkateBuildWheel
 
     public static void Draw()
     {
-        if (failed || !SkatePieces.Open) return;
+        if (failed || (!SkatePieces.Open && !SkatePieces.RustModeHint)) return;
+        if (SkatePieces.Open && !SkatePieces.CanDrawWheel) return;
         var old = GUI.color;
         try
         {
             float diameter = PointerRadius * 2, cx = Screen.width * 0.5f, cy = Screen.height * 0.48f;
+            EnsureStyles(diameter);
+            if (SkatePieces.RustModeHint)
+            {
+                var rustControls = footerText.Get("RUST BUILDING  |  X / Shift + P: Skate building\nRelease, then hold Back / right click for the Rust wheel.", footer, diameter);
+                GUI.Label(new Rect(cx - diameter / 2, Screen.height - Math.Max(70, footerText.Height + 18), diameter, Math.Max(52, footerText.Height)), rustControls, footer);
+                return;
+            }
             int selected = SkatePieces.Hover;
             var texture = Texture(selected);
             GUI.DrawTexture(new Rect(cx - diameter / 2, cy - diameter / 2, diameter, diameter), texture);
@@ -164,7 +172,7 @@ public static class SkateBuildWheel
             GUI.Label(new Rect(cx - hole / 2 + 10, bodyY, hole - 20, Math.Max(74, bodyText.Height)), description, body);
             var priceY = Math.Max(cy + 79, bodyY + bodyText.Height + 8);
             GUI.Label(new Rect(cx - hole / 2, priceY, hole, 28), "10 WOOD", footer);
-            var controls = footerText.Get("Arrows / D-pad: select   |   Release right click / Back, A / Enter: choose\nEsc / B: Rust building   |   Shift + right click: Rust wheel", footer, diameter);
+            var controls = footerText.Get("SKATE BUILDING  |  X / Shift + P: Rust building\nArrows / D-pad: select  |  Release right click / Back, A / Enter: choose  |  B / Esc: close", footer, diameter);
             GUI.Label(new Rect(cx - diameter / 2, Math.Max(cy + diameter / 2 + 14, priceY + 42), diameter, Math.Max(66, footerText.Height)), controls, footer);
             if (dot == null)
             {

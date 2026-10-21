@@ -98,7 +98,7 @@ game; see [The controller](#the-controller).
 | Right stick | The board: see below. Kept part of the way back or forward for 0.2 s: manual or nose manual. | Flicked to a side or a forward diagonal: a flip; after a pop, a whole composition (held back then flicked, or rolled) is a late flip or late shove on top of what is under way, when the jump still lasts long enough. Pulled back: set for the pop after the landing. |
 | `LT`, `RT` | Held going down a transition and let go through its bottom: a pump (speed, by how long it was held and how steep the descent, once a pass; nothing on the flat or let go on the slope itself). | Held: grab; with the right stick held, another grab. |
 | Right stick click | View from behind or the game's first person | |
-| `Back` held on the board | Every controller trick and grab in a panel at the top left, for as long as it is held (the first seconds on the board show the short version). On foot with an ordinary building plan, `Back` opens the skate park wheel. Native validation pending. | |
+| `Back` held on the board | Every controller trick and grab in a panel at the top left, for as long as it is held (the first seconds on the board show the short version). On foot with an ordinary building plan, `Back` opens the selected building mode; `X` switches between Skate and Rust building. Native validation pending for the new switch. | |
 | Left stick swept half round its rim, within 0.6 s of landing a trick (as in the skate. games; a hard steer alone is a carve) | Revert: the rider and the board pivot a half turn together on the ground and roll on the same way, the other end of the deck leading (fakie after a regular landing, regular again after a fakie one); it joins the combo. | |
 | Right stick back or forward, on an edge | Along the edge: 5-0 or nosegrind instead of the 50-50. Across it on the tail, held back: bluntslide instead of the tailslide; on the nose, held forward: nosebluntslide. Let go, the slide goes back to the plain one. | |
 | A flip asked for coming down onto an edge, with room for half of it | Darkslide: the board is caught upside down on the edge, griptape on it; a pop finishes the flip the same way round (a kickflip lands as a kickflip); rolled off without a pop, the board comes down upside down and it is a bail. | |
@@ -164,15 +164,23 @@ two minutes; thumbs up cancels. Gesture names and the piece order are configurab
 for the twelve-piece wheel. Move the mouse toward an icon, then release right click
 to choose it. The ring has original line icons, a red selected wedge and the selected
 piece's English name, description and **10 Wood** price, including the MEGA halfpipe.
-The centre deadzone cancels selection. `P` opens the same wheel; `Q`/`E` choose and
+The centre deadzone cancels selection. `P` opens the same wheel; Left/Right arrows choose and
 `Enter`/`O` confirms. On a controller hold `Back`, choose with the right stick or D-pad,
 and release `Back` or press `A`; `B` cancels. Hold `Y` in the wheel to switch stance.
 
-`Escape` / `Backspace` / `B` returns to normal Rust building. Hold **Shift + right click**
-to open Rust's original building wheel. The ordinary planner is paused while the wheel owns focus, while a selection reply is
-pending, and throughout confirmed skate-building mode. It is restored after the server
-confirms `off`, on refusing a selection, or during player/rig teardown. Losing focus requests
-`off` before restoring the native plan.
+Press **X** in the building wheel to switch between **Skate building** and **Rust building**;
+on the keyboard use **Shift + P**. Both use your ordinary building plan. The custom wheel
+closes Rust's own construction wheel and waits for its fade and cursor capture to finish
+before opening. It does not hide unrelated Rust screens.
+
+Switching to Rust building closes the Skate wheel after the server confirms `off`.
+Release, then hold your normal wheel control again (`Back` / right click) to open the
+original Rust wheel. The selected mode stays in effect while you use the same plan/player.
+`Escape` / `Backspace` / `B` closes the Skate wheel. **Shift + right click** also requests
+Rust building. The ordinary planner is paused while the Skate wheel owns focus, while a
+selection reply is pending, and throughout confirmed skate-building mode. It is restored
+after the server confirms `off`, on refusing a selection, or during player/rig teardown.
+Losing focus requests `off` before restoring the native plan.
 Movement and ride actions are not taken from the menu's input. No park inventory item
 is required or issued. Existing tagged park items remain compatible with their old
 placement route.
@@ -191,10 +199,10 @@ reported honestly; no client-side wood is removed. The server verifies the held 
 placement and **10 Wood per successfully completed piece**. It does not charge for a
 refused placement. A server `placed` reply is the source of successful-placement feedback.
 
-Client compilation against the local October 8 API snapshot and headless wheel direction /
-artwork checks passed. Current Windows compilation, native planner recognition, reply
-callback delivery, both wheels, camera/input focus and an actual placement still require
-matching-build Shadow validation; this source status is not an in-game acceptance result.
+The .42 client was built and loaded on Shadow. The owner approved the wheel's appearance
+but reported overlap with Rust's original wheel. The .43 mode switch addresses that report;
+its two-way switching, focus, reply callbacks and actual placement still need matching-build
+native validation. Compilation and controlled input checks do not close those gameplay gates.
 
 A server line can reach the client without a hook only as text: `SkateInbox` reads the BepInEx log
 (`LogOutput.log`, written with `UnityLogListening` on: `sv plisten 1` before `zz play`) and logs every
