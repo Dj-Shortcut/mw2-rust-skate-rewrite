@@ -117,10 +117,13 @@ public static class RiderRig
     {
         if (heldOff) return;
         var began = SkateClock.Now();
-        // The view going behind the rider is worth one look through the whole scene.
-        if (wantThird && !heldThird)
+        var transition = wantThird && !heldThird;
+        var emptyTransition = transition && heldPrepared && !HeldPresent();
+        // A prepared empty set needs a fresh local look, without a cold scene scan on boarding.
+        if (transition)
         {
             if (!heldPrepared) { nextHeld = nextWhole = 0f; wholeWait = HeldWhole; }
+            else if (emptyTransition) nextHeld = 0f;
             else { nextHeld = now + HeldEvery; nextWhole = Math.Max(nextWhole, now + wholeWait); }
         }
         heldThird = wantThird;
@@ -134,7 +137,16 @@ public static class RiderRig
             {
                 Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppArrayBase<BaseViewModel> models = null;
                 if (!ReferenceEquals(heldHolder, null) && heldHolder != null) models = heldHolder.GetComponentsInChildren<BaseViewModel>(true);
-                if ((models == null || models.Length == 0) && now >= nextWhole)
+                if ((models == null || models.Length == 0) && emptyTransition)
+                {
+                    var cam = Camera.main;
+                    if (cam != null) models = cam.GetComponentsInChildren<BaseViewModel>(true);
+                    if ((models == null || models.Length == 0) && SkateRig.LocalT != null)
+                        models = SkateRig.LocalT.GetComponentsInChildren<BaseViewModel>(true);
+                    if (models != null && models.Length > 0 && models[0] != null) heldHolder = models[0].transform.parent;
+                }
+                // The local anchors need not contain every view model; retain the existing fallback deadline.
+                if ((models == null || models.Length == 0) && now >= nextWhole && !emptyTransition)
                 {
                     nextWhole = now + wholeWait;
                     models = UnityEngine.Object.FindObjectsOfType<BaseViewModel>();
@@ -175,6 +187,12 @@ public static class RiderRig
             heldOff = true; HeldRestore(false);
             Say("held item: keeping it out of the way cost " + ms.ToString("F0") + " ms a frame for " + HeldSlowFrames + " frames; it is left alone from here on");
         }
+    }
+
+    private static bool HeldPresent()
+    {
+        for (var i = 0; i < held.Length; i++) if (!held[i].Old && held[i].Root != null) return true;
+        return false;
     }
 
     // A held item that was swapped is destroyed with its parts: the set is looked for again then.
@@ -289,21 +307,23 @@ public static class RiderRig
     public static void PrepareLook(bool heldViews)
     {
         if (heldViews) Held(false, Time.realtimeSinceStartup, true);
-        else { lookPrepared = true; Look(false); }
+        else { lookPrepared = true; Look(false, true); }
     }
 
-    public static void Look(bool wantThird)
+    public static void Look(bool wantThird) { Look(wantThird, false); }
+
+    private static void Look(bool wantThird, bool preparing)
     {
         var now = Time.realtimeSinceStartup;
         var began = SkateClock.Now(); Held(wantThird, now); SkateClock.Add(SkateClock.Held, began);
         if ((!lookPrepared && !SkateRide.On) || !Bound || Root == null || lookFailures >= 3 || now < lookRetryAt) return;
         try
         {
-            if (now >= nextScan || SkinGone())
+            if (preparing || (SkateRide.On && now >= nextScan) || SkinGone())
             {
                 // Clothing changes replace the meshes, also one for one, so the set is compared by
                 // identity now and then. Walking the whole model costs a visible hitch, so it is done
-                // every few seconds, or at once when a known mesh has been destroyed. The old set goes
+                // periodically only on board, during preparation, or when a known mesh is destroyed. The old set goes
                 // back to the game's own state before the new one is sorted: a mesh is recognised as
                 // body by that state.
                 nextScan = now + ScanEvery;

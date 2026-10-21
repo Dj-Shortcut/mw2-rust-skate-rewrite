@@ -25,13 +25,13 @@ public class SkateRig : MonoBehaviour
 
     // Preparation owns no movement or input. One unit per rendered frame, followed by quiet
     // frames, keeps cold reflection/clip uploads out of the first mounted network tick.
-    private const float PrepareQuietSeconds = 3f, PrepareLongFrame = 0.1f;
+    private const float PrepareQuietSeconds = 3f, PrepareExtraWaitSeconds = 3f, PrepareStallGap = 0.8f;
     private const double PrepareBudgetMs = 2.0;
     private static BasePlayer preparePlayer;
     private static Transform prepareRoot, prepareModel;
     private static Rigidbody prepareBody;
     private static PlayerWalkMovement prepareWalk;
-    private static float prepareLife, prepareFrame = -1f, prepareQuietUntil;
+    private static float prepareLife, prepareFrame = -1f, prepareQuietUntil, prepareWaitLimit;
     private static int prepareStage, prepareBindAttempts;
     private static float prepareRetryAt;
     private const int PrepareBindAttempts = 3;
@@ -52,7 +52,7 @@ public class SkateRig : MonoBehaviour
     private static void ForgetPreparation()
     {
         preparePlayer = null; prepareRoot = prepareModel = null; prepareBody = null; prepareWalk = null;
-        prepareLife = 0f; prepareStage = prepareBindAttempts = 0; prepareRetryAt = 0f; prepareRider = false; prepareMaximumMs = 0;
+        prepareLife = prepareQuietUntil = prepareWaitLimit = 0f; prepareStage = prepareBindAttempts = 0; prepareRetryAt = 0f; prepareRider = false; prepareMaximumMs = 0;
     }
     private static void PrepareMountFrame(float now)
     {
@@ -71,14 +71,34 @@ public class SkateRig : MonoBehaviour
         // A delayed avatar gets bounded off-board retries, never a blocking retry during a ride.
         if (!RiderRig.Bound && prepareStage >= 5 && prepareBindAttempts < PrepareBindAttempts && now >= prepareRetryAt)
             prepareStage = 0;
-        if (gap < 0f || gap > PrepareLongFrame)
-        {
-            prepareQuietUntil = now + PrepareQuietSeconds;
-            if (prepareStage == 6) prepareStage = 5;
-        }
         if (prepareStage == 6) return;
+        var stalled = gap < 0f || gap >= PrepareStallGap;
+        if (prepareStage == 7)
+        {
+            // Repeated network-length stalls cannot safely be declared quiet. Keep the
+            // completed caches, report a bounded refusal, and retry only the recovery wait.
+            if (!stalled)
+            {
+                prepareQuietUntil = now + PrepareQuietSeconds;
+                prepareWaitLimit = prepareQuietUntil + PrepareExtraWaitSeconds;
+                prepareStage = 5;
+            }
+            return;
+        }
         if (prepareStage == 5)
         {
+            // Ordinary low frame rates do not keep cold setup pending forever. Only a
+            // gap as long as Rust's standard stall threshold restarts the recovery wait.
+            if (stalled)
+            {
+                if (now >= prepareWaitLimit)
+                {
+                    prepareStage = 7;
+                    Say("PREPARE waiting for frame recovery; setup is cached");
+                    return;
+                }
+                prepareQuietUntil = now + PrepareQuietSeconds;
+            }
             if (now < prepareQuietUntil) return;
             prepareStage = 6;
             Say("PREPARE ready rider=" + RiderRig.Bound + " audio=" + SkateSfx.State + " max-unit-ms=" + prepareMaximumMs.ToString("F2") + "; press the mount control");
@@ -112,6 +132,7 @@ public class SkateRig : MonoBehaviour
             // A unit can contain one uninterruptible engine call. Budget excess is reported,
             // then followed by quiet off-board time; this is a cooperative budget, not a deadline.
             prepareQuietUntil = Time.realtimeSinceStartup + PrepareQuietSeconds;
+            prepareWaitLimit = prepareQuietUntil + PrepareExtraWaitSeconds;
             if (ms > PrepareBudgetMs) Say("PREPARE unit=" + stage + " ms=" + ms.ToString("F2") + "; waiting off board");
         }
         prepareStage++;
@@ -293,7 +314,7 @@ public class SkateRig : MonoBehaviour
                 if (SkateKeys.ToggleTap || twice)
                 {
                     if (CanMount) MountNow(SkateCamera.LookYaw);
-                    else if (!MountPrepared) SkateHud.Notice("Preparing skateboard... press again when ready");
+                    else if (!MountPrepared) SkateHud.Notice(prepareStage == 7 ? "Waiting for client frame recovery... press again when ready" : "Preparing skateboard... press again when ready");
                 }
             }
         }
