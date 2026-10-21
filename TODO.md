@@ -8,6 +8,18 @@ Nieuwe wensen van Andy komen eerst hier en in #469 te staan, met zijn eigen woor
 
 Oude lijst (alles tot 18 oktober): [docs/TODO-HISTORY.md](docs/TODO-HISTORY.md).
 
+## Eigenaarfeedback 20 oktober: lichaam, push en air
+
+Andy over de .31-rit: "ik werd niet meer gerukt , en ik ben boven de coping geraakt, maar tijdens de air trekt mijn playermodel horizontaal recht".
+Vervolg: "de rigging van het playermodel is nog altijd niet skate, elke truck is nog vreemd, pushen is nog raar" en "er ontbreken veel truuken".
+Het goedgekeurde vervolg is eerst één samenhangende push → afzet → air → catch → landing, daarna meer tricks.
+
+| Wat | Issue | Eigenaar | Klaar als |
+|---|---|---|---|
+| Board en lichaam delen dezelfde actuele pose; vloeiende push en air zonder ongevraagd rechtzetten | #469 | Codex, `codex/client-motion-032` | Andy ziet en rijdt normale/mongo-push, een ollie/flip, transition-air en landing met samenhangende voet-/boardcontacten; de .31-rit zonder put-backs blijft behouden |
+
+Status: implementatie gestart vanaf client .31; nog geen nieuwe build, installatie of rijvalidatie. De .31-verbetering is door Andy voor één rit gemeld; de volledige oude halfpipecriteria hieronder blijven afzonderlijk te bevestigen.
+
 ## Nu: de halfpipe moet rijdbaar zijn
 
 Niets anders gaat voor, tot dit klaar is.
@@ -30,8 +42,8 @@ Niets anders gaat voor, tot dit klaar is.
 
 | # | Wat | Issue / PR | Eigenaar | Klaar als |
 |---|-----|------------|----------|-----------|
-| 7 | Niets in de hand en niet bouwen tijdens het rijden | #469 punten 7 en 11 | Claude | Op het board: geen item zichtbaar, geen rode bouwpreview, niets te bouwen |
-| 8 | Flip en grab niet tegelijk | #469 punt 10 | Claude | Met controller: grab vasthouden en flicken geeft geen flip+grab |
+| 7 | Niets in de hand en niet bouwen tijdens het rijden | #469 punten 7 en 11; bouwplan uit sinds client 0.18.19, rode preview blijft; PR #518 (open, niet in het spel gezien) | Claude | Op het board: geen item zichtbaar, geen rode bouwpreview, niets te bouwen |
+| 8 | Flip en grab niet tegelijk | #469 punt 10; PR #520 (grab loslaten met de stick nog opzij flipt niet meer; niet in het spel gezien) | Claude | Met controller: grab vasthouden en flicken geeft geen flip+grab, en de grab loslaten flipt het board niet |
 | 9 | Boardgeluid klinkt als echt skaten | #469 punt 12 | open | Andy vindt het geluid oké |
 | 9b | Altijd dag op de server, zodat tests niet in het donker gebeuren | PR #502 | Claude | Overdag in het spel, en het blijft dag |
 

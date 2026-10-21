@@ -82,7 +82,7 @@ game; see [The controller](#the-controller).
 | Right stick | The board: see below. Kept part of the way back or forward for 0.2 s: manual or nose manual. | Flicked to a side or a forward diagonal: a flip; after a pop, a whole composition (held back then flicked, or rolled) is a late flip or late shove on top of what is under way, when the jump still lasts long enough. Pulled back: set for the pop after the landing. |
 | `LT`, `RT` | Held going down a transition and let go through its bottom: a pump (speed, by how long it was held and how steep the descent, once a pass; nothing on the flat or let go on the slope itself). | Held: grab; with the right stick held, another grab. |
 | Right stick click | View from behind or the game's first person | |
-| `Back` held on the board | The controls panel at the bottom left, as in the first seconds on the board, for as long as it is held. On foot `Back` opens the picker. Not yet seen in game. | |
+| `Back` held on the board | Every controller trick and grab in a panel at the top left, for as long as it is held (the first seconds on the board show the short version). On foot `Back` opens the picker. Not yet seen in game. | |
 | Left stick swept half round its rim, within 0.6 s of landing a trick (as in the skate. games; a hard steer alone is a carve) | Revert: the rider and the board pivot a half turn together on the ground and roll on the same way, the other end of the deck leading (fakie after a regular landing, regular again after a fakie one); it joins the combo. | |
 | Right stick back or forward, on an edge | Along the edge: 5-0 or nosegrind instead of the 50-50. Across it on the tail, held back: bluntslide instead of the tailslide; on the nose, held forward: nosebluntslide. Let go, the slide goes back to the plain one. | |
 | A flip asked for coming down onto an edge, with room for half of it | Darkslide: the board is caught upside down on the edge, griptape on it; a pop finishes the flip the same way round (a kickflip lands as a kickflip); rolled off without a pop, the board comes down upside down and it is a bail. | |
@@ -99,11 +99,10 @@ first, or goofy, they are the other way round.
 | Held forward, flicked back | Nollie |
 | Held back, flicked to the forward right or left | Kickflip, heelflip |
 | Held back, rolled a quarter round the rim to the right or left | Pop shove-it, frontside pop shove-it |
-| Held back, rolled half way round | 360 shove-it |
+| Held back, rolled half way round | 360 shove-it (round by the right: backside, by the left: frontside) |
 | Held at the back left or back right, flicked straight across to the opposite front | Varial kickflip, varial heelflip |
 | From the left or right rolled round to the back, then flicked to the opposite front | 360 flip, laser flip |
-| Held back, rolled a little to the right or left, flicked straight forward | Hardflip, inward heelflip |
-| Held back, rolled half way round backside | Impossible |
+| Held back, rolled 45 to 60 degrees to the right or left, flicked straight forward | Hardflip, inward heelflip (rolled less than 40 degrees it stays an ollie) |
 
 An edge is taken when the rider comes down on it from an ollie: the way of travel within 60° of
 the edge, at least 1 m/s along it, the feet from 0.15 m below its top to 0.5 m above, the edge
@@ -118,8 +117,10 @@ A turn of the rider goes on for as long as the left stick is held and the next h
 still be reached before the ground; let go, the rider is brought round to the nearest half turn.
 A turn with a shove the same way is a bigspin. As in Skate, a flip, shove-it, body varial or turn
 asked for too late is started all the same and does not come round before the ground: a bail (the
-log keeps each as `SKATE late ...`, which `zz last` sums up by kind); so is a grab still held as
-the wheels touch down. Late flips and shoves and body varials are named by the shared scorer
+log keeps each as `SKATE late ...`, which `zz last` sums up by kind, and "Too late for ..." shows
+under the middle of the screen for a moment); so is a grab still held as the wheels touch down. A
+fall that was not popped (rolling off an edge or a ramp) is steered: a turn asked for there starts a
+spin only while the half turn can still come round before the ground, never late. Late flips and shoves and body varials are named by the shared scorer
 ("Late Kickflip", "Late Pop Shove-it", "Body Varial"); a body varial of a half round leaves the
 deck the other way round under the feet, as a shove does. Unverified in game.
 
@@ -129,7 +130,12 @@ deck the other way round under the feet, as a shove does. Unverified in game.
 | `LT` | at rest, up, down, right | Frontside, tail, crail, stalefish |
 | both | at rest, up, down | Double, nosebone, tailbone |
 
-While a trigger is held in the air the right stick picks the grab and does not flip the board.
+While a trigger is held in the air the right stick picks the grab and does not flip the board; a flip
+asked for then says "No flip during a grab" (on the controller: the stick flicked out to the rim and
+back to the middle within 0.3 s with the trigger still pulled, which is how it is told from picking
+a grab; on the keyboard: `W` or `S` tapped while `Ctrl` or `C` is held). Let go of the trigger with the right stick still out
+(a melon, a method), and the stick must come back to the middle before it moves the board again:
+letting go of a grab is no late flip.
 The steering turns the board at a rate; the view does not steer it.
 
 **Park pieces on foot.** Server ShortcutSkate 0.3.3+ lets an administrator select the next piece
@@ -298,6 +304,21 @@ so a diagonal up a steep face keeps the drawn board aligned with the ride. A nos
 into a vertical wall points up the wall instead of having no way at all. This retains the MEGA,
 contact, held-item and tour changes in 0.18.26. Native compilation and a real ride straight and
 diagonally up a vertical face remain to be verified for 0.18.27.
+
+Empty hands on the board (0.18.19, 0.18.30): this client has no readable held item and no belt
+member on the player (the log: `HELD methods returning Item: (none)`, `HELD belt select route:
+none found`), so the held entity is found by type on the rider model's hand bone and switched off
+while riding, and on again on stepping off. Seen on Shadow, 18 October: `HOLSTER switched off
+HeldEntity (…building_planner…)`; the building plan's red preview stayed standing in front of the
+rider all the same, so it is not under the plan. 0.18.30 reads, by shape, the scene objects the
+switched-off plan refers to (its members of a GameObject, Transform or Renderer type) and switches
+off with it one that is outside the plan and named like a guide (guide, preview, ghost,
+placeholder); it comes back with the plan. Logged once: all of those (`HELD the Planner refers
+to …`), what is drawn within 40 m under such a name (`HELD drawn near the rider …`), and the shape
+of every loaded game type named like a belt (`HELD belt survey …`: its static ints with their
+values, its instance ints, its methods taking one int), for a belt route that does not depend on
+member names; nothing of the survey is called. Not seen in the game: whether the preview goes with
+the plan, and what the three lines say.
 
 Riding a transition (0.18.18, the client side of #487): on a transition's own collider the ground
 is read along the face's normal, from the centre of the body's bottom half sphere, rather than

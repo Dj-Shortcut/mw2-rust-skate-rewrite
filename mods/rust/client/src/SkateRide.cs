@@ -303,6 +303,7 @@ public static class SkateRide
 
     public static void Dismount(string reason)
     {
+        SkateRig.ReleaseRootProxy();
         if (Mode == RideMode.Off) return;
         Mode = RideMode.Off; Pump = default(SkatePumpState); PumpHeld = RevertLeft = 0f; Stalling = false; OffReason = reason; Grab = SkateGrabKind.None; Manual = NoseManual = false;
         SkateKeys.EndStep();
@@ -381,7 +382,7 @@ public static class SkateRide
             var sign = Speed < 0f ? -1f : 1f;
             lastPos = pos; lastDir = pace > 0.0001f ? flat / pace * sign : Dir(Yaw); lastSpeed = pace * sign; hasLast = true; Steps++;
             pastPos[pastNext] = pos; pastAt[pastNext] = now; pastNext = (pastNext + 1) % PastSteps; if (pastCount < PastSteps) pastCount++;
-            var target = Mode == RideMode.Ground ? Normal : Vector3.up;
+            var target = Mode == RideMode.Air ? ViewNormal : Mode == RideMode.Ground ? Normal : Vector3.up;
             ViewNormal = (ViewNormal + (target - ViewNormal) * 0.3f).normalized;
             SkateKeys.EndStep();
         }
@@ -874,6 +875,7 @@ public static class SkateRide
 
     private static void TakeOff(bool jumped, float vertical)
     {
+        if (Mode == RideMode.Ground) ViewNormal = Normal;
         // Read while the board still rolls: which end leads decides which way is frontside.
         spinSide = (TailFirst ? -1f : 1f) * StanceSign;
         Enter(RideMode.Air);
@@ -923,6 +925,7 @@ public static class SkateRide
             if (left < (Math.Abs(flipLeft) + 360f * Math.Abs(flips)) / (float)SkateMotion.FlipRate) Late("a flip", left);
             flipLeft += 360f * flips; TrickAir = true; if (lateFlips) LateTrick = true;
         }
+        else if (flips != 0 && grabbing) SkateHud.Notice("No flip during a grab");
         // A shove asked for in the air goes on top of what is under way, the same way round.
         var lateShove = Jumped ? SkateKeys.LateShove : 0f;
         if (lateShove != 0f && !grabbing && (Math.Abs(shoveLeft) < 0.001f || Math.Sign(shoveLeft) == Math.Sign(lateShove))) pendShove += lateShove;
@@ -1023,7 +1026,8 @@ public static class SkateRide
             if (ahead <= (left - dt) * rate + SpinSlack || spinLate) { TrickAir = spinning = true; SpinLead = want * SpinLeadMost; return want; }
             // A turn asked for afresh too late is started all the same, and turns for as long as it
             // is held: not round before the ground, it is a bail.
-            if (SkateKeys.SpinPressed) { Late(Math.Abs(at) > 45f ? "the next half spin" : "a spin", left); spinLate = true; TrickAir = spinning = true; SpinLead = want * SpinLeadMost; return want; }
+            // Only in a trick: a fall that was not popped (rolling off an edge) is steered, not spun.
+            if (SkateKeys.SpinPressed && TrickAir) { Late(Math.Abs(at) > 45f ? "the next half spin" : "a spin", left); spinLate = true; TrickAir = spinning = true; SpinLead = want * SpinLeadMost; return want; }
         }
         else spinLate = false;
         if (!TrickAir) { SpinLead = 0f; return 0f; }
@@ -1034,10 +1038,10 @@ public static class SkateRide
     }
 
     // A press in the air that the arc cannot finish: started all the same (it will be a bail), and
-    // logged for the ride summary. Nothing is shown on screen.
+    // logged for the ride summary, and said on screen for a moment.
     private static void Late(string what, float left)
     {
-        Refused++;
+        Refused++; SkateHud.Notice("Too late for " + what);
         Out.Say("SKATE late " + what + ": " + (left < 0f ? 0f : left).ToString("F2") + " s of air left, " + AirTime.ToString("F2") + " s in");
     }
 
@@ -1348,6 +1352,7 @@ public class LateDriver : MonoBehaviour
     {
         Calls++;
         var t0 = SkateClock.Now(); SkateRide.Step(); SkateClock.Add(SkateClock.Ride, t0);
+        SkateRig.SyncRootProxy(0);
     }
 
     private void LateUpdate()

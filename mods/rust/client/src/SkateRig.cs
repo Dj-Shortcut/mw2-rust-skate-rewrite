@@ -37,9 +37,142 @@ public class SkateRig : MonoBehaviour
 
     private static void Say(string m) { Out.Say("SKATE " + m); }
 
+    // The walk Rigidbody is the physical player. Rust sends the separate player root's
+    // position, so keep that proxy with the body while the board owns locomotion.
+    // Its kinematic collider must not become another physical participant as it follows.
+    private sealed class RootProxyLease
+    {
+        public BasePlayer Player;
+        public Transform Root, Frame, Parent;
+        public Rigidbody Proxy, Physical;
+        public PlayerWalkMovement Movement;
+        public float Life, MaximumOffset;
+        public bool OriginalCollisions, Changed, RestoreReported, Releasing;
+        public int Attempts, Writes, Fixed, Update, Late, Samples;
+    }
+    private static RootProxyLease rootProxy;
+
+    private static bool ProxyFinite(Vector3 v)
+    {
+        return !float.IsNaN(v.x) && !float.IsInfinity(v.x) && !float.IsNaN(v.y) && !float.IsInfinity(v.y) && !float.IsNaN(v.z) && !float.IsInfinity(v.z);
+    }
+    private static bool ProxyFinite(Quaternion q) { return ProxyFinite(new Vector3(q.x, q.y, q.z)) && !float.IsNaN(q.w) && !float.IsInfinity(q.w); }
+    private static bool ProxySame(Vector3 a, Vector3 b) { return a.x == b.x && a.y == b.y && a.z == b.z; }
+    private static bool ProxySame(Quaternion a, Quaternion b) { return a.x == b.x && a.y == b.y && a.z == b.z && a.w == b.w; }
+
+    private static bool ProxyCurrent(RootProxyLease p)
+    {
+        return p != null && Local == p.Player && LocalT == p.Root && Body == p.Physical && Walk == p.Movement && AwakeAt == p.Life &&
+            Local != null && Local.lifestate == BaseCombatEntity.LifeState.Alive && LocalT != null && LocalT == Local.transform && LocalT.parent == null &&
+            Body != null && !Body.isKinematic && Body.detectCollisions && Body.transform == p.Frame && p.Frame.parent == p.Parent && !p.Frame.IsChildOf(LocalT) &&
+            Walk != null && Walk.enabled && Walk.transform == p.Frame && p.Proxy != null && p.Proxy.transform == LocalT && p.Proxy.isKinematic && !p.Proxy.detectCollisions;
+    }
+
+    [HideFromIl2Cpp]
+    private static bool AcquireRootProxy()
+    {
+        ReleaseRootProxy();
+        if (rootProxy != null) { Say("ROOTSYNC mount refused: collision restoration is pending"); return false; }
+        try
+        {
+            if (!Ready || Local == null || LocalT == null || LocalT != Local.transform || LocalT.parent != null ||
+                Local.lifestate != BaseCombatEntity.LifeState.Alive || Walk == null || !Walk.enabled || Body == null || Body.isKinematic || !Body.detectCollisions)
+                throw new InvalidOperationException("player is not ready");
+            var frame = Body.transform; var proxy = LocalT.GetComponent<Rigidbody>();
+            if (frame != Walk.transform || frame == LocalT || frame.IsChildOf(LocalT) || LocalT.IsChildOf(frame) ||
+                proxy == null || proxy == Body || proxy.transform != LocalT || !proxy.isKinematic)
+                throw new InvalidOperationException("player proxy is not independent");
+            // This lease owns only this proxy, never another Rigidbody or a joint-driven body.
+            var bodies = LocalT.GetComponentsInChildren<Rigidbody>(true);
+            if (bodies.Length != 1 || bodies[0] != proxy || LocalT.GetComponentsInChildren<Joint>(true).Length != 0 ||
+                frame.GetComponentsInChildren<Joint>(true).Length != 0)
+                throw new InvalidOperationException("player proxy has other physical owners");
+            var position = Body.position; var velocity = Body.linearVelocity; var world = frame.position; var rotation = frame.rotation;
+            if (!ProxyFinite(position) || !ProxyFinite(velocity) || !ProxyFinite(world) || !ProxyFinite(rotation) || !ProxyFinite(LocalT.position) || (LocalT.position - position).sqrMagnitude > 1f)
+                throw new InvalidOperationException("player proxy is too far from the body");
+            rootProxy = new RootProxyLease { Player = Local, Root = LocalT, Proxy = proxy, Physical = Body, Movement = Walk,
+                Frame = frame, Parent = frame.parent, Life = AwakeAt, OriginalCollisions = proxy.detectCollisions };
+            // Record ownership before the setter: even a later readback failure must restore it.
+            if (rootProxy.OriginalCollisions) { rootProxy.Changed = true; proxy.detectCollisions = false; }
+            if (!ProxyCurrent(rootProxy) || !ProxySame(Body.position, position) || !ProxySame(Body.linearVelocity, velocity) ||
+                !ProxySame(frame.position, world) || !ProxySame(frame.rotation, rotation))
+                throw new InvalidOperationException("player proxy collision lease did not verify");
+            Say("ROOTSYNC acquired kinematic=True collisions=False physical-unchanged=True");
+            return true;
+        }
+        catch (Exception e)
+        {
+            Say("ROOTSYNC mount refused: " + e.GetType().Name + ": " + e.Message);
+            ReleaseRootProxy(); return false;
+        }
+    }
+
+    [HideFromIl2Cpp]
+    public static void SyncRootProxy(int phase)
+    {
+        if (!SkateRide.On) { ReleaseRootProxy(); return; }
+        try
+        {
+            var p = rootProxy;
+            if (!ProxyCurrent(p)) throw new InvalidOperationException("player proxy ownership changed");
+            var position = p.Physical.position; var velocity = p.Physical.linearVelocity; var world = p.Frame.position; var rotation = p.Frame.rotation;
+            var offset = p.Root.position - position;
+            if (!ProxyFinite(position) || !ProxyFinite(velocity) || !ProxyFinite(world) || !ProxyFinite(rotation) || !ProxyFinite(offset) || offset.sqrMagnitude > 1f)
+                throw new InvalidOperationException("player proxy offset is invalid");
+            p.MaximumOffset = Math.Max(p.MaximumOffset, offset.magnitude);
+            p.Attempts++; p.Root.position = position;
+            if (!ProxyCurrent(p) || !ProxySame(p.Physical.position, position) || !ProxySame(p.Physical.linearVelocity, velocity) ||
+                !ProxySame(p.Frame.position, world) || !ProxySame(p.Frame.rotation, rotation) ||
+                !ProxyFinite(p.Root.position) || (p.Root.position - position).sqrMagnitude > 0.00000001f)
+                throw new InvalidOperationException("player proxy write did not verify");
+            p.Writes++;
+            if (phase == 0) p.Fixed++; else if (phase == 1) p.Update++; else p.Late++;
+            var bit = 1 << phase;
+            if ((p.Samples & bit) == 0) { p.Samples |= bit; Say("ROOTSYNC sample phase=" + (phase == 0 ? "fixed" : phase == 1 ? "update" : "late") + " physical-unchanged=True readback=True"); }
+        }
+        catch (Exception e)
+        {
+            Say("ROOTSYNC stopped: " + e.GetType().Name + ": " + e.Message);
+            SkateRide.Dismount("the player proxy changed");
+        }
+    }
+
+    [HideFromIl2Cpp]
+    public static void ReleaseRootProxy()
+    {
+        var p = rootProxy; if (p == null || p.Releasing) return;
+        p.Releasing = true;
+        try
+        {
+            if (p.Changed && p.Proxy != null)
+            {
+                if (p.Proxy.transform != p.Root) throw new InvalidOperationException("player proxy identity changed");
+                // A different value is already the original one; do not overwrite another owner.
+                if (!p.Proxy.detectCollisions) p.Proxy.detectCollisions = p.OriginalCollisions;
+                if (p.Proxy.detectCollisions != p.OriginalCollisions) throw new InvalidOperationException("collision restoration did not verify");
+            }
+            var gone = p.Proxy == null;
+            rootProxy = null;
+            Say("ROOTSYNC released proxy-gone=" + gone + " restored=" + (gone ? "n/a" : "True") + " attempts=" + p.Attempts + " writes=" + p.Writes + " fixed=" + p.Fixed + " update=" + p.Update + " late=" + p.Late + " max-offset=" + p.MaximumOffset.ToString("F3"));
+        }
+        catch (Exception e)
+        {
+            // Keep the exact old reference for another release attempt; never transfer its lease.
+            if (!p.RestoreReported) { p.RestoreReported = true; Say("ROOTSYNC restore pending: " + e.GetType().Name + ": " + e.Message); }
+        }
+        finally { p.Releasing = false; }
+    }
+
+    private static string RootProxyStatus()
+    {
+        var p = rootProxy;
+        return p == null ? "root-sync=off" : "root-sync=" + p.Writes + "/" + p.Attempts + " fixed=" + p.Fixed + " update=" + p.Update + " late=" + p.Late + " max-offset=" + p.MaximumOffset.ToString("F3");
+    }
+
     private void Update()
     {
         var now = Time.realtimeSinceStartup;
+        SyncRootProxy(1);
         SkateClock.Frame();
         var t0 = SkateClock.Now(); SkateKeys.Poll(); SkateConsole.Update(Time.realtimeSinceStartup); SkateClock.Add(SkateClock.Keys, t0);
         if (SkateRide.On)
@@ -64,7 +197,7 @@ public class SkateRig : MonoBehaviour
                 if ((SkateKeys.ToggleTap || twice) && CanMount) MountNow(SkateCamera.LookYaw);
             }
         }
-        if (SkateRide.On && now >= nextLog) { nextLog = now + 1f; Say(SkateRide.Status() + " | " + SkateClock.Report()); }
+        if (SkateRide.On && now >= nextLog) { nextLog = now + 1f; Say(SkateRide.Status() + " | " + RootProxyStatus() + " | " + SkateClock.Report()); }
         if (wasOn && !SkateRide.On) { offAt = now; Say("OFF (" + SkateRide.OffReason + ") top=" + SkateRide.Top.ToString("F1") + " pull-backs=" + SkateRide.Resets + " score=" + SkateRide.Trick.TotalPoints); LevelView(); Unholster(); }
         // Nothing in the hand while riding, as on a vehicle: no building or swinging from the board,
         // and nothing held to be seen. Every frame, so a slot picked mid-ride never shows.
@@ -202,12 +335,16 @@ public class SkateRig : MonoBehaviour
 
     public static void MountNow(float yaw)
     {
-        if (Body == null) return;
-        if (!RiderRig.Bound) { try { RiderRig.Bind(LocalT); } catch (Exception e) { Out.Say("RIDER bind threw " + e.GetType().Name + ": " + e.Message); } }
-        SkateSfx.Start();
-        SkateRide.Mount(Body, yaw); viewAhead = true; steadyFailed = false;
-        SkateHud.MountedAt = Time.realtimeSinceStartup;
-        Say("MOUNT yaw=" + SkateRide.Yaw.ToString("F0") + " speed=" + SkateRide.Speed.ToString("F1") + " rider=" + RiderRig.Bound + " audio=" + SkateSfx.State);
+        if (Body == null || SkateRide.On || !AcquireRootProxy()) return;
+        try
+        {
+            if (!RiderRig.Bound) { try { RiderRig.Bind(LocalT); } catch (Exception e) { Out.Say("RIDER bind threw " + e.GetType().Name + ": " + e.Message); } }
+            SkateSfx.Start();
+            SkateRide.Mount(Body, yaw); viewAhead = true; steadyFailed = false;
+            SkateHud.MountedAt = Time.realtimeSinceStartup;
+            Say("MOUNT yaw=" + SkateRide.Yaw.ToString("F0") + " speed=" + SkateRide.Speed.ToString("F1") + " rider=" + RiderRig.Bound + " audio=" + SkateSfx.State);
+        }
+        catch { SkateRide.Dismount("the skate mount failed"); ReleaseRootProxy(); throw; }
     }
 
     [HideFromIl2Cpp]
@@ -276,6 +413,7 @@ public class SkateRig : MonoBehaviour
 
     public static void LateFrame()
     {
+        SyncRootProxy(2);
         var now = Time.realtimeSinceStartup;
         var frame = SkateRide.Clamp(now - lastFrame, 0.001f, 0.1f); lastFrame = now;
         SkateCamera.Sample();
@@ -300,6 +438,9 @@ public class SkateRig : MonoBehaviour
         if (grinding) Shortcut.RustMod.SkateRider.GrindDeck(SkateRide.GrindKind, out gp, out gr, out gc);
         SkateBoard.GrindPitch += ((float)gp - SkateBoard.GrindPitch) * SkateRide.Clamp(frame * 12f, 0f, 1f);
         SkateBoard.GrindRoll += ((float)gr - SkateBoard.GrindRoll) * SkateRide.Clamp(frame * 12f, 0f, 1f);
+        var third = SkateRide.On && LocalT != null && (SkateCamera.Chase || SkateCamera.Fixed);
+        var t1 = SkateClock.Now(); RiderRig.Look(third); SkateClock.Add(SkateClock.Look, t1);
+        RiderRig.Prepare(frame);
         // An ollie pitches the board: nose up as it climbs, level at the top, nose a little down as
         // it falls; not held in a grab or a handplant, where the hands have the board.
         var ollie = SkateRide.On && SkateRide.Mode == RideMode.Air && SkateRide.Jumped && !SkateRide.Grabbing && !SkateRide.Handplant;
@@ -318,6 +459,14 @@ public class SkateRig : MonoBehaviour
         // A grab pulls the board up further, to the rider's hands, as the body folds into it.
         if (SkateRide.On && SkateRide.Mode == RideMode.Air) rise += SkateBoard.GrabRise * SkateBoard.GrabFold;
         SkateBoard.Pop += (rise - SkateBoard.Pop) * SkateRide.Clamp(frame * 18f, 0f, 1f);
+        var at = LocalT != null ? SkateBoard.Contact(LocalT) : Vector3.zero;
+        if (SkateRide.On && LocalT != null)
+        {
+            var feet = at; var up = SkateRide.ViewNormal; var tilted = up;
+            SkateBoard.Tilt(ref feet, ref tilted);
+            var t2 = SkateClock.Now(); RiderRig.Frame(feet, up, !third, frame); SkateClock.Add(SkateClock.Rider, t2);
+        }
+        // Held board placement is produced by this frame's solved pose.
         if (board != null)
         {
             var t0 = SkateClock.Now();
@@ -325,20 +474,22 @@ public class SkateRig : MonoBehaviour
             catch (Exception e) { Say("board update threw " + e.GetType().Name + ": " + e.Message); board = null; }
             SkateClock.Add(SkateClock.Board, t0);
         }
-        var third = SkateRide.On && LocalT != null && (SkateCamera.Chase || SkateCamera.Fixed);
-        var t1 = SkateClock.Now(); RiderRig.Look(third); SkateClock.Add(SkateClock.Look, t1);
         if (!SkateRide.On || LocalT == null) return;
-        var at = SkateBoard.Contact(LocalT);
-        // The rider stands on the deck's middle where the pitch puts it, but the body keeps the
-        // unpitched up; the module puts the feet on the pitched deck.
-        var feet = at; var up = SkateRide.ViewNormal; var tilted = up;
-        SkateBoard.Tilt(ref feet, ref tilted);
-        var t2 = SkateClock.Now(); RiderRig.Frame(feet, up, !third, frame); SkateClock.Add(SkateClock.Rider, t2);
         var t3 = SkateClock.Now(); SkateCamera.Apply(at - Vector3.up * SkateBoard.Pop); SteadyView(); SkateClock.Add(SkateClock.Camera, t3);
         try { SkateWatch.Frame(LocalT, board, now); }
         catch (Exception e) { if (!watchFailed) { watchFailed = true; Say("watch threw " + e.GetType().Name + ": " + e.Message); } }
     }
     private static bool watchFailed;
+
+    // Disabled without being destroyed, Update no longer runs the cleanup after the ride: the item
+    // put away for it is taken in hand again here, as OnDestroy does.
+    private void OnDisable()
+    {
+        SkateRide.Dismount("the skate rig is disabled");
+        try { Unholster(); }
+        catch (Exception e) { Out.Err("HELD restore while the rig is disabled threw " + e.GetType().Name + ": " + e.Message); }
+        ReleaseRootProxy();
+    }
 
     private void OnDestroy()
     {
