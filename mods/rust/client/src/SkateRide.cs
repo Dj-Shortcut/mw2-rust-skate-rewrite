@@ -717,6 +717,9 @@ public static class SkateRide
         // Rolling back down a transition keeps its pace both ways (#409): only friction, the brake,
         // a powerslide and the server's horizontal cap slow it, never which end leads.
         LimitSpeed(Cap, Cap);
+        // A stroke begun before a rollback must not kick against the new way of travel.
+        if (PushPhase > 0f && ((strokeBack && Speed > 0.3f) || (!strokeBack && Speed < -0.3f)))
+            PushPhase = 0f;
         if (pushing || PushPhase > 0f)
         {
             if (PushPhase <= 0f) { Pushes++; PushMongo = SkateKeys.Mongo; PushLead = PushMongo != TailFirst; strokeBack = fakiePush; }
