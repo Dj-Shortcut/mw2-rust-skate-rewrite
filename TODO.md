@@ -16,11 +16,13 @@ Het goedgekeurde vervolg is eerst één samenhangende push → afzet → air →
 
 | Wat | Issue | Eigenaar | Klaar als |
 |---|---|---|---|
-| Board en lichaam delen dezelfde actuele pose; vloeiende push en air zonder ongevraagd rechtzetten | #469 | Codex, `codex/client-flow-034-public` | Andy ziet en rijdt normale/mongo-push, een ollie/flip, transition-air en landing met samenhangende voet-/boardcontacten; de .31-rit zonder put-backs blijft behouden |
+| Board en lichaam delen dezelfde actuele pose; vloeiende push en air zonder ongevraagd rechtzetten | #469 | Codex, `codex/rider-air-frame-036` | Andy ziet en rijdt normale/mongo-push, een ollie/flip, transition-air en landing met samenhangende voet-/boardcontacten; de .31-rit zonder put-backs blijft behouden |
 
-Status: client .34 is native gebouwd, geïnstalleerd en geladen; de rig is toegevoegd. Dat bewijst nog geen correcte controllerbesturing, rit, airpose of hand-/voetcontacten. De eerdere feedback op .33 over controllerproblemen na afstappen en terugzetten tijdens het rijden blijft open. De .31-verbetering gold voor één rit en sluit deze latere feedback niet.
+Status: client .35 is native gebouwd, met geverifieerde clientback-up geïnstalleerd en geladen. Een korte rit met toetsenbord bevestigde opstappen en beweging op de bestaande MEGA. Dat bewijst nog geen correcte controllerbesturing, airpose of hand-/voetcontacten. De eerdere feedback over controllerproblemen na afstappen en terugzetten tijdens het rijden blijft open.
 
-De nieuwe .35-presentatiebron koppelt rotatie, catch en grab-loslaten aan één vluchtstatus voor lichaam en board. De bronproeven dekken een doorlopende dubbele flip zonder tussentijdse catch/herhaalde flick, grab-loslaten tijdens een bodyspin en reset/herinstap. Deze wijziging is nog niet native geïnstalleerd of in het spel gezien; de fysieke beweging en netwerk-handoff blijven ongewijzigd. Klaar pas wanneer Andy de volledige afzet → air → catch → landing samenhangend ziet en rijdt.
+De .35-presentatie koppelt rotatie, catch en grab-loslaten aan één vluchtstatus voor lichaam en board. De bronproeven dekken een doorlopende dubbele flip zonder tussentijdse catch/herhaalde flick, grab-loslaten tijdens een bodyspin en reset/herinstap. Deze contacten zijn nog niet visueel in het spel goedgekeurd.
+
+De nieuwe .36-bron laat het getekende lichaam en board de vertrekhelling geleidelijk verlaten en de waargenomen landingshelling naderen. Een gemiste grondmeting wist die naderingsstand niet; een hoeklimiet voorkomt een plotselinge wissel. De echte gedeelde bron en actuele Rust/Unity-API zijn gecontroleerd. De fysieke beweging, netwerk-handoff en bediening blijven ongewijzigd. Native bouw, installatie en visuele rijvalidatie van .36 staan nog open. Bij een laat waargenomen steile tegenwand kan de houding door de hoeklimiet nog achterlopen op de landingshelling. Klaar pas wanneer Andy de volledige afzet → air → catch → landing samenhangend ziet en rijdt.
 
 De geregistreerde MEGA is na de toegestane serverherstart met zijn 80 delen en gladde botsingsvlakken gecontroleerd. De oude, ongeregistreerde MEGA werd niet hersteld: de 80 oude entiteiten ontbraken. Dat is geen bewijs voor een foutloze rit op de huidige parkstukken.
 
