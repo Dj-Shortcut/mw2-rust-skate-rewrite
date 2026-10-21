@@ -32,6 +32,16 @@ namespace Shortcut.RustMod
         }
     }
 
+    public readonly struct SkateRiderAirFrameState
+    {
+        public readonly bool Initialized;
+        public readonly SkateVector Up, LandingUp;
+        public readonly double LandingShare;
+
+        internal SkateRiderAirFrameState(SkateVector up, SkateVector landingUp, double landingShare)
+        { Initialized = true; Up = up; LandingUp = landingUp; LandingShare = landingShare; }
+    }
+
     public static class SkateRiderMotion
     {
         public const double MinimumDelta = 0.0001;
@@ -43,6 +53,49 @@ namespace Shortcut.RustMod
         public const double LengthTolerance = 0.000001;
         private const double FrameTolerance = 0.000001;
         private const double Substep = 1.0 / 120;
+
+        // Display only: leave the support frame continuously, level near the flight apex,
+        // then meet the sensed landing plane. Neither catch state nor stance snaps this frame.
+        public const double AirReleaseMinimum = 0.18, AirLandingLead = 0.25, AirFrameRadiansPerSecond = Math.PI * 2;
+        public static bool TryAirFrame(SkateRiderAirFrameState state, double dt,
+                                       SkateVector takeoffUp, double sinceRelease, double riseAtRelease, double gravity,
+                                       SkateVector landingUp, double gapToContact, double closingSpeed,
+                                       out SkateVector up, out SkateRiderAirFrameState next, out string error)
+        {
+            up = takeoffUp; next = state; error = null;
+            if (!Finite(dt) || dt < MinimumDelta || dt > MaximumDelta ||
+                !Normal(takeoffUp) || takeoffUp.Y <= 0 || !Normal(landingUp) || landingUp.Y <= 0 ||
+                !Finite(sinceRelease) || sinceRelease < 0 || !Finite(riseAtRelease) || riseAtRelease < 0 ||
+                !Finite(gravity) || gravity <= 0 || !Finite(gapToContact) || !Finite(closingSpeed) || closingSpeed < 0 ||
+                (state.Initialized && (!Normal(state.Up) || state.Up.Y <= 0 || !Normal(state.LandingUp) || state.LandingUp.Y <= 0 ||
+                    !Finite(state.LandingShare) || state.LandingShare < 0 || state.LandingShare > 1)))
+            { error = "Invalid rider air display frame."; return false; }
+            var duration = Math.Max(AirReleaseMinimum, riseAtRelease / gravity);
+            var release = Math.Min(1, sinceRelease / duration);
+            release *= release * (3 - 2 * release);
+            var released = Unit(takeoffUp * (1 - release) + new SkateVector(0, 1, 0) * release);
+            var land = closingSpeed > 0.000001 ? Math.Max(0, Math.Min(1,
+                1 - Math.Max(0, gapToContact) / (closingSpeed * AirLandingLead))) : 0;
+            land *= land * (3 - 2 * land);
+            // A missed probe must not undo an already observed landing approach.
+            var held = state.Initialized ? state.LandingShare : 0;
+            var plane = state.Initialized ? state.LandingUp : landingUp;
+            if (land > 0) plane = held > 0 ? AirTurn(plane, landingUp, dt) : landingUp;
+            land = Math.Max(held, land);
+            var target = Unit(released * (1 - land) + plane * land);
+            up = AirTurn(state.Initialized ? state.Up : takeoffUp, target, dt);
+            if (!Normal(up) || up.Y <= 0) { up = takeoffUp; error = "Rider air display frame left the upper hemisphere."; return false; }
+            next = new SkateRiderAirFrameState(up, plane, land);
+            return true;
+        }
+
+        private static SkateVector AirTurn(SkateVector from, SkateVector to, double dt)
+        {
+            var cosine = Math.Max(-1, Math.Min(1, SkateVector.Dot(from, to)));
+            var angle = Math.Acos(cosine); var step = AirFrameRadiansPerSecond * dt;
+            if (angle <= step) return to;
+            return Unit(from * Math.Cos(step) + Unit(to - from * cosine) * Math.Sin(step));
+        }
 
         public static bool TryStep(SkateRiderMotionState state, SkateRiderRig rig, SkateRiderPose target, double dt,
                                    out SkateRiderPose shown, out SkateRiderMotionState next, out string error)
