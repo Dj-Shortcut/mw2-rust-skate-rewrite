@@ -259,15 +259,16 @@ namespace Shortcut.RustMod
                 // (owner, 15 October).
                 var pushSide = facing * -1;
                 var rest = input.BoardPosition + travel * SkatePose.FootOffset;
-                leadAnkle = PushFoot(rest, input.BoardPosition + travel * (LeadPlant - PushPlant), travel, pushSide, up, input.PushPhase, input.GroundDrop, out grounded, out heel);
+                var stroke = input.BoardPosition + travel * (LeadPlant - PushPlant);
+                leadAnkle = PushFoot(rest, stroke, travel, pushSide, up, input.PushPhase, input.GroundDrop, out grounded, out heel);
                 leadToe = RidingLeadToe * Math.PI / 180 + (Math.PI / 2 - RidingLeadToe * Math.PI / 180) * grounded;
-                swing = StrokeSwing(leadAnkle, rest + up * SkatePose.FootLift, travel);
+                swing = StrokeSwing(leadAnkle, rest, stroke, travel);
             }
             else if (pushing)
             {
                 backAnkle = PushFoot(input.BoardPosition - travel * SkatePose.FootOffset, input.BoardPosition, travel, facing, up, input.PushPhase, input.GroundDrop, out grounded, out heel);
                 backToe = backToe + (Math.PI / 2 - backToe) * grounded;
-                swing = StrokeSwing(backAnkle, backDeck, travel);
+                swing = StrokeSwing(backAnkle, input.BoardPosition - travel * SkatePose.FootOffset, input.BoardPosition, travel);
             }
             if (input.FootPlant > 0 && input.Airborne && !input.Bailed)
             {
@@ -725,11 +726,15 @@ namespace Shortcut.RustMod
 
         // Where the pushing foot is in its stroke, from -1 (planted ahead) to 1 (swept back), 0 on
         // its place on the deck: read from the foot itself, so the arms and hips follow the contact
-        // and not a clock that has no relation to it.
-        private static double StrokeSwing(SkateVector foot, SkateVector rest, SkateVector travel)
+        // and not a clock that has no relation to it. Each side is measured against that stroke's
+        // own end (origin as PushFoot has it): the leading foot's push plants only a little ahead
+        // of its place and sweeps far behind it, the trailing foot's the other way round.
+        private static double StrokeSwing(SkateVector foot, SkateVector rest, SkateVector origin, SkateVector travel)
         {
-            double back = SkateVector.Dot(rest - foot, travel) / ((PushPlant + PushSweep) * 0.65);
-            return Math.Max(-1, Math.Min(1, back));
+            double back = SkateVector.Dot(rest - foot, travel);
+            double reach = back >= 0 ? SkateVector.Dot(rest - origin, travel) + PushSweep : SkateVector.Dot(origin - rest, travel) + PushPlant;
+            if (reach < 1e-6) return back >= 0 ? 1 : -1;
+            return Math.Max(-1, Math.Min(1, back / reach));
         }
 
         // The pushing foot through a stroke: from its resting spot on the deck (rest) down to the
