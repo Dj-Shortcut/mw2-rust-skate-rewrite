@@ -21,6 +21,9 @@ public static class RiderRig
     private static float plantBlend, plantHold = -1f;
     public static float PlantBlend { get { return plantHold >= 0f ? plantHold : plantBlend; } }
     public static void PlantFor(float blend) { plantHold = blend; }
+    // A landing is taken up over LandSettle seconds: the crouch's spring dips the legs, and the
+    // module folds the chest forward and brings the arms out by what is left of it.
+    public const float LandSettle = 0.45f;
     public const float AnkleHeight = 0.095f, ToeHeight = 0.025f, DeckTop = 0.092f, HeelShift = 0.055f;
     public const float HeadLiftFrom = 15f, HeadLiftShare = 1f, HeadLiftMost = 60f;
     public static bool Bound;
@@ -564,6 +567,8 @@ public static class RiderRig
             if (mode == RideMode.Ground && SkateRide.PumpHeld > 0f) want = Math.Max(want, 0.25f + 0.45f * SkateRide.PumpHeld / SkateRide.PumpCharge);
             var since = now - SkateRide.LandAt;
             if (mode == RideMode.Ground && since < 0.35f) want += (1f - since / 0.35f) * SkateRide.Clamp(SkateRide.LandImpact / 8f, 0.2f, 1f) * 0.45f;
+            var settle = mode == RideMode.Ground && since >= 0f && since < LandSettle ? 1f - since / LandSettle : 0f;
+            var landing = settle * settle * SkateRide.Clamp(SkateRide.LandImpact / 8f, 0.2f, 1f);
             // The legs are a spring, a little under critical: the body dips past the crouch on a
             // landing and comes back, and settles into a pop with a small overshoot.
             var dt = SkateRide.Clamp(frameSeconds, 0f, 0.05f);
@@ -594,13 +599,13 @@ public static class RiderRig
                 DeckTop, mode == RideMode.Bail ? SkateRide.Clamp((now - SkateRide.ModeAt) / SkateRide.BailSeconds, 0f, 1f) : 0f,
                 SkateRide.PushLead, plant, grabHold >= 0f ? grabHold : grabSince < 0f ? 0f : now - grabSince, handplant,
                 SkateRide.Clamp(SkateBoard.PitchDegrees, -40f, 40f) * Math.PI / 180.0,
-                noseSlide, chestLead);
+                noseSlide, chestLead, mode == RideMode.Air ? SkateRide.ShoveDeg : 0.0, landing);
             SkateRiderPose pose; string error;
             if (!SkateRider.TryCreate(Rig, input, out pose, out error))
             {
                 var withoutPush = pushing ? new SkateRiderInput(input.BoardPosition, input.BoardForward, input.BoardUp, input.Stance, input.Switch,
                     speed, lean, Crouch, false, false, 0, SkateRide.FlipDeg, grab, false, SkateKeys.LookYaw % 360f, SkatePose.FootLift - AnkleHeight,
-                    DeckTop, 0, false, plant, 0, handplant, SkateRide.Clamp(SkateBoard.PitchDegrees, -40f, 40f) * Math.PI / 180.0, 0, chestLead) : input;
+                    DeckTop, 0, false, plant, 0, handplant, SkateRide.Clamp(SkateBoard.PitchDegrees, -40f, 40f) * Math.PI / 180.0, 0, chestLead, 0.0, landing) : input;
                 if (!pushing || !SkateRider.TryCreate(Rig, withoutPush, out pose, out error))
                 {
                     if (Refusals++ == 0 || error != Error) Say("pose refused: " + error);
@@ -616,15 +621,19 @@ public static class RiderRig
             // it stays on the board while the rest lags. Not in a handplant or a bail, where the
             // module's contact must stand as it is: the motion is reset and the pose shown as is.
             var contact = handplant > 0.001f || mode == RideMode.Bail;
-            if (contact || mode != motionMode) motion = default(SkateRiderMotionState);
+            // Between the air and the ground the lag carries on, so the chest and the hands follow
+            // through the catch into the landing instead of jumping onto the pose; into and out of a
+            // grind or a bail the motion starts over.
+            var flowing = (mode == RideMode.Air || mode == RideMode.Ground) && (motionMode == RideMode.Air || motionMode == RideMode.Ground);
+            if (contact || (mode != motionMode && !flowing)) motion = default(SkateRiderMotionState);
             motionMode = mode;
+            bool pinL = false, pinR = false;
             if (!contact)
             {
                 var airborne = mode == RideMode.Air;
                 // The hand on the board is pinned to it, both only in a two-handed grab; the free
                 // hand keeps its secondary motion. Which hand grips is read from the pose: the one
                 // nearer the deck.
-                bool pinL = false, pinR = false;
                 if (airborne && grab != SkateGrabKind.None)
                 {
                     if (grab == SkateGrabKind.Double) pinL = pinR = true;
@@ -666,18 +675,25 @@ public static class RiderRig
             var footDown = mode == RideMode.Ground && SkateRide.PushPhase > (float)SkateRider.PushDown && SkateRide.PushPhase < (float)SkateRider.PushUp;
             var trailingIsLeft = SkateRide.Goofy != SkateRide.TailFirst;
             var pushLeft = SkateRide.PushLead ? !trailingIsLeft : trailingIsLeft;
-            pinHips = pushing;
+            // A gripping hand must remain reachable from the solved upper body. Its shared
+            // secondary motion is already contact-aware; another independent trunk lag is not.
+            pinHips = pushing || pinL || pinR;
             pinLeft = pushing && (!pushLeft || footDown); pinRight = pushing && (pushLeft || footDown);
             Shown = pose;
-            Ease(pose, plane, toToes, upV, new Vector3((float)fx, (float)fy, (float)fz), now, frameSeconds);
+            Ease(pose, plane, toToes, upV, new Vector3((float)fx, (float)fy, (float)fz), now, frameSeconds, pinL, pinR);
             Shape(upV);
+            // Pitch/grind balance shapes the free arm, never the hand already holding the board.
+            if (pinL) { joint[LHandJ] = V(pose.LeftHand); joint[LElbowJ] = V(pose.LeftElbow); }
+            if (pinR) { joint[RHandJ] = V(pose.RightHand); joint[RElbowJ] = V(pose.RightElbow); }
+            if (pinL && !pinR) ReachFreeHand(RShoulderJ, RHandJ);
+            if (pinR && !pinL) ReachFreeHand(LShoulderJ, LHandJ);
             Apply(upV, legsOnly);
             Applied++;
         }
         catch (Exception e) { failed = true; Say("pose threw " + e.GetType().Name + ": " + e.Message); }
     }
 
-    private static void Ease(SkateRiderPose p, Vector3 origin, Vector3 x, Vector3 y, Vector3 z, float now, float frameSeconds)
+    private static void Ease(SkateRiderPose p, Vector3 origin, Vector3 x, Vector3 y, Vector3 z, float now, float frameSeconds, bool pinLeftHand, bool pinRightHand)
     {
         joint[PelvisJ] = V(p.Pelvis); joint[LHipJ] = V(p.LeftHip); joint[RHipJ] = V(p.RightHip); joint[LKneeJ] = V(p.LeftKnee); joint[RKneeJ] = V(p.RightKnee);
         joint[LAnkleJ] = V(p.LeftAnkle); joint[RAnkleJ] = V(p.RightAnkle); joint[LToeJ] = V(p.LeftToe); joint[RToeJ] = V(p.RightToe);
@@ -697,9 +713,12 @@ public static class RiderRig
             // The solved hips must reach a planted foot; easing them independently can break that contact.
             // The trunk goes with the hips in a push: the module turns the chest with the pelvis, and
             // a chest eased behind pinned hips would untwist the spine for a moment each stroke.
+            // Keep a grab's solved hand target through the final filter too. The free hand and
+            // the rest of the pose still ease; releasing starts from the last held hand and elbow targets.
             var pinned = (pinHips && (i == PelvisJ || i == LHipJ || i == RHipJ || i == PelvisForwardJ || i == PelvisUpJ ||
                     i == LShoulderJ || i == RShoulderJ || i == ChestForwardJ || i == ChestUpJ)) ||
-                (pinLeft && (i == LAnkleJ || i == LToeJ)) || (pinRight && (i == RAnkleJ || i == RToeJ));
+                (pinLeft && (i == LAnkleJ || i == LToeJ)) || (pinRight && (i == RAnkleJ || i == RToeJ)) ||
+                (pinLeftHand && (i == LHandJ || i == LElbowJ)) || (pinRightHand && (i == RHandJ || i == RElbowJ));
             eased[i] = pinned ? local : eased[i] + (local - eased[i]) * share;
             var back = x * eased[i].x + y * eased[i].y + z * eased[i].z;
             joint[i] = i < Points ? origin + back : back.sqrMagnitude > 0.0001f ? back.normalized : fresh;
@@ -710,6 +729,16 @@ public static class RiderRig
         joint[ChestJ] = hips + line * (float)Rig.SpineLength;
         joint[NeckJ] = hips + line * (float)(Rig.SpineLength * 1.12);
         joint[HeadJ] = joint[NeckJ] + line * (float)Rig.NeckToHeadLength;
+    }
+
+    // The held arm keeps the solved trunk. The free hand may still lag and balance, but
+    // cannot ask that shoulder to reach beyond the arm's physical length.
+    private static void ReachFreeHand(int shoulder, int hand)
+    {
+        var offset = joint[hand] - joint[shoulder];
+        var distance = offset.magnitude;
+        var reach = (float)(Rig.UpperArmLength + Rig.ForearmLength) * 0.999f;
+        if (distance > reach) joint[hand] = joint[shoulder] + offset * (reach / distance);
     }
 
     // What the module does not know: in a manual the weight goes over the axle that carries it, the

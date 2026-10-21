@@ -53,7 +53,7 @@ public static class SkateKeys
     private static bool wasPush, wasBrake, wasLeft, wasRight, wasJump, wasCrouch, wasToggle, wasCamera, wasStance, wasBody;
     private static float stanceSince = -1f;
     private static float wasSpin;
-    private static bool keyboardSuspended;
+    private static bool keyboardSuspended, stickPushBlocked;
     private static bool popKeys = true, crouchKeys = true, cameraKey = true, manualKey = true, helpKey = true, taps = true, cursorKnown = true, failed;
 
     public static void Reset()
@@ -61,13 +61,13 @@ public static class SkateKeys
         Push = Brake = Left = Right = Crouch = Jump = Manual = NoseManual = Analog = Charging = Help = false; Steer = Charge = Spin = wasSpin = 0f; PopScale = 1f;
         Grab = SkateGrabKind.None; PopKind = SkatePopKind.Ollie; Mongo = HandplantFront = HandplantBack = false; aTappedAt = -99f;
         EndStep(); JumpTap = ToggleTap = CameraTap = CrouchTap = false;
-        keyboardSuspended = true; stanceSince = -1f;
+        keyboardSuspended = true; stickPushBlocked = false; stanceSince = -1f;
     }
 
     public static void Poll()
     {
         JumpTap = ToggleTap = CameraTap = CrouchTap = false;
-        if (Scripted || failed) { Help = false; return; }
+        if (Scripted || failed) { Help = false; stickPushBlocked = false; return; }
         var now = Time.realtimeSinceStartup;
         SkatePad.Poll(now);
         var padDown = SkatePad.Pressed();
@@ -81,7 +81,7 @@ public static class SkateKeys
             {
                 Push = Brake = Left = Right = Crouch = Jump = Manual = NoseManual = Charging = Help = false; Steer = Charge = Spin = wasSpin = 0f; Grab = SkateGrabKind.None;
                 wasPush = wasBrake = wasLeft = wasRight = wasJump = wasCrouch = wasToggle = wasCamera = false; EndStep(); SkatePad.DropPops();
-                keyboardSuspended = true; stanceSince = -1f;
+                keyboardSuspended = true; stickPushBlocked = false; stanceSince = -1f;
                 return;
             }
             var stanceKey = Down(kb.f2Key);
@@ -147,8 +147,11 @@ public static class SkateKeys
                 Analog = true;
                 Steer = Math.Abs(x) <= SteerDead ? 0f : (x - Math.Sign(x) * SteerDead) / (1f - SteerDead);
                 bool lt0 = SkatePad.LeftTrigger > SkatePad.Pulled, rt0 = SkatePad.RightTrigger > SkatePad.Pulled;
-                // With a trigger held A and X are foot plants, not pushes.
-                Push = (!lt0 && !rt0 && (SkatePad.Buttons & (SkatePad.A | SkatePad.X)) != 0) || (straight && y > StickPush);
+                // A held forward stick must return before it pushes after a pump's release.
+                if (!SkateRide.On || y <= StickPush) stickPushBlocked = false;
+                else if (SkateRide.Mode == RideMode.Ground && SkateRide.Grounded && (lt0 || rt0)) stickPushBlocked = true;
+                // A/X can still ask for a new push after release, or select the plants below while held.
+                Push = !lt0 && !rt0 && ((SkatePad.Buttons & (SkatePad.A | SkatePad.X)) != 0 || (!stickPushBlocked && straight && y > StickPush));
                 Mongo = (SkatePad.Buttons & SkatePad.X) != 0 && (SkatePad.Buttons & SkatePad.A) == 0;
                 HandplantFront = (SkatePad.Buttons & SkatePad.LeftBumper) != 0; HandplantBack = (SkatePad.Buttons & SkatePad.RightBumper) != 0;
                 // Only while the right stick is held back for the pop: a push tapped on its own stays a push.
@@ -193,6 +196,7 @@ public static class SkateKeys
             }
             else
             {
+                stickPushBlocked = false;
                 SkatePad.DropPops();
                 Analog = Charging = false; Charge = 0f; NoseManual = false;
                 Steer = (left ? -1f : 0f) + (right ? 1f : 0f);
