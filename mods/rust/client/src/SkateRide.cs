@@ -73,6 +73,7 @@ public static class SkateRide
     // the ground last hit under the board, which is what a landing meets.
     public static float SlopeDegrees;
     public static SkatePumpState Pump = default(SkatePumpState);
+    private static uint pumpInputEpoch;
     public static Vector3 ContactNormal = Vector3.up;
     public static string PhysicsError = "";
     public static SkateGrindKind GrindKind;
@@ -426,6 +427,11 @@ public static class SkateRide
         if (reach < 0.001f || !SkateParks.Ray(from, to / reach, out face, reach + WallProbe, GroundMask) || face.collider != hit.collider) return false;
         return face.m_Normal.y > -0.05f && Vector3.Dot(face.m_Normal, hit.m_Normal) > 0.9f;
     }
+    private static bool RidingWallFace(Vector3 from, Vector3 dir, float distance, RaycastHit hit)
+    {
+        return RampFaceAhead(from, hit) || ((Mode == RideMode.Ground || Mode == RideMode.Air) &&
+            SkateParks.MegaLipFace(from, dir, WallProbe, distance, hit));
+    }
     // The whole measured pace of the last step, along the path the body took (for the checks' logs).
     public static float PathSpeed;
     private static Vector3 WallAhead(Vector3 pos, Vector3 v, float dt)
@@ -438,8 +444,8 @@ public static class SkateRide
         {
             RaycastHit hit;
             var from = pos + Vector3.up * wallHeights[i];
-            if (SkateParks.Sphere(from, WallProbe, dir, out hit, reach, GroundMask)
-                && hit.m_Normal.y < 0.5f && hit.distance < nearest && !RampFaceAhead(from, hit)) { found = true; nearest = hit.distance; normal = hit.m_Normal; }
+            if (SkateParks.SphereWall(from, WallProbe, dir, out hit, reach, GroundMask, RidingWallFace)
+                && hit.distance < nearest) { found = true; nearest = hit.distance; normal = hit.m_Normal; }
         }
         if (!found) return v;
         var into = -Vector3.Dot(v, normal);
@@ -827,6 +833,13 @@ public static class SkateRide
     // transition, awarded when let go through its bottom, once per pass, by an energy budget.
     private static void PumpStep(float dt)
     {
+        // Losing controls or changing their owner is not the rider extending his knees.
+        var active = SkateKeys.Scripted || SkateKeys.ControlsActive;
+        if (!active || pumpInputEpoch != SkateKeys.InputEpoch)
+        {
+            Pump = default(SkatePumpState); PumpHeld = 0f; pumpInputEpoch = SkateKeys.InputEpoch;
+            if (!active) return;
+        }
         PumpHeld = SkateKeys.Crouch ? Math.Min(PumpCharge, PumpHeld + dt) : 0f;
         var travel = Flat(Tangent); if (travel.sqrMagnitude < 0.0001f) travel = Dir(Yaw);
         travel = travel * (Speed >= 0f ? 1f : -1f);

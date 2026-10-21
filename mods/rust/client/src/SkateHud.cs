@@ -451,13 +451,14 @@ public static class SkateHud
 
     private static void Hints(Shown v, float w, float h, float k)
     {
-        float x = 40f * k, y = h - 220f * k; var size = (int)(17 * k);
-        Box(x - 12f * k, y - 8f * k, Math.Min(w - 80f * k, 1240f * k), 96f * k, Fade(Dark, 0.5f));
+        float x = 40f * k, y = h - (v.Pad ? 248f : 220f) * k; var size = (int)(17 * k);
+        Box(x - 12f * k, y - 8f * k, Math.Min(w - 80f * k, 1240f * k), (v.Pad ? 124f : 96f) * k, Fade(Dark, 0.5f));
         if (v.Pad)
         {
-            Text(x, y, w - 80f * k, Key("LEFT STICK") + " steer, hold to spin in the air   " + Key("A / X") + " push   " + Key("B") + " brake   " + Key("LT / RT") + " grab, with the right stick: other grabs   " + Key("Y") + " get off   " + Key("R3") + " camera", size, Ink, 0, 1f);
+            Text(x, y, w - 80f * k, Key("LEFT STICK") + " steer / air spin   " + Key("A") + " push   " + Key("X") + " mongo push   " + Key("B") + " brake   " + Key("Y") + " get off   " + Key("R3") + " camera", size, Ink, 0, 1f);
             Text(x, y + 28f * k, w - 80f * k, Key("RIGHT STICK") + "  back, then flick forward: ollie   to a diagonal: kickflip / heelflip   rolled round to a side: shove-it   part way back or forward: manual", size, Ink, 0, 1f);
-            Text(x, y + 56f * k, w - 80f * k, "Hold " + Key("BACK") + " on the board for every trick and grab", (int)(15 * k), Dim, 0, 1f);
+            Text(x, y + 56f * k, w - 80f * k, Key("LT / RT") + " on the ground: bend knees downhill, release at the bottom to pump. In the air: grab; right stick chooses the grab.", size, Ink, 0, 1f);
+            Text(x, y + 84f * k, w - 80f * k, "Hold " + Key("BACK") + " on the board for every trick and grab", (int)(15 * k), Dim, 0, 1f);
             return;
         }
         else

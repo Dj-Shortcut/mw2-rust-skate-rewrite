@@ -56,7 +56,7 @@ namespace Shortcut.RustMod
         public readonly SkateStance Stance;
         public readonly bool Switch, Airborne, Pushing, Grab, Bailed;
         public readonly double Speed, LeanDegrees, Crouch, PushPhase, FlipDegrees, LookYawDegrees, DeckOffset;
-        public readonly double GroundDrop, BailPhase;
+        public readonly double GroundDrop, BailPhase, PushSeconds;
         public readonly SkateGrabKind GrabKind;
         // MongoPush: the front foot pushes and the back foot stays on the tail. FootPlant (0..1): the
         // front foot is off the deck beside the board, as in a no comply or a boneless. GrabSeconds:
@@ -170,8 +170,8 @@ namespace Shortcut.RustMod
                                double flipDegrees, SkateGrabKind grabKind, bool bailed, double lookYawDegrees, double deckOffset,
                                double groundDrop, double bailPhase, bool mongoPush, double footPlant, double grabSeconds, double handplant,
                                double deckPitch, double noseSlide, double chestTurnDegrees, double shoveDegrees, double landing,
-                               SkateRiderContactState contact)
-        { Contact = contact; ShoveDegrees = shoveDegrees; Landing = landing; ChestTurnDegrees = chestTurnDegrees; NoseSlide = noseSlide; DeckPitch = deckPitch; MongoPush = mongoPush; FootPlant = footPlant; GrabSeconds = grabSeconds; Handplant = handplant;
+                               SkateRiderContactState contact, double pushSeconds = 0.8)
+        { PushSeconds = pushSeconds; Contact = contact; ShoveDegrees = shoveDegrees; Landing = landing; ChestTurnDegrees = chestTurnDegrees; NoseSlide = noseSlide; DeckPitch = deckPitch; MongoPush = mongoPush; FootPlant = footPlant; GrabSeconds = grabSeconds; Handplant = handplant;
           BoardPosition = boardPosition; BoardForward = boardForward; BoardUp = boardUp; Stance = stance;
           Switch = ridingSwitch; Speed = speed; LeanDegrees = leanDegrees; Crouch = crouch; Airborne = airborne;
           Pushing = pushing; PushPhase = pushPhase; FlipDegrees = flipDegrees; GrabKind = grabKind; Grab = grabKind != SkateGrabKind.None;
@@ -294,7 +294,7 @@ namespace Shortcut.RustMod
             return new SkateRiderInput(i.BoardPosition, i.BoardForward, i.BoardUp, i.Stance, i.Switch, i.Speed,
                 i.LeanDegrees, i.Crouch, i.Airborne, i.Pushing, i.PushPhase, i.FlipDegrees, grab, i.Bailed,
                 i.LookYawDegrees, i.DeckOffset, i.GroundDrop, i.BailPhase, i.MongoPush, i.FootPlant, seconds,
-                i.Handplant, i.DeckPitch, i.NoseSlide, i.ChestTurnDegrees, i.ShoveDegrees, i.Landing, i.Contact);
+                i.Handplant, i.DeckPitch, i.NoseSlide, i.ChestTurnDegrees, i.ShoveDegrees, i.Landing, i.Contact, i.PushSeconds);
         }
 
         // Mix the complete free/held contact targets, then solve lengths again. Mixing independently
@@ -347,6 +347,10 @@ namespace Shortcut.RustMod
             bool grabLeft = namedGrab ? grip.Left : backIsLeft;
             double armLength = rig.UpperArmLength + rig.ForearmLength;
             double speed = Math.Min(1, input.Speed / PoseSpeed);
+            // The drive advances contact by a slow clock even when the board cannot roll.
+            // Match that same floor at the noncontact endpoints as well as the distance branch.
+            double cycleDistance = Math.Max(input.Speed * input.PushSeconds,
+                (PushPlant + PushSweep) / (3 * (PushUp - PushDown)));
             double lean = input.LeanDegrees * Math.PI / 180;
             double turn = pushing ? PushTurn(input.PushPhase) : 0;
             double swing = 0;
@@ -427,13 +431,13 @@ namespace Shortcut.RustMod
                 var pushSide = facing * -1;
                 var rest = input.BoardPosition + travel * SkatePose.FootOffset;
                 var stroke = input.BoardPosition + travel * (LeadPlant - PushPlant);
-                leadAnkle = PushFoot(rest, stroke, travel, pushSide, up, input.PushPhase, input.GroundDrop, out grounded, out heel);
+                leadAnkle = PushFoot(rest, stroke, travel, pushSide, up, input.PushPhase, input.GroundDrop, cycleDistance, rig.FootLength, out grounded, out heel);
                 leadToe = RidingLeadToe * Math.PI / 180 + (Math.PI / 2 - RidingLeadToe * Math.PI / 180) * grounded;
                 swing = StrokeSwing(leadAnkle, rest, stroke, travel);
             }
             else if (pushing)
             {
-                backAnkle = PushFoot(input.BoardPosition - travel * SkatePose.FootOffset, input.BoardPosition, travel, facing, up, input.PushPhase, input.GroundDrop, out grounded, out heel);
+                backAnkle = PushFoot(input.BoardPosition - travel * SkatePose.FootOffset, input.BoardPosition, travel, facing, up, input.PushPhase, input.GroundDrop, cycleDistance, rig.FootLength, out grounded, out heel);
                 backToe = backToe + (Math.PI / 2 - backToe) * grounded;
                 swing = StrokeSwing(backAnkle, input.BoardPosition - travel * SkatePose.FootOffset, input.BoardPosition, travel);
             }
@@ -443,7 +447,9 @@ namespace Shortcut.RustMod
                 var planted = input.BoardPosition + facing * 0.2 + travel * 0.22 + up * (SkatePose.FootLift - plantDown);
                 leadAnkle = leadAnkle + (planted - leadAnkle) * input.FootPlant;
             }
-            double leanScale = 1, yawScale = input.Airborne ? AirYaw : 1;
+            // Leaving the support does not ask the torso to untwist. Spins and grabs have their
+            // own explicit chest/hip targets; a plain ollie retains the rider's stance.
+            double leanScale = 1, yawScale = 1;
             var pelvisAt = default(SkateVector); double pelvisDown = 0, chestPitch = 0, bailYaw = 0;
             SkateVector leftReach = default(SkateVector), rightReach = default(SkateVector); bool reaching = false;
             if (input.Bailed)
@@ -459,6 +465,15 @@ namespace Shortcut.RustMod
             var backToeDir = facing * Math.Cos(backToe) + travel * Math.Sin(backToe);
             var leftToeDir = backIsLeft ? backToeDir : leadToeDir;
             var rightToeDir = backIsLeft ? leadToeDir : backToeDir;
+            // A foot still on the deck follows its pitch, toes as well as ankle. The pushing
+            // foot meets the support plane instead, then returns to the deck through recovery.
+            var pushingLeft = mongo ? !backIsLeft : backIsLeft;
+            var leftPitch = input.Bailed ? 0 : input.DeckPitch * (pushing && pushingLeft ? 1 - grounded : 1);
+            var rightPitch = input.Bailed ? 0 : input.DeckPitch * (pushing && !pushingLeft ? 1 - grounded : 1);
+            leftToeDir = PitchFoot(leftToeDir, travel, up, leftPitch);
+            rightToeDir = PitchFoot(rightToeDir, travel, up, rightPitch);
+            var leftFootUp = up * Math.Cos(leftPitch) - travel * Math.Sin(leftPitch);
+            var rightFootUp = up * Math.Cos(rightPitch) - travel * Math.Sin(rightPitch);
             if (SkateVector.Dot(leftAnkle - floor, up) < -1e-8 || SkateVector.Dot(rightAnkle - floor, up) < -1e-8)
             { error = "Skate rider feet are below the ground plane."; return false; }
 
@@ -618,8 +633,8 @@ namespace Shortcut.RustMod
             if (headForward.LengthSquared < 0.5) headForward = forward;
             // The heel lifts on the foot that pushes: the leading one in a mongo push, else the back one.
             var heelLeft = mongo ? !backIsLeft : backIsLeft;
-            var leftToe = Toe(leftAnkle, leftToeDir, up, rig.FootLength, heelLeft ? heel : 0);
-            var rightToe = Toe(rightAnkle, rightToeDir, up, rig.FootLength, heelLeft ? 0 : heel);
+            var leftToe = Toe(leftAnkle, leftToeDir, leftFootUp, rig.FootLength, heelLeft ? heel : 0);
+            var rightToe = Toe(rightAnkle, rightToeDir, rightFootUp, rig.FootLength, heelLeft ? 0 : heel);
             pose = new SkateRiderPose(pelvis, leftHip, rightHip, leftKnee, rightKnee, leftAnkle, rightAnkle,
                 leftToe, rightToe,
                 chest, neck, head, leftShoulder, rightShoulder, leftElbow, rightElbow, leftHand, rightHand,
@@ -633,7 +648,7 @@ namespace Shortcut.RustMod
 
         private const double RidingPelvisYaw = 12, RidingChestYaw = 28, RidingLeadToe = 25, RidingBackToe = 5;
         private const double PushPelvisYaw = 55, PushChestYaw = 70, PushLeadToe = 60;
-        private const double AirYaw = 0.35, PushWeight = 0.28, PushSide = 0.03, PushDip = 0.06, PushLean = 0.24, PushSwing = 0.28;
+        private const double PushWeight = 0.28, PushSide = 0.03, PushDip = 0.06, PushLean = 0.24, PushSwing = 0.28;
         // The pushing foot comes down PushPlant ahead of the board's middle and leaves it PushSweep
         // behind: the stroke, over which the foot is on the ground (push phase PushDown..PushUp).
         public const double PushPlant = 0.18, PushSweep = 0.44, PushDown = 0.25, PushUp = 0.6;
@@ -877,6 +892,16 @@ namespace Shortcut.RustMod
         private static double PushTurn(double phase)
         { return phase < 0.2 ? Smooth(phase / 0.2) : phase < 0.75 ? 1 : Smooth((1 - phase) / 0.25); }
 
+        public static double PushContact(double phase)
+        {
+            if (!Finite(phase) || phase < 0 || phase > 1) return 0;
+            return phase <= PushDown ? Smooth(phase / PushDown) : phase <= PushUp ? 1 :
+                phase <= 0.85 ? 1 - Smooth((phase - PushUp) / 0.25) : 0;
+        }
+
+        private static SkateVector PitchFoot(SkateVector direction, SkateVector travel, SkateVector up, double pitch)
+        { return direction + (travel * (Math.Cos(pitch) - 1) + up * Math.Sin(pitch)) * SkateVector.Dot(direction, travel); }
+
         private static double GrabPitch(SkateVector pelvis, SkateVector carved, SkateVector ahead, SkateVector target,
                                         SkateRiderRig rig, double roll, bool backIsLeft, double initial)
         {
@@ -932,17 +957,33 @@ namespace Shortcut.RustMod
         // ground PushPlant ahead of origin, back along the ground to PushSweep behind it, up and
         // back to its spot.
         private static SkateVector PushFoot(SkateVector rest, SkateVector origin, SkateVector travel, SkateVector side,
-                                           SkateVector up, double phase, double groundDrop, out double grounded, out double heel)
+                                           SkateVector up, double phase, double groundDrop, double cycleDistance, double footLength, out double grounded, out double heel)
         {
             var deck = rest + up * SkatePose.FootLift;
             var front = origin + travel * PushPlant + side * SkatePose.PushFootSide + up * (SkatePose.FootLift - groundDrop);
             var back = origin - travel * PushSweep + side * SkatePose.PushFootSide + up * (SkatePose.FootLift - groundDrop + PushHeel);
             var lifted = back + up * (0.1 + groundDrop * 0.5) + travel * 0.06;
             heel = 0;
-            if (phase <= PushDown) { grounded = Smooth(phase / PushDown); return Blend(deck, front, grounded); }
-            if (phase <= PushUp) { grounded = 1; heel = PushHeel * (phase - PushDown) / (PushUp - PushDown); return Blend(front, back, (phase - PushDown) / (PushUp - PushDown)); }
-            if (phase <= 0.85) { grounded = 1 - Smooth((phase - PushUp) / 0.25); heel = PushHeel * grounded; return Blend(back, lifted, 1 - grounded); }
+            grounded = PushContact(phase);
+            if (phase <= PushDown) return SwingFoot(deck, front, travel, phase / PushDown, cycleDistance * PushDown, footLength, true);
+            // Contact runs linearly by actual board distance in the client drive. Remapping this
+            // part would slide a planted foot through the world, even with unchanged endpoints.
+            if (phase <= PushUp) { heel = PushHeel * (phase - PushDown) / (PushUp - PushDown); return Blend(front, back, (phase - PushDown) / (PushUp - PushDown)); }
+            if (phase <= 0.85) { heel = PushHeel * grounded; return SwingFoot(back, lifted, travel, (phase - PushUp) / 0.25, cycleDistance * 0.25, footLength, false); }
             grounded = 0; return Blend(lifted, deck, Smooth((phase - 0.85) / 0.15));
+        }
+
+        private static SkateVector SwingFoot(SkateVector from, SkateVector to, SkateVector travel, double t, double distance, double footLength, bool entering)
+        {
+            // Match the ground contact's world velocity only near its endpoint. A full-segment
+            // tangent grows with speed and can swing beyond the legs' reach; its influence is
+            // instead limited by the measured foot length, with no change to the contact stroke.
+            var width = Math.Min(1, footLength / Math.Max(0.000001, distance));
+            var q = entering ? (t - (1 - width)) / width : t / width;
+            if (q <= 0 || q >= 1) return Blend(from, to, Smooth(t));
+            var q2 = q * q; var q3 = q2 * q;
+            var tangent = -distance * width;
+            return Blend(from, to, Smooth(t)) + travel * (tangent * (entering ? q3 - q2 : q3 - 2 * q2 + q));
         }
 
         private static SkateVector Toe(SkateVector ankle, SkateVector direction, SkateVector up, double length, double heel)
@@ -1082,6 +1123,7 @@ namespace Shortcut.RustMod
             (input.Stance == SkateStance.Regular || input.Stance == SkateStance.Goofy) &&
             Finite(input.Speed) && input.Speed >= 0 && input.Speed <= SkateMotion.MaximumGroundSpeed &&
             Finite(input.LeanDegrees) && Math.Abs(input.LeanDegrees) <= SkatePose.MaximumLean &&
+            Finite(input.PushSeconds) && input.PushSeconds > 0 && input.PushSeconds <= 10 &&
             Fraction(input.Crouch) && Fraction(input.PushPhase) && Finite(input.FlipDegrees) &&
             Math.Abs(input.FlipDegrees) <= 3600000 && Finite(input.LookYawDegrees) && Math.Abs(input.LookYawDegrees) <= 3600000 &&
             Finite(input.DeckOffset) && Math.Abs(input.DeckOffset) <= MaximumMeasurement &&
