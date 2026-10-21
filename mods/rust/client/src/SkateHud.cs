@@ -71,11 +71,17 @@ public static class SkateHud
         if (points > BestCombo) BestCombo = points;
     }
 
+    // Why a trick asked for did not happen as asked: said under the middle for a moment.
+    private const float NoticeSeconds = 1.6f;
+    private static string notice = "";
+    private static float noticeAt = -99f;
+    public static void Notice(string text) { notice = text ?? ""; noticeAt = Time.realtimeSinceStartup; }
+
     public static void Bailed(long lost) { line.Clear(); lostPoints = lost; bailAt = Time.realtimeSinceStartup; popAt = -99f; }
 
     public static void Clear()
     {
-        line.Clear(); popAt = bankAt = bailAt = countAt = -99f;
+        line.Clear(); popAt = bankAt = bailAt = countAt = noticeAt = -99f;
         // Getting on is a moment to look for the game's font again: at the first look, while the
         // game was still loading, it may not have been there, and one that was can be gone.
         if (!ReferenceEquals(font, null) && font == null) { font = null; styles.Clear(); }
@@ -272,7 +278,7 @@ public static class SkateHud
         var now = Time.realtimeSinceStartup;
         var v = Staged ? Stage : Sample(now);
         var onFoot = !Scenarios.Active && !v.Riding && (!SkateRig.Ready || now - SkateRig.AwakeAt < 12f || SkateKeys.Help);
-        var recent = now - popAt < PopSeconds || now - bankAt < BankSeconds || now - bailAt < BailSeconds;
+        var recent = now - popAt < PopSeconds || now - bankAt < BankSeconds || now - bailAt < BailSeconds || now - noticeAt < NoticeSeconds;
         var pieces = v.Riding ? "" : SkatePieces.Line(now);
         if (!Scenarios.Active && !v.Riding && !recent && !onFoot && pieces == "") return;
         float w = Screen.width, h = Screen.height;
@@ -303,6 +309,7 @@ public static class SkateHud
             if (v.Cap < SkateRide.MaxSpeed - 0.25f && capSince < 3f)
                 Text(40f * k, h - 336f * k, w - 80f * k, "The server put the board back; held to " + (v.Cap * 3.6f).ToString("F0") + " km/h for now", (int)(18 * k), Amber, 0, capSince > 2.5f ? (3f - capSince) / 0.5f : 1f);
             Combo(v, now, w, h, k);
+            if (v.Hints && v.Pad && SkateKeys.Help) { Tricks(w, k); return; }
             if (v.Hints) Hints(v, w, h, k);
         }
         Middle(v, now, w, h, k);
@@ -393,6 +400,9 @@ public static class SkateHud
     private static void Middle(Shown v, float now, float w, float h, float k)
     {
         var y = h * 0.24f;
+        var told = now - noticeAt;
+        if (told < NoticeSeconds && notice != "")
+            Text(0f, y + 110f * k, w, notice, (int)(24 * k), Amber, 1, told > NoticeSeconds - 0.4f ? (NoticeSeconds - told) / 0.4f : 1f);
         var bail = now - bailAt;
         if (bail < BailSeconds)
         {
@@ -446,6 +456,8 @@ public static class SkateHud
         {
             Text(x, y, w - 80f * k, Key("LEFT STICK") + " steer, hold to spin in the air   " + Key("A / X") + " push   " + Key("B") + " brake   " + Key("LT / RT") + " grab, with the right stick: other grabs   " + Key("Y") + " get off   " + Key("R3") + " camera", size, Ink, 0, 1f);
             Text(x, y + 28f * k, w - 80f * k, Key("RIGHT STICK") + "  back, then flick forward: ollie   to a diagonal: kickflip / heelflip   rolled round to a side: shove-it   part way back or forward: manual", size, Ink, 0, 1f);
+            Text(x, y + 56f * k, w - 80f * k, "Hold " + Key("BACK") + " on the board for every trick and grab", (int)(15 * k), Dim, 0, 1f);
+            return;
         }
         else
         {
@@ -453,6 +465,59 @@ public static class SkateHud
             Text(x, y + 28f * k, w - 80f * k, "In the air: tap " + Key("W") + " kickflip   tap " + Key("S") + " heelflip   " + Key("A / D") + " spin   hold " + Key("CTRL") + " grab", size, Ink, 0, 1f);
         }
         Text(x, y + 56f * k, w - 80f * k, v.Pad ? "Hold " + Key("BACK") + " on the board to see these controls again" : "Hold " + Key("H") + " to see these controls again", (int)(15 * k), Dim, 0, 1f);
+    }
+
+    // Every controller trick, while Back is held on the board. Sides are those of a regular rider
+    // going nose first; goofy, or rolling tail first, they are the other way round.
+    private static readonly string[] PadTricks = {
+        "@RIGHT STICK ON THE GROUND   (sides for regular going nose first; goofy or fakie: mirrored)",
+        "back, flick forward: #Ollie   forward, flick back: #Nollie   back, flick to the forward right / left: #Kickflip / #Heelflip",
+        "back, roll a quarter round to the right / left: #Pop Shove-it / #Frontside Pop Shove-it   half round: #360 Shove-it",
+        "hold back-left / back-right, flick across to the opposite front: #Varial Kickflip / #Varial Heelflip",
+        "from the left / right, roll round to the back, flick to the opposite front: #360 Flip / #Laser Flip",
+        "back, roll 45-60 degrees to the right / left, flick straight forward: #Hardflip / #Inward Heelflip",
+        "part way back / forward for a moment: #Manual / #Nose Manual, flick out of it to pop",
+        "@IN THE AIR",
+        "right stick flicked to the right / left: #Late Kickflip / #Late Heelflip, again for another flip",
+        "left stick held to a side: #spin, with a shove the same way a #Bigspin   left stick round a full circle: #Body Varial",
+        "RT: #Backside   up #Seatbelt   down #Nose   left #Melon   right #Method        LT: #Frontside   up #Tail   down #Crail   right #Stalefish",
+        "LT + RT: #Double   up #Nosebone   down #Tailbone        no flip during a grab; let the stick come back to the middle after one",
+        "@ON THE GROUND",
+        "#A push   #X mongo push   #B brake, with the left stick to a side a #Powerslide   left stick half round just after landing: #Revert",
+        "A tapped with the right stick held back, then the flick: #No Comply   #LT+A Boneless   #LT+X / RT+X Fastplant   #RT+A Beanplant",
+        "LT or RT held down a transition, let go at the bottom: pump   #Y get off   #R3 camera",
+        "@EDGES",
+        "come down on an edge from a pop: grind; right stick back / forward: #5-0 / #Nosegrind, across on the tail / nose: #Bluntslide / #Nosebluntslide",
+        "square onto an edge: stall; #LB / #RB held: frontside / backside #Handplant   flick to pop out",
+    };
+
+    private static void Tricks(float w, float k)
+    {
+        float x = 40f * k, y = 96f * k, step = 25f * k, width = Math.Min(w - 80f * k, 1320f * k);
+        Box(x - 14f * k, y - 10f * k, width + 28f * k, (PadTricks.Length * 25f + 18f) * k, Fade(Dark, 0.72f));
+        for (var i = 0; i < PadTricks.Length; i++, y += step)
+        {
+            var t = PadTricks[i];
+            if (t.StartsWith("@")) { Text(x, y + 4f * k, width, t.Substring(1), (int)(15 * k), Dim, 0, 1f); continue; }
+            Text(x, y, width, Marked(t), (int)(16 * k), Ink, 0, 1f);
+        }
+    }
+
+    // "#Kickflip" as the trick's name in amber: up to the next space-separated word that does not
+    // start with a capital, or the next separator.
+    private static string Marked(string t)
+    {
+        var b = new StringBuilder(t.Length + 64); var open = false;
+        for (var i = 0; i < t.Length; i++)
+        {
+            var c = t[i];
+            if (c == '#') { if (open) b.Append(End); b.Append(AmberTag); open = true; continue; }
+            if (open && (c == ':' || c == ',' || c == '/' || (c == ' ' && (i + 1 >= t.Length || !(char.IsUpper(t[i + 1]) || char.IsDigit(t[i + 1]) || t[i + 1] == '+')))))
+            { b.Append(End); open = false; }
+            b.Append(c);
+        }
+        if (open) b.Append(End);
+        return b.ToString();
     }
 
     private static string Key(string name) { return AmberTag + name + End; }
