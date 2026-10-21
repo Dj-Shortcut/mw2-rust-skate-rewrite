@@ -164,7 +164,7 @@ public static class SkateBuildWheel
             GUI.Label(new Rect(cx - hole / 2 + 10, bodyY, hole - 20, Math.Max(74, bodyText.Height)), description, body);
             var priceY = Math.Max(cy + 79, bodyY + bodyText.Height + 8);
             GUI.Label(new Rect(cx - hole / 2, priceY, hole, 28), "10 WOOD", footer);
-            var controls = footerText.Get("Release right click / Back to choose   |   A / Enter: choose\nEsc / B: Rust building   |   Shift + right click: Rust wheel", footer, diameter);
+            var controls = footerText.Get("Arrows / D-pad: select   |   Release right click / Back, A / Enter: choose\nEsc / B: Rust building   |   Shift + right click: Rust wheel", footer, diameter);
             GUI.Label(new Rect(cx - diameter / 2, Math.Max(cy + diameter / 2 + 14, priceY + 42), diameter, Math.Max(66, footerText.Height)), controls, footer);
             if (dot == null)
             {

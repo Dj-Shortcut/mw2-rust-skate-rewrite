@@ -289,10 +289,13 @@ public static class SkateHeld
     private static Planner pausedPlanner;
     private static bool plannerWasEnabled;
     private static object plannerPlayer;
+    // Wheel/builder previews are a separate owner from the holstered riding models.
+    private static readonly System.Collections.Generic.List<UnityEngine.GameObject> plannerGuides = new System.Collections.Generic.List<UnityEngine.GameObject>();
     public static bool PausePlanner(object player, out string why)
     {
         why = "";
-        if (pausedPlanner != null && ReferenceEquals(plannerPlayer, player) && HasPlanner(player)) return true;
+        if (pausedPlanner != null && ReferenceEquals(plannerPlayer, player) && HasPlanner(player))
+        { Guides(pausedPlanner, false, plannerGuides, true); return true; }
         if (pausedPlanner != null) ResumePlanner();
         var root = player as UnityEngine.Component;
         if (root == null) { why = "The local player is unavailable."; return false; }
@@ -313,6 +316,7 @@ public static class SkateHeld
         pausedPlanner = found;
         plannerPlayer = player;
         found.enabled = false;
+        Guides(found, false, plannerGuides, true);
         Out.Say("PIECES ordinary building plan paused on local hand");
         return true;
     }
@@ -344,6 +348,16 @@ public static class SkateHeld
         var planner = pausedPlanner;
         pausedPlanner = null;
         plannerPlayer = null;
+        for (var i = plannerGuides.Count - 1; i >= 0; i--)
+        {
+            try
+            {
+                var go = plannerGuides[i];
+                if (go != null && !go.activeSelf) go.SetActive(true);
+                plannerGuides.RemoveAt(i);
+            }
+            catch (Exception e) { Out.Say("PIECES building preview restore unavailable: " + e.GetType().Name); }
+        }
         try { if (planner != null && plannerWasEnabled && !planner.enabled) planner.enabled = true; }
         catch (Exception e) { Out.Say("PIECES building plan restore unavailable: " + e.GetType().Name); }
         plannerWasEnabled = false;
@@ -459,6 +473,9 @@ public static class SkateHeld
     // comes back with it (Show). The first plan of a type logs those bounded local references;
     // normal holstering does not survey every renderer in the scene.
     private static string Guides(UnityEngine.Component plan, bool log)
+    { return Guides(plan, log, hidden, false); }
+
+    private static string Guides(UnityEngine.Component plan, bool log, System.Collections.Generic.List<UnityEngine.GameObject> owned, bool plannerReferences)
     {
         var names = ""; var line = ""; var n = 0;
         const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly;
@@ -469,7 +486,10 @@ public static class SkateHeld
                 // Fields and properties of a drawn object's type only: a game property of another
                 // type could do work in its getter, and nothing of the plan is to be set off here.
                 var members = new System.Collections.Generic.List<MemberInfo>();
-                foreach (var p in t.GetProperties(flags)) if (p.GetIndexParameters().Length == 0 && Drawn(p.PropertyType)) members.Add(p);
+                foreach (var p in t.GetProperties(flags))
+                    if (p.GetIndexParameters().Length == 0 && (Drawn(p.PropertyType) ||
+                        (plannerReferences && t == typeof(Planner) && p.PropertyType == typeof(Il2CppSystem.Object) &&
+                         t.GetField("NativeFieldInfoPtr_" + p.Name, BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Static) != null))) members.Add(p);
                 foreach (var f in t.GetFields(flags)) if (Drawn(f.FieldType)) members.Add(f);
                 foreach (var p in members)
                 {
@@ -477,6 +497,14 @@ public static class SkateHeld
                     object v;
                     try { v = p is PropertyInfo ? ((PropertyInfo)p).GetValue(plan, null) : ((FieldInfo)p).GetValue(plan); } catch (Exception) { continue; }
                     var o = v as UnityEngine.Object;
+                    // This build erases Planner's scene references to Object. Only its field-backed
+                    // getters are admitted above; TryCast checks the live IL2CPP class, not a guessed ABI.
+                    if (plannerReferences && ReferenceEquals(o, null))
+                    {
+                        var native = v as Il2CppSystem.Object;
+                        if (!ReferenceEquals(native, null))
+                        { try { o = native.TryCast<UnityEngine.GameObject>(); if (o == null) o = native.TryCast<UnityEngine.Component>(); } catch (Exception) { continue; } }
+                    }
                     if (ReferenceEquals(o, null) || o == null) continue;
                     var go = o as UnityEngine.GameObject;
                     var part = o as UnityEngine.Component;
@@ -486,10 +514,15 @@ public static class SkateHeld
                     if (ReferenceEquals(go, null) || go == null) { line += " " + p.Name + ":" + typeName + "=" + o.name; continue; }
                     var outside = !go.transform.IsChildOf(plan.transform);
                     line += " " + p.Name + ":" + typeName + "=" + go.name + (go.activeInHierarchy ? "" : ",off") + (outside ? ",outside" : "");
-                    if (outside && go.activeSelf && GuideLike(go.name))
+                    if (outside && (!plannerReferences || !plan.transform.IsChildOf(go.transform)) && go.activeSelf && GuideLike(go.name))
                     {
+                        if (plannerReferences)
+                        {
+                            // Record before changing it, so even a throwing setter can be restored.
+                            if (!owned.Contains(go)) owned.Add(go);
+                        }
                         go.SetActive(false);
-                        hidden.Add(go);
+                        if (!plannerReferences) owned.Add(go);
                         names += " and its " + go.name;
                     }
                 }

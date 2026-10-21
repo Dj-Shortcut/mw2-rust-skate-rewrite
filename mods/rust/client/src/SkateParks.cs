@@ -199,6 +199,66 @@ public static class SkateParks
         public readonly List<int> Ramp = new List<int>();
         public readonly List<int> Coping = new List<int>();
         public readonly List<Mesh> Meshes = new List<Mesh>();
+        public readonly List<SoundContact> Sounds = new List<SoundContact>();
+        public bool SoundFlat; public float SoundFlatFrom, SoundFlatTo;
+    }
+    private sealed class SoundContact
+    {
+        public int Id; public Collider Collider; public Placed Owner; public SkateParkMaterial Material;
+    }
+    private static readonly Dictionary<int, SoundContact> soundContacts = new Dictionary<int, SoundContact>();
+
+    // Only captured colliders of a currently recognized, live owned overlay have an authored substrate.
+    public static bool TrySoundMaterial(Collider collider, Vector3 point, out SkateParkMaterial material)
+    {
+        material = SkateParkMaterial.Stone;
+        try
+        {
+            if (collider == null || !collider.enabled) return false;
+            SoundContact contact;
+            if (!soundContacts.TryGetValue(collider.GetInstanceID(), out contact) || contact.Collider == null ||
+                contact.Collider != collider || contact.Owner.Root == null || !contact.Owner.Root.activeInHierarchy ||
+                !collider.transform.IsChildOf(contact.Owner.Root.transform)) return false;
+            var substrate = contact.Material;
+            if (substrate == SkateParkMaterial.Wood && contact.Owner.SoundFlat)
+            {
+                var forward = contact.Owner.Root.transform.InverseTransformPoint(point).z;
+                if (float.IsNaN(forward) || float.IsInfinity(forward)) return false;
+                if (forward >= contact.Owner.SoundFlatFrom && forward <= contact.Owner.SoundFlatTo) substrate = SkateParkMaterial.Stone;
+            }
+            material = substrate;
+            return true;
+        }
+        catch (Exception) { return false; }
+    }
+
+    private static void ReadSoundMaterials(Placed p)
+    {
+        try
+        {
+            // The authored ledges are concrete; the other riding panels are plywood. Coping is metal.
+            p.SoundFlat = p.Kind == Kind.Halfpipe || p.Kind == Kind.MegaHalfpipe;
+            if (p.SoundFlat)
+            {
+                // The same rendered profile identifies the concrete flat between the plywood transitions.
+                var profile = TransitionProfile(p.Kind); var low = float.PositiveInfinity;
+                foreach (var point in profile) low = Math.Min(low, point.y);
+                p.SoundFlatFrom = float.PositiveInfinity; p.SoundFlatTo = float.NegativeInfinity;
+                foreach (var point in profile) if (Math.Abs(point.y - low) <= 0.00001f)
+                { p.SoundFlatFrom = Math.Min(p.SoundFlatFrom, point.x); p.SoundFlatTo = Math.Max(p.SoundFlatTo, point.x); }
+                if (!(p.SoundFlatFrom < p.SoundFlatTo)) return;
+            }
+            SkateParkBox ledge;
+            var riding = SkateParkLayout.TryLedgeBody((SkateParkKind)(int)p.Kind, out ledge) ? SkateParkMaterial.Stone : SkateParkMaterial.Wood;
+            foreach (var collider in p.Root.GetComponentsInChildren<Collider>(true))
+            {
+                if (collider == null) continue;
+                var id = collider.GetInstanceID();
+                p.Sounds.Add(new SoundContact { Id = id, Collider = collider, Owner = p,
+                    Material = p.Coping.Contains(id) ? SkateParkMaterial.Metal : riding });
+            }
+        }
+        catch (Exception) { p.Sounds.Clear(); } // Optional audio identity must not block park recognition.
     }
 
     public static void Frame(float now)
@@ -669,6 +729,7 @@ public static class SkateParks
             if (p.Root == null) return false;
             p.Root.SetActive(false); p.ColliderCount = colliders;
             if (IsTransition(kind)) ReadRamp(p, p.Root);
+            ReadSoundMaterials(p); // Before the unclassified seam/entry bridges are added.
             if (kind == Kind.Bank || kind == Kind.Kicker) p.ColliderCount += Entry(p.Root, 0f, -1f, p.Meshes);
             if (IsQuarter(kind)) p.ColliderCount += Entry(p.Root, (float)QuarterStart, -1f, p.Meshes);
             if (kind == Kind.HalfWallKicker) p.ColliderCount += Entry(p.Root, (float)KickerRunIn, -1f, p.Meshes);
@@ -715,6 +776,7 @@ public static class SkateParks
         foreach (var id in p.Coping) CopingIds.Add(id);
         Colliders += p.ColliderCount;
         placed.Add(p);
+        foreach (var contact in p.Sounds) soundContacts[contact.Id] = contact;
         foreach (var old in displaced) { placed.Remove(old); Remove(old); }
         BackingIds.Clear(); BackingIds.UnionWith(nextBacking); backingVersion++;
         try { Isolate(SkateRide.On, SkateRig.Body, Time.realtimeSinceStartup); }
@@ -1623,6 +1685,12 @@ public static class SkateParks
 
     private static void Remove(Placed p)
     {
+        foreach (var contact in p.Sounds)
+        {
+            SoundContact current;
+            if (soundContacts.TryGetValue(contact.Id, out current) && ReferenceEquals(current, contact)) soundContacts.Remove(contact.Id);
+        }
+        p.Sounds.Clear();
         if (p.Root != null) p.Root.SetActive(false);
         Colliders -= p.ColliderCount; p.ColliderCount = 0;
         foreach (var id in p.Ramp) { RampIds.Remove(id); CopingIds.Remove(id); }

@@ -19,9 +19,17 @@ C# source/generated waveforms follow Apache-2.0; the separate authored WAV pack 
 The client keeps its current playback contract: ground roll pitch 0.75–1.30, wood ×0.9;
 metal/deck pitch 0.90–1.25, wood layer 0.85–1.15. Speed changes gain and the pitch-scaled
 grain/rattle cadence. Wood layers Hollow under Rolling; hard ground uses Rolling alone.
-Surface selection is the existing coarse layer raycast, not native material recognition.
+Surface selection uses the nearest existing contact ray and exact captured colliders of recognized
+park overlays: authored concrete ledges use the dry hard-ground roll, plywood riding panels add
+Hollow, and owned coping is metal and uses the dry roll. Halfpipe/MEGA flat boundaries come from
+the same rendered profile, so their central concrete flat stays dry while the wooden transitions resonate.
+This is a coarse riding-substrate contract,
+not per-triangle or native material recognition. Unclassified entry bridges and unrelated default-layer
+objects use hard ground; a default-layer hit alone never implies wood. Destroyed, disabled, reparented
+or removed owned colliders lose the lookup. Construction/terrain fallbacks and the existing 1 m reach remain.
 Other Foley events, dirt and airborne wheel loops retain their synthesis and playback.
-No `SkateSfx`, counters, crossfades, clip ownership, release pins or server changes.
+Counters, crossfades, clip ownership, release pins and the server are unchanged. Native contact identity,
+material transitions and heard quality still require in-game verification.
 `SkateSound` IDs 0–6, both `TryCreate` overloads and default durations remain stable.
 Accept 8,000–192,000 Hz, 0.02–10 seconds and any uint seed; length is round(rate × seconds),
 away from zero. Invalid requests return false/null samples with an English error.
