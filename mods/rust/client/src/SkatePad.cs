@@ -4,7 +4,9 @@
 // changes, each with the reader's clock. The right stick goes through the flick module change by
 // change, with the time it spent where it was, so a flick between two frames is not lost.
 // While a trigger is pulled in the air the right stick belongs to the grab: the flick module is
-// told that it rests, or picking a grab would also flip the board.
+// told that it rests, or picking a grab would also flip the board. A flick there all the same (out
+// to the rim and back to the middle within a flick's time, the trigger still pulled) is a flip
+// asked for, and the screen says there is none during a grab.
 using System;
 using System.IO.MemoryMappedFiles;
 using System.Threading;
@@ -44,6 +46,9 @@ public static class SkatePad
     private static long clock, beat;
     private static float nextOpen, beatAt;
     private static bool primed, failed, said, fed, rightSuspended, wasGrabbing;
+    // The right stick in a grab: 0 not yet seen inside the rim this grab, 1 inside, 2 out at the rim since `grabRimAt`.
+    private static int grabStick;
+    private static long grabRimAt;
 
     private static void Say(string m) { Out.Say("PAD " + m); }
 
@@ -109,7 +114,7 @@ public static class SkatePad
 
     private static void Lost()
     {
-        primed = rightSuspended = wasGrabbing = false; LeftSweep = leftAngle = 0f; leftOnRim = false; sweepFromUs = 0;
+        primed = rightSuspended = wasGrabbing = false; grabStick = 0; LeftSweep = leftAngle = 0f; leftOnRim = false; sweepFromUs = 0;
         Shared = false; Buttons = 0; LeftX = LeftY = RightX = RightY = LeftTrigger = RightTrigger = 0f;
         poppedCount = 0; BodyVarialDegrees = 0f; Charging = Manual = NoseManual = false; Charge = 0f; pressed = 0; flick = default(SkateFlickState);
     }
@@ -153,16 +158,29 @@ public static class SkatePad
     private static void Advance(long us)
     {
         SkatePadLog.Clock(us);
+        var from = clock;
         var seconds = (us - clock) / 1000000.0;
         clock = us;
         if (seconds <= 0) return;
         if (seconds > MostCatchUp) seconds = MostCatchUp;
         var air = SkateRide.Mode == RideMode.Air;
         var grabbing = air && (LeftTrigger > Pulled || RightTrigger > Pulled);
+        var rightFar = RightX * RightX + RightY * RightY;
         // The right stick picked the grab; let go of the trigger with it still out, it is no flick:
         // it must come back to the middle before it moves the board again.
-        if (wasGrabbing && !grabbing && RightX * RightX + RightY * RightY > SkateFlick.RearmZone * SkateFlick.RearmZone) rightSuspended = true;
+        if (wasGrabbing && !grabbing && rightFar > SkateFlick.RearmZone * SkateFlick.RearmZone) rightSuspended = true;
         wasGrabbing = grabbing;
+        // In the grab the flick module never sees the stick, so a flip asked for there is told apart
+        // here: from inside the rim out to where a flick fires and back to the middle within a flick's
+        // time, the trigger still pulled. A grab picked with the stick stays out there, and is none.
+        if (!grabbing) grabStick = 0;
+        else if (grabStick == 0) { if (rightFar < SkateFlick.FireReach * SkateFlick.FireReach) grabStick = 1; }
+        else if (grabStick == 1) { if (rightFar >= SkateFlick.FireReach * SkateFlick.FireReach) { grabStick = 2; grabRimAt = from; } }
+        else if (rightFar <= SkateFlick.DeadZone * SkateFlick.DeadZone)
+        {
+            grabStick = 1;
+            if ((from - grabRimAt) / 1000000.0 <= SkateFlick.FlickSeconds) { SkateHud.Notice("No flip during a grab"); Say("flick in a grab: no flip"); }
+        }
         // The left stick goes along for the body varial (a full circle in the air), and whether this
         // flight was popped: only then does a right-stick composition in the air count as a late flip.
         // The flick module's sides are those of a rider whose heels are on the stick's left; in the

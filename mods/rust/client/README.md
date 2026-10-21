@@ -131,7 +131,9 @@ deck the other way round under the feet, as a shove does. Unverified in game.
 | both | at rest, up, down | Double, nosebone, tailbone |
 
 While a trigger is held in the air the right stick picks the grab and does not flip the board; a flip
-asked for then says "No flip during a grab". Let go of the trigger with the right stick still out
+asked for then says "No flip during a grab" (on the controller: the stick flicked out to the rim and
+back to the middle within 0.3 s with the trigger still pulled, which is how it is told from picking
+a grab; on the keyboard: `W` or `S` tapped while `Ctrl` or `C` is held). Let go of the trigger with the right stick still out
 (a melon, a method), and the stick must come back to the middle before it moves the board again:
 letting go of a grab is no late flip.
 The steering turns the board at a rate; the view does not steer it.
