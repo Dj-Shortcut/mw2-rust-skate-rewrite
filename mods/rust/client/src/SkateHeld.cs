@@ -365,7 +365,7 @@ public static class SkateHeld
         {
             const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
             if (!selectLooked) LookForBelt(player);
-            if (selectSlot == null) return Hide(player, out how);
+            if (selectSlot == null) { SurveyBelt(); return Hide(player, out how); }
             var field = selectMember as FieldInfo;
             var owner = field != null ? field.GetValue(player) : ((PropertyInfo)selectMember).GetValue(player, null);
             if (owner == null) { how = selectOwner + " is empty"; return false; }
@@ -422,10 +422,11 @@ public static class SkateHeld
             var go = c.gameObject;
             if (go == null || !go.activeSelf) continue;
             var kind = c.GetType().Name;
-            if (probed.Add(kind)) Out.Say("HELD switching off a " + kind + " (" + go.name + ") while riding");
+            var first = probed.Add(kind);
+            if (first) Out.Say("HELD switching off a " + kind + " (" + go.name + ") while riding");
             go.SetActive(false);
             hidden.Add(go);
-            names += " " + kind + " (" + go.name + ")";
+            names += " " + kind + " (" + go.name + ")" + Guides(c, first);
             off++;
         }
         if (off == 0)
@@ -455,6 +456,197 @@ public static class SkateHeld
         for (; t != null && t != typeof(object); t = t.BaseType) if (t.Name == name) return true;
         return false;
     }
+
+    // A building plan switched off on the hand bone still leaves its red preview standing in front
+    // of the rider (the Shadow test of 18 October): that preview is not under the plan, or it would
+    // have gone off with it. So what the plan refers to is read by shape, with its member names
+    // obfuscated: every member whose type is a scene object (a GameObject, or a component) and
+    // whose object is not under the plan. One named like a guide is switched off with the plan and
+    // comes back with it (Show). The first plan of a type logs all of them, and what is drawn near
+    // the rider under a guide-like name, so that the next log says where the preview lives when
+    // no member of the plan names it.
+    private static string Guides(UnityEngine.Component plan, bool log)
+    {
+        var names = ""; var line = ""; var n = 0;
+        const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly;
+        try
+        {
+            for (var t = plan.GetType(); t != null && t != typeof(object) && n < 24; t = t.BaseType)
+            {
+                // Fields and properties of a drawn object's type only: a game property of another
+                // type could do work in its getter, and nothing of the plan is to be set off here.
+                var members = new System.Collections.Generic.List<MemberInfo>();
+                foreach (var p in t.GetProperties(flags)) if (p.GetIndexParameters().Length == 0 && Drawn(p.PropertyType)) members.Add(p);
+                foreach (var f in t.GetFields(flags)) if (Drawn(f.FieldType)) members.Add(f);
+                foreach (var p in members)
+                {
+                    if (n >= 24) break;
+                    object v;
+                    try { v = p is PropertyInfo ? ((PropertyInfo)p).GetValue(plan, null) : ((FieldInfo)p).GetValue(plan); } catch (Exception) { continue; }
+                    var o = v as UnityEngine.Object;
+                    if (ReferenceEquals(o, null) || o == null) continue;
+                    var go = o as UnityEngine.GameObject;
+                    var part = o as UnityEngine.Component;
+                    if (ReferenceEquals(go, null) && !ReferenceEquals(part, null) && part != null) go = part.gameObject;
+                    n++;
+                    var typeName = p is PropertyInfo ? ((PropertyInfo)p).PropertyType.Name : ((FieldInfo)p).FieldType.Name;
+                    if (ReferenceEquals(go, null) || go == null) { line += " " + p.Name + ":" + typeName + "=" + o.name; continue; }
+                    var outside = !go.transform.IsChildOf(plan.transform);
+                    line += " " + p.Name + ":" + typeName + "=" + go.name + (go.activeInHierarchy ? "" : ",off") + (outside ? ",outside" : "");
+                    if (outside && go.activeSelf && GuideLike(go.name))
+                    {
+                        go.SetActive(false);
+                        hidden.Add(go);
+                        names += " and its " + go.name;
+                    }
+                }
+            }
+            if (log) Out.Say("HELD the " + plan.GetType().Name + " refers to" + (line == "" ? " no scene object" : ":" + Short(line, 1200)));
+        }
+        catch (Exception e) { if (log) Out.Say("HELD reading the " + plan.GetType().Name + " threw: " + e.GetType().Name + ": " + e.Message); }
+        if (log) NearbyGuides(plan.transform.position);
+        return names;
+    }
+
+    private static bool Drawn(Type t)
+    {
+        return t == typeof(UnityEngine.GameObject) || typeof(UnityEngine.Transform).IsAssignableFrom(t) || typeof(UnityEngine.Renderer).IsAssignableFrom(t);
+    }
+
+    private static bool GuideLike(string name)
+    {
+        return name.IndexOf("guide", StringComparison.OrdinalIgnoreCase) >= 0 || name.IndexOf("preview", StringComparison.OrdinalIgnoreCase) >= 0 ||
+            name.IndexOf("ghost", StringComparison.OrdinalIgnoreCase) >= 0 || name.IndexOf("placeholder", StringComparison.OrdinalIgnoreCase) >= 0;
+    }
+
+    // What is drawn within 40 m of the rider under a guide-like name: once, for the log.
+    private static void NearbyGuides(UnityEngine.Vector3 at)
+    {
+        try
+        {
+            var all = UnityEngine.Object.FindObjectsOfType<UnityEngine.Renderer>();
+            var line = ""; var n = 0;
+            var seen = new System.Collections.Generic.HashSet<string>();
+            for (var i = 0; i < all.Length && n < 10; i++)
+            {
+                var r = all[i];
+                if (ReferenceEquals(r, null) || r == null) continue;
+                var go = r.gameObject;
+                if (!GuideLike(go.name) && go.name.IndexOf("planner", StringComparison.OrdinalIgnoreCase) < 0) continue;
+                var d = (go.transform.position - at).magnitude;
+                if (d > 40f) continue;
+                var root = go.transform.root;
+                var key = root.name + "/" + go.name;
+                if (!seen.Add(key)) continue;
+                var material = "";
+                try { var m = r.sharedMaterial; if (!ReferenceEquals(m, null) && m != null) material = ", " + m.name; } catch (Exception) { }
+                line += " " + go.name + (root == go.transform ? "" : " in " + root.name) + " " + d.ToString("F1") + " m" + (r.enabled ? "" : ", off") + material + ";";
+                n++;
+            }
+            Out.Say("HELD drawn near the rider under a guide-like name (" + all.Length + " renderers looked at):" + (line == "" ? " (none)" : Short(line, 1200)));
+        }
+        catch (Exception e) { Out.Say("HELD looking for guides threw: " + e.GetType().Name + ": " + e.Message); }
+    }
+
+    // Where the belt could be when nothing on the player is belt-like (this build: member names
+    // obfuscated, type names kept; the log said "belt-like members: (none)"): every loaded game
+    // type named like a belt, with what it offers by shape, logged once. A static int can carry
+    // the selected slot; a method taking one int can be the selection; a component's instances
+    // in the scene are counted and the first one's ints read. Nothing is called.
+    private static bool surveyed;
+    public static void SurveyBelt()
+    {
+        if (surveyed) return;
+        surveyed = true;
+        try
+        {
+            var found = 0;
+            foreach (var a in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                var an = a.GetName().Name;
+                if (a == typeof(SkateHeld).Assembly || an.StartsWith("System", StringComparison.Ordinal) || an.StartsWith("mscorlib", StringComparison.Ordinal) || an.StartsWith("netstandard", StringComparison.Ordinal) ||
+                    an.StartsWith("BepInEx", StringComparison.Ordinal) || an.StartsWith("Il2CppInterop", StringComparison.Ordinal) || an.StartsWith("Il2Cppmscorlib", StringComparison.Ordinal) ||
+                    an.StartsWith("UnityEngine", StringComparison.Ordinal) || an.StartsWith("Microsoft", StringComparison.Ordinal) || an.StartsWith("Mono.", StringComparison.Ordinal)) continue;
+                Type[] types;
+                try { types = a.GetTypes(); } catch (ReflectionTypeLoadException e) { types = e.Types; } catch (Exception) { continue; }
+                foreach (var t in types)
+                {
+                    if (t == null || found >= 8 || t.Name.IndexOf("Belt", StringComparison.OrdinalIgnoreCase) < 0) continue;
+                    found++;
+                    Out.Say("HELD belt survey " + found + ": " + Short(Shape(t, an), 1500));
+                }
+            }
+            if (found == 0) Out.Say("HELD belt survey: no loaded game type is named like a belt");
+        }
+        catch (Exception e) { Out.Say("HELD belt survey threw: " + e.GetType().Name + ": " + e.Message); }
+    }
+
+    // One type's shape for the log: its base, its static ints with their values, its instance ints
+    // (with the first scene instance's values when it is a component), and its methods taking
+    // one int.
+    private static string Shape(Type t, string assembly)
+    {
+        const BindingFlags all = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly;
+        var s = t.FullName + " (" + assembly + ")" + (t.BaseType == null ? "" : " : " + t.BaseType.Name) + (t.IsAbstract ? " abstract" : "");
+        object instance = null; var instances = -1;
+        if (typeof(UnityEngine.Object).IsAssignableFrom(t) && !t.IsAbstract && !t.ContainsGenericParameters)
+        {
+            try
+            {
+                foreach (var m in typeof(UnityEngine.Object).GetMethods(BindingFlags.Public | BindingFlags.Static))
+                {
+                    if (m.Name != "FindObjectsOfType" || !m.IsGenericMethodDefinition || m.GetParameters().Length != 0) continue;
+                    var found = m.MakeGenericMethod(t).Invoke(null, null) as System.Collections.IEnumerable;
+                    if (found == null) continue;
+                    instances = 0;
+                    foreach (var o in found) { if (o != null && instance == null) instance = o; instances++; }
+                    break;
+                }
+            }
+            catch (Exception e) { s += " [instances: " + e.GetType().Name + "]"; }
+            if (instances >= 0) s += " [" + instances + " in the scene]";
+        }
+        var statics = ""; var ints = ""; var methods = "";
+        // The game's own types only, not the engine's bases under them.
+        for (var at = t; at != null && at.Assembly == t.Assembly; at = at.BaseType)
+        {
+            foreach (var p in at.GetProperties(all))
+            {
+                if (p.GetIndexParameters().Length != 0 || p.PropertyType != typeof(int)) continue;
+                var getter = p.GetGetMethod(true);
+                if (getter == null) continue;
+                if (getter.IsStatic) statics += " " + p.Name + "=" + Value(p, null);
+                else ints += " " + p.Name + (instance == null ? "" : "=" + Value(p, instance));
+            }
+            foreach (var f in at.GetFields(all))
+            {
+                if (f.FieldType != typeof(int)) continue;
+                if (f.IsStatic) { try { statics += " " + f.Name + "=" + f.GetValue(null); } catch (Exception) { statics += " " + f.Name + "=?"; } }
+                else ints += " " + f.Name + (instance == null ? "" : "=" + Value(f, instance));
+            }
+            foreach (var m in at.GetMethods(all))
+            {
+                if (m.IsSpecialName) continue;
+                var ps = m.GetParameters();
+                if (ps.Length != 1 || ps[0].ParameterType != typeof(int)) continue;
+                methods += " " + (m.IsStatic ? "static " : "") + m.ReturnType.Name + " " + m.Name + "(int)";
+            }
+        }
+        return s + "; static ints:" + (statics == "" ? " (none)" : statics) + "; ints:" + (ints == "" ? " (none)" : ints) + "; methods taking one int:" + (methods == "" ? " (none)" : methods);
+    }
+
+    private static string Value(MemberInfo m, object o)
+    {
+        try
+        {
+            var p = m as PropertyInfo;
+            var v = p != null ? p.GetValue(o, null) : ((FieldInfo)m).GetValue(o);
+            return v == null ? "null" : v.ToString();
+        }
+        catch (Exception e) { return "?" + e.GetType().Name; }
+    }
+
+    private static string Short(string s, int most) { return s.Length > most ? s.Substring(0, most) + "…" : s; }
 
     // Stepping off: every held entity switched off for the ride is switched on again.
     public static int Show()

@@ -39,7 +39,10 @@ public static class SkatePieces
     private static bool builderRequested;
     private static float builderNoticeUntil;
     private static int builderTurn;
-    private static bool wasPlaceTrigger;
+    private static bool wasPlaceTrigger, builderPad;
+    private static string BuilderControls { get { return builderPad
+        ? "RT places, RB / LB rotate. Back, then B: Rust building."
+        : "Left click places, R rotates. Shift + right click: Rust building."; } }
     private static bool offPending;
     private static float offUntil;
     private static int previewKind = -1;
@@ -169,7 +172,7 @@ public static class SkatePieces
                     SaidAt = now;
                     Said = SkateConsole.Send("skate.builder place " + builderTurn.ToString(CultureInfo.InvariantCulture))
                         ? "Placement requested. The server checks the site and 10 Wood."
-                        : "Placement not sent. Check your connection, then click again.";
+                        : "Placement not sent. Check your connection, then " + (builderPad ? "press RT again." : "click again.");
                     builderNoticeUntil = now + 2f;
                 }
                 padDown &= ~(SkatePad.LeftBumper | SkatePad.RightBumper);
@@ -248,7 +251,7 @@ public static class SkatePieces
             BuilderKind = requestedKind; requestedKind = -1;
             Picked = BuilderKind;
             builderTurn = 0;
-            Said = SkateBuildWheel.Labels[BuilderKind] + " selected. 10 Wood per successful piece; left click places, R rotates.";
+            Said = SkateBuildWheel.Labels[BuilderKind] + " selected. 10 Wood per successful piece. " + BuilderControls;
         }
         else if (reply.StartsWith("refused ", StringComparison.Ordinal))
         {
@@ -339,7 +342,7 @@ public static class SkatePieces
         else if (Vector3.Distance(previewAt, origin) > 0.01f || Math.Abs(previewYaw - Yaw) > 0.01f) { SkateParks.PreviewMove(origin, Yaw); previewAt = origin; previewYaw = Yaw; }
         if (now >= builderNoticeUntil)
         {
-            Said = SkateHeld.ItemNames[HeldKind] + (Valid ? ": preview fits here; server verifies placement and 10 Wood" : ": preview does not fit: " + GhostWhy) + "  |  Shift + right click: Rust building"; SaidAt = now;
+            Said = SkateHeld.ItemNames[HeldKind] + (Valid ? ": preview fits here; server verifies placement and 10 Wood" : ": preview does not fit: " + GhostWhy) + "  |  " + (BuilderKind >= 0 ? BuilderControls : "Shift + right click: Rust building"); SaidAt = now;
         }
         if (GhostWhy != lastWhy) { lastWhy = GhostWhy; Out.Say("PIECES ghost " + SkateHeld.ItemNames[HeldKind] + (Valid ? " fits" + (OnFoundation ? " on a foundation" : "") : ": " + GhostWhy)); }
     }
@@ -360,7 +363,7 @@ public static class SkatePieces
         AimOk = true; Aim = origin; Yaw = yaw;
         if (HeldKind != previewKind) { SkateParks.PreviewAt((SkateParks.Kind)HeldKind, origin, yaw, false); previewKind = HeldKind; previewAt = origin; previewYaw = yaw; }
         else if (Vector3.Distance(previewAt, origin) > 0.01f || Math.Abs(previewYaw - yaw) > 0.01f) { SkateParks.PreviewMove(origin, yaw); previewAt = origin; previewYaw = yaw; }
-        Said = SkateHeld.ItemNames[HeldKind] + (BuilderKind >= 0 ? ": preview against this half wall; left click places for 10 Wood"
+        Said = SkateHeld.ItemNames[HeldKind] + (BuilderKind >= 0 ? ": preview against this half wall; 10 Wood. " + BuilderControls
             : ": against this half wall (left click with the square foundation)");
     }
 
@@ -378,9 +381,9 @@ public static class SkatePieces
         string command = "skate.builder " + Names[Chosen];
         if (!SkateConsole.Send(command))
         { Said = Status = "Not selected. In F1 type: " + command; return; }
-        requestedKind = Chosen; replyUntil = now + 5f; BuilderKind = -1; Picked = -1; builderRequested = true;
+        requestedKind = Chosen; replyUntil = now + 5f; BuilderKind = -1; Picked = -1; builderRequested = true; builderPad = pad;
         Close(false);
-        Said = "Requested " + SkateBuildWheel.Labels[Chosen] + ". Server checks placement and 10 Wood; left click places, R rotates.";
+        Said = "Requested " + SkateBuildWheel.Labels[Chosen] + ". Server checks placement and 10 Wood. " + BuilderControls;
     }
 
 
@@ -432,7 +435,7 @@ public static class SkatePieces
         builderRequested = offPending = false;
         Picked = -1; HeldKind = -1; Asked = Said = Status = ""; SaidAt = AskedAt = -99f; Chosen = 0;
         Sent = Placed = 0; Turn = 0f; AimOk = false;
-        builderTurn = 0; wasPlaceTrigger = false;
+        builderTurn = 0; wasPlaceTrigger = builderPad = false;
     }
     public static void Shutdown()
     {
