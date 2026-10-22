@@ -1,6 +1,6 @@
 # Skate feel reference
 
-**Incomplete, 22 October 2026:** all modern EA **skate.** reference values are **NOT FOUND YET**. This records our mod’s source baseline and a tooling audit; installed game build, contents, native behavior and feel acceptance are unverified. No game files, extracted code, assets, footage, credentials or raw logs are included.
+**Incomplete, 22 October 2026:** all modern EA **skate.** tuning references are **NOT FOUND YET**. The owner's Shadow Steam installation and build have been inventoried and confirmed; initial static reads have not recovered skating values. Native behavior and feel acceptance remain unverified. No game files, extracted code, assets, footage, credentials or raw logs are included.
 
 Mod baseline: [main `34f6201`](https://github.com/Dj-Shortcut/mw2-rust-skate-rewrite/commit/34f6201d09a266c87c8c86a935d9fe72af911aef). Later source changes require a new comparison. **Code** = declaration plus actual client call site read; **derived** = arithmetic, not measurement. Seconds follow clocks/dt, degrees follow angles, metres/m/s/m/s² assume the project’s Unity-world convention (scale unmeasured). Mutable initializers are defaults; installed configuration, server caps and native effects remain unknown.
 
@@ -30,7 +30,7 @@ The alternative [SkateMotion movement defaults](https://github.com/Dj-Shortcut/m
 
 ## Public reference/tooling audit
 
-Checked on 22 October 2026. These are bounded documentation/tree findings, not support verification for the owner’s installed build. EBX tuning is a hypothesis; a suitable parser and compatibility with that build remain unverified.
+Checked on 22 October 2026. Steam Properties reports App ID **3,354,750**, installed Build ID **25,617,022**, under `steamapps/common/Skate`. Observed candidates include root `Runtime_Win64_retail.BuildSettings`, `Data/layout.toc`, `Data/initfs_Win32`, `Data/Win32/globals.toc`, level/localization TOCs and CAS files under `Data/Win32/configurations/layout/`. This is an inventory, not verified tool support. EBX tuning remains a hypothesis; no loose EBX has been verified.
 
 - [ReSkate README](https://github.com/Dingo-Shenanigans/ReSkate/blob/main/README.md) pins one Steam/executable build; consult that README for the supported build identifiers before selecting tooling. Its actual [LICENSE](https://github.com/Dingo-Shenanigans/ReSkate/blob/main/LICENSE) is GPLv3. Its README excludes EA game content and separately licensed dependencies from that scope. No ReSkate source is copied into our mod or this document. [ReSkate structure documentation](https://github.com/Dingo-Shenanigans/ReSkate/blob/main/STRUCTURE.md) describes Frostbite bundles, TOC, CAS and EBX plus initfs. They are discovery clues for the modern game's inventory, not evidence that a particular file on Shadow contains tuning.
 - ReSkate-specific locations include `ReSkateLauncher.settings.json` beside its launcher, `%LOCALAPPDATA%\ReSkate\Game\`, `%LOCALAPPDATA%\ReSkate\profiles\offline\` and `Mods\mods.json`. These do not establish unmodified skate.'s settings locations.
@@ -39,12 +39,12 @@ Checked on 22 October 2026. These are bounded documentation/tree findings, not s
 ## Conditional tuning directions; owner approval required for implementation
 
 1. Match push/coast/brake curves, separating continuous drive, planted-foot impulse and stroke timing; expected effect: comparable acceleration and speed retention.
-2. Match carve target rate across speeds separately from deadzone and response lag; expected effect: comparable turn radius and steering response.
-3. Match pop height and airtime together before trick/catch windows; expected effect: comparable jump weight and trick time. Airtime alone cannot identify both impulse and gravity; one frame count cannot prove a feel match.
+2. Fit carve target rate from matched speed and radius using **angular speed = speed/radius** (radians/s; convert to degrees/s for our controller), then fit response lag separately; expected effect: comparable turn radius and steering response. Deadzone/input calibration must be controlled.
+3. Fit pop height h and airtime T together using **gravity = 8h/T²**, **pop speed = 4h/T**, before trick/catch windows; expected effect: comparable jump weight and trick time. This assumes a ballistic movement body and equal launch/landing height; board animation height must be separated. Airtime alone cannot identify both parameters or prove a feel match.
 4. Match pump energy on comparable transitions at the same entry speed/input phase; expected effect: comparable speed gain through the bottom.
 5. Match camera framing/follow response separately from speed while preserving obstruction handling; expected effect: comparable framing and perceived speed. No replacement numbers are justified yet.
 
 ## Next evidence and limits
 
-Inventory the real install layout, TOC/CAS/bundles, build identity and candidate settings paths; show it to the owner and wait for confirmation before opening contents. Keep game files, generated output and working copies outside the repository/Git. Stop and ask before breaking protections or proceeding against unapproved terms. Do not run/attach/modify the game, online sessions or anti-cheat. Reference values require a source location, interpreted units and confidence.
+The owner confirmed the installation inventory before content reads. BuildSettings is binary with an unrecognized format; `Data/layout.toc` has a header consistent with [ReSkate's documented native database envelope](https://github.com/Dingo-Shenanigans/ReSkate/blob/main/Engine/Vfs/native_db.h). Neither finding supplies a tuning value. TOC/CAS payload mapping, EBX decoding, profile settings and build-compatible tooling remain unverified. Keep game files, generated output and working copies outside the repository/Git. Stop and ask before breaking protections or proceeding against unapproved terms. Do not run/attach/modify the game, online sessions or anti-cheat. Reference values require a source location, interpreted units and confidence.
 Prefer owner-provided 60 fps recordings over owner-supplied YouTube links. Extract fixed-rate frames with ffmpeg outside Git. Report ollie duration/board-length-relative height, calibrated speed, turn radius per known input, pump phase and camera-distance changes as ranges with timestamps/method/uncertainty. Unknown FOV, perspective, compression and duplicate frames limit precision. No clips have been analysed for this task.
