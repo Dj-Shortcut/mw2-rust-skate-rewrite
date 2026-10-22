@@ -277,7 +277,7 @@ public static class SkateHud
     {
         var now = Time.realtimeSinceStartup;
         var v = Staged ? Stage : Sample(now);
-        if (SkatePieces.Open && !v.Riding) { SkateBuildWheel.Draw(); return; }
+        if ((SkatePieces.Open || SkatePieces.RustModeHint) && !v.Riding) { SkateBuildWheel.Draw(); return; }
         if (!v.Riding) SkateSupportFootprint.Draw();
         var onFoot = !Scenarios.Active && !v.Riding && (!SkateRig.Ready || now - SkateRig.AwakeAt < 12f || SkateKeys.Help);
         var recent = now - popAt < PopSeconds || now - bankAt < BankSeconds || now - bailAt < BailSeconds || now - noticeAt < NoticeSeconds;

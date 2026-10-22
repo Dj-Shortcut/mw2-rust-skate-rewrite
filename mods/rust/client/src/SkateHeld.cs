@@ -289,12 +289,14 @@ public static class SkateHeld
     private static Planner pausedPlanner;
     private static bool plannerWasEnabled;
     private static object plannerPlayer;
+    private static object plannerBody;
+    private static float plannerAwakeAt;
     // Wheel/builder previews are a separate owner from the holstered riding models.
     private static readonly System.Collections.Generic.List<UnityEngine.GameObject> plannerGuides = new System.Collections.Generic.List<UnityEngine.GameObject>();
     public static bool PausePlanner(object player, out string why)
     {
         why = "";
-        if (pausedPlanner != null && ReferenceEquals(plannerPlayer, player) && HasPlanner(player))
+        if (PausedPlanner(player) != null)
         { Guides(pausedPlanner, false, plannerGuides, true); return true; }
         if (pausedPlanner != null) ResumePlanner();
         var root = player as UnityEngine.Component;
@@ -315,18 +317,41 @@ public static class SkateHeld
         plannerWasEnabled = found.enabled;
         pausedPlanner = found;
         plannerPlayer = player;
+        plannerBody = SkateRig.Body;
+        plannerAwakeAt = SkateRig.AwakeAt;
         found.enabled = false;
         Guides(found, false, plannerGuides, true);
         Out.Say("PIECES ordinary building plan paused on local hand");
         return true;
     }
 
+    public static object PausedPlanner(object player)
+    {
+        try
+        {
+            if (player == null || !ReferenceEquals(player, SkateRig.Local) || !ReferenceEquals(plannerPlayer, player) ||
+                plannerBody == null || !ReferenceEquals(plannerBody, SkateRig.Body) || plannerAwakeAt <= 0f ||
+                plannerAwakeAt != SkateRig.AwakeAt || pausedPlanner == null || pausedPlanner.enabled ||
+                !pausedPlanner.gameObject.activeInHierarchy) return null;
+            var root = player as UnityEngine.Component;
+            var model = RiderRig.Bound && RiderRig.Root != null ? (UnityEngine.Component)RiderRig.Root : root;
+            var parent = pausedPlanner.transform.parent;
+            return model != null && pausedPlanner.transform.IsChildOf(model.transform) && parent != null &&
+                parent.name.EndsWith("_prop", StringComparison.Ordinal) ? pausedPlanner : null;
+        }
+        catch { return null; }
+    }
+
     public static bool HasPlanner(object player)
     {
+        if (WheelPlannerCurrent(player)) return true;
         if (pausedPlanner != null)
         {
             var parent = pausedPlanner.transform.parent;
-            return ReferenceEquals(plannerPlayer, player) && pausedPlanner.gameObject.activeInHierarchy && parent != null && parent.name.EndsWith("_prop", StringComparison.Ordinal);
+            var pausedRoot = player as UnityEngine.Component;
+            var pausedModel = RiderRig.Bound && RiderRig.Root != null ? (UnityEngine.Component)RiderRig.Root : pausedRoot;
+            return ReferenceEquals(plannerPlayer, player) && pausedModel != null && pausedPlanner.gameObject.activeInHierarchy &&
+                pausedPlanner.transform.IsChildOf(pausedModel.transform) && parent != null && parent.name.EndsWith("_prop", StringComparison.Ordinal);
         }
         var root = player as UnityEngine.Component;
         if (root == null) return false;
@@ -343,11 +368,263 @@ public static class SkateHeld
         return found == 1;
     }
 
+    private static Planner wheelPlanner;
+    private static object wheelPlayer, wheelBody;
+    private static float wheelAwakeAt;
+    private static PieMenu closingWheel;
+    private static object closingPlayer, closingBody;
+    private static float closingAwakeAt;
+    private static UnityEngine.GameObject skateCursorHost;
+    private static NeedsCursor skateCursorRequest;
+    private static Planner skateCursorPlanner;
+    private static UnityEngine.Component skateCursorModel;
+    private static object skateCursorPlayer, skateCursorBody;
+    private static float skateCursorAwakeAt;
+    private static string cursorReleaseNotice = "";
+    public static string RustWheelGate { get; private set; } = "not-checked";
+    private static string wheelBindingNotice = "";
+
+    private static bool WheelPlannerCurrent(object player)
+    {
+        if (wheelPlanner == null || !ReferenceEquals(player, SkateRig.Local) || !ReferenceEquals(wheelPlayer, player) || !ReferenceEquals(wheelBody, SkateRig.Body) ||
+            wheelAwakeAt != SkateRig.AwakeAt || !wheelPlanner.enabled || !wheelPlanner.gameObject.activeInHierarchy) return false;
+        var root = player as UnityEngine.Component;
+        var model = RiderRig.Bound && RiderRig.Root != null ? (UnityEngine.Component)RiderRig.Root : root;
+        var parent = wheelPlanner.transform.parent;
+        return model != null && wheelPlanner.transform.IsChildOf(model.transform) && parent != null && parent.name.EndsWith("_prop", StringComparison.Ordinal);
+    }
+
+    private static bool ConstructionWheel(object player, out PieMenu menu, out string why)
+    {
+        bool registryAbsent;
+        return ConstructionWheel(player, out menu, out why, out registryAbsent);
+    }
+
+    private static bool ConstructionWheel(object player, out PieMenu menu, out string why, out bool registryAbsent)
+    {
+        menu = null; why = ""; registryAbsent = false;
+        var root = player as UnityEngine.Component;
+        if (root == null || !ReferenceEquals(player, SkateRig.Local)) { why = "The local player is unavailable."; return false; }
+        var model = RiderRig.Bound && RiderRig.Root != null ? (UnityEngine.Component)RiderRig.Root : root;
+        var plan = pausedPlanner;
+        if (plan == null || !ReferenceEquals(plannerPlayer, player))
+        {
+            plan = wheelPlanner;
+            if (!WheelPlannerCurrent(player))
+            {
+                plan = null;
+                var planners = model.GetComponentsInChildren<Planner>(false);
+                for (var i = 0; i < planners.Length; i++)
+                {
+                    var candidate = planners[i];
+                    if (candidate == null || !candidate.enabled || !candidate.gameObject.activeInHierarchy) continue;
+                    var parent = candidate.transform.parent;
+                    if (parent == null || !parent.name.EndsWith("_prop", StringComparison.Ordinal)) continue;
+                    if (plan != null) { why = "More than one active building plan was found."; return false; }
+                    plan = candidate;
+                }
+            }
+        }
+        if (plan == null || !plan.gameObject.activeInHierarchy || !plan.transform.IsChildOf(model.transform) || plan.transform.parent == null ||
+            !plan.transform.parent.name.EndsWith("_prop", StringComparison.Ordinal))
+        { why = "Hold your ordinary building plan first."; return false; }
+        wheelPlanner = plan; wheelPlayer = player; wheelBody = SkateRig.Body; wheelAwakeAt = SkateRig.AwakeAt;
+        // This is the same construction-menu registry member that the native planner reads.
+        // Its intact static-field getter and checked IL2CPP cast do not invoke an erased method.
+        var native = PieMenu.ObjectNPublicAbstractSealedBoObBoObBoObBoObBoObUnique.field_Public_Static_Object_15;
+        if (ReferenceEquals(native, null))
+        { registryAbsent = true; why = "Rust's construction wheel is not available yet."; return false; }
+        menu = native.TryCast<PieMenu>();
+        if (menu == null || menu.escapeCapture == null)
+        { why = "Rust's construction-wheel binding is unavailable."; return false; }
+        return true;
+    }
+
+    public static bool RustWheelOpen(object player)
+    {
+        try
+        {
+            PieMenu menu; string why;
+            return ConstructionWheel(player, out menu, out why) && menu.gameObject.activeInHierarchy && menu.escapeCapture.enabled;
+        }
+        catch (Exception) { return false; }
+    }
+
+    public static bool RustWheelHiddenForSkate(object player)
+    {
+        try
+        {
+            string ownerWhy;
+            if (!SkateCursorCurrent(player, out ownerWhy)) { RustWheelGate = ownerWhy; return false; }
+            PieMenu menu; string why; bool registryAbsent;
+            if (ConstructionWheel(player, out menu, out why, out registryAbsent))
+            {
+                bool hidden = ConstructionWheelVisuallyHidden(menu);
+                RustWheelGate = hidden ? "native-wheel-hidden" : "native-wheel-input-or-fade-active";
+                return hidden;
+            }
+            // Rust may not have created its radial yet. Our own active native cursor request
+            // is the lease; its next Update, not a one-time raw cursor setter, asks Rust for focus.
+            RustWheelGate = registryAbsent ? "native-wheel-uncreated-owned-cursor" : "planner-or-native-binding-unavailable";
+            return registryAbsent;
+        }
+        catch (Exception e) { RustWheelGate = "native-wheel-query-" + e.GetType().Name; return false; }
+    }
+
+    private static bool SkateCursorCurrent(object player, out string why)
+    {
+        why = "cursor-lease-not-owned";
+        if (!UnityEngine.Application.isFocused || SkateRide.On || !SkateRig.Ready)
+        { why = "cursor-lease-not-offboard-focused"; return false; }
+        if (!ReferenceEquals(player, SkateRig.Local) || !ReferenceEquals(skateCursorPlayer, player) ||
+            ReferenceEquals(SkateRig.Body, null) || !ReferenceEquals(skateCursorBody, SkateRig.Body) ||
+            skateCursorAwakeAt <= 0f || skateCursorAwakeAt != SkateRig.AwakeAt)
+        { why = "cursor-lease-life-changed"; return false; }
+        if (skateCursorHost == null || skateCursorRequest == null || !skateCursorHost.activeInHierarchy || !skateCursorRequest.isActiveAndEnabled)
+        { why = "cursor-lease-inactive"; return false; }
+        if (pausedPlanner == null || !ReferenceEquals(skateCursorPlanner, pausedPlanner) || !ReferenceEquals(plannerPlayer, player) ||
+            pausedPlanner.enabled || !pausedPlanner.gameObject.activeInHierarchy)
+        { why = "cursor-lease-plan-changed"; return false; }
+        var root = player as UnityEngine.Component;
+        var model = RiderRig.Bound && RiderRig.Root != null ? (UnityEngine.Component)RiderRig.Root : root;
+        if (model == null || !ReferenceEquals(skateCursorModel, model) || !pausedPlanner.transform.IsChildOf(model.transform))
+        { why = "cursor-lease-model-changed"; return false; }
+        why = "cursor-lease-current"; return true;
+    }
+
+    public static bool SkateCursorOwned(object player)
+    {
+        try { string why; return SkateCursorCurrent(player, out why); }
+        catch (Exception) { return false; }
+    }
+
+    public static bool AcquireSkateCursor(object player, out string why)
+    {
+        why = "";
+        try
+        {
+            var admittedPlanner = pausedPlanner;
+            var admittedBody = SkateRig.Body;
+            float admittedLife = SkateRig.AwakeAt;
+            var root = player as UnityEngine.Component;
+            var admittedModel = RiderRig.Bound && RiderRig.Root != null ? (UnityEngine.Component)RiderRig.Root : root;
+            // Acquire after PausePlanner: replacing an old paused plan cannot erase a new lease.
+            if (!UnityEngine.Application.isFocused || SkateRide.On || !SkateRig.Ready || ReferenceEquals(SkateRig.Body, null) || SkateRig.AwakeAt <= 0f ||
+                pausedPlanner == null || !ReferenceEquals(plannerPlayer, player) || pausedPlanner.enabled)
+            { why = "cursor-acquire-needs-paused-plan"; ReleaseSkateCursor(); return false; }
+            PieMenu menu; bool registryAbsent;
+            bool bound = ConstructionWheel(player, out menu, out why, out registryAbsent);
+            if ((!bound && !registryAbsent) || (bound && !ConstructionWheelHidden(menu)) ||
+                (registryAbsent && (UnityEngine.Cursor.lockState != UnityEngine.CursorLockMode.Locked || UnityEngine.Cursor.visible)))
+            { why = "cursor-acquire-native-screen-not-clear"; ReleaseSkateCursor(); return false; }
+            if (skateCursorHost == null)
+            {
+                skateCursorHost = new UnityEngine.GameObject("Skate build cursor");
+                skateCursorHost.SetActive(false);
+                skateCursorRequest = skateCursorHost.AddComponent<NeedsCursor>();
+            }
+            if (skateCursorRequest == null) { why = "cursor-acquire-component-unavailable"; ReleaseSkateCursor(true); return false; }
+            skateCursorPlanner = admittedPlanner; skateCursorModel = admittedModel; skateCursorPlayer = player;
+            skateCursorBody = admittedBody; skateCursorAwakeAt = admittedLife;
+            skateCursorRequest.enabled = true;
+            skateCursorHost.SetActive(true);
+            if (!SkateCursorCurrent(player, out why)) { ReleaseSkateCursor(); return false; }
+            RustWheelGate = why; why = ""; return true;
+        }
+        catch (Exception e) { why = "cursor-acquire-" + e.GetType().Name; ReleaseSkateCursor(true); return false; }
+    }
+
+    public static void ReleaseSkateCursor(bool destroy = false)
+    {
+        skateCursorPlanner = null; skateCursorModel = null; skateCursorPlayer = skateCursorBody = null; skateCursorAwakeAt = 0;
+        try { if (skateCursorHost != null) skateCursorHost.SetActive(false); }
+        catch (Exception e)
+        {
+            if (cursorReleaseNotice != e.GetType().Name)
+            { cursorReleaseNotice = e.GetType().Name; Out.Say("PIECES own cursor release unavailable: " + cursorReleaseNotice); }
+        }
+        try { if (skateCursorRequest != null) skateCursorRequest.enabled = false; }
+        catch (Exception e)
+        {
+            if (cursorReleaseNotice != e.GetType().Name)
+            { cursorReleaseNotice = e.GetType().Name; Out.Say("PIECES own cursor release unavailable: " + cursorReleaseNotice); }
+        }
+        if (!destroy) return;
+        var host = skateCursorHost; skateCursorHost = null; skateCursorRequest = null;
+        try { if (host != null) UnityEngine.Object.Destroy(host); }
+        catch (Exception e) { Out.Say("PIECES own cursor cleanup unavailable: " + e.GetType().Name); }
+    }
+
+    private static bool ConstructionWheelVisuallyHidden(PieMenu menu)
+    {
+        if (!menu.gameObject.activeInHierarchy) return true;
+        var needsCursor = menu.GetComponent<NeedsCursor>();
+        var canvas = menu.GetComponent<UnityEngine.CanvasGroup>();
+        if (needsCursor == null || canvas == null) return false;
+        return !needsCursor.enabled && !menu.escapeCapture.enabled && canvas.alpha <= 0f;
+    }
+
+    private static bool ConstructionWheelHidden(PieMenu menu)
+    { return ConstructionWheelVisuallyHidden(menu) && UnityEngine.Cursor.lockState == UnityEngine.CursorLockMode.Locked; }
+
+    public static bool RustWheelClosed(object player, out string why)
+    {
+        why = "";
+        try
+        {
+            PieMenu menu;
+            if (!ReferenceEquals(closingPlayer, player) || !ReferenceEquals(closingBody, SkateRig.Body) ||
+                closingAwakeAt != SkateRig.AwakeAt || !ConstructionWheel(player, out menu, out why) || menu != closingWheel)
+            { why = "The building plan or Rust wheel changed while switching."; return false; }
+            return ConstructionWheelHidden(menu);
+        }
+        catch (Exception e) { why = "Rust construction-wheel access failed: " + e.GetType().Name; return false; }
+    }
+
+    public static bool CloseRustWheel(object player, bool nativeUiExpected, out bool waiting, out string why)
+    {
+        waiting = false; why = "";
+        try
+        {
+            PieMenu menu; bool registryAbsent;
+            if (ConstructionWheel(player, out menu, out why, out registryAbsent))
+            {
+                bool open = menu.gameObject.activeInHierarchy && menu.escapeCapture.enabled;
+                if (nativeUiExpected && !open) why = "Close the other Rust screen before switching build modes.";
+                else if (!open && ConstructionWheelHidden(menu)) { wheelBindingNotice = ""; return true; }
+                else if (open)
+                {
+                    // Use the normal cancel route; its own cursor release and fade finish before
+                    // the custom wheel may take focus. No native UI object is toggled or rebuilt.
+                    closingWheel = menu; closingPlayer = player; closingBody = SkateRig.Body; closingAwakeAt = SkateRig.AwakeAt;
+                    menu.Close(false);
+                    if (ConstructionWheelHidden(menu)) { wheelBindingNotice = ""; return true; }
+                    waiting = true; why = "Waiting for the Rust build wheel to close.";
+                    return false;
+                }
+                else why = "Rust's build wheel is still closing, or another screen owns the cursor.";
+            }
+            else if (registryAbsent && !nativeUiExpected && UnityEngine.Cursor.lockState == UnityEngine.CursorLockMode.Locked && !UnityEngine.Cursor.visible)
+            {
+                // No native radial exists to close. An owned plan with a clear, locked cursor
+                // may open the custom wheel without manufacturing a native UI instance.
+                wheelBindingNotice = ""; why = ""; return true;
+            }
+        }
+        catch (Exception e) { why = "Rust construction-wheel access failed: " + e.GetType().Name; }
+        if (why != wheelBindingNotice)
+        { wheelBindingNotice = why; Out.Say("PIECES Rust-wheel switch refused: " + why); }
+        return false;
+    }
+
     public static void ResumePlanner()
     {
+        ReleaseSkateCursor();
         var planner = pausedPlanner;
         pausedPlanner = null;
         plannerPlayer = null;
+        plannerBody = null;
+        plannerAwakeAt = 0f;
         for (var i = plannerGuides.Count - 1; i >= 0; i--)
         {
             try

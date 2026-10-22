@@ -11,6 +11,19 @@ public static class SkatePieces
     public const float ShownSeconds = 6f, PlaceSeconds = 120f, AimReach = 25f, TurnStep = 15f, ClearGround = 0.04f;
 
     public static bool Open;
+    private static bool rustBuilding, rustWheelOpen, switchingToRust, switchingFromClosed;
+    private static object modePlayer, modeBody;
+    private static float modeAwakeAt;
+    private static Rect modeButtonArea;
+    private static object modeButtonPlayer, modeButtonBody;
+    private static float modeButtonAwakeAt, modeButtonAt = -99f;
+    private static bool modeButtonToRust, modeButtonQueued, modeButtonHeld, modeButtonPaused, modeButtonConsumes;
+    public static bool RustBuilding { get { return rustBuilding; } }
+    public static bool RustWheelOpen { get { return rustWheelOpen; } }
+    public static bool RustModeHint { get; private set; }
+    public static bool CanDrawWheel { get { return Open && !SkateRide.On && SkateRig.Ready &&
+        ReferenceEquals(menuPlayer, SkateRig.Local) && ReferenceEquals(menuBody, SkateRig.Body) && menuAwakeAt == SkateRig.AwakeAt &&
+        SkateHeld.RustWheelHiddenForSkate(SkateRig.Local); } }
     private static float stanceSince = -1f;
     public static int Chosen;
     public static float Turn;
@@ -23,14 +36,17 @@ public static class SkatePieces
     public static float Yaw;
     private enum Entry { None, Keyboard, MouseHold, ControllerHold }
     private static Entry entry;
+    private static bool openingSkate;
+    private static Entry openingEntry;
+    private static object openingPlayer, openingBody;
+    private static float openingAwakeAt, openingUntil;
     private static bool wasP, wasBack, wasRight, inputPrimed, cancelledHold, stickChosen;
-    private static object menuPlayer;
+    private static object menuPlayer, menuBody;
+    private static float menuAwakeAt;
     private static Vector2 pointer;
     public static int Hover = -1;
     public static bool BlocksControls;
     public static bool OwnsCursor;
-    private static CursorLockMode cursorBefore;
-    private static bool cursorVisibleBefore;
     public static int BuilderKind = -1;
     private static int requestedKind = -1;
     private static float replyUntil;
@@ -40,6 +56,10 @@ public static class SkatePieces
     private static string selectionToken = "";
     private static object selectionPlayer, selectionBody;
     private static float selectionAwakeAt;
+    private static object selectionCursorPlan;
+    private static string selectionCursorToken = "";
+    private static float selectionCursorUntil;
+    private static int selectionCursorPolls;
     private static float builderNoticeUntil;
     private static int builderTurn;
     private static bool wasPlaceTrigger, builderPad;
@@ -51,8 +71,8 @@ public static class SkatePieces
     private static int placementKind = -1;
     private static bool placementUnknown;
     private static string BuilderControls { get { return builderPad
-        ? "RT places, RB / LB rotate. Back, then B: Rust building."
-        : "Left click places, R rotates. Shift + right click: Rust building."; } }
+        ? "RT places, RB / LB rotate. Back, then X: Rust building."
+        : "Left click places, R rotates. Open the wheel, then Shift + P: Rust building."; } }
     private static bool offPending;
     private static float offUntil;
     private static int previewKind = -1;
@@ -60,11 +80,91 @@ public static class SkatePieces
     public static int GhostKind { get { return previewKind; } }
     private static float previewYaw = 9999f; private static Vector3 previewAt;
 
+    // OnGUI only records intent. Input owns the actual switch and its server/cursor gates.
+    public static void ModeButton(Rect area, bool clicked)
+    {
+        if (!Application.isFocused || SkateRide.On || !SkateRig.Ready || SkateRig.Local == null || openingSkate || switchingToRust ||
+            !(Open && OwnsCursor && CanDrawWheel) && !RustModeHint) return;
+        modeButtonArea = area; modeButtonAt = Time.realtimeSinceStartup;
+        modeButtonPlayer = SkateRig.Local; modeButtonBody = SkateRig.Body; modeButtonAwakeAt = SkateRig.AwakeAt;
+        modeButtonToRust = Open;
+        if (clicked)
+        {
+            var mouse = Mouse.current;
+            if (mouse != null && mouse.leftButton.wasReleasedThisFrame)
+            {
+                var p = mouse.position.ReadValue();
+                if (area.Contains(new Vector2(p.x, Screen.height - p.y))) modeButtonQueued = true;
+            }
+        }
+    }
+
+    private static bool ModeButtonInput(float now, Mouse mouse)
+    {
+        bool current = now >= modeButtonAt && now - modeButtonAt <= 0.25f && Application.isFocused && !SkateRide.On && SkateRig.Ready &&
+            ReferenceEquals(modeButtonPlayer, SkateRig.Local) && ReferenceEquals(modeButtonBody, SkateRig.Body) && modeButtonAwakeAt == SkateRig.AwakeAt &&
+            !openingSkate && !switchingToRust && (modeButtonToRust ? Open && OwnsCursor && CanDrawWheel : rustBuilding && RustModeHint);
+        bool click = current && modeButtonQueued;
+        modeButtonQueued = false;
+        bool held = mouse != null && mouse.leftButton.isPressed;
+        var position = mouse != null ? mouse.position.ReadValue() : Vector2.zero;
+        bool over = current && mouse != null && modeButtonArea.Contains(new Vector2(position.x, Screen.height - position.y));
+        bool consume = click || modeButtonHeld || (over && held);
+        modeButtonConsumes = consume;
+        modeButtonHeld = current && held && (over || modeButtonHeld);
+        if (consume) BlocksControls = true;
+        // Native placement must not also receive a footer-button press or release. Borrow only
+        // the same local Planner while this control owns the mouse; normal Rust clicks elsewhere pass.
+        if (current && rustBuilding && (over || consume))
+        {
+            string why;
+            if (!SkateHeld.PausePlanner(SkateRig.Local, out why)) return false;
+            modeButtonPaused = true;
+        }
+        else if (modeButtonPaused)
+        {
+            modeButtonPaused = false;
+            if (!Open && !openingSkate && !builderRequested && !offPending) SkateHeld.ResumePlanner();
+        }
+        return click;
+    }
+
+    private static void ClearModeButton()
+    {
+        modeButtonQueued = modeButtonHeld = modeButtonConsumes = false;
+        modeButtonPlayer = modeButtonBody = null; modeButtonAt = -99f;
+        if (modeButtonPaused && !Open && !openingSkate && !builderRequested && !offPending) SkateHeld.ResumePlanner();
+        modeButtonPaused = false;
+    }
+
+    private static void ClearSelectionCursor()
+    { selectionCursorPlan = null; selectionCursorToken = ""; selectionCursorUntil = 0f; selectionCursorPolls = 0; }
+
+    private static bool SelectionCursorSettling(float now, bool uiBlocked, bool cancel)
+    {
+        if (selectionCursorPlan == null) return false;
+        // Rust's cursor manager retains the previous positive request. Only this just-closed
+        // selection may wait for its next two input frames; no build input is allowed meanwhile.
+        if (!uiBlocked || cancel || Open || openingSkate || !Application.isFocused || SkateRide.On || !SkateRig.Ready ||
+            SkateRig.Local == null || SkateRig.Local.lifestate != BaseCombatEntity.LifeState.Alive ||
+            !ReferenceEquals(selectionPlayer, SkateRig.Local) || !ReferenceEquals(selectionBody, SkateRig.Body) || selectionAwakeAt != SkateRig.AwakeAt ||
+            !builderRequested || offPending || selectionToken != selectionCursorToken ||
+            (requestedKind < 0 && BuilderKind < 0) || (requestedKind >= 0 && now >= replyUntil) ||
+            !ReferenceEquals(selectionCursorPlan, SkateHeld.PausedPlanner(SkateRig.Local)) ||
+            now >= selectionCursorUntil || selectionCursorPolls >= 2)
+        { ClearSelectionCursor(); return false; }
+        selectionCursorPolls++;
+        BlocksControls = true;
+        return true;
+    }
+
     public static int Input(int padDown, float now, Keyboard keyboard, Mouse mouse, bool uiBlocked)
     {
         try { return InputFrame(padDown, now, keyboard, mouse, uiBlocked); }
         catch (Exception e)
         {
+            switchingToRust = false;
+            ForgetRustWheel();
             bool ready = NativeMode(now);
             Close(ready);
             Said = "Skate wheel input unavailable. Use F1: skate.builder <piece>, or skate.builder off.";
@@ -76,7 +176,7 @@ public static class SkatePieces
 
     private static int InputFrame(int padDown, float now, Keyboard keyboard, Mouse mouse, bool uiBlocked)
     {
-        BlocksControls = false;
+        BlocksControls = false; RustModeHint = false;
         bool p = keyboard != null && keyboard.pKey.isPressed;
         bool back = SkatePad.Shared && (SkatePad.Buttons & MenuButton) != 0;
         bool right = mouse != null && mouse.rightButton.isPressed;
@@ -86,17 +186,63 @@ public static class SkatePieces
         if (!inputPrimed) { wasP = p; wasBack = back; wasRight = right; inputPrimed = true; }
         if (!right && !back) cancelledHold = false;
         bool opened = false;
-        bool canOpen = !uiBlocked && !SkateRide.On && SkateRig.Ready && SkateRig.Local != null;
-        if (!canOpen || (Open && !ReferenceEquals(menuPlayer, SkateRig.Local)))
+        bool shift = keyboard != null && (keyboard.leftShiftKey.isPressed || keyboard.rightShiftKey.isPressed);
+        bool switchPressed = (padDown & SkatePad.X) != 0 || (shift && p && !wasP);
+        if (rustBuilding && (!ReferenceEquals(modePlayer, SkateRig.Local) || !ReferenceEquals(modeBody, SkateRig.Body) || modeAwakeAt != SkateRig.AwakeAt))
+            ForgetRustWheel();
+        bool offboard = !SkateRide.On && SkateRig.Ready && SkateRig.Local != null && Application.isFocused;
+        if (rustBuilding && offboard && !SkateHeld.HasPlanner(SkateRig.Local)) ForgetRustWheel();
+        rustWheelOpen = rustBuilding && offboard && SkateHeld.RustWheelOpen(SkateRig.Local);
+        RustModeHint = rustBuilding && offboard && (!uiBlocked || rustWheelOpen);
+        switchPressed |= ModeButtonInput(now, mouse);
+        bool cancelKey = (padDown & SkatePad.B) != 0 || (keyboard != null && (keyboard.escapeKey.wasPressedThisFrame || keyboard.f1Key.wasPressedThisFrame || keyboard.tabKey.wasPressedThisFrame));
+        bool selectionSettling = SelectionCursorSettling(now, uiBlocked, cancelKey);
+        if (openingSkate)
         {
-            bool ready = NativeMode(now);
-            if (Open) Close(ready);
+            BlocksControls = true;
+            bool cancelOpening = !Application.isFocused || SkateRide.On || !SkateRig.Ready ||
+                !ReferenceEquals(openingPlayer, SkateRig.Local) || !ReferenceEquals(openingBody, SkateRig.Body) || openingAwakeAt != SkateRig.AwakeAt ||
+                cancelKey || (openingEntry == Entry.MouseHold && !right) || (openingEntry == Entry.ControllerHold && !back);
+            string why;
+            bool closed = !cancelOpening && SkateHeld.RustWheelClosed(SkateRig.Local, out why);
+            if (cancelOpening || now >= openingUntil)
+            {
+                bool ready = NativeMode(now); Close(ready);
+                Said = cancelOpening ? "Build-mode switch cancelled." : "Rust's wheel did not release focus. Close other screens, then try again."; SaidAt = now;
+            }
+            else if (closed) { var from = openingEntry; openingSkate = false; OpenSkateWheel(from, now); }
+            wasP = p; wasBack = back; wasRight = right;
+            return 0;
+        }
+        // Only a proven own native radial may surrender an otherwise blocked cursor to us.
+        if (rustBuilding && switchPressed && !cancelKey && offboard)
+        {
+            BlocksControls = true; cancelledHold = true;
+            Begin(Entry.Keyboard, now, uiBlocked);
+            wasP = p; wasBack = back; wasRight = right;
+            return 0;
+        }
+        bool canOpen = !uiBlocked && !SkateRide.On && SkateRig.Ready && SkateRig.Local != null && Application.isFocused;
+        if (!canOpen || (Open && (!ReferenceEquals(menuPlayer, SkateRig.Local) || !ReferenceEquals(menuBody, SkateRig.Body) || menuAwakeAt != SkateRig.AwakeAt)))
+        {
+            if (!selectionSettling)
+            {
+                bool ready = NativeMode(now);
+                if (Open) Close(ready);
+            }
+            wasP = p; wasBack = back; wasRight = right;
+            return selectionSettling ? 0 : padDown;
+        }
+        bool wantsOpen = (right && !wasRight) || (p && !wasP) || (back && !wasBack);
+        if (rustBuilding)
+        {
+            // The ordinary planner receives its usual hold/release input. No synthetic native opener.
+            stanceSince = -1f;
             wasP = p; wasBack = back; wasRight = right;
             return padDown;
         }
         if (!Open)
         {
-            bool wantsOpen = (right && !wasRight) || (p && !wasP) || (back && !wasBack);
             bool planner = wantsOpen && SkateHeld.HasPlanner(SkateRig.Local);
             if (requestedKind >= 0 || offPending)
             {
@@ -112,13 +258,11 @@ public static class SkatePieces
                 wasP = p; wasBack = back; wasRight = right;
                 return padDown;
             }
-            bool native = keyboard != null && (keyboard.leftShiftKey.isPressed || keyboard.rightShiftKey.isPressed);
-            if (right && !wasRight && native && planner)
+            if (right && !wasRight && shift && planner)
             {
-                if (NativeMode(now))
-                { wasP = p; wasBack = back; wasRight = right; return padDown; }
+                SwitchToRust(now, true);
                 wasP = p; wasBack = back; wasRight = right;
-                return padDown;
+                return 0;
             }
             if (!opened)
             {
@@ -132,9 +276,16 @@ public static class SkatePieces
             BlocksControls = true;
             bool cancel = (padDown & SkatePad.B) != 0 || (keyboard != null &&
                 (keyboard.escapeKey.wasPressedThisFrame || keyboard.backspaceKey.wasPressedThisFrame || keyboard.f1Key.wasPressedThisFrame ||
-                keyboard.tabKey.wasPressedThisFrame || (!opened && p && !wasP)));
-            if (cancel) { cancelledHold = true; bool ready = NativeMode(now); Close(ready); }
-            else
+                keyboard.tabKey.wasPressedThisFrame || (!opened && p && !wasP && !shift)));
+            if (cancel) { switchingToRust = false; cancelledHold = true; bool ready = NativeMode(now); Close(ready); }
+            else if (switchPressed)
+            {
+                cancelledHold = true;
+                SwitchToRust(now);
+                wasP = p; wasBack = back; wasRight = right;
+                return 0;
+            }
+            else if (!switchingToRust && !modeButtonConsumes)
             {
                 SkateRide.StanceHold(ref stanceSince, (SkatePad.Buttons & SkatePad.Y) != 0, now);
                 if (SkatePad.Shared && (SkatePad.RightX * SkatePad.RightX + SkatePad.RightY * SkatePad.RightY > 0.04f || stickChosen))
@@ -210,10 +361,28 @@ public static class SkatePieces
         }
     }
 
-    private static bool Begin(Entry from, float now)
+    private static bool Begin(Entry from, float now, bool nativeUiExpected = false)
     {
         if (!SkateBuildWheel.Available)
         { Said = "The skate wheel cannot be drawn here. Use F1: skate.builder <piece>."; SaidAt = now; return false; }
+        string why; bool waiting;
+        // Close only the ordinary plan's own radial, before taking our cursor snapshot.
+        if (!SkateHeld.CloseRustWheel(SkateRig.Local, nativeUiExpected, out waiting, out why))
+        {
+            if (waiting && SkateHeld.PausePlanner(SkateRig.Local, out why))
+            {
+                openingSkate = true; openingEntry = from; openingPlayer = SkateRig.Local; openingBody = SkateRig.Body; openingAwakeAt = SkateRig.AwakeAt;
+                openingUntil = now + 3f; BlocksControls = true;
+                Said = "Closing the Rust wheel before Skate building..."; SaidAt = now;
+            }
+            else { Said = "Could not close the Rust build wheel. " + why; SaidAt = now; }
+            return false;
+        }
+        return OpenSkateWheel(from, now);
+    }
+
+    private static bool OpenSkateWheel(Entry from, float now)
+    {
         string why;
         if (!SkateHeld.PausePlanner(SkateRig.Local, out why))
         {
@@ -221,25 +390,59 @@ public static class SkatePieces
             SaidAt = now;
             return false;
         }
-        try
+        if (!SkateHeld.AcquireSkateCursor(SkateRig.Local, out why))
         {
-            cursorBefore = Cursor.lockState; cursorVisibleBefore = Cursor.visible;
-            Cursor.lockState = CursorLockMode.None; Cursor.visible = false; OwnsCursor = true;
-        }
-        catch (Exception)
-        {
+            SkateHeld.ReleaseSkateCursor();
             if (!builderRequested && requestedKind < 0 && !offPending) SkateHeld.ResumePlanner();
-            Said = "The skate wheel cannot take cursor focus."; SaidAt = now; return false;
+            Said = "The skate wheel cannot take cursor focus. " + why; SaidAt = now; return false;
         }
-        Open = true; entry = from; menuPlayer = SkateRig.Local;
+        OwnsCursor = true;
+        openingSkate = false; openingPlayer = openingBody = null; openingAwakeAt = openingUntil = 0;
+        Open = true; entry = from; menuPlayer = SkateRig.Local; menuBody = SkateRig.Body; menuAwakeAt = SkateRig.AwakeAt;
+        rustBuilding = rustWheelOpen = switchingToRust = RustModeHint = false; modePlayer = modeBody = null; modeAwakeAt = 0;
         Hover = -1; pointer = Vector2.zero; Status = ""; stickChosen = false;
         ListenForReplies();
         HeldClear();
         return true;
     }
 
+    private static void SwitchToRust(float now, bool fromClosed = false)
+    {
+        switchingToRust = true; switchingFromClosed = fromClosed;
+        if (fromClosed) { modePlayer = SkateRig.Local; modeBody = SkateRig.Body; modeAwakeAt = SkateRig.AwakeAt; }
+        if (NativeMode(now)) FinishRustSwitch(now);
+        else Status = offPending ? "Switching to Rust building. Waiting for the server..." : Said;
+    }
+
+    private static void FinishRustSwitch(float now)
+    {
+        // A reply arriving after focus/life/plan loss cannot open UI over another menu.
+        bool sameLife = switchingFromClosed
+            ? ReferenceEquals(modePlayer, SkateRig.Local) && ReferenceEquals(modeBody, SkateRig.Body) && modeAwakeAt == SkateRig.AwakeAt
+            : Open && OwnsCursor && ReferenceEquals(menuPlayer, SkateRig.Local) && ReferenceEquals(menuBody, SkateRig.Body) && menuAwakeAt == SkateRig.AwakeAt;
+        if (!switchingToRust || !sameLife || !Application.isFocused || !SkateRig.Ready || !SkateHeld.HasPlanner(SkateRig.Local))
+        {
+            Close(!builderRequested && requestedKind < 0 && !offPending);
+            Said = "Build-mode switch cancelled."; SaidAt = now; return;
+        }
+        switchingToRust = false;
+        Close(false);
+        SkateHeld.ResumePlanner();
+        rustBuilding = true; rustWheelOpen = false;
+        modePlayer = SkateRig.Local; modeBody = SkateRig.Body; modeAwakeAt = SkateRig.AwakeAt;
+        Said = "Rust building. Release, then hold Back / right click for the Rust wheel. X / Shift + P: Skate building."; SaidAt = now;
+    }
+
+    private static void ForgetRustWheel()
+    {
+        // Rust mode yielded ownership to the native planner; it is not our UI lease to close.
+        rustBuilding = rustWheelOpen = RustModeHint = false; modePlayer = modeBody = null; modeAwakeAt = 0;
+        ClearModeButton();
+    }
+
     private static bool NativeMode(float now)
     {
+        ClearSelectionCursor();
         if (offPending) return false;
         if (!builderRequested) return true;
         SaidAt = now;
@@ -290,7 +493,9 @@ public static class SkatePieces
         }
         if (reply == "off")
         {
-            BuilderKind = requestedKind = -1; builderRequested = offPending = false; ClearPlacement(); ClearSelectionReceipt(); Said = "Rust building"; if (!Open) SkateHeld.ResumePlanner();
+            BuilderKind = requestedKind = -1; builderRequested = offPending = false; ClearPlacement(); ClearSelectionReceipt(); Said = "Rust building";
+            if (switchingToRust) FinishRustSwitch(Time.realtimeSinceStartup);
+            else if (!Open) SkateHeld.ResumePlanner();
         }
         else if (reply.StartsWith("selected ", StringComparison.Ordinal))
         {
@@ -321,25 +526,22 @@ public static class SkatePieces
     }
 
     private static void ClearSelectionReceipt()
-    { selectionToken = ""; selectionPlayer = selectionBody = null; selectionAwakeAt = 0; }
+    { ClearSelectionCursor(); selectionToken = ""; selectionPlayer = selectionBody = null; selectionAwakeAt = 0; }
 
     private static void ClearPlacement()
     { placementToken = ""; placementUntil = 0; placementUnknown = false; placementPlayer = placementBody = null; placementAwakeAt = 0; placementKind = -1; }
 
     private static void Close(bool resumePlanner = true)
     {
-        Open = false; entry = Entry.None; menuPlayer = null; Hover = -1;
+        ClearSelectionCursor();
+        // The native cursor manager settles the request after our component stops updating.
+        // Do not restore global cursor flags over another menu's current request.
+        SkateHeld.ReleaseSkateCursor();
+        OwnsCursor = false;
+        Open = false; entry = Entry.None; menuPlayer = menuBody = null; menuAwakeAt = 0; Hover = -1; switchingToRust = switchingFromClosed = RustModeHint = false;
+        openingSkate = false; openingEntry = Entry.None; openingPlayer = openingBody = null; openingAwakeAt = openingUntil = 0;
+        ClearModeButton();
         stanceSince = -1f;
-        if (OwnsCursor)
-        {
-            OwnsCursor = false;
-            try
-            {
-                if (Cursor.lockState == CursorLockMode.None && !Cursor.visible)
-                { Cursor.lockState = cursorBefore; Cursor.visible = cursorVisibleBefore; }
-            }
-            catch (Exception e) { Out.Say("PIECES cursor restore unavailable: " + e.GetType().Name); }
-        }
         if (resumePlanner) SkateHeld.ResumePlanner();
         SkateSupportFootprint.Hide();
         SkateParks.PreviewClear(); previewKind = -1; previewYaw = 9999f;
@@ -369,8 +571,26 @@ public static class SkatePieces
         {
             Said = "Rust-building reply not received. In F1 type: skate.builder off, or re-equip your building plan.";
             SaidAt = now; offUntil = float.PositiveInfinity;
+            if (Open && switchingToRust) Status = Said;
         }
-        if (Open) { AimOk = false; HeldClear(); return; }
+        if (Open)
+        {
+            // A native input callback can open its wheel later in the frame that began ours.
+            // Never paint over it; close only that same owned menu before taking focus again.
+            if (!CanDrawWheel)
+            {
+                bool sameMenu = !SkateRide.On && SkateRig.Ready && Application.isFocused && ReferenceEquals(menuPlayer, SkateRig.Local) &&
+                    ReferenceEquals(menuBody, SkateRig.Body) && menuAwakeAt == SkateRig.AwakeAt;
+                if (sameMenu && SkateHeld.RustWheelOpen(SkateRig.Local)) { var from = entry; Close(false); Begin(from, now, true); }
+                else
+                {
+                    Out.Say("PIECES build wheel closed: " + (sameMenu ? SkateHeld.RustWheelGate : "player-or-focus-changed"));
+                    bool ready = NativeMode(now); Close(ready);
+                    Said = "The Rust build screen changed. Close other screens, then reopen the wheel."; SaidAt = now;
+                }
+            }
+            AimOk = false; HeldClear(); return;
+        }
         HeldFrame(now);
     }
 
@@ -455,10 +675,17 @@ public static class SkatePieces
         { Said = Status = "Hold your ordinary building plan first."; return; }
         selectionToken = Guid.NewGuid().ToString("N");
         selectionPlayer = SkateRig.Local; selectionBody = SkateRig.Body; selectionAwakeAt = SkateRig.AwakeAt;
+        var plan = SkateHeld.PausedPlanner(SkateRig.Local);
         requestedKind = Chosen; replyUntil = now + 5f; BuilderKind = -1; Picked = -1; builderRequested = true; builderPad = pad;
         string command = "skate.builder " + Names[Chosen] + " " + selectionToken;
         bool sent = SkateConsole.Send(command);
         Close(false);
+        if (sent && plan != null && builderRequested && !offPending && selectionToken.Length != 0)
+        {
+            // A selection ACK does not extend this independent, already-running cursor bound.
+            selectionCursorPlan = plan; selectionCursorToken = selectionToken;
+            selectionCursorUntil = Time.realtimeSinceStartup + 0.5f;
+        }
         Said = sent ? "Requested " + SkateBuildWheel.Labels[Chosen] + ". Server checks placement and 10 Wood. " + BuilderControls
             : "Selection unconfirmed. Waiting for a server reply before another request.";
     }
@@ -500,12 +727,15 @@ public static class SkatePieces
     public static Vector2 Pointer { get { return pointer; } }
     public static void CancelFocus()
     {
+        switchingToRust = false;
         bool ready = NativeMode(Time.realtimeSinceStartup);
         Close(ready);
         inputPrimed = false;
     }
     public static void Reset()
     {
+        switchingToRust = false;
+        ForgetRustWheel();
         if (builderRequested) NativeMode(Time.realtimeSinceStartup);
         // Player/rig teardown cannot retain a disabled component after its input driver is gone.
         Close(); inputPrimed = false; cancelledHold = BlocksControls = false; BuilderKind = requestedKind = -1;
@@ -518,6 +748,7 @@ public static class SkatePieces
     public static void Shutdown()
     {
         Reset();
+        SkateHeld.ReleaseSkateCursor(true);
         if (replyListener != null)
         {
             try { Application.remove_logMessageReceived(replyListener); } catch (Exception) { }
